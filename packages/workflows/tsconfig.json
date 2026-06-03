@@ -1,0 +1,19 @@
+{
+  // Layer 3 (workflows). Extends the strict monorepo baseline.
+  // Project-references enforce the single-direction dependency wall:
+  //   core -> model -> workflows -> tools -> app.
+  // workflows may depend on core, model, and tools; nothing below it.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../model" },
+    { "path": "../tools" }
+  ]
+}

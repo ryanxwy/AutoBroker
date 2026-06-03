@@ -1,0 +1,29 @@
+{
+  "name": "@autobroker/model",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Layer 2 of the AutoBroker (TS) monorepo: the AI SDK layer. Owns the provider registry, useCase->ModelAlias policy, the provider-neutral harness.generate entry, and the #1244 fail-closed malformed-tool-call detector.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@autobroker/core": "workspace:*",
+    "ai": "^6.0.0",
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/deepseek": "^2.0.0",
+    "zod": "^4.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@autobroker/skills",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The 17 AutoBroker skill definitions — built one-at-a-time by dependency × risk order. Each skill = contract (core Zod) + SKILL.md + emit_result binding + fallback-gate mapping. One skill = one commit. (No skill impls yet — placeholder.)",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.6"
+  }
+}

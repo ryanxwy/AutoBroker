@@ -1,0 +1,29 @@
+{
+  "name": "@autobroker/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AutoBroker persistence layer — Drizzle ORM over better-sqlite3, drizzle-kit-pull-introspected schema, and the test_run_records cost/time ledger.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./client": "./src/client.ts",
+    "./testRunRecords": "./src/testRunRecords.ts"
+  },
+  "scripts": {
+    "db:pull": "drizzle-kit pull",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit generate --name ci_empty_diff_gate && git diff --exit-code drizzle/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "~0.45",
+    "better-sqlite3": "^12"
+  },
+  "devDependencies": {
+    "drizzle-kit": "~0.31",
+    "@types/better-sqlite3": "^7",
+    "typescript": "^5.6"
+  }
+}

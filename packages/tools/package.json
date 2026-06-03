@@ -1,0 +1,43 @@
+{
+  "name": "@autobroker/tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Layer 4 — the ONLY layer that touches SQLite or external APIs. In-process tool({execute}) closures for Gmail, Playwright browser, DB writes, pure calc/validators, plus the L2 in-process gate bridge (fail-CLOSED single side-effect path) and the L1 AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS env fuse.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./gate": {
+      "types": "./dist/gate/index.d.ts",
+      "import": "./dist/gate/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@autobroker/core": "workspace:*",
+    "@autobroker/db": "workspace:*",
+    "@googleapis/gmail": "^17.0.0",
+    "better-sqlite3": "^11.0.0",
+    "google-auth-library": "^9.0.0",
+    "playwright": "^1.48.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

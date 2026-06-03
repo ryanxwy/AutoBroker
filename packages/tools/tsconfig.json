@@ -1,0 +1,18 @@
+{
+  // Layer 4 (tools) — the ONLY layer permitted to touch SQLite or external APIs.
+  // Project-references enforce the single-direction dependency wall:
+  //   core -> model -> workflows -> tools -> app.
+  // tools may depend on core and db; never on workflows or app.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../db" }
+  ]
+}

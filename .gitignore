@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Secrets / local env
+.env
+.env.local
+
+# SQLite (data dir lives under ~/.autobroker-ts during parity; never commit DBs)
+*.db
+*.db-wal
+*.db-shm
+
+# Test / coverage artifacts
+coverage/
+
+# OS
+.DS_Store

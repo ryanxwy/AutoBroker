@@ -1,0 +1,154 @@
+/**
+ * @autobroker/core — shared type aliases and enums (Layer 1).
+ *
+ * Pure types + Zod only. This file MUST NOT import any framework
+ * (no `ai`, no `drizzle-orm`, no `playwright`). See ./index.ts and the
+ * package README for the layer contract.
+ *
+ * Grounded in /tmp/ab_reconciliation.json (architectureStack + currentTruth)
+ * and the AUTHORITATIVE OVERRIDES of 2026-06-02 (DeepSeek = default api-key
+ * provider AND live-harness test agent; no per-provider tiering / privacy gate).
+ */
+
+import { z } from "zod";
+
+// ---------------------------------------------------------------------------
+// ModelAlias — provider-neutral routing identity: `{provider}.{tier}`
+// ---------------------------------------------------------------------------
+//
+// workflows/skills only ever name a `useCase`; policy() maps useCase ->
+// ModelAlias, and the model-layer registry maps ModelAlias -> a concrete
+// LanguageModel. Swapping providers is a one-string change in the registry.
+// (architectureStack §"Provider 路由 / Agent lane")
+
+/** Providers AutoBroker supports as first-class, switchable api-key lanes. */
+export const PROVIDERS = ["deepseek", "anthropic", "openai"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
+/**
+ * Capability tier within a provider. The registry binds each {provider}.{tier}
+ * to a concrete model id via `customProvider` aliases in the model layer.
+ */
+export const MODEL_TIERS = ["reasoner", "chat", "cheap", "strong"] as const;
+export type ModelTier = (typeof MODEL_TIERS)[number];
+
+/** Template-literal alias type: e.g. "deepseek.cheap", "anthropic.strong". */
+export type ModelAlias = `${Provider}.${ModelTier}`;
+
+export const ProviderSchema = z.enum(PROVIDERS);
+export const ModelTierSchema = z.enum(MODEL_TIERS);
+
+/**
+ * Zod validator for a ModelAlias string. Kept as a refined string (rather than
+ * a giant enum of every cross product) so new tiers/providers do not require a
+ * schema edit; the structural `{provider}.{tier}` shape is what we enforce.
+ */
+export const ModelAliasSchema = z
+  .string()
+  .refine(
+    (s): s is ModelAlias => {
+      const [provider, tier, ...rest] = s.split(".");
+      if (rest.length > 0) return false;
+      return (
+        ProviderSchema.safeParse(provider).success &&
+        ModelTierSchema.safeParse(tier).success
+      );
+    },
+    { message: "ModelAlias must be `{provider}.{tier}` (e.g. deepseek.cheap)" },
+  )
+  .describe("Provider-neutral model alias, shape `{provider}.{tier}`.");
+
+/**
+ * DEFAULT provider per the 2026-06-02 product-owner override: DeepSeek is the
+ * default api-key provider AND the live-harness test agent. Anthropic and
+ * OpenAI are equally first-class, switchable api-key lanes.
+ */
+export const DEFAULT_PROVIDER: Provider = "deepseek";
+
+// ---------------------------------------------------------------------------
+// CapabilityFlags — what a routed model can/can't do, surfaced to policy()
+// ---------------------------------------------------------------------------
+//
+// Used to fail-loud or down-route. Each provider supports a different subset of
+// JSON-Schema features; structured-output decisions key off these flags rather
+// than hard-coding provider names. (architectureStack §"结构化输出 / 校验")
+
+export const CapabilityFlagsSchema = z
+  .object({
+    /** Provider exposes a native agentic tool loop the AI SDK can own. True only
+     *  on the api-key lane (subscription/CLI-spawn lanes do NOT fire it — T1). */
+    ownsToolLoop: z.boolean(),
+    /** Mixing `Output.object` with `tools` is safe (false for DeepSeek per #1244
+     *  json_schema-injection text-dump; use emit_result or a two-phase pipeline). */
+    supportsOutputObjectWithTools: z.boolean(),
+    /** Honors strict JSON-Schema (rejects recursion / min / max / $ref, etc.). */
+    strictJsonSchema: z.boolean(),
+    /** Native vision input available (else fall back to OCR — transient, traced). */
+    supportsVision: z.boolean(),
+    /** Provider emits usage tokens we can price into cost_usd (else NULL + flag,
+     *  never silently $0). (currentTruth §"成本/时间度量") */
+    reportsUsageTokens: z.boolean(),
+    // TODO: add reasoning/thinking budget flags, max context window, JSON-mode
+    // vs tool-call mode, structured-output strictness sub-levels as skills land.
+  })
+  .strict()
+  .describe("Capabilities of a routed model; drives fail-loud / down-route.");
+
+export type CapabilityFlags = z.infer<typeof CapabilityFlagsSchema>;
+
+// ---------------------------------------------------------------------------
+// SkillRun status enum — the ~50-line self-built state machine's states
+// ---------------------------------------------------------------------------
+//
+// Lives in workflows (Layer 3), but the status vocabulary is a Layer-1 contract
+// so every layer agrees on it. `awaiting_approval` is the HITL suspend state
+// that pairs with a persisted resume_payload for crash-and-resume.
+// (architectureStack §"SkillRun 状态机 / 工作流编排")
+
+export const SKILL_RUN_STATUSES = [
+  "pending",
+  "running",
+  /** Suspended at a gate; a typed resume_payload is persisted. Set on semantic /
+   *  irreversible fallbacks (prose-vs-typed-gate, newest-vs-pinned-profile,
+   *  email_fallback scope switch) and on #1244 fail-closed under HITL. */
+  "awaiting_approval",
+  "done",
+  /** Terminal failure, incl. typed MalformedToolCallAbort with no HITL. */
+  "failed",
+  /** User declined at an approval gate (deny path → zero external calls). */
+  "declined",
+  /** Heartbeat stale (> 5 min) → swept to aborted; distinct from `failed`. */
+  "aborted",
+] as const;
+
+export type SkillRunStatus = (typeof SKILL_RUN_STATUSES)[number];
+export const SkillRunStatusSchema = z.enum(SKILL_RUN_STATUSES);
+
+// ---------------------------------------------------------------------------
+// DriverKind — PRODUCT enum vs HARNESS label
+// ---------------------------------------------------------------------------
+//
+// NOTE (per task spec + harness-standard/ANCHORS): the *product* DriverKind enum
+// is { agent | shell | codex_cli }. `deepseek_apikey` is a HARNESS-only label
+// emitted by the runner and asserted by the `driver_kind` anchor (it must stay
+// in lockstep with the runner's PROVIDER_DRIVER_KIND map). It is intentionally
+// NOT a product driver — DeepSeek runs through the ordinary api-key model lane,
+// not a bespoke driver.
+
+export const DRIVER_KINDS = ["agent", "shell", "codex_cli"] as const;
+export type DriverKind = (typeof DRIVER_KINDS)[number];
+export const DriverKindSchema = z.enum(DRIVER_KINDS);
+
+/**
+ * Harness-only `driver_kind` anchor labels. Superset of the product enum plus
+ * the per-provider test labels (e.g. `deepseek_apikey`). Asserted by the
+ * harness evaluator's driver_kind anchor; see harness-standard/ANCHORS.md.
+ */
+export const HARNESS_DRIVER_KINDS = [
+  ...DRIVER_KINDS,
+  "deepseek_apikey",
+  // TODO: add anthropic_apikey / openai_apikey labels when those test lanes
+  // are wired through the runner PROVIDER_DRIVER_KIND map (Phase 0).
+] as const;
+export type HarnessDriverKind = (typeof HARNESS_DRIVER_KINDS)[number];
+export const HarnessDriverKindSchema = z.enum(HARNESS_DRIVER_KINDS);

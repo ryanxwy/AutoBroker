@@ -1,0 +1,24 @@
+{
+  "name": "@autobroker/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Layer 1 of the AutoBroker (TS) monorepo: pure TYPES + Zod contracts. MUST NOT import any framework (no AI SDK / Drizzle / Playwright / HTTP).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  }
+}
