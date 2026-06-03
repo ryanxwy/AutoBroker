@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sqlite": {
+      "command": "./scripts/sqlite-mcp-launcher.sh",
+      "args": []
+    }
+  }
+}
