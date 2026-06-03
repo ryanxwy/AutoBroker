@@ -3,7 +3,7 @@
 > Status: Phase 0 (foundation) · 2026-06-02 · SCAFFOLD. This directory is the
 > code-repo **implementation** of the live-LLM harness. The canonical
 > specification lives in the plan repo at
-> [`../../AutoBroker-dev-plan/harness-standard/`](../../AutoBroker-dev-plan/harness-standard/)
+> [`../../AutoBroker-dev-plan/ts-rebuild/harness-standard/`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/)
 > (STANDARD / ANCHORS / TEST_LAYERS / INVARIANTS / VERDICTS / CORPUS). Where code
 > and standard disagree, fix one to match the other — do not let them drift.
 
@@ -44,7 +44,7 @@ the orchestration model.
       else `deny_all`).
 - [ ] [`export_daily.ts`](export_daily.ts) — exports `test_run_records` for a
       given day to stable JSON (already stubbed), consumed by the plan repo's
-      [`../../AutoBroker-dev-plan/tools/new-day.sh`](../../AutoBroker-dev-plan/tools/new-day.sh).
+      [`../../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh`](../../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh).
 
 ## Safety (frozen invariants — never relaxed)
 
@@ -56,5 +56,5 @@ the orchestration model.
 - Never set `AUTOBROKER_TEST_AUTO_APPROVE`.
 - Mode-A orchestration uses explicit harness framing — never a bare prompt.
 
-See [`../../AutoBroker-dev-plan/harness-standard/INVARIANTS.md`](../../AutoBroker-dev-plan/harness-standard/INVARIANTS.md)
+See [`../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.md`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.md)
 for the full set.

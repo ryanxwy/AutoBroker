@@ -5,8 +5,8 @@
 > schema (introspected from a cold-copied legacy SQLite), the better-sqlite3
 > connection, and the `test_run_records` cost/time ledger. Canonical decisions
 > live in
-> [`../../../AutoBroker-dev-plan/architecture/ARCH_PERSISTENCE.md`](../../../AutoBroker-dev-plan/architecture/ARCH_PERSISTENCE.md)
-> and [`DECISIONS.md`](../../../AutoBroker-dev-plan/architecture/DECISIONS.md)
+> [`../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md`](../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md)
+> and [`DECISIONS.md`](../../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.md)
 > ("DB 驱动 + schema 迁移").
 
 The persistence layer for **AutoBroker** (the TS rebuild). Drizzle ORM over

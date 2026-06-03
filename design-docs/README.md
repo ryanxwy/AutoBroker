@@ -15,12 +15,12 @@
 ## What does NOT belong here
 
 - Long-range phase plans, the build order, exit criteria → plan repo
-  [`phases/`](../../AutoBroker-dev-plan/phases/).
+  [`phases/`](../../AutoBroker-dev-plan/ts-rebuild/phases/).
 - The live-harness standard, anchors, invariants → plan repo
-  [`harness-standard/`](../../AutoBroker-dev-plan/harness-standard/).
+  [`harness-standard/`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/).
 - The architecture mirror and the master decision ledger → plan repo
-  [`architecture/`](../../AutoBroker-dev-plan/architecture/), especially
-  [`DECISIONS.md`](../../AutoBroker-dev-plan/architecture/DECISIONS.md).
+  [`architecture/`](../../AutoBroker-dev-plan/ts-rebuild/architecture/), especially
+  [`DECISIONS.md`](../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.md).
 
 The plan repo is the **source of intent**; this code repo is the **source of
 truth**. The split keeps narrative/planning prose out of the code repo and

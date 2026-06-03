@@ -12,7 +12,7 @@
  *
  * MANUAL CORRECTION REQUIRED after every `db:pull` — drizzle-kit introspection
  * does NOT faithfully round-trip the following; re-apply by hand and keep this
- * list in sync with ../../../AutoBroker-dev-plan/architecture/ARCH_PERSISTENCE.md:
+ * list in sync with ../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md:
  *
  *   1. THREE partial indexes — drizzle-kit drops the `WHERE` predicate on pull.
  *      Re-add the partial-index `.where(...)` clauses:

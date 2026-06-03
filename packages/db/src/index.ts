@@ -2,7 +2,7 @@
  * @autobroker/db barrel.
  *
  * The ONLY layer (with packages/tools) permitted to touch SQLite — core/ must
- * never import this. See ../../../AutoBroker-dev-plan/architecture/ARCH_OVERVIEW.md
+ * never import this. See ../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_OVERVIEW.md
  * (five-layer one-way dependency rule).
  */
 

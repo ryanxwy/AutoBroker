@@ -6,7 +6,7 @@
 > (`core → model → workflows → tools → app`). Sibling plans:
 > [tools package](../tools/README.md) (Layer 4, the only side-effect layer),
 > and the canonical phase plan in the dev-plan repo at
-> `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-e2e-rebuild-plan-20260602/index.html`.
+> `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/ts-e2e-rebuild-plan-20260602/index.html`.
 
 ## What this package is
 

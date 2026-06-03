@@ -3,7 +3,7 @@
 > Status: Phase 0 (foundation) · 2026-06-02 · Layer 1 of the AutoBroker (TS)
 > five-layer monorepo. Owns the **pure TYPES + Zod contracts** every other layer
 > shares. Sits below `@autobroker/model`. Canonical architecture lives in the
-> plan repo: `../../../AutoBroker-dev-plan/architecture/ARCH_OVERVIEW.md` and
+> plan repo: `../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_OVERVIEW.md` and
 > `ARCH_STRUCTURED_OUTPUT.md`.
 
 Layer 1 (`core`) is the bottom of the one-way dependency chain:
@@ -64,7 +64,7 @@ The **product** `DriverKind` enum is `agent | shell | codex_cli`.
 (`HarnessDriverKind`) emitted by the live-harness runner and asserted by the
 `driver_kind` anchor. DeepSeek runs through the ordinary api-key **model lane**,
 not a bespoke driver. See
-`../../../AutoBroker-dev-plan/harness-standard/ANCHORS.md`.
+`../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/ANCHORS.md`.
 
 ## Provider defaults
 

@@ -3,7 +3,7 @@
 **Model: Opus.** Dispatched ONLY on a Monitor defect flag, with a bounded
 iteration budget (default 3).
 
-> Mirrors `../../../AutoBroker-dev-plan/harness-standard/STANDARD.md` §2.
+> Mirrors `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.md` §2.
 
 ## You do
 
@@ -21,7 +21,7 @@ iteration budget (default 3).
 - **never run a live skill**,
 - **never open a browser**,
 - never widen scope beyond the flagged defect — "while I'm here" improvements go
-  to `../../../AutoBroker-dev-plan/architecture/BACKLOG.md` (greenfield
+  to `../../../AutoBroker-dev-plan/ts-rebuild/architecture/BACKLOG.md` (greenfield
   second-system-effect mitigation: defer all incidental changes to the
   post-parity backlog).
 

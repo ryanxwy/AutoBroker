@@ -4,9 +4,9 @@
 > five-layer monorepo: **the AI SDK layer**. Owns provider routing and the
 > provider-neutral structured-generation entry. Sits above `@autobroker/core`,
 > below `@autobroker/workflows`. Canonical architecture lives in the plan repo:
-> `../../../AutoBroker-dev-plan/architecture/ARCH_PROVIDER_ROUTER.md`,
+> `../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PROVIDER_ROUTER.md`,
 > `ARCH_STRUCTURED_OUTPUT.md`, and the foundation phase
-> `../../../AutoBroker-dev-plan/phases/PHASE_0_foundation.md`.
+> `../../../AutoBroker-dev-plan/ts-rebuild/phases/PHASE_0_foundation.md`.
 
 Layer 2 (`model`) is the only layer that imports the AI SDK
 (`ai`, `@ai-sdk/*`). It depends on Layer 1 (`@autobroker/core`) and **must not**

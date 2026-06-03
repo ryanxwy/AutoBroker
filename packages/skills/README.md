@@ -4,9 +4,9 @@
 > impls yet). This package will hold the 17 AutoBroker skill definitions, built
 > **one at a time** in dependency × risk order across Phases 1–5. The build order,
 > the 7-step per-skill loop, and the fallback taxonomy are canonical in
-> [`../../../AutoBroker-dev-plan/phases/SKILL_LOOP.md`](../../../AutoBroker-dev-plan/phases/SKILL_LOOP.md)
+> [`../../../AutoBroker-dev-plan/ts-rebuild/phases/SKILL_LOOP.md`](../../../AutoBroker-dev-plan/ts-rebuild/phases/SKILL_LOOP.md)
 > and the `PHASE_N_*.md` files; the live verification standard is in
-> [`../../../AutoBroker-dev-plan/harness-standard/STANDARD.md`](../../../AutoBroker-dev-plan/harness-standard/STANDARD.md).
+> [`../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.md`](../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.md).
 
 ## What a skill is
 
@@ -58,7 +58,7 @@ suspend → L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` fuse) is mandatory.
 6. cross-provider cheap smoke (anthropic / openai)
 7. acceptance + cost/time ledger row
 
-See [`SKILL_LOOP.md`](../../../AutoBroker-dev-plan/phases/SKILL_LOOP.md) for the
+See [`SKILL_LOOP.md`](../../../AutoBroker-dev-plan/ts-rebuild/phases/SKILL_LOOP.md) for the
 full loop and the fallback classification.
 
 ## TODO

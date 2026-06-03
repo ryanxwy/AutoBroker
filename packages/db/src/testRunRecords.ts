@@ -32,7 +32,7 @@ import { sqliteTable, integer, text, real } from "drizzle-orm/sqlite-core";
 /**
  * STUB shape — finalize columns/indexes in Phase 0 alongside the evaluator's
  * cost_and_time anchor and harness/export_daily.ts (the daily JSON consumed by
- * ../../../AutoBroker-dev-plan/tools/new-day.sh).
+ * ../../../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh).
  */
 export const testRunRecords = sqliteTable("test_run_records", {
   id: integer("id").primaryKey({ autoIncrement: true }),
