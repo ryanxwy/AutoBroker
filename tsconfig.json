@@ -1,0 +1,17 @@
+{
+  "//": [
+    "Solution-style root for `tsc --build` (the root `typecheck` script). Holds no",
+    "files of its own — it only references every composite package so a single",
+    "`tsc --build` walks the five-layer graph in one-way dependency order",
+    "(core -> model -> workflows -> tools -> app). Adding a new composite package",
+    "means adding one reference here. `skills` is a placeholder with no tsconfig yet."
+  ],
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/db" },
+    { "path": "packages/model" },
+    { "path": "packages/workflows" },
+    { "path": "packages/tools" }
+  ]
+}

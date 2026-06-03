@@ -4,6 +4,7 @@
   "private": true,
   "description": "Local-first, provider-agnostic new-car quote pipeline. Full-TypeScript rebuild of AutoBroker around 17 skills.",
   "type": "module",
+  "//ai": "Pinned to ^6 deliberately. Do NOT take v7: its LanguageModelV4 spec breaks V3-spec community providers (ts-migration 2026-05-29 D5/D9). CI must ignore the ai major-bump.",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20"
@@ -20,10 +21,10 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "typescript": "~5.6.3",
+    "vite": "^6.0.0",
     "vitest": "^4.0.0"
   },
   "dependencies": {
-    "//ai": "Pinned to ^6 deliberately. Do NOT take v7: its LanguageModelV4 spec breaks V3-spec community providers (ts-migration 2026-05-29 D5/D9). CI must ignore the ai major-bump.",
     "ai": "^6"
   }
 }

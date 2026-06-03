@@ -23,7 +23,8 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { openai } from "@ai-sdk/openai";
 import { createProviderRegistry, customProvider } from "ai";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ProviderRegistryProvider } from "ai";
+import type { ProviderV3 } from "@ai-sdk/provider";
 import { DEFAULT_PROVIDER, type ModelAlias, type Provider } from "@autobroker/core";
 
 /**
@@ -42,7 +43,8 @@ const deepseek = createDeepSeek();
  * temperature:0) per the harness lane; thinking/reasoner tier is the V4-Pro
  * reasoner. These ids are PLACEHOLDERS — confirm before Phase 1 live runs.
  */
-export const registry = createProviderRegistry(
+export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, typeof SEPARATOR> =
+  createProviderRegistry(
   {
     // DEFAULT provider — cheap-model-first; also the live-harness test agent.
     deepseek: customProvider({

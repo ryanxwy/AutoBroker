@@ -50,7 +50,7 @@ export interface HarnessWorkflowRuntime {
 export class SelfBuiltWorkflowRuntime implements HarnessWorkflowRuntime {
   private readonly machine: SkillRun;
 
-  constructor(private readonly store: SkillRunStore) {
+  constructor(store: SkillRunStore) {
     this.machine = new SkillRun(store);
   }
 
