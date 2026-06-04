@@ -1,23 +1,13 @@
 /**
- * SkillRun — the self-built ~50-line state machine that orchestrates one skill
- * invocation from start to terminal state.
+ * SkillRun — transitional pre-Phase-0 scaffold.
  *
- * WHY self-built (not Mastra) — decided 2026-06-01 (local-first platform round),
- * reaffirmed 2026-06-02:
- *   All 17 skills are <10-state LINEAR pipelines. A hand-rolled status enum plus
- *   a `resume_payload` JSON column on the existing SQLite `skill_runs` table is
- *   strictly simpler than a workflow framework. Mastra stays parked behind
- *   `HarnessWorkflowRuntime` (see ./harnessWorkflowRuntime.ts) and is only pulled
- *   in if a workflow genuinely exceeds ~10 states, needs multi-agent
- *   sub-orchestration, or needs durable mid-LLM-call resume.
+ * The source-of-intent is Mastra 1.x as the workflow backbone. Phase 0 replaces
+ * this self-built state machine with flat Mastra createWorkflow definitions plus
+ * a small workflow-host service for boot recovery, duplicate-runId guard, SSE
+ * pubsub, and product status projection.
  *
- * CRASH-AND-RESUME (the load-bearing reason this is a state machine at all):
- *   `awaiting_approval` is a DURABLE pause, not an in-memory await. The
- *   `resume_payload` carries everything needed to re-enter the run after a
- *   process restart. The Decision table (SQLite) is the persistent backing store
- *   for the awaiting-user set — the in-memory await store is a convenience cache
- *   only, NEVER the source of truth. A heartbeat reaper marks runs stale
- *   (heartbeat > 5min) as aborted so a crashed run never wedges a profile.
+ * This file remains only so the scaffold compiles until that replacement lands.
+ * Do not extend it as the production runtime.
  *
  * INVARIANT: SkillRun NEVER performs a side effect itself. Irreversible actions
  *   (Gmail send / dealer form submit) are physically reachable ONLY through the
@@ -26,9 +16,8 @@
  *   gate, which returned "needs approval" — it does not re-implement the gate.
  */
 
-// TODO(phase-3): import the real Zod-validated status enum + row types from
-// @autobroker/core once that package is scaffolded. Inlined here as a stub so
-// this file typechecks standalone during the workflows scaffold.
+// TODO(phase-0): replace this local scaffold status with the product status
+// projection from @autobroker/core once the Mastra workflow host lands.
 // import { SkillRunStatus, type SkillRunRow } from "@autobroker/core";
 
 /**

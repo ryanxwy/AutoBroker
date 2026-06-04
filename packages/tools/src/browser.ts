@@ -58,7 +58,7 @@ export class BrowserTool {
   ): Promise<{ submitted: true } | { declined: true }> {
     const req: GateRequest = {
       kind: "dealer_form_submit",
-      runId: "TODO-run-id", // TODO(phase-4): thread the real SkillRun id.
+      runId: "TODO-run-id", // TODO(phase-4): thread the real product run id.
       summary: `Submit dealer lead form at ${form.url}`,
       payload: { url: form.url, fieldCount: Object.keys(form.fields).length },
     };

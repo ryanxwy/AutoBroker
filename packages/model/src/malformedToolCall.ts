@@ -19,8 +19,8 @@
  * loop level, ahead of any "render the prose" path.
  *
  * STUB: the heuristic shell is real (it must be, it is a safety boundary); the
- * exact provider response field plumbing is TODO until the harness.generate loop
- * is wired in Phase 0.
+ * exact provider response field plumbing is TODO until the Mastra agent loop is
+ * wired in Phase 0.
  *
  * Layer note: this file imports `ai` types only (Layer 2 is the AI SDK layer).
  */
@@ -113,8 +113,9 @@ export function detectMalformedToolCall(turn: ToolTurnView): MalformedSignal[] {
  * - suspect + no HITL → throws MalformedToolCallAbort.
  *
  * We signal "must suspend" via the return value rather than reaching into the
- * workflow layer (that would invert the dependency direction). The loop in
- * harness.generate owns the suspend vs. abort decision using `hitlAvailable`.
+ * workflow layer (that would invert the dependency direction). The Mastra
+ * workflow/agent integration owns the suspend vs. abort decision using
+ * `hitlAvailable`.
  */
 export function assertToolTurnOrFailClosed(
   turn: ToolTurnView,

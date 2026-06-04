@@ -2,12 +2,12 @@
  * @autobroker/core — shared type aliases and enums (Layer 1).
  *
  * Pure types + Zod only. This file MUST NOT import any framework
- * (no `ai`, no `drizzle-orm`, no `playwright`). See ./index.ts and the
- * package README for the layer contract.
+ * (no `ai`, no `@mastra/*`, no `drizzle-orm`, no `playwright`). See ./index.ts
+ * and the package README for the layer contract.
  *
- * Grounded in /tmp/ab_reconciliation.json (architectureStack + currentTruth)
- * and the AUTHORITATIVE OVERRIDES of 2026-06-02 (DeepSeek = default api-key
- * provider AND live-harness test agent; no per-provider tiering / privacy gate).
+ * Grounded in the ts-rebuild plan repo's 2026-06-03 architecture docs:
+ * DeepSeek remains the default api-key provider/live-harness test agent, and
+ * Mastra owns orchestration while this package stays framework-free.
  */
 
 import { z } from "zod";
@@ -75,9 +75,9 @@ export const DEFAULT_PROVIDER: Provider = "deepseek";
 
 export const CapabilityFlagsSchema = z
   .object({
-    /** Provider exposes a native agentic tool loop the AI SDK can own. True only
-     *  on the api-key lane (subscription/CLI-spawn lanes do NOT fire it — T1). */
-    ownsToolLoop: z.boolean(),
+    /** Provider/model supports structured tool calls in the in-process api-key
+     *  lane. Mastra owns the loop; this flag describes model capability only. */
+    supportsToolCalls: z.boolean(),
     /** Mixing `Output.object` with `tools` is safe (false for DeepSeek per #1244
      *  json_schema-injection text-dump; use emit_result or a two-phase pipeline). */
     supportsOutputObjectWithTools: z.boolean(),
@@ -97,13 +97,13 @@ export const CapabilityFlagsSchema = z
 export type CapabilityFlags = z.infer<typeof CapabilityFlagsSchema>;
 
 // ---------------------------------------------------------------------------
-// SkillRun status enum — the ~50-line self-built state machine's states
+// Public run-status projection
 // ---------------------------------------------------------------------------
 //
-// Lives in workflows (Layer 3), but the status vocabulary is a Layer-1 contract
-// so every layer agrees on it. `awaiting_approval` is the HITL suspend state
-// that pairs with a persisted resume_payload for crash-and-resume.
-// (architectureStack §"SkillRun 状态机 / 工作流编排")
+// Mastra has its own workflow/run statuses. This vocabulary is the product's
+// projected status contract so UI, harness, tools, and reports do not drift.
+// `awaiting_approval` is the HITL suspend projection used for semantic or
+// irreversible gates; Phase 0 maps Mastra snapshots onto these values.
 
 export const SKILL_RUN_STATUSES = [
   "pending",

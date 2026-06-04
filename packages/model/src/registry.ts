@@ -11,11 +11,12 @@
  * switchable api-key lanes. NO tiering / privacy gate (disclosure is in the
  * README, not enforced in code). See `DEFAULT_PROVIDER` from @autobroker/core.
  *
- * Architecture (architectureStack §"Provider 路由 / Agent lane"):
- *   - api-key lane only: the AI SDK owns the agentic tool loop here, so
- *     needsApproval / stopWhen / Output.* fire natively. Subscription/CLI-spawn
- *     lanes do NOT fire it (T1) and route their gate through the in-process
- *     handler in the tools layer instead.
+ * Architecture:
+ *   - api-key lane: this registry returns AI SDK 6 LanguageModel instances for
+ *     Mastra agents. Mastra owns the agentic loop, approval pauses, processors,
+ *     stopWhen/maxSteps, and workflow snapshots.
+ *   - subscription/CLI-spawn lanes still do not fire an in-process loop over our
+ *     tools (T1), so their side-effect gate routes through the same L2 handler.
  *   - alias = `{provider}.{tier}`, tier in { reasoner, chat, cheap, strong }.
  */
 
@@ -38,10 +39,9 @@ const deepseek = createDeepSeek();
 /**
  * Tier -> concrete model bindings per provider.
  *
- * TODO: pin exact model ids once verified against each provider's current
- * catalog. DeepSeek test default is `deepseek-v4-flash` (non-thinking,
- * temperature:0) per the harness lane; thinking/reasoner tier is the V4-Pro
- * reasoner. These ids are PLACEHOLDERS — confirm before Phase 1 live runs.
+ * TODO(phase-0): pin exact model ids before live runs. The plan's current ids
+ * are `deepseek-v4-flash` for cheap/chat and `deepseek-v4-pro` for the
+ * reasoner/strong tier, with thinking default-off for structured pipelines.
  */
 export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, typeof SEPARATOR> =
   createProviderRegistry(

@@ -1,21 +1,20 @@
 /**
- * harness.generate — provider-neutral structured-generation entry (Layer 2).
+ * harness.generate — provider-neutral structured-generation probe/helper.
  *
- * STUB: the single chokepoint every skill calls for a schema-valid structured
- * result. It is provider-neutral: the caller passes a `useCase` (NOT a provider)
- * and a Zod `schema`; policy() picks the alias, the registry resolves the model,
- * and this function owns the api-key tool loop end to end.
+ * STUB: provider-neutral helper for schema-valid structured output. Callers pass
+ * a `useCase` (NOT a provider) and a Zod `schema`; policy() picks the alias and
+ * the registry resolves the LanguageModel. Phase 0 wires the resolved model into
+ * Mastra agents/workflows, which own the api-key loop end to end.
  *
- * Why "harness" owns the loop: on the api-key lane the AI SDK owns the agentic
- * tool loop, so this is where the #1244 fail-closed detector runs, where the
- * in-process gate handler is reached, and where Zod post-validation belts the
- * structured output. (architectureStack §"运行时 / tool loop owner".)
+ * Loop ownership: Mastra owns the agent loop. This helper owns provider policy,
+ * structured-output strategy selection, Zod post-validation, usage accounting,
+ * and the #1244 detector/Processor helpers attached to Mastra agents.
  *
  * Structured-output rule (currentTruth §"结构化输出机制"): when the routed model
  * cannot mix Output.object with tools (DeepSeek — #1244), use the single
  * `emit_result` tool (Zod-validated in-process) OR a two-phase pipeline
- * (tools-only loop, then a separate no-tools generateText + Output.object).
- * NEVER mix Output.object with tools on such a model. The strategy is chosen
+ * (tools-only loop, then a separate no-tools structured call).
+ * NEVER mix structured object output with tools on such a model. The strategy is chosen
  * from `policy(useCase).capabilities.supportsOutputObjectWithTools`.
  */
 
@@ -36,7 +35,7 @@ export interface HarnessGenerateInput<TSchema extends z.ZodTypeAny> {
    *  canonical-message <-> ModelMessage translator lands in this layer. */
   prompt: string;
   /** Whether a human is available to suspend to on a fail-closed event. The
-   *  in-process loop suspends if true, hard-aborts (typed) if false. */
+   *  Mastra workflow suspends if true, hard-aborts (typed) if false. */
   hitlAvailable: boolean;
 }
 
@@ -69,8 +68,8 @@ export interface HarnessSuspend {
  *   1. const route = policy(input.useCase); const model = resolveModel(route.alias);
  *   2. choose structured-output strategy from route.capabilities:
  *        supportsOutputObjectWithTools ? Output.object+tools : emit_result tool.
- *   3. run the AI SDK tool loop (stepCountIs default ~20); after EACH
- *      tool-expecting step call assertToolTurnOrFailClosed(turn, hitlAvailable):
+ *   3. in the Mastra agent loop, after EACH tool-expecting step call
+ *      assertToolTurnOrFailClosed(turn, hitlAvailable):
  *        - thrown MalformedToolCallAbort propagates (no HITL),
  *        - {suspend:true} returns a HarnessSuspend to the workflow layer.
  *   4. Zod post-validate against input.schema (belt-and-suspenders).

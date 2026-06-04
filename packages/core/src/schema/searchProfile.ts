@@ -2,7 +2,7 @@
  * SearchProfile — one active new-car search for an (account, brand).
  *
  * STUB: identity fields + lifecycle status; TODO for location/contact/financing
- * preferences written by search_profile_intake (Phase 2, root dependency).
+ * preferences written by search_profile_intake (Phase 1, root dependency).
  *
  * Invariants this contract underpins (legacy CLAUDE.md §Constraints + W-C):
  *   - New cars only.

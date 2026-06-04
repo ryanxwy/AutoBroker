@@ -1,21 +1,10 @@
 /**
- * HarnessWorkflowRuntime — the REVERSIBLE seam that hides the orchestration
- * engine from the rest of the system.
+ * HarnessWorkflowRuntime — transitional pre-Phase-0 seam.
  *
- * Today the only implementation is `SelfBuiltWorkflowRuntime`, which drives the
- * ~50-line `SkillRun` state machine (./skillRun.ts). The seam exists so that
- * swapping in Mastra later is a one-file change at the runtime boundary, NOT a
- * rewrite of every skill: skills and the server talk to this interface, never to
- * `SkillRun` directly.
- *
- * UPGRADE TRIGGERS (decided 2026-06-01, reaffirmed 2026-06-02) — only adopt
- * Mastra behind this seam when at least one is true for a real workflow:
- *   1. The workflow genuinely exceeds ~10 states (current max is well under).
- *   2. It needs multi-agent sub-orchestration (one skill driving sub-agents).
- *   3. It needs durable MID-LLM-CALL resume (resume inside a single model call,
- *      not just between steps — which crash-and-resume already covers).
- * Until then, a framework is pure overhead: all 17 skills are <10-state linear
- * pipelines and the self-built machine + SQLite resume_payload is sufficient.
+ * This interface and its self-built runtime are no longer the target
+ * architecture. Per the 2026-06-03 Mastra decision, Phase 0 deletes this seam
+ * and lets skills use Mastra primitives directly. The replacement should be a
+ * thin workflow-host service around Mastra, not an alternate engine abstraction.
  */
 
 import { SkillRun, type SkillRunSnapshot, type SkillRunStore } from "./skillRun.js";
@@ -28,10 +17,7 @@ export interface WorkflowHandle {
 }
 
 /**
- * The seam. Both the self-built engine and a future Mastra-backed engine
- * implement this. Callers (skills, the server's SSE route) depend only on this
- * type. Keep the surface small — every method added here must also be
- * implementable by Mastra, or the seam stops being reversible.
+ * Transitional seam kept only until the Mastra workflow host lands.
  */
 export interface HarnessWorkflowRuntime {
   /** Start a new run for `skill`, returning a handle in `pending`/`running`. */
@@ -43,9 +29,8 @@ export interface HarnessWorkflowRuntime {
 }
 
 /**
- * Default runtime: thin adapter over `SkillRun`. This is the production path for
- * Phase 3+; the Mastra slot below stays a no-op stub until an upgrade trigger
- * fires.
+ * Transitional runtime: thin adapter over `SkillRun`. Do not treat this as the
+ * production path for new work; Phase 0 replaces it with Mastra.
  */
 export class SelfBuiltWorkflowRuntime implements HarnessWorkflowRuntime {
   private readonly machine: SkillRun;
@@ -77,24 +62,19 @@ export class SelfBuiltWorkflowRuntime implements HarnessWorkflowRuntime {
 }
 
 /**
- * Mastra upgrade slot — intentionally NOT implemented.
- *
- * Leaving this as a documented throw (rather than deleting it) keeps the seam
- * honest: the day an upgrade trigger fires, this is the single class to fill in,
- * and `app`/skills keep depending on `HarnessWorkflowRuntime` unchanged.
+ * Deprecated placeholder. Phase 0 should delete this class with the seam rather
+ * than filling it in.
  */
 export class MastraWorkflowRuntime implements HarnessWorkflowRuntime {
-  // TODO(upgrade-trigger): only build this when a real workflow hits >10 states,
-  // needs multi-agent sub-orchestration, or needs durable mid-LLM-call resume.
   startRun(): Promise<WorkflowHandle> {
     throw new Error(
-      "MastraWorkflowRuntime is an upgrade slot — not yet warranted (no >10-state / multi-agent / durable-mid-LLM-resume workflow exists).",
+      "MastraWorkflowRuntime placeholder is deprecated — Phase 0 deletes HarnessWorkflowRuntime and installs the Mastra workflow host.",
     );
   }
   resumeRun(): Promise<WorkflowHandle> {
-    throw new Error("MastraWorkflowRuntime is an upgrade slot — not implemented.");
+    throw new Error("MastraWorkflowRuntime placeholder is deprecated.");
   }
   reapStale(): Promise<string[]> {
-    throw new Error("MastraWorkflowRuntime is an upgrade slot — not implemented.");
+    throw new Error("MastraWorkflowRuntime placeholder is deprecated.");
   }
 }

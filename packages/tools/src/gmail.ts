@@ -90,7 +90,7 @@ export class GmailTool {
     const raw = buildRaw(email);
     const req: GateRequest = {
       kind: "gmail_send",
-      runId: "TODO-run-id", // TODO(phase-4): thread the real SkillRun id.
+      runId: "TODO-run-id", // TODO(phase-4): thread the real product run id.
       summary: `Send email to ${email.to} — "${email.subject}"`,
       payload: { to: email.to, subject: email.subject },
     };

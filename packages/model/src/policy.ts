@@ -24,11 +24,11 @@ import type { CapabilityFlags, ModelAlias, Provider } from "@autobroker/core";
  * a registry tier binding + a CapabilityFlags row.
  */
 export const USE_CASES = [
-  /** Extract a structured DealerQuote from a dealer reply (Phase 2 template). */
+  /** Extract a structured DealerQuote from a dealer reply (Phase 3 template). */
   "dealer_reply_extract",
   /** Render a Telegram headline from already-computed audit flags (Phase 1). */
   "quote_audit_headline",
-  /** Verify trim at intake; force-override is audited (Phase 2 root dep). */
+  /** Verify trim at intake; force-override is audited (Phase 1 root dep). */
   "search_profile_intake",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
@@ -51,7 +51,7 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
 
 /**
  * Capability map keyed by alias. Drives fail-loud / down-route and the
- * structured-output strategy choice (emit_result vs Output.object).
+ * structured-output strategy choice (emit_result vs structured object output).
  *
  * Key fact baked in: DeepSeek MUST NOT mix Output.object with tools
  * (`supportsOutputObjectWithTools: false`) — per-step json_schema injection
@@ -62,14 +62,14 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
  */
 const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
   "deepseek.cheap": {
-    ownsToolLoop: true, // api-key lane: AI SDK owns the loop
+    supportsToolCalls: true, // Mastra owns the loop; DeepSeek supports tool calls.
     supportsOutputObjectWithTools: false, // #1244 — use emit_result / two-phase
     strictJsonSchema: false,
     supportsVision: false,
     reportsUsageTokens: true,
   },
   "deepseek.chat": {
-    ownsToolLoop: true,
+    supportsToolCalls: true,
     supportsOutputObjectWithTools: false,
     strictJsonSchema: false,
     supportsVision: false,

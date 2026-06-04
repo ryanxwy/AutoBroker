@@ -1,9 +1,9 @@
 /**
  * @autobroker/workflows — Layer 3 public surface.
  *
- * Exposes the self-built SkillRun state machine and the HarnessWorkflowRuntime
- * reversible seam. Consumers (apps/server, packages/skills) depend on the seam
- * interface, not on the concrete machine.
+ * Transitional pre-Phase-0 scaffold. The source-of-intent is the Mastra
+ * backbone; Phase 0 deletes the self-built SkillRun/HarnessWorkflowRuntime seam
+ * and replaces this public surface with Mastra workflow host primitives.
  *
  * Dependency wall: workflows may import core, model, and tools — never app.
  * workflows NEVER touches SQLite or external APIs; all side effects go through

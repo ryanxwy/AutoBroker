@@ -1,7 +1,8 @@
 /**
  * @autobroker/model — Layer 2 public surface (the AI SDK layer).
  *
- * Owns provider routing and the provider-neutral structured-generation entry.
+ * Owns provider routing, structured-output helpers, and #1244 detector helpers.
+ * Mastra owns orchestration and the agent loop.
  * Imports `ai` / `@ai-sdk/*` (that is this layer's job) and `@autobroker/core`
  * (Layer 1). MUST NOT import workflows / tools / app (one-way deps).
  *

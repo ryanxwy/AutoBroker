@@ -2,8 +2,9 @@
  * L2 in-process gate bridge — the load-bearing layer of the four-layer gate
  * stack. THIS IS THE SINGLE SIDE-EFFECT PATH.
  *
- * Four-layer stack (decided 2026-06-01, reaffirmed 2026-06-02):
- *   L3  native AI SDK `needsApproval`  — convenience only, api-key lane only.
+ * Four-layer stack (revised 2026-06-03 for the Mastra backbone):
+ *   L3  native Mastra tool/step approval or suspend — convenience only,
+ *                                        api-key lane only.
  *   L2  THIS in-process gate bridge    — LOAD-BEARING, all lanes, fail-CLOSED,
  *                                        single structured path. (Renamed from
  *                                        the legacy `build_sdk_mcp_server`.)
