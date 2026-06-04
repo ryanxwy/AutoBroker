@@ -1,0 +1,35 @@
+# CI gates for the AutoBroker (TS) monorepo — Phase 0 set.
+#
+# Gates (each maps to a documented invariant):
+#   typecheck     — TS project references encode the five-layer wall (types).
+#   test          — L1 safety net: #1244 detector, L2 gate paths, Mastra trio.
+#   check:strings — stale-name guard (CLAUDE.md naming ruling 2026-06-03).
+#   lint:deps     — dependency-cruiser runtime-import wall (layer DAG +
+#                   framework ownership; TS references alone don't police this).
+#   db:check      — drizzle-kit empty-diff gate, scoped to the PRODUCT schema
+#                   (mastra.db is excluded by scope, not by exception).
+#                   TODO(phase-0): enable once the drizzle/ introspection
+#                   baseline from the cold-copied oracle DB is committed —
+#                   until then it has no baseline to diff against.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from package.json packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm check:strings
+      - run: pnpm lint:deps
+      # - run: pnpm db:check   # TODO(phase-0): enable with the drizzle/ baseline
