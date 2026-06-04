@@ -27,7 +27,13 @@
  * the @autobroker/tools L2 gate.
  */
 
-// Intentionally empty until Phase-0 spike 1 (ESM/dependency smoke: ai@^6 +
-// @mastra/core@1.38.x + @mastra/memory + @mastra/libsql) lands the Mastra
-// instance. Do NOT re-introduce a self-built run state machine here.
+// Spike-1 ESM/dependency smoke (offline half) is DONE: @mastra/core@1.38.0 +
+// @mastra/memory@1.20.1 + @mastra/libsql@1.12.0 are installed as an EXACT
+// date-matched trio (2026-06-02) — the published peer ranges are looser than
+// reality (libsql@1.12.1 imports NotificationsStorage that core@1.38 lacks;
+// mastra#10602-class residue), so bump all three together or none.
+// `Mastra` / `Memory` / `LibSQLStore` / `createWorkflow` (subpath
+// @mastra/core/workflows) all resolve under NodeNext ESM. Remaining half of
+// spike 1: one real generate through a Mastra agent (needs a live api-key).
+// Do NOT re-introduce a self-built run state machine here.
 export {};
