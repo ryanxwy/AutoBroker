@@ -33,3 +33,6 @@ AGENTS.md
 
 # OS
 .DS_Store
+
+# Cold-copied legacy SQLite for drizzle-kit pull (copy-not-share scratch)
+.cold-copy/

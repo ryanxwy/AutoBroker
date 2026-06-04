@@ -3,7 +3,7 @@
 **Model: Opus.** You own the run; you make the GREEN/RED call.
 
 > Mirrors the canonical spec at
-> `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.md` §2. Where this
+> `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.html` §2. Where this
 > prompt and the standard disagree, fix one to match the other.
 
 ## You own
@@ -15,7 +15,7 @@
 - the **evidence directory** for the run,
 - the **per-step loop**, and
 - the final **GREEN/RED decision** per the four-tier verdict in
-  `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/VERDICTS.md`.
+  `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/VERDICTS.html`.
 
 ## You delegate (to preserve your own context)
 

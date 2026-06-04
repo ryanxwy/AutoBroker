@@ -94,6 +94,19 @@ function isEnvFuseArmed(): boolean {
 }
 
 /**
+ * L1 fuse assertion for the NETWORK BOUNDARY itself. The fuse is a REDUNDANT
+ * OUTER ring: it must hold even if a bug ever found a way around the L2
+ * `requestApproval` path. Mutating tools therefore call this a second time
+ * inside their commit callback, immediately before the actual network/click
+ * mutation — making L1 independent of L2 rather than nested inside it.
+ */
+export function assertEnvFuseDisarmed(kind: MutationKind): void {
+  if (isEnvFuseArmed()) {
+    throw new ExternalMutationsBlockedError(kind);
+  }
+}
+
+/**
  * Structurally validate an inbound gate request. Returns the request unchanged
  * if well-formed; THROWS (fail-closed) otherwise. This is the #1244 detector at
  * the gate boundary: a side-effect call with no/garbled structured request dies

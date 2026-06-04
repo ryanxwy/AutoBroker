@@ -15,7 +15,8 @@
  *   - Cross-field rules (financing_mode discriminant, Rule 1 cross-mode leakage,
  *     Rule 2 mode-required fields, ±$1 math reconciliation) are enforced in the
  *     `tools`/`calc` layer as POST-validation, NOT encoded as JSON-Schema the
- *     model sees. See Phase 1/2 plans.
+ *     model sees. See PHASE_1 (deterministic calc) + PHASE_3
+ *     (dealer_reply_extract) under the browser-first reorder.
  *
  * This file MUST NOT import any framework. Pure types + Zod only.
  */

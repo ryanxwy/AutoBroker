@@ -14,7 +14,12 @@
  * allowedTools/tools:[] so the model can't reach a shell to bypass this.
  */
 
-import { withGate, type Approver, type GateRequest } from "./gate/index.js";
+import {
+  assertEnvFuseDisarmed,
+  withGate,
+  type Approver,
+  type GateRequest,
+} from "./gate/index.js";
 
 /** Minimal slice of the Playwright Page surface this tool needs. Kept as a
  *  local interface so the scaffold typechecks before `playwright` is installed.
@@ -64,6 +69,9 @@ export class BrowserTool {
     };
 
     const result = await withGate(req, this.approver, async () => {
+      // L1 outer ring, asserted AGAIN at the click boundary itself so the
+      // fuse holds independently of the L2 path that brought us here.
+      assertEnvFuseDisarmed("dealer_form_submit");
       // TODO(phase-4): fill `form.fields` (fake phone unless opted in), then:
       await page.click(form.submitSelector); // network mutation — gate-approved only.
       return { submitted: true as const };

@@ -3,7 +3,7 @@
 **Model: Opus.** Dispatched ONLY on a Monitor defect flag, with a bounded
 iteration budget (default 3).
 
-> Mirrors `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.md` §2.
+> Mirrors `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.html` §2.
 
 ## You do
 

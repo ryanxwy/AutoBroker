@@ -1,7 +1,7 @@
 /**
  * AutoBroker Drizzle schema — STUB / introspection baseline.
  *
- * PROVENANCE (DECISIONS.md "DB 驱动 + schema 迁移", ts-migration REWRITE_SPEC §7):
+ * PROVENANCE (DECISIONS.html "DB 驱动 + schema 迁移", ts-migration REWRITE_SPEC §7):
  *   This file is GENERATED, not hand-authored. The baseline comes from
  *   `drizzle-kit pull` introspecting the **cold-copied** legacy SQLite
  *   (see ../../scripts/cold-copy-sqlite.sh — copy-not-share, never two-way sync).
@@ -12,7 +12,7 @@
  *
  * MANUAL CORRECTION REQUIRED after every `db:pull` — drizzle-kit introspection
  * does NOT faithfully round-trip the following; re-apply by hand and keep this
- * list in sync with ../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md:
+ * list in sync with ../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.html:
  *
  *   1. THREE partial indexes — drizzle-kit drops the `WHERE` predicate on pull.
  *      Re-add the partial-index `.where(...)` clauses:
@@ -43,7 +43,7 @@
  * schema. Do not build skills against these stubs.
  *
  * IMPORT RULE: this package is the ONLY layer (with packages/tools) permitted to
- * touch SQLite. core/ must never import drizzle. (ARCH_OVERVIEW.md, five-layer
+ * touch SQLite. core/ must never import drizzle. (ARCH_OVERVIEW.html, five-layer
  * one-way dependency rule.)
  */
 

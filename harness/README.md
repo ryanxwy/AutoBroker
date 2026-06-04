@@ -56,5 +56,5 @@ the orchestration model.
 - Never set `AUTOBROKER_TEST_AUTO_APPROVE`.
 - Mode-A orchestration uses explicit harness framing — never a bare prompt.
 
-See [`../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.md`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.md)
+See [`../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.html`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.html)
 for the full set.

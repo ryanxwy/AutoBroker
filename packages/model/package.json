@@ -16,7 +16,11 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "test": "vitest run",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.0"
   },
   "dependencies": {
     "@autobroker/core": "workspace:*",

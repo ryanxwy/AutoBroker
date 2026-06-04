@@ -102,8 +102,11 @@ export type CapabilityFlags = z.infer<typeof CapabilityFlagsSchema>;
 //
 // Mastra has its own workflow/run statuses. This vocabulary is the product's
 // projected status contract so UI, harness, tools, and reports do not drift.
-// `awaiting_approval` is the HITL suspend projection used for semantic or
-// irreversible gates; Phase 0 maps Mastra snapshots onto these values.
+// Per ARCH_ORCHESTRATION_SESSIONS: "the product never re-implements a status
+// machine; it renames one" — Mastra's 10-value run status projects onto these
+// 7 (success → done, suspended → awaiting_approval, failed → error,
+// canceled → aborted/declined with app metadata, …). `awaiting_approval` is
+// the HITL suspend projection used for semantic or irreversible gates.
 
 export const SKILL_RUN_STATUSES = [
   "pending",
@@ -113,11 +116,12 @@ export const SKILL_RUN_STATUSES = [
    *  email_fallback scope switch) and on #1244 fail-closed under HITL. */
   "awaiting_approval",
   "done",
-  /** Terminal failure, incl. typed MalformedToolCallAbort with no HITL. */
-  "failed",
+  /** Terminal failure (Mastra `failed` → product `error`), incl. typed
+   *  MalformedToolCallAbort with no HITL. */
+  "error",
   /** User declined at an approval gate (deny path → zero external calls). */
   "declined",
-  /** Heartbeat stale (> 5 min) → swept to aborted; distinct from `failed`. */
+  /** Heartbeat stale (> 5 min) → swept to aborted; distinct from `error`. */
   "aborted",
 ] as const;
 
@@ -142,7 +146,7 @@ export const DriverKindSchema = z.enum(DRIVER_KINDS);
 /**
  * Harness-only `driver_kind` anchor labels. Superset of the product enum plus
  * the per-provider test labels (e.g. `deepseek_apikey`). Asserted by the
- * harness evaluator's driver_kind anchor; see harness-standard/ANCHORS.md.
+ * harness evaluator's driver_kind anchor; see harness-standard/ANCHORS.html.
  */
 export const HARNESS_DRIVER_KINDS = [
   ...DRIVER_KINDS,

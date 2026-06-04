@@ -64,7 +64,7 @@ The **product** `DriverKind` enum is `agent | shell | codex_cli`.
 (`HarnessDriverKind`) emitted by the live-harness runner and asserted by the
 `driver_kind` anchor. DeepSeek runs through the ordinary api-key **model lane**,
 not a bespoke driver. See
-`../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/ANCHORS.md`.
+`../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/ANCHORS.html`.
 
 ## Provider defaults
 

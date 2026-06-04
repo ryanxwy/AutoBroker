@@ -1,0 +1,19 @@
+{
+  // Layer 5 (app/server). Extends the strict monorepo baseline.
+  // Project-references enforce the single-direction dependency wall:
+  //   core -> model -> workflows -> tools -> app.
+  // app may depend on everything below it; nothing depends on app.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/workflows" },
+    { "path": "../../packages/tools" }
+  ]
+}

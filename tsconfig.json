@@ -12,6 +12,9 @@
     { "path": "packages/db" },
     { "path": "packages/model" },
     { "path": "packages/workflows" },
-    { "path": "packages/tools" }
+    { "path": "packages/tools" },
+    { "path": "apps/server" },
+    { "path": "apps/ui" },
+    { "path": "apps/desktop" }
   ]
 }

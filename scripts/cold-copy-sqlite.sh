@@ -4,7 +4,7 @@
 #
 # Cold-copy the legacy AutoBroker-Python SQLite into the TS repo's parity path.
 # COPY-NOT-SHARE: the two repos NEVER open the same file, and we NEVER two-way
-# sync. (DECISIONS.md "DB 驱动 + schema 迁移"; risks "双语言/双栈共写一个 SQLite".)
+# sync. (DECISIONS.html "DB 驱动 + schema 迁移"; risks "双语言/双栈共写一个 SQLite".)
 #
 # WHY: the legacy machine runs `busy_timeout = 0`, so two writers on one SQLite
 # file fail immediately with SQLITE_BUSY and no retry. A one-time cold copy

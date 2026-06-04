@@ -20,7 +20,12 @@
  *     NEVER sent in tests.
  */
 
-import { withGate, type Approver, type GateRequest } from "./gate/index.js";
+import {
+  assertEnvFuseDisarmed,
+  withGate,
+  type Approver,
+  type GateRequest,
+} from "./gate/index.js";
 
 /** Where a send actually goes. `fake` is the default for all non-production
  *  and all test paths; `real` requires both an approved gate verdict AND an
@@ -100,6 +105,9 @@ export class GmailTool {
         // TODO(phase-4): write `raw` to the local fake-mailbox DB row.
         return { mode: "fake" as const, messageId: `fake-${Date.now()}` };
       }
+      // L1 outer ring, asserted AGAIN at the network boundary itself so the
+      // fuse holds independently of the L2 path that brought us here.
+      assertEnvFuseDisarmed("gmail_send");
       // TODO(phase-4): real send via @googleapis/gmail users.messages.send({raw}).
       // Reaches the network ONLY here, ONLY inside an approved gate commit.
       void raw;

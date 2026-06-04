@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "db:pull": "drizzle-kit pull",
     "db:generate": "drizzle-kit generate",
+    "db:check": "pnpm --filter @autobroker/db run db:check",
     "harness": "pnpm --filter @autobroker/harness run start"
   },
   "devDependencies": {

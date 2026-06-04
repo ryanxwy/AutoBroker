@@ -2,9 +2,9 @@
 
 > Status: Phase 0 (foundation) · 2026-06-02 · SCAFFOLD. This directory holds
 > repo-level engineering scripts. Long-form rationale lives in the plan repo at
-> [`../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.md`](../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.md)
+> [`../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.html`](../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.html)
 > ("DB 驱动 + schema 迁移") and
-> [`ARCH_PERSISTENCE.md`](../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md).
+> [`ARCH_PERSISTENCE.html`](../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.html).
 
 ## Scripts
 

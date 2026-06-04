@@ -14,16 +14,26 @@
  *   repo retires.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema.js";
 
-/** Resolve the SQLite file path from AUTOBROKER_DATA_DIR (parity dir default). */
+/** Resolve the SQLite file path from AUTOBROKER_DATA_DIR (parity dir default).
+ *  Tilde is expanded here — Node does NOT expand "~" in paths, so a literal
+ *  "~/.autobroker-ts" from the environment would create a directory named "~"
+ *  in the cwd. AUTOBROKER_DB (explicit file path) overrides everything. */
 function resolveDbPath(): string {
-  // TODO(phase-0): resolve AUTOBROKER_DATA_DIR (default ~/.autobroker-ts) +
-  // "autobroker.db"; honor an explicit AUTOBROKER_DB override; create the dir.
-  const dataDir = process.env.AUTOBROKER_DATA_DIR ?? "~/.autobroker-ts";
-  return `${dataDir}/autobroker.db`;
+  const explicit = process.env.AUTOBROKER_DB;
+  if (explicit !== undefined && explicit !== "") return expandTilde(explicit);
+  const dataDir = process.env.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts");
+  return join(expandTilde(dataDir), "autobroker.db");
+  // TODO(phase-0): create the data dir if missing before first open.
+}
+
+function expandTilde(p: string): string {
+  return p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
 }
 
 /**

@@ -1,0 +1,13 @@
+{
+  // Layer 5 (app/desktop). Extends the strict monorepo baseline.
+  // Optional Electron shell (Phase 6) wrapping the server process + the ui SPA.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": []
+}

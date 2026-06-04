@@ -39,9 +39,13 @@ const deepseek = createDeepSeek();
 /**
  * Tier -> concrete model bindings per provider.
  *
- * TODO(phase-0): pin exact model ids before live runs. The plan's current ids
- * are `deepseek-v4-flash` for cheap/chat and `deepseek-v4-pro` for the
- * reasoner/strong tier, with thinking default-off for structured pipelines.
+ * DeepSeek ids are pinned per D3 (ARCH_PROVIDER_ROUTER, 2026-06-03): the
+ * deepseek-chat/deepseek-reasoner aliases deprecate 2026-07-24. V4 thinking is
+ * a REQUEST PARAMETER on a shared model id (extra_body thinking:enabled +
+ * reasoning_effort), not a separate "-thinking" model — so the reasoner tier
+ * binds the same deepseek-v4-flash id and the thinking flag is set per-call
+ * (v4-pro only for the hardest planning useCases). cheap/chat/strong run
+ * thinking-OFF (explicit), temperature:0 for structured pipelines.
  */
 export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, typeof SEPARATOR> =
   createProviderRegistry(
@@ -49,10 +53,12 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
     // DEFAULT provider — cheap-model-first; also the live-harness test agent.
     deepseek: customProvider({
       languageModels: {
-        cheap: deepseek("deepseek-chat"), // TODO: pin deepseek-v4-flash id
-        chat: deepseek("deepseek-chat"),
-        strong: deepseek("deepseek-reasoner"), // TODO: confirm reasoner id
-        reasoner: deepseek("deepseek-reasoner"),
+        cheap: deepseek("deepseek-v4-flash"), // thinking-off (explicit), temperature:0
+        chat: deepseek("deepseek-v4-flash"),
+        strong: deepseek("deepseek-v4-pro"), // thinking-off; evaluate per useCase
+        // Same id as cheap/chat — thinking:enabled is a per-request parameter
+        // bound at call time by the reasoner-tier useCases (D3).
+        reasoner: deepseek("deepseek-v4-flash"),
       },
       fallbackProvider: deepseek,
     }),

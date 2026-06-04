@@ -2,7 +2,7 @@
  * test_run_records — the net-new cost/time + harness-result ledger.
  *
  * PROVENANCE (currentTruth "测试分层 L1–L5" + "成本/时间度量";
- *   risks "成本账本静默 $0/缺失 usage 骗趋势"; ANCHORS.md cost_and_time anchor):
+ *   risks "成本账本静默 $0/缺失 usage 骗趋势"; ANCHORS.html cost_and_time anchor):
  *
  *   Every harness run lands one row here. Cost is the APPLICATION's own job:
  *   usage tokens × a self-managed pricing table → USD (AI SDK #3932 is wontfix,
@@ -42,7 +42,7 @@ export const testRunRecords = sqliteTable("test_run_records", {
   skill: text("skill").notNull(),
   createdAt: text("created_at").notNull(), // ISO-8601, YYYY-MM-DD-derived bucket.
 
-  // ── test taxonomy (TEST_LAYERS.md) ─────────────────────────────────────
+  // ── test taxonomy (TEST_LAYERS.html) ─────────────────────────────────────
   layer: text("layer").notNull(), // 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
   provider: text("provider").notNull(), // 'deepseek' (default) | 'anthropic' | 'openai'
   modelAlias: text("model_alias").notNull(), // e.g. 'deepseek-v4-flash'

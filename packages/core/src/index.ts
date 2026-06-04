@@ -49,3 +49,6 @@ export {
   SearchProfileStatusSchema,
 } from "./schema/searchProfile.js";
 export type { SearchProfile, SearchProfileStatus } from "./schema/searchProfile.js";
+
+export { SessionThreadSchema } from "./schema/sessionThread.js";
+export type { SessionThread } from "./schema/sessionThread.js";
