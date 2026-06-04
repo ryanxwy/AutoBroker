@@ -53,7 +53,7 @@ shell and bypass the gate.
 | `src/gate/index.ts` | L2 in-process gate bridge + L1 env fuse. The single side-effect path. |
 | `src/gmail.ts` | Gmail tool. Hand-built RFC-2822 raw message = the single **fake/real send seam** (default **fake**); real send only inside an approved gate commit. |
 | `src/browser.ts` | Playwright-native tool. `page.route`/`waitForResponse` read structured JSON off the wire; mutating click/submit wrapped by the gate. |
-| `src/db.ts` | Drizzle + better-sqlite3 connection factory (WAL, busy_timeout=5000); honors `AUTOBROKER_DATA_DIR` (parity period → `~/.autobroker-ts`). |
+| `src/db.ts` | Layer-4 wrapper over `@autobroker/db`: re-exports the single Drizzle + better-sqlite3 factory and resolves non-DB artifacts under `AUTOBROKER_DATA_DIR`. |
 | `src/calc.ts` | Pure offer math: `validateOfferMath` (±$1 reconciliation) and `STATE_DOC_FEE_CAP`. |
 | `src/validators.ts` | Pure post-validation + safety rules (no budget in dealer text, fake phone unless opted in). |
 

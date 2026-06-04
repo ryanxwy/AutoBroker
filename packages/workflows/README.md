@@ -1,10 +1,10 @@
 # @autobroker/workflows
 
 > Status: Phase 0 alignment target, 2026-06-03. The source-of-intent is now
-> **Mastra 1.x as the workflow backbone**. The current code still contains the
-> pre-Phase-0 self-built `SkillRun` / `HarnessWorkflowRuntime` scaffold; Phase 0
-> replaces that scaffold rather than extending it. Layer 3 of the five-layer
-> monorepo (`core -> model -> workflows -> tools -> app`). Sibling plans:
+> **Mastra 1.x as the workflow backbone**. The pre-Phase-0 self-built
+> `SkillRun` / `HarnessWorkflowRuntime` scaffold has been deleted; this package
+> now owns the Mastra integration shell and runtime-glue surface. Layer 3 of the
+> five-layer monorepo (`core -> model -> workflows -> tools -> app`). Sibling plans:
 > [tools package](../tools/README.md) (the only side-effect layer), and the
 > canonical phase plan in the dev-plan repo at
 > `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/phases/index.html`.
@@ -26,17 +26,17 @@ Target shape:
 | Status projection | App-side projection from Mastra workflow state into AutoBroker's public run statuses. |
 | Gate routing | Irreversible actions are routed through the L2 in-process gate in `@autobroker/tools`; workflows only orchestrate the ask/resume path. |
 
-## What Phase 0 removes
+## What Phase 0 removed
 
 The 2026-06-03 product-owner override deleted the old reversibility seam. Phase
-0 should remove the self-built engine artifacts instead of treating them as an
+0 removed the self-built engine artifacts instead of treating them as an
 abstraction to preserve:
 
-| Old artifact | Phase 0 direction |
+| Old artifact | Phase 0 result |
 | --- | --- |
-| `src/skillRun.ts` | Replace with Mastra workflow definitions plus a thin status-projection service. |
-| `src/harnessWorkflowRuntime.ts` | Delete the engine seam; skills import/use Mastra primitives directly. |
-| `SelfBuiltWorkflowRuntime` / `MastraWorkflowRuntime` split | Delete; there is no parallel engine choice in MVP. |
+| `src/skillRun.ts` | Deleted; replace with Mastra workflow definitions plus a thin status-projection service as skills land. |
+| `src/harnessWorkflowRuntime.ts` | Deleted; skills import/use Mastra primitives directly. |
+| `SelfBuiltWorkflowRuntime` / `MastraWorkflowRuntime` split | Deleted; there is no parallel engine choice in MVP. |
 
 The accepted cost is that Mastra public API/type churn reaches skill files
 directly. The mitigation is a minor-version pin, codemods when needed, and the
