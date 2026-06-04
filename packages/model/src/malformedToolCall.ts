@@ -56,7 +56,13 @@ export type MalformedSignal =
 export interface ToolTurnView {
   /** The step's finish/stop reason as reported by the provider. */
   finishReason: string;
-  /** Whether the step intended to call at least one tool (per provider parse). */
+  /** Whether the LOOP expects this step to call a tool: tools are registered
+   *  and the terminal tool (emit_result) has not fired yet. MUST be set by the
+   *  loop's own state — NEVER derived from the provider's parse of the step,
+   *  because the provider mis-parsing its own tool call is exactly the #1244
+   *  failure this detector exists to catch (deriving it from the provider
+   *  would skip the finish_reason/empty-tool-calls signals precisely when
+   *  they matter). */
   expectsToolCall: boolean;
   /** Number of structured tool calls actually parsed out of the step. */
   toolCallCount: number;

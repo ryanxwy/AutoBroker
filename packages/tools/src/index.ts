@@ -37,8 +37,8 @@ export {
   type DealerLeadForm,
 } from "./browser.js";
 
-// DB (Drizzle + better-sqlite3 connection factory).
-export { openDb, resolveDataDir } from "./db.js";
+// DB (single connection factory, re-exported from @autobroker/db).
+export { openDb, resolveDataDir, type Db } from "./db.js";
 
 // Pure offer math.
 export {

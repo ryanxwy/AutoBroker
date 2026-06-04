@@ -34,8 +34,9 @@ export type FinancingMode = z.infer<typeof FinancingModeSchema>;
 export const DealerQuoteSchema = z
   .object({
     // --- identity / provenance ----------------------------------------------
-    /** FK to the search profile this quote was extracted under. */
-    search_profile_id: z.string().describe("Owning search profile id."),
+    /** FK to the search profile this quote was extracted under (integer PK —
+     *  lockstep with SearchProfile.id). */
+    search_profile_id: z.number().int().describe("Owning search profile id."),
     /** Gmail message id the figures were extracted from (provenance). */
     gmail_message_id: z.string().nullable(),
     /** Dealer the quote is from (display name as it appeared; untrusted input). */
