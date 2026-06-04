@@ -36,4 +36,11 @@
 // @mastra/core/workflows) all resolve under NodeNext ESM. Remaining half of
 // spike 1: one real generate through a Mastra agent (needs a live api-key).
 // Do NOT re-introduce a self-built run state machine here.
-export {};
+
+// #1244 fail-closed detector as a Mastra output Processor (spike-3 shell;
+// detection logic stays pure in @autobroker/model).
+export {
+  malformedToolCallProcessor,
+  type MalformedToolCallProcessorOptions,
+  type MalformedToolCallTripMetadata,
+} from "./malformedToolCallProcessor.js";
