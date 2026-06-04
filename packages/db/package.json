@@ -4,18 +4,33 @@
   "private": true,
   "description": "AutoBroker product DB persistence layer — Drizzle ORM over better-sqlite3, drizzle-kit-pull-introspected schema, and the test_run_records cost/time ledger; Mastra runtime state lives separately in mastra.db.",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./schema": "./src/schema.ts",
-    "./client": "./src/client.ts",
-    "./testRunRecords": "./src/testRunRecords.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./testRunRecords": {
+      "types": "./dist/testRunRecords.d.ts",
+      "import": "./dist/testRunRecords.js"
+    }
   },
   "scripts": {
+    "build": "tsc -b",
     "db:pull": "drizzle-kit pull",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit generate --name ci_empty_diff_gate && git diff --exit-code drizzle/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "drizzle-orm": "~0.45",

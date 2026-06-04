@@ -18,12 +18,18 @@ import { defineConfig } from "drizzle-kit";
  */
 export default defineConfig({
   dialect: "sqlite",
-  schema: "./src/schema.ts",
+  // Both files form the product schema: schema.ts is the introspected oracle
+  // baseline; testRunRecords.ts is the TS-owned ledger (no legacy equivalent,
+  // hand-authored, migrated forward).
+  schema: ["./src/schema.ts", "./src/testRunRecords.ts"],
   out: "./drizzle",
+  // alembic_version is the frozen oracle's migration bookkeeping — legacy
+  // machinery, not product schema. Excluded declaratively so every re-pull
+  // drops it without a manual step.
+  tablesFilter: ["!alembic_version"],
   dbCredentials: {
-    // TODO(phase-0): resolve from AUTOBROKER_DATA_DIR (parity dir ~/.autobroker-ts).
     // For `db:pull` this points at the cold-copied file produced by
     // scripts/cold-copy-sqlite.sh — NEVER the legacy ~/.autobroker/autobroker.db.
-    url: process.env.AUTOBROKER_DB ?? "./.cold-copy/autobroker.db",
+    url: process.env.AUTOBROKER_DB ?? `${process.env.HOME}/.autobroker-ts/autobroker.db`,
   },
 });

@@ -32,9 +32,11 @@ export type SearchProfileStatus = z.infer<typeof SearchProfileStatusSchema>;
 
 export const SearchProfileSchema = z
   .object({
-    /** Integer PK mirroring the DB autoincrement id — keep in lockstep with
-     *  DealerQuote.search_profile_id and SessionThread.pinnedSearchProfileId. */
-    id: z.number().int().describe("Stable profile id (resolver returns this)."),
+    /** TEXT PK mirroring the introspected oracle (search_profiles.
+     *  search_profile_id is TEXT, verified via db:pull 2026-06-03) — keep in
+     *  lockstep with DealerQuote.search_profile_id and
+     *  SessionThread.pinnedSearchProfileId. */
+    id: z.string().describe("Stable profile id (resolver returns this)."),
     /** Gmail account that owns the search. */
     account: z.string(),
     /** Brand the search targets; (account, brand) is the active-uniqueness key. */

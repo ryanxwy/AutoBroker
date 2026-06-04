@@ -7,10 +7,10 @@
 #   lint:deps     — dependency-cruiser runtime-import wall (layer DAG +
 #                   framework ownership; TS references alone don't police this).
 #   db:check      — drizzle-kit empty-diff gate, scoped to the PRODUCT schema
-#                   (mastra.db is excluded by scope, not by exception).
-#                   TODO(phase-0): enable once the drizzle/ introspection
-#                   baseline from the cold-copied oracle DB is committed —
-#                   until then it has no baseline to diff against.
+#                   (mastra.db is excluded by scope, not by exception). The
+#                   committed drizzle/ snapshot was generated from the
+#                   corrected src/schema.ts (introspected oracle baseline +
+#                   the 3 partial-index WHEREs + 12 hand-authored CHECKs).
 name: ci
 on:
   push:
@@ -32,4 +32,4 @@ jobs:
       - run: pnpm test
       - run: pnpm check:strings
       - run: pnpm lint:deps
-      # - run: pnpm db:check   # TODO(phase-0): enable with the drizzle/ baseline
+      - run: pnpm db:check

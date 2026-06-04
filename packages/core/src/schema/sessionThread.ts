@@ -26,9 +26,10 @@ export const SessionThreadSchema = z
     /** Mastra Memory resource id — the local user (single-user product). */
     resourceId: z.string().min(1),
     /** The search profile this rail is bound to (1 rail = 1 thread = 1
-     *  profile); null until intake pins one. Inferred-newest resolutions are
-     *  logged, never silent — see the profile-ASK three-branch contract. */
-    pinnedSearchProfileId: z.number().int().nullable(),
+     *  profile); null until intake pins one. TEXT id per the introspected
+     *  oracle — lockstep with SearchProfile.id. Inferred-newest resolutions
+     *  are logged, never silent — see the profile-ASK three-branch contract. */
+    pinnedSearchProfileId: z.string().nullable(),
     /** Human-facing rail title; null until first user turn names it. */
     title: z.string().nullable(),
   })
