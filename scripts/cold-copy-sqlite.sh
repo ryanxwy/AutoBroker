@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# cold-copy-sqlite.sh — STUB.
+# cold-copy-sqlite.sh
 #
 # Cold-copy the legacy AutoBroker-Python SQLite into the TS repo's parity path.
 # COPY-NOT-SHARE: the two repos NEVER open the same file, and we NEVER two-way
@@ -40,24 +40,43 @@ set -euo pipefail
 LEGACY_DB="${LEGACY_DB:-$HOME/.autobroker/autobroker.db}"
 TS_DATA_DIR="${AUTOBROKER_DATA_DIR:-$HOME/.autobroker-ts}"
 TS_DB="${TS_DB:-$TS_DATA_DIR/autobroker.db}"
+FORCE=0
+[[ "${1:-}" == "--force" ]] && FORCE=1
 
-echo "cold-copy-sqlite.sh (STUB)"
+echo "cold-copy-sqlite.sh"
 echo "  legacy : $LEGACY_DB"
 echo "  ts     : $TS_DB"
 
-# TODO(phase-0): step 1 — verify no legacy writer is running (pgrep autobroker;
-#   bail loudly if one is, rather than risk a torn copy).
+if [[ ! -f "$LEGACY_DB" ]]; then
+  echo "legacy DB not found at $LEGACY_DB (set LEGACY_DB to override)" >&2
+  exit 1
+fi
 
-# TODO(phase-0): step 2 — checkpoint-truncate the legacy WAL into the main file:
-#   sqlite3 "$LEGACY_DB" "PRAGMA wal_checkpoint(TRUNCATE);"
-#   (read-only on legacy is fine; this only folds the -wal in.)
+# step 1 — verify no legacy writer is running; bail loudly rather than risk a
+# torn copy. The read-mostly sqlite MCP servers are not writers — exclude them.
+writers="$(pgrep -fl autobroker | grep -vE 'mcp-server-sqlite|uvx|cold-copy-sqlite' || true)"
+if [[ -n "$writers" ]]; then
+  echo "refusing to copy: possible legacy writer(s) running:" >&2
+  echo "$writers" >&2
+  echo "stop them (autobroker up / backend) and re-run." >&2
+  exit 1
+fi
 
-# TODO(phase-0): step 3 — mkdir -p "$TS_DATA_DIR" && cp "$LEGACY_DB" "$TS_DB"
-#   (plus a guard: refuse to overwrite an existing $TS_DB without --force, so we
-#    don't clobber accumulated parity-period TS data).
+# step 2 — checkpoint-truncate the legacy WAL into the main file, so the copy
+# is a single self-contained file (no orphaned -wal/-shm).
+sqlite3 "$LEGACY_DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
 
-# TODO(phase-0): step 4 — the TS app applies WAL + busy_timeout=5000 on open
-#   (packages/db/src/client.ts); nothing to do here beyond leaving a clean file.
+# step 3 — copy legacy -> TS path. Refuse to overwrite an existing $TS_DB
+# without --force, so we don't clobber accumulated parity-period TS data.
+if [[ -f "$TS_DB" && "$FORCE" -ne 1 ]]; then
+  echo "refusing to overwrite existing $TS_DB (pass --force to refresh)" >&2
+  exit 1
+fi
+mkdir -p "$TS_DATA_DIR"
+cp "$LEGACY_DB" "$TS_DB"
 
-echo "TODO(phase-0): implement the four steps above."
-exit 1
+# step 4 — the TS app applies WAL + busy_timeout=5000 on open
+# (packages/db/src/client.ts); nothing to do here beyond leaving a clean file.
+
+echo "integrity_check: $(sqlite3 "$TS_DB" 'PRAGMA integrity_check;')"
+echo "cold copy complete: $TS_DB"

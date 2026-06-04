@@ -8,7 +8,7 @@
 
 ## Scripts
 
-### `cold-copy-sqlite.sh` (stub)
+### `cold-copy-sqlite.sh`
 
 Cold-copies the legacy **AutoBroker-Python** SQLite into the TS repo's parity
 path — **copy-not-share, never two-way sync**.
@@ -41,8 +41,8 @@ silently diverges from the live DB.
 
 ## TODO
 
-- [ ] Implement the four steps of `cold-copy-sqlite.sh` (currently a documented
-      stub that exits 1).
+- [x] Implement the four steps of `cold-copy-sqlite.sh` (refuses to overwrite an
+      existing TS DB without `--force`).
 - [ ] Add the `db:generate` empty-diff check to CI (it already exists as the
       `db:check` npm script in `@autobroker/db`).
 - [ ] Add the intake schema ↔ TS sync check (port of the legacy `intake:check`).
