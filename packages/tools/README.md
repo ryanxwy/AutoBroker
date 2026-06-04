@@ -1,20 +1,22 @@
 # @autobroker/tools
 
-> Status: Phase 4 scaffold, 2026-06-02. Owns the **only layer that touches
-> SQLite or external APIs**: in-process tool closures for Gmail, Playwright
+> Status: Phase 4 scaffold, 2026-06-03. Owns the **only layer that touches the
+> product DB or external APIs**: in-process tool closures for Gmail, Playwright
 > browser, DB writes, pure calc/validators, and the **L2 in-process gate bridge**
 > (the single side-effect path) plus the **L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS`
 > env fuse**. Layer 4 of the five-layer monorepo
 > (`core → model → workflows → tools → app`). Sibling plans:
-> [workflows package](../workflows/README.md) (Layer 3, the orchestrator that
-> drives this gate), and the canonical phase plan at
-> `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/ts-e2e-rebuild-plan-20260602/index.html`.
+> [workflows package](../workflows/README.md) (Layer 3, the Mastra orchestrator
+> that drives this gate), and the canonical phase plan at
+> `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/phases/index.html`.
 
 ## The side-effect invariant (the whole point of this package)
 
-**Every** SQLite handle and **every** external API call in AutoBroker lives here
-and nowhere else. Routes, the CLI, workflows, and skills are all forbidden from
-touching the DB or the network directly — they call into this layer.
+**Every** product-DB handle and **every** external API call in AutoBroker lives
+here and nowhere else. Routes, the CLI, workflows, and skills are all forbidden
+from touching the product DB or the network directly — they call into this
+layer. Mastra's own workflow runtime state lives in a separate `mastra.db`;
+those framework tables are not product schema.
 
 Within this layer, every **irreversible external action** (Gmail send, dealer
 form submit, typed-YES destructive confirm) is reachable **only** through the L2
@@ -27,7 +29,7 @@ shell and bypass the gate.
 
 | Layer | Role |
 | --- | --- |
-| L3 native `needsApproval` | Convenience only, api-key lane only. |
+| L3 native Mastra approval / `suspend()` | Convenience only, api-key lane only. |
 | **L2 in-process gate bridge** | **Load-bearing. All lanes. fail-CLOSED, single structured path.** (Renamed from the legacy `build_sdk_mcp_server`.) |
 | fallback-gate suspend | Workflow re-asks the human. |
 | L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` | Redundant **outer ring**, always armed in harness runs, **never the only floor**. |

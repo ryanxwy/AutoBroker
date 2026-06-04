@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Package manager local stores
+.pnpm-store/
+
 # Build output
 dist/
 *.tsbuildinfo
@@ -16,6 +19,17 @@ dist/
 
 # Test / coverage artifacts
 coverage/
+
+# Local scratch / temp
+tmp/
+.tmp/
+temp/
+*.tmp
+
+# Machine-local Codex config / hooks
+.codex/
+.agents/
+AGENTS.md
 
 # OS
 .DS_Store

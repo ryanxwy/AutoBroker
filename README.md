@@ -8,7 +8,10 @@ load-bearing work and humans approving anything irreversible.
 This repository is the **full-TypeScript rebuild** of AutoBroker. It is built
 from the ground up, one skill at a time in dependency × risk order, against the
 frozen legacy Python implementation (`../AutoBroker-Python`) as a read-only
-parity oracle. See `../AutoBroker-dev-plan` for the canonical phase plan,
+parity oracle. The current source-of-intent is the 2026-06-03 browser-first
+plan: Mastra 1.x owns orchestration and durable workflow state, AI SDK 6 is the
+provider layer, and React/Vite is the local UI surface before the optional
+Electron shell. See `../AutoBroker-dev-plan` for the canonical phase plan,
 architecture mirror, and live-harness standard.
 
 ---
@@ -50,32 +53,36 @@ pnpm typecheck     # tsc --build across the workspace
 pnpm test          # vitest
 ```
 
-Parity-period data (cold-copied SQLite DB, logs, config) lives under
-`~/.autobroker-ts/`, isolated from the legacy Python repo's `~/.autobroker/`.
+Parity-period data (cold-copied product SQLite DB, Mastra runtime DB, logs,
+config) lives under `~/.autobroker-ts/`, isolated from the legacy Python repo's
+`~/.autobroker/`.
 
 ---
 
 ## Architecture — the five layers
 
-A pnpm monorepo with a strict **one-way** dependency order, enforced by TS
-project references. Each layer may import only from layers above it in this
-list; the reverse is a build error.
+A pnpm monorepo with a strict **one-way** dependency wall, enforced by TS
+project references. Frameworks stay in their owning layer: `core` remains pure
+contracts, `model` owns provider adaptation, `workflows` owns Mastra
+orchestration, `tools` owns all side effects, and `app` owns HTTP/UI shells.
 
 | Layer | Package | Owns | May import frameworks? |
 | --- | --- | --- | --- |
-| 1. core | `packages/core` | Pure TYPES + Zod schemas (`DealerQuote`, `AuditFlag`, `SearchProfile`, `CapabilityFlags`, `ModelAlias`, `SkillRun` states) | **No** — AI SDK / Drizzle / Playwright are invisible here |
-| 2. model | `packages/model` | AI SDK layer: provider registry (`deepseek`, `anthropic`, `openai`), `policy(useCase→alias)`, `harness.generate({useCase,schema})`, canonical-message ↔ ModelMessage translation, #1244 fail-closed loop detector | AI SDK 6 |
-| 3. workflows | `packages/workflows` | Self-built ~50-line `SkillRun` state machine + `HarnessWorkflowRuntime` seam; the L2 in-process gate bridge + fallback-suspend orchestration | — |
-| 4. tools | `packages/tools` | Gmail, browser (Playwright-native), DB writes, calc/validators. **Only this layer touches SQLite or external APIs.** Mutating actions wear a code-level approval wrapper | Playwright, googleapis |
-| 5. app | `apps/server`, `apps/desktop` | Backend HTTP + SSE skill-run stream; Electron shell (Phase 6 placeholder) | Electron, React |
+| 1. core | `packages/core` | Pure TYPES + Zod schemas (`DealerQuote`, `AuditFlag`, `SearchProfile`, `CapabilityFlags`, `ModelAlias`, run-status projections) | **No** — AI SDK / Mastra / Drizzle / Playwright are invisible here |
+| 2. model | `packages/model` | AI SDK 6 provider layer: registry (`deepseek`, `anthropic`, `openai`), `policy(useCase->alias)`, `resolveModel(alias)`, canonical-message translation, #1244 fail-closed detector/processor helpers | AI SDK 6 |
+| 3. workflows | `packages/workflows` | Mastra 1.x backbone: one flat `createWorkflow` per skill, Memory-thread/session integration, OM chat-lane compacting, durable suspend/resume projection, L2 gate orchestration | Mastra |
+| 4. tools | `packages/tools` | Gmail, browser (Playwright-native), product DB writes, calc/validators. **Only this layer touches the product DB or external APIs.** Mutating actions wear a code-level approval wrapper | Playwright, googleapis |
+| 5. app | `apps/server`, `apps/ui`, `apps/desktop` | Backend HTTP + SSE skill-run stream; React/Vite + AI SDK UI chat rail; Electron shell (Phase 6 optional placeholder) | HTTP framework TBD in Phase 0, React, Electron |
 
 Supporting packages: `packages/db` (Drizzle schema + better-sqlite3,
-`drizzle-kit pull` baseline, `test_run_records` ledger), `packages/skills`
-(the 17 skill definitions).
+`drizzle-kit pull` baseline, `test_run_records` ledger; Mastra state lives in a
+separate `mastra.db`), `packages/skills` (the 17 skill definitions).
 
 **`ai` is pinned to `^6`** deliberately — v7's `LanguageModelV4` spec would
-break V3-spec community providers. AI SDK 6 owns the tool loop on the api-key
-lane, which is where the native approval gate lives.
+break V3-spec community providers. On the backend, AI SDK 6 is the provider
+adapter (`createProviderRegistry` -> `LanguageModel` -> Mastra agent), not the
+workflow engine. On the frontend, AI SDK UI remains first-class for the chat
+rail and message streaming.
 
 ### Safety, in one line
 
@@ -90,12 +97,16 @@ invariant set.
 
 ## The plan
 
-The canonical phase plan, architecture decisions (`DECISIONS.md`), live-harness
+The canonical phase plan, architecture decisions (`DECISIONS.html`), live-harness
 standard, and daily progress reports live in the docs repo next door:
 
 - **`../AutoBroker-dev-plan`** — phases (0–6), architecture mirror, harness
-  standard, daily reports. That repo describes *what to build and in what
-  order*; this repo answers *what is actually built today*.
+  standard, daily reports. The current plan is revised 2026-06-03 to
+  browser-first: Phase 0 Mastra backbone; Phase 1 deterministic core + intake;
+  Phase 2 browser service + scans; Phase 3 email service + LLM extraction;
+  Phase 4 orchestration/reporting; Phase 5 irreversible fake-send; Phase 6
+  optional Electron. That repo describes *what to build and in what order*;
+  this repo answers *what is actually built today*.
 
 The legacy Python implementation is frozen at **`../AutoBroker-Python`** and is
 read-only until all 17 skills reach parity-GREEN, at which point AutoBroker (TS)

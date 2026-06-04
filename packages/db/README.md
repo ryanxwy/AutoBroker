@@ -1,17 +1,18 @@
 # @autobroker/db
 
-> Status: Phase 0 (foundation) · 2026-06-02 · SCAFFOLD STUB. This package owns
-> the AutoBroker persistence layer for the new full-TypeScript repo: the Drizzle
-> schema (introspected from a cold-copied legacy SQLite), the better-sqlite3
-> connection, and the `test_run_records` cost/time ledger. Canonical decisions
-> live in
-> [`../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md`](../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_PERSISTENCE.md)
-> and [`DECISIONS.md`](../../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.md)
-> ("DB 驱动 + schema 迁移").
+> Status: Phase 0 (foundation) · 2026-06-03 · SCAFFOLD STUB. This package owns
+> the AutoBroker **product DB** persistence layer for the new full-TypeScript
+> repo: the Drizzle schema (introspected from a cold-copied legacy SQLite), the
+> better-sqlite3 connection, and the `test_run_records` cost/time ledger.
+> Mastra runtime state lives beside it in a dedicated `mastra.db`, not in this
+> product schema. Canonical decisions live in the dev-plan repo's
+> `ts-rebuild/architecture/ARCH_PERSISTENCE.html` and `DECISIONS.html`.
 
-The persistence layer for **AutoBroker** (the TS rebuild). Drizzle ORM over
-better-sqlite3. This is one of only two layers (the other is `packages/tools`)
-permitted to touch SQLite — `packages/core` must never import it.
+The product persistence layer for **AutoBroker** (the TS rebuild). Drizzle ORM
+over better-sqlite3. Only `packages/db` and `packages/tools` may touch the
+product SQLite database — `packages/core`, `packages/model`, `packages/workflows`,
+and app routes must never open it directly. Mastra's `mastra.db` is framework
+runtime state and is excluded from the drizzle parity gate.
 
 ## Stack
 
@@ -51,8 +52,10 @@ permitted to touch SQLite — `packages/core` must never import it.
 ## Data isolation
 
 Parity-period data dir is **`~/.autobroker-ts/`** (via `AUTOBROKER_DATA_DIR`),
-physically isolated from the legacy `~/.autobroker/`. At the single-point flip
-(all 17 skills parity-GREEN) the TS repo takes over `~/.autobroker/`.
+physically isolated from the legacy `~/.autobroker/`. During the Mastra-backed
+plan it contains both the cold-copied product DB (`autobroker.db`) and Mastra's
+runtime DB (`mastra.db`). At the single-point flip (all 17 skills parity-GREEN)
+the TS repo takes over `~/.autobroker/`.
 
 ## TODO
 

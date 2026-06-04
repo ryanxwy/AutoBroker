@@ -1,10 +1,10 @@
 # @autobroker/core
 
-> Status: Phase 0 (foundation) · 2026-06-02 · Layer 1 of the AutoBroker (TS)
+> Status: Phase 0 (foundation) · 2026-06-03 · Layer 1 of the AutoBroker (TS)
 > five-layer monorepo. Owns the **pure TYPES + Zod contracts** every other layer
 > shares. Sits below `@autobroker/model`. Canonical architecture lives in the
-> plan repo: `../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_OVERVIEW.md` and
-> `ARCH_STRUCTURED_OUTPUT.md`.
+> plan repo: `../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_OVERVIEW.html`
+> and `ARCH_STRUCTURED_OUTPUT.html`.
 
 Layer 1 (`core`) is the bottom of the one-way dependency chain:
 
@@ -15,9 +15,9 @@ core → model → workflows → tools → app
 ## The contract: no framework imports
 
 `@autobroker/core` **MUST NOT import any framework**. The AI SDK (`ai`,
-`@ai-sdk/*`), Drizzle, Playwright, Gmail/Maps adapters, and any HTTP server are
-**invisible** here. The only runtime dependency is **Zod** (`^4`), because the
-schemas in this package *are* the shared contracts.
+`@ai-sdk/*`), Mastra, Drizzle, Playwright, Gmail/Maps adapters, and any HTTP
+server are **invisible** here. The only runtime dependency is **Zod** (`^4`),
+because the schemas in this package *are* the shared contracts.
 
 This is enforced two ways:
 
@@ -35,7 +35,7 @@ without dragging a runtime into the type layer.
 
 | File | Owns |
 | --- | --- |
-| `src/types.ts` | `ModelAlias` (`{provider}.{tier}`), `Provider`/`ModelTier`, `CapabilityFlags`, `SkillRunStatus` (incl. `awaiting_approval`), `DriverKind` (product enum) + `HarnessDriverKind` (harness label set) |
+| `src/types.ts` | `ModelAlias` (`{provider}.{tier}`), `Provider`/`ModelTier`, `CapabilityFlags`, public run-status projection values (incl. `awaiting_approval`), `DriverKind` (product enum) + `HarnessDriverKind` (harness label set) |
 | `src/schema/dealerQuote.ts` | `DealerQuoteSchema` — flat, required-with-null offer; `financing_mode` discriminant |
 | `src/schema/auditFlag.ts` | `AuditFlagSchema` + stable `AuditFlagCode` catalog (computed in calc, not by the LLM) |
 | `src/schema/searchProfile.ts` | `SearchProfileSchema` — one `(account, brand)` new-car search |
@@ -68,13 +68,14 @@ not a bespoke driver. See
 
 ## Provider defaults
 
-Per the product-owner decision of **2026-06-02**, `DEFAULT_PROVIDER` is
-`deepseek` — DeepSeek is the **default api-key provider** *and* the live-harness
-test agent. **Anthropic** and **OpenAI** are equally first-class, switchable
-api-key lanes. There is **no per-provider tiering and no privacy precondition
-gate**; the privacy posture is an upfront README disclosure (see the model layer
-and the root README). `core` only encodes the `Provider` set and the default;
-routing lives in `@autobroker/model`.
+Per the product-owner decision of **2026-06-02**, still current under the
+2026-06-03 Mastra/browser-first plan, `DEFAULT_PROVIDER` is `deepseek` —
+DeepSeek is the **default api-key provider** *and* the live-harness test agent.
+**Anthropic** and **OpenAI** are equally first-class, switchable api-key lanes.
+There is **no per-provider tiering and no privacy precondition gate**; the
+privacy posture is an upfront README disclosure (see the model layer and the
+root README). `core` only encodes the `Provider` set and the default; routing
+lives in `@autobroker/model`.
 
 ## Build
 

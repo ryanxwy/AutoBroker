@@ -2,7 +2,7 @@
   "name": "@autobroker/db",
   "version": "0.0.0",
   "private": true,
-  "description": "AutoBroker persistence layer — Drizzle ORM over better-sqlite3, drizzle-kit-pull-introspected schema, and the test_run_records cost/time ledger.",
+  "description": "AutoBroker product DB persistence layer — Drizzle ORM over better-sqlite3, drizzle-kit-pull-introspected schema, and the test_run_records cost/time ledger; Mastra runtime state lives separately in mastra.db.",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {

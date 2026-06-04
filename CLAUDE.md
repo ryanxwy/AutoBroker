@@ -7,7 +7,7 @@ Guidance for Claude Code (claude.ai/code) when working in **this** repository.
 This **is AutoBroker (TS)** — the full-TypeScript rebuild of AutoBroker, a
 local-first, provider-agnostic new-car quote pipeline built around 17 skills.
 
-Naming (authoritative, 2026-06-02):
+Naming (authoritative, 2026-06-03):
 
 - **AutoBroker** — this repo (`~/vscode/AutoBroker/AutoBroker`), the runnable
   full-TS code, `source-of-truth`. Git branch `main`.
@@ -36,38 +36,45 @@ pnpm harness          # live-harness runner
 
 ## Five-layer one-way dependency rule
 
-A pnpm monorepo with a strict one-way dependency order, enforced by TS project
-references in `tsconfig.base.json`. Each layer imports only from layers **above**
-it; a reverse reference is a build error.
+A pnpm monorepo with a strict one-way ownership wall, enforced by TS project
+references in `tsconfig.base.json` and per-package `tsconfig.json` files.
+Frameworks stay in their owning layer: `core` stays pure, `model` adapts
+providers, `workflows` orchestrates, `tools` owns side effects, and `app` owns
+HTTP/UI shells. Treat any new cross-layer reference not already encoded in a
+package `tsconfig.json` as an architecture change, not a casual import.
 
 ```
 core  ->  model  ->  workflows  ->  tools  ->  app
 ```
 
 - `packages/core` — pure TYPES + Zod schemas. **Imports no framework** (AI SDK,
-  Drizzle, Playwright must be invisible here).
-- `packages/model` — AI SDK 6 layer: `createProviderRegistry({deepseek,
+  Mastra, Drizzle, Playwright must be invisible here).
+- `packages/model` — AI SDK 6 provider layer: `createProviderRegistry({deepseek,
   anthropic, openai})`, `policy(useCase→ModelAlias→CapabilityFlags)`,
-  `harness.generate({useCase,schema})`, canonical-message ↔ ModelMessage
-  translation, the #1244 fail-closed loop detector.
-- `packages/workflows` — the self-built ~50-line `SkillRun` state machine
-  (`status=awaiting_approval` + `resume_payload` JSON) behind the
-  `HarnessWorkflowRuntime` seam; L2 gate bridge + fallback-suspend
-  orchestration. (Mastra is a reversible upgrade seam, not used in MVP.)
+  `resolveModel(alias)`, canonical-message ↔ ModelMessage translation, and the
+  #1244 fail-closed detector/Processor helpers.
+- `packages/workflows` — Mastra 1.x backbone: each skill is a flat linear
+  `createWorkflow`; sessions use Mastra Memory threads/resources plus OM
+  auto-compact on the chat lane; durable `suspend()` / resume and app-side
+  status projection replace the old self-built `SkillRun` seam in Phase 0.
 - `packages/tools` — Gmail, browser (Playwright-native), DB writes, calc /
   validators. Mutating actions wear a code-level approval wrapper.
-- `apps/server`, `apps/desktop` — backend HTTP + SSE; Electron shell (Phase 6).
+- `apps/server`, `apps/ui`, `apps/desktop` — backend HTTP + SSE, React/Vite +
+  AI SDK UI chat rail, and the optional Electron shell (Phase 6).
 
-Supporting: `packages/db` (Drizzle + better-sqlite3, `test_run_records`),
-`packages/skills` (the 17 skill defs).
+Supporting: `packages/db` (Drizzle + better-sqlite3 product DB,
+`test_run_records`; Mastra runtime state lives beside it in a dedicated
+`mastra.db`), `packages/skills` (the 17 skill defs).
 
 ## The SQLite / external-API invariant
 
-**Only `packages/tools` (and the services within it) may touch SQLite or call
-external APIs.** Routes, CLI, workflows, and model code must delegate down into
-tools — they never open a DB connection or call Gmail/Maps/an LLM-mutation
-endpoint directly. This mirrors the legacy rule "only the services layer touches
-SQLite or external I/O."
+**Only `packages/tools` (and the services within it) may touch the product DB or
+call external APIs.** Routes, CLI, workflows, and model code must delegate down
+into tools — they never open the product DB connection or call Gmail/Maps/an
+LLM-mutation endpoint directly. Mastra may persist framework runtime state to
+its own `mastra.db` in the same data dir, but those tables are not part of the
+product schema or parity gate. This mirrors the legacy rule "only the services
+layer touches SQLite or external I/O" while carving out Mastra's runtime store.
 
 ## Provider policy (no tiering)
 
@@ -82,10 +89,12 @@ SQLite or external I/O."
   Support all three. Provider selection is policy-driven (`useCase →
   ModelAlias`); workflows never hardcode a provider name. Swapping a provider is
   a registry-string change, not a workflow edit.
-- The api-key lane is the keystone: AI SDK 6 owns the tool loop, so the native
-  approval gate (`needsApproval`) fires inside `tool({execute})`. (Subscription
-  OAuth CLI-spawn lanes remain optional; on those the AI SDK tool loop does not
-  fire, so the gate must live in the in-process MCP handler.)
+- The api-key lane is the keystone: AI SDK 6 supplies `LanguageModel` instances
+  to Mastra agents, while Mastra owns the agent loop, workflow snapshots, and
+  durable suspend/resume. Native Mastra tool/step approval is a convenience
+  layer only; the L2 in-process gate is still load-bearing. Subscription OAuth
+  CLI-spawn lanes remain optional; on those the api-key loop does not fire, so
+  the gate must live in the in-process MCP handler.
 
 ## Safety invariants (load-bearing — do not weaken)
 
@@ -94,22 +103,24 @@ SQLite or external I/O."
 2. **Side effects can physically reach `browser.submit` / `gmail.send` only
    through the L2 in-process gate handler**, which fails **closed**. There is no
    second code path to a side effect.
-3. **Gate stack (top → bottom):** L3 native `needsApproval` (convenience, api-key
-   lane only) → **L2 in-process gate, load-bearing, fail-CLOSED, single
-   structured path** → fallback-suspend → L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1`
-   fuse (redundant outer ring, always armed, never the only floor).
+3. **Gate stack (top → bottom):** L3 native Mastra tool/step approval or
+   `suspend()` (convenience, api-key lane only) → **L2 in-process gate,
+   load-bearing, fail-CLOSED, single structured path** → fallback-suspend → L1
+   `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` fuse (redundant outer ring, always
+   armed, never the only floor).
 4. **#1244 fail-closed.** DeepSeek (and others) intermittently dump a tool call
    as plain text into `content`. On `finish_reason != tool_calls` OR empty
-   `tool_calls` OR tool-shaped blob in content → fail **closed**: under HITL
-   suspend and ask; with no HITL, hard-abort with a typed
-   `MalformedToolCallAbort`. **Never** regex a function name out of content and
-   execute it. fail-open == silent-fallback.
-5. **Structured output:** never mix `Output.object` + tools (per-step json_schema
-   injection triggers the #1244 text dump). Use a single `emit_result` tool with
-   a Zod schema, or a two-phase pipeline (tools-only loop + separate no-tools
-   `generateText` + `Output.object`). Always add Zod post-validation. Keep
-   schemas flat, all-required with explicit null, prefer enums, lowest common
-   JSON-Schema subset.
+   `tool_calls` OR tool-shaped blob in content → fail **closed** through the
+   Mastra output Processor / post-step detector path: under HITL suspend and
+   ask; with no HITL, hard-abort with a typed `MalformedToolCallAbort`. **Never**
+   regex a function name out of content and execute it. fail-open ==
+   silent-fallback.
+5. **Structured output:** never mix structured object output + tools in the same
+   DeepSeek model step (per-step json_schema injection triggers the #1244 text
+   dump). Use a single `emit_result` tool with a Zod schema, or a two-phase
+   pipeline (tools-only loop + separate no-tools structured call). Always add
+   Zod post-validation. Keep schemas flat, all-required with explicit null,
+   prefer enums, lowest common JSON-Schema subset.
 6. **profile-ASK three-branch contract.** Every skill acts on one profile. If
    none resolves, ASK first — never silently pick newest-active. (exactly 1 →
    run; 0 → STOP, point to intake; 2+ → STOP, ask by vehicle name). Return a
@@ -141,11 +152,13 @@ SQLite or external I/O."
 
 ## One skill, one commit
 
-Build skills one at a time in dependency × risk order (deterministic/read-only →
-LLM extract → browser → orchestration/report → irreversible send). Each skill
-follows the 7-step loop (define contract → build deterministic tools + L1 →
-wire `harness.generate` → map fallback gating → DeepSeek live → cross-provider
-smoke → acceptance ledger), and the acceptance step is **one commit per skill**.
+Build skills one at a time in dependency × risk order, revised 2026-06-03 to
+browser-first: deterministic/read-only + intake → browser service + scans →
+email service + LLM extraction → orchestration/report → irreversible send. Each
+skill follows the 7-step loop (define contract → build deterministic tools + L1
+→ scaffold the flat Mastra `createWorkflow` + bind `harness.generate`/model
+policy → map fallback gating → DeepSeek live → cross-provider smoke →
+acceptance ledger), and the acceptance step is **one commit per skill**.
 Move to the next skill only after the DeepSeek-live step (step 5) is green.
 
 Commit message prefix: **`phaseN/<skill>:`** (e.g. `phase1/quote_audit:`), so the
@@ -155,11 +168,11 @@ mark the commit body `[fake-send]` until Phase 5 acceptance is GREEN.
 ## Sync contract with `../AutoBroker-dev-plan`
 
 - Two-repo, one-way: the plan repo (`AutoBroker-dev-plan`) is source-of-intent
-  (Markdown canonical + hand-curated HTML, no build toolchain); **this** repo is
-  source-of-truth (runnable TS). The plan repo never writes into this repo, and
-  this repo never holds long-form plan prose — keep only short ADR stubs under
-  `design-docs/` here; the long-range phase order and harness standard live in
-  the plan repo.
+  (hand-curated HTML canonical, no build toolchain; Markdown/helper files are
+  secondary where present); **this** repo is source-of-truth (runnable TS). The
+  plan repo never writes into this repo, and this repo never holds long-form
+  plan prose — keep only short ADR stubs under `design-docs/` here; the
+  long-range phase order and harness standard live in the plan repo.
 - The plan repo's `tools/new-day.sh` reads this repo's git log (bucketing by the
   `phaseN/<skill>:` prefix and the touched monorepo layer) plus the
   `test_run_records` harness export to fill its daily HTML report. Keep commit

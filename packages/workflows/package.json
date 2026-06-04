@@ -2,7 +2,7 @@
   "name": "@autobroker/workflows",
   "version": "0.0.0",
   "private": true,
-  "description": "Layer 3 — self-built ~50-line SkillRun state machine + HarnessWorkflowRuntime reversible seam (Mastra upgrade slot). Orchestrates the 17 skills; owns awaiting_approval / resume_payload crash-and-resume; drives the L2 in-process gate but never touches SQLite or external APIs directly.",
+  "description": "Layer 3 — Mastra 1.x workflow backbone for the 17 flat skill workflows. Owns durable suspend/resume projection, Memory-thread session plumbing, fallback orchestration, and L2 gate routing without touching the product DB or external APIs directly.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

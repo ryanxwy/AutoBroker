@@ -3,13 +3,14 @@
 # Five-layer one-way dependency order (enforced by TS project references in
 # tsconfig.base.json): core -> model -> workflows -> tools -> app.
 #   packages/core       — pure TYPES + Zod schemas (imports no framework)
-#   packages/model      — AI SDK layer (provider registry, harness.generate)
-#   packages/workflows  — self-built SkillRun state machine + gate orchestration
+#   packages/model      — AI SDK 6 provider layer (registry, policy, resolveModel)
+#   packages/workflows  — Mastra backbone + gate/fallback orchestration
 #   packages/tools      — Gmail / browser / DB / calc / validators (only layer
-#                         that touches SQLite or external APIs)
+#                         that touches product DB or external APIs)
 #   packages/db         — Drizzle schema + better-sqlite3 connection
 #   packages/skills     — the 17 skill definitions (built one-at-a-time by risk)
 #   apps/server         — backend HTTP + SSE skill-run stream
+#   apps/ui             — React/Vite + AI SDK UI chat rail
 #   apps/desktop        — Electron shell (Phase 6 placeholder)
 packages:
   - "packages/*"
