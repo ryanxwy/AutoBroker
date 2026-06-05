@@ -14,8 +14,9 @@
  *   repo retires.
  */
 
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema.js";
@@ -29,7 +30,6 @@ function resolveDbPath(): string {
   if (explicit !== undefined && explicit !== "") return expandTilde(explicit);
   const dataDir = process.env.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts");
   return join(expandTilde(dataDir), "autobroker.db");
-  // TODO(phase-0): create the data dir if missing before first open.
 }
 
 function expandTilde(p: string): string {
@@ -41,6 +41,13 @@ function expandTilde(p: string): string {
  * Copy-not-share: this process is the sole writer of its own cold-copied file.
  */
 export function openDb(dbPath: string = resolveDbPath()) {
+  // M1 既定项: the first intake disk write must not fail on a fresh machine, so
+  // create the resolved data directory before better-sqlite3 opens the file.
+  // Covers both the AUTOBROKER_DATA_DIR default (dir holds autobroker.db) and an
+  // explicit AUTOBROKER_DB file override (mkdir ITS parent). recursive: true is
+  // idempotent — a no-op when the directory already exists.
+  mkdirSync(dirname(dbPath), { recursive: true });
+
   const sqlite = new Database(dbPath);
 
   // Mandated PRAGMAs (architectureStack "持久化 / DB").

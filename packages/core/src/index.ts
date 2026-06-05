@@ -47,8 +47,31 @@ export type { AuditFlag, AuditFlagCode, AuditSeverity } from "./schema/auditFlag
 export {
   SearchProfileSchema,
   SearchProfileStatusSchema,
+  PhonePolicySchema,
+  FinancingPreferenceSchema,
+  IntBoolSchema,
 } from "./schema/searchProfile.js";
-export type { SearchProfile, SearchProfileStatus } from "./schema/searchProfile.js";
+export type {
+  SearchProfile,
+  SearchProfileStatus,
+  PhonePolicy,
+  FinancingPreference,
+  IntBool,
+} from "./schema/searchProfile.js";
+
+export {
+  SearchProfileIntakeInputSchema,
+  INTAKE_FIELD_META,
+  INTAKE_REQUIRED_FIELDS,
+  INTAKE_INTERNAL_ONLY_FIELDS,
+} from "./schema/intake.js";
+export type {
+  SearchProfileIntakeInput,
+  IntakeFieldName,
+  IntakeFieldMeta,
+  IntakeSection,
+  IntakeFieldSensitivity,
+} from "./schema/intake.js";
 
 export { SessionThreadSchema } from "./schema/sessionThread.js";
 export type { SessionThread } from "./schema/sessionThread.js";

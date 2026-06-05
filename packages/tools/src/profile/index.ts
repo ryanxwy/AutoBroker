@@ -1,0 +1,52 @@
+/**
+ * profile/ barrel — the tools-layer search_profiles + audit_log surface
+ * (BACKEND_SERVICES §8/§9). The ONLY write path for the product profile tables.
+ */
+
+export {
+  rowToProfile,
+  profileToRow,
+  type SearchProfileRow,
+} from "./adapter.js";
+
+export {
+  validate,
+  create,
+  resolveActive,
+  update,
+  replace,
+  close,
+  restore,
+  parseLocation,
+  synthProfileId,
+  type ValidateResult,
+  type ParsedLocation,
+  type ResolvedCoordinates,
+  type CreateOpts,
+  type CreateResult,
+} from "./profileService.js";
+
+export {
+  resolveActiveProfile,
+  requireActiveProfile,
+  type ResolveResult,
+  type ResolverTrace,
+} from "./resolver.js";
+
+export {
+  makeFakePhone,
+  resolveStoredPhone,
+  type Rng,
+} from "./fakePhone.js";
+
+export { writeAuditLog, AUDIT_ACTIONS, type AuditAction, type AuditEntry } from "./audit.js";
+
+export {
+  ActiveSlotConflict,
+  IdentityLockedError,
+  IDENTITY_FIELDS,
+  CoordinatesNotResolvedError,
+  MissingRequiredFieldError,
+  NoActiveProfileError,
+  MultipleActiveProfilesError,
+} from "./errors.js";
