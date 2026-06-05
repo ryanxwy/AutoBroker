@@ -1,0 +1,21 @@
+{
+  "date": "2026-06-05",
+  "code_repo_head_sha": "7aa8061",
+  "runs": [
+    {
+      "run_id": "fac5c969-72ff-40ca-9230-bd740b14dcea",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.00077196,
+      "duration_ms": 7938,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    }
+  ]
+}
