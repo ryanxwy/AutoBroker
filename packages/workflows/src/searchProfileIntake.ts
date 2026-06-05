@@ -194,6 +194,7 @@ const ResolvedCoordsSchema = z.object({
 /** One ambiguous candidate, stored in state so a `pick` resume indexes the SAME
  *  list that was shown (no re-resolution → no wrong-list bug, no Google
  *  nondeterminism). Mirrors the goplaces GeoLocation shape. */
+type LocationCandidate = z.infer<typeof LocationCandidateSchema>;
 const LocationCandidateSchema = z.object({
   lat: z.number(),
   lng: z.number(),
@@ -640,7 +641,11 @@ const resolveLocationStep = createStep({
     // The list/query carried by the suspend the user is responding to (suspendData
     // re-feeds the prior suspend payload). These ARE the last-shown candidates and
     // the effective query — threaded through the snapshot, not re-resolved.
-    const shownCandidates = suspendData?.stored_candidates ?? state.shownCandidates ?? [];
+    // Explicitly typed: inference across the suspendData generic boundary is
+    // fragile under a pristine frozen-lockfile install (CI-only TS7006 repro,
+    // 2026-06-05) — annotate rather than lean on it.
+    const shownCandidates: LocationCandidate[] =
+      suspendData?.stored_candidates ?? state.shownCandidates ?? [];
     let query = suspendData?.effective_query ?? state.locationQuery ?? fields.location_query;
 
     // pick indexes the STORED candidate list DIRECTLY (no re-resolution) — this
