@@ -108,13 +108,15 @@ layer touches SQLite or external I/O" while carving out Mastra's runtime store.
    load-bearing, fail-CLOSED, single structured path** → fallback-suspend → L1
    `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` fuse (redundant outer ring, always
    armed, never the only floor).
-4. **#1244 fail-closed.** DeepSeek (and others) intermittently dump a tool call
-   as plain text into `content`. On `finish_reason != tool_calls` OR empty
-   `tool_calls` OR tool-shaped blob in content → fail **closed** through the
-   Mastra output Processor / post-step detector path: under HITL suspend and
-   ask; with no HITL, hard-abort with a typed `MalformedToolCallAbort`. **Never**
-   regex a function name out of content and execute it. fail-open ==
-   silent-fallback.
+4. **#1244 fail-closed.** Live-probed 2026-06-04 (107 controlled calls): pure
+   tool loops are clean (0/56); the trigger is mixing structured output
+   (`response_format`/json_schema) with tools — 27/36 silent tool-skip, 2/36
+   plain-text dump. Detection and handling unchanged: on `finish_reason !=
+   tool_calls` OR empty `tool_calls` OR tool-shaped blob in content → fail
+   **closed** through the Mastra output Processor / post-step detector path:
+   under HITL suspend and ask; with no HITL, hard-abort with a typed
+   `MalformedToolCallAbort`. **Never** regex a function name out of content and
+   execute it. fail-open == silent-fallback.
 5. **Structured output:** never mix structured object output + tools in the same
    DeepSeek model step (per-step json_schema injection triggers the #1244 text
    dump). Use a single `emit_result` tool with a Zod schema, or a two-phase
