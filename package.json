@@ -19,7 +19,8 @@
     "db:check": "pnpm --filter @autobroker/db run db:check",
     "lint:deps": "depcruise packages apps harness",
     "check:strings": "bash scripts/check-forbidden-strings.sh",
-    "harness": "node -e \"console.error('harness runner: TODO(phase-0) — see harness/README.md'); process.exit(1)\""
+    "harness": "pnpm --filter @autobroker/harness run harness --",
+    "harness:export": "pnpm --filter @autobroker/harness run export-daily --"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

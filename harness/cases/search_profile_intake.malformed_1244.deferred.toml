@@ -1,0 +1,90 @@
+# harness/cases/search_profile_intake.malformed_1244.deferred.toml
+#
+# DEFERRED-WITH-REASON (#1244 live-trigger case). The malformed_tool_call anchor's
+# `expect="fail_closed"` branch is fully implemented in the evaluator, but a LIVE
+# trigger needs a way to make the real DeepSeek call emit a malformed/text-dumped
+# tool call on demand. The spec allows "the documented injection channel if the
+# spec defines one"; the committed SUT defines NONE for the LIVE host:
+#
+#   - The only #1244-injection seam is __setIntakeDepsForTests (harnessGenerate
+#     stub), which the LIVE harness DELIBERATELY DISABLES (live = real DeepSeek,
+#     serverHost.ts never injects). Re-enabling it would make this a stubbed run,
+#     not a live one — violating the live-only invariant (§17.2 replay REJECTED).
+#   - #1244 is a MIXING-ONLY trigger (structured output + tools); the emit_result
+#     discipline + the two-place fail-closed path are exercised by the COMMITTED
+#     in-stack unit tests against a deterministic fake model:
+#       * packages/workflows/src/harness.test.ts        (agent→processor→tripwire→
+#         ledger; hitlAvailable → HarnessSuspend, no-HITL → MalformedToolCallAbort)
+#       * packages/workflows/src/malformedToolCallProcessor.test.ts
+#       * packages/model/src/malformedToolCall.test.ts  (the pure detector)
+#     plus this harness's evaluator.test.ts fixture for the fail_closed anchor.
+#
+# So the LIVE-trigger case is DEFERRED until a SUT-side fault-injection control
+# route (e.g. POST /__harness/inject-1244, gated to the harness env) is added —
+# that is a SUT change, out of scope for M3-run1. The anchor + its scoring are
+# ready; only the live trigger is deferred. This file is kept as the case skeleton
+# so the trigger drops straight in once the SUT injection route exists.
+#
+# (Not run by `pnpm harness intake` — selected only with an explicit --case once
+#  the injection channel lands. The `.deferred.toml` suffix keeps it out of the
+#  default-case discovery.)
+
+[meta]
+id = "search_profile_intake_malformed_1244"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 25
+budget_max = 0
+follow_up_phone = "555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_malformed_1244"
+skill = "search_profile_intake"
+purpose = "DEFERRED: live #1244 fail-closed (needs a SUT fault-injection route)."
+gate_policy = "approve_safe"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+# When the SUT injection route lands, the trim_verify call is forced to emit a
+# malformed tool call; the run must fail CLOSED (typed abort / malformed suspend),
+# NEVER fall through to a fabricated profile.
+[[steps.resume]]
+on = "malformed_tool_call"
+action = "decline"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "fail_closed"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined", "error"]

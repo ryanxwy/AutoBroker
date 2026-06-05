@@ -1,0 +1,79 @@
+# harness/cases/search_profile_intake.freeform.toml — the freeform-prefill case (案例 B).
+# Round 2 of the per-skill 2-round standard (裁定⑦): freeform natural-language input
+# (input_mode=freeform). The prefill step extracts a seed via harness.generate
+# (intake_freeform_prefill), but the FORM STILL RENDERS for human confirmation —
+# prefill output NEVER persists directly (BRIEF §1.2 / D-AI-3). The collect resume
+# submits the human-confirmed final values (the corpus profile).
+#
+# SEPARATE EVIDENCE (裁定⑦ / §R6): this lands in a DIFFERENT cell_id
+# (input_mode=freeform) and MUST NOT be filled by the slash GREEN — both rounds
+# must each be GREEN for the skill's L2 to be complete.
+
+[meta]
+id = "search_profile_intake_freeform"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "freeform"
+provider = "deepseek"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 25
+budget_max = 0
+follow_up_phone = "555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_freeform"
+skill = "search_profile_intake"
+purpose = "Freeform prefill then human-confirm the Tucson profile."
+gate_policy = "approve_safe"
+
+[steps.input_inline]
+prompt = "I want to buy a 2026 Hyundai Tucson Hybrid Limited in Irvine, CA within 25 miles, use a fake phone number for now."
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"   # human-confirmed final values (prefill does not write DB).
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

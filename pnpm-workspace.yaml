@@ -15,3 +15,8 @@
 packages:
   - "packages/*"
   - "apps/*"
+  # harness/ — the live-LLM harness (runner CLI, evaluator, cases, daily export).
+  # A standalone workspace package (NOT in the layered src/ wall; consumes the
+  # built @autobroker/* dist read-only, like the apps/ui/e2e test infra). It is
+  # dependency-cruiser-isolated from better-sqlite3/drizzle/playwright/@ai-sdk.
+  - "harness"

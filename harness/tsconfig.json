@@ -1,0 +1,22 @@
+{
+  "//": [
+    "harness/ is a standalone (non-composite) workspace package: it is NOT in the",
+    "root solution tsconfig references (it consumes built @autobroker/* dist, never",
+    "rebuilds them) and is run via tsx, so this config only TYPE-CHECKS the harness",
+    "sources in place. It extends the repo base for strictness but emits nothing.",
+    "The five-layer wall + the harness sqlite/playwright isolation are enforced by",
+    ".dependency-cruiser.cjs (pnpm lint:deps), not by project references."
+  ],
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "rootDir": ".",
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist", "exports"]
+}

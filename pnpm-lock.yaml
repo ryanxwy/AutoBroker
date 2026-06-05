@@ -114,6 +114,37 @@ importers:
         specifier: ^4.0.0
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@15.11.7)(vite@6.4.3(@types/node@22.19.19)(tsx@4.22.4))
 
+  harness:
+    dependencies:
+      '@autobroker/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@autobroker/db':
+        specifier: workspace:*
+        version: link:../packages/db
+      '@autobroker/server':
+        specifier: workspace:*
+        version: link:../apps/server
+      '@autobroker/tools':
+        specifier: workspace:*
+        version: link:../packages/tools
+      '@autobroker/workflows':
+        specifier: workspace:*
+        version: link:../packages/workflows
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      tsx:
+        specifier: ^4.22.0
+        version: 4.22.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.6.3
+      vitest:
+        specifier: ^4.0.0
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@15.11.7)(vite@6.4.3(@types/node@22.19.19)(tsx@4.22.4))
+
   packages/core:
     dependencies:
       zod:
