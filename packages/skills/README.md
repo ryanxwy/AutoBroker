@@ -43,7 +43,7 @@ before the next skill starts.
 
 | Phase | Skills | Risk |
 |---|---|---|
-| **P1 · deterministic core + intake** | `quote_audit`★ (template), `quote_compare`, `inventory_compare`, `search_profile_intake` | read-only + profile root-dep |
+| **P1 · deterministic core + intake** | `search_profile_intake` (skill #1, e2e-first — 2026-06-04 ruling ①), `quote_audit`★ (template), `quote_compare`, `inventory_compare` | read-only + profile root-dep |
 | **P2 · browser service + scans** | `dealer_geosearch`★, `inventory_site_scan`, `inventory_link_scan`, `incentive_scrape` | browser read + local db.write |
 | **P3 · email service + LLM extract** | `dealer_inbox_check`, `dealer_reply_extract`★ (LLM template), `dealer_hygiene` | Gmail read + fake-mailbox/local db.write |
 | **P4 · orchestration / report** | `quote_pipeline`, `daily_digest`, `pipeline_reset` (typed-YES) | compose + destructive-local |
@@ -71,6 +71,6 @@ classification.
 
 ## TODO
 
-- [ ] Phase 1: scaffold `quote_audit` as the deterministic-core template.
+- [ ] Phase 1: build `search_profile_intake` first (skill #1, e2e slice); `quote_audit` stays the deterministic-core template.
 - [ ] No skill directories exist yet — this package is intentionally empty of
       implementations until Phase 1 begins.
