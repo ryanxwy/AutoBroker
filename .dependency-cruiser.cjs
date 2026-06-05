@@ -21,7 +21,10 @@ module.exports = {
     doNotFollow: { path: "node_modules" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.base.json" },
-    exclude: { path: "/dist/" },
+    // /dist/ = build output; apps/ui/e2e = the Playwright e2e harness (test
+    // infrastructure that legitimately boots the full server stack + drives a
+    // browser, so it lives OUTSIDE the layered src/ wall — like a .test file).
+    exclude: { path: "/dist/|apps/ui/e2e/" },
   },
   forbidden: [
     // ---- layer DAG: lower layers must not reach up -------------------------
