@@ -115,19 +115,48 @@ export const SkillRunSummarySchema = z.object({
 export type SkillRunSummary = z.infer<typeof SkillRunSummarySchema>;
 
 // ---------------------------------------------------------------------------
-// Start ack — POST /api/skill-runs (201). routes.ts:154 returns { run_id }.
+// IntakeScopeNotice — the non-skippable system notice carried on the start ack
+// when intake was forked from a PINNED session (裁定⑧). MIRRORS the server type
+// sessions.ts:69-77 (IntakeScopeNotice) verbatim: kind discriminant +
+// source/forked ids + the three fixed points. The UI renders it as the forked
+// session's FIRST part under [data-intake-scope-notice]; null when the source
+// was unpinned/absent (nothing to confuse).
 // ---------------------------------------------------------------------------
 
-export const StartAckSchema = z.object({ run_id: z.string() });
+export const IntakeScopeNoticeSchema = z.object({
+  kind: z.literal("intake_scope_notice"),
+  source_pinned_profile_id: z.string(),
+  forked_session_id: z.string(),
+  points: z.tuple([z.string(), z.string(), z.string()]),
+});
+export type IntakeScopeNotice = z.infer<typeof IntakeScopeNoticeSchema>;
+
+// ---------------------------------------------------------------------------
+// Start ack — POST /api/skill-runs (201). routes.ts:204-208 returns
+//   { run_id, session_id: string|null, scope_notice: IntakeScopeNotice|null }.
+// (The B1 scaffold modelled only `run_id`; the server already emits session_id +
+// scope_notice — this closes the recorded latent gap so the rail can render the
+// fork's first system notice, recorded in api_findings.)
+// ---------------------------------------------------------------------------
+
+export const StartAckSchema = z.object({
+  run_id: z.string(),
+  session_id: z.string().nullable(),
+  scope_notice: IntakeScopeNoticeSchema.nullable(),
+});
 export type StartAck = z.infer<typeof StartAckSchema>;
 
-/** The headless start body — routes.ts:43-48 (StartBodySchema). snake_case is
- *  intentional (it matches the workflow input verbatim, routes.ts:15-18). */
+/** The headless start body — routes.ts:55-65 (StartBodySchema). snake_case is
+ *  intentional (it matches the workflow input verbatim). `from_session_id` forks
+ *  a fresh unpinned session (and yields a scope_notice when the source was
+ *  pinned); `session_id` links to an already-unpinned rail without a fork. */
 export interface StartRunBody {
   skill: "search_profile_intake";
   input_mode: "slash" | "freeform";
   freeform_text?: string | null;
   seed_fields?: Record<string, unknown> | null;
+  session_id?: string | null;
+  from_session_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------

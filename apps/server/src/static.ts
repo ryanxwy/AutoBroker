@@ -45,23 +45,37 @@ export interface StaticServing {
 }
 
 /**
- * Register static serving of the UI dist when it exists. Returns the resolved
- * serving info (or null when absent). `wildcard: false` keeps @fastify/static
- * from claiming a catch-all route — an unmatched non-/api GET falls through to
- * the server's notFoundHandler, which calls {@link sendSpaFallback}. Real asset
- * requests (/assets/app.js) are served by the plugin directly; only client-side
- * routes reach the fallback.
+ * Resolve the serving info WITHOUT registering anything (sync, no side effect).
+ * Returns null when no build artifact exists (dev/test, UI not built).
+ *
+ * SPLIT RATIONALE (2026-06-05 regression fix): `await app.register(...)` BOOTS
+ * the Fastify instance up to that point; a `setErrorHandler`/`setNotFoundHandler`
+ * installed AFTER an awaited register is silently ignored, so API error
+ * envelopes degraded to Fastify's default serialization whenever apps/ui/dist
+ * existed (production shape!). The server must resolve serving info first, set
+ * its handlers, and register the plugin LAST.
  */
-export async function registerStatic(app: FastifyInstance): Promise<StaticServing | null> {
+export function resolveStaticServing(): StaticServing | null {
   const distDir = resolveUiDist();
   const indexPath = join(distDir, "index.html");
-  if (!existsSync(indexPath)) {
-    // No build artifact (dev/test, or UI not built) → nothing to serve.
-    return null;
-  }
+  if (!existsSync(indexPath)) return null;
+  return { distDir, indexPath };
+}
 
+/**
+ * Register @fastify/static for an already-resolved serving. MUST be the LAST
+ * registration on the instance (see {@link resolveStaticServing} rationale).
+ * `wildcard: false` keeps the plugin from claiming a catch-all route — an
+ * unmatched non-/api GET falls through to the server's notFoundHandler, which
+ * calls {@link sendSpaFallback}. Real asset requests (/assets/app.js) are served
+ * by the plugin directly; only client-side routes reach the fallback.
+ */
+export async function registerStaticPlugin(
+  app: FastifyInstance,
+  serving: StaticServing,
+): Promise<void> {
   await app.register(fastifyStatic, {
-    root: distDir,
+    root: serving.distDir,
     // No `prefix` → assets serve at their natural paths (/assets/..., /favicon).
     // `wildcard: false` registers per-file routes (a `/*` glob match) without a
     // catch-all, so /api/* and unmatched client routes are NOT swallowed here.
@@ -70,8 +84,15 @@ export async function registerStatic(app: FastifyInstance): Promise<StaticServin
     // notFoundHandler fallback (sendSpaFallback) instead.
     index: ["index.html"],
   });
+}
 
-  return { distDir, indexPath };
+/** Back-compat shim: resolve + register in one call. Prefer the split form so
+ *  handlers can be installed between resolve and register. */
+export async function registerStatic(app: FastifyInstance): Promise<StaticServing | null> {
+  const serving = resolveStaticServing();
+  if (serving === null) return null;
+  await registerStaticPlugin(app, serving);
+  return serving;
 }
 
 /**

@@ -83,8 +83,9 @@ const STATUS_AWAITING_FIXTURE = {
   ],
 };
 
-/** POST /api/skill-runs → 201 { run_id } (routes.ts:154). */
-const START_ACK_FIXTURE = { run_id: "run-1" };
+/** POST /api/skill-runs → 201 { run_id, session_id, scope_notice } (routes.ts:204-208).
+ *  Headless/unpinned start → session_id + scope_notice null (nothing to confuse). */
+const START_ACK_FIXTURE = { run_id: "run-1", session_id: null, scope_notice: null };
 
 /** form-decision accept ack (intakeRuns.ts:403). */
 const ACCEPT_ACK_FIXTURE = { action: "accept", content: { make: "Hyundai" } };

@@ -32,3 +32,43 @@ export type {
 } from "./store/useChat.js";
 
 export * from "./api/wire.js";
+
+// --- M2 shell + routes ----------------------------------------------------
+export { App } from "./App.js";
+export { matchRoute, navigate, useRoute, Link } from "./router.js";
+export type { Route } from "./router.js";
+
+// --- draft store (PII strip + 24h TTL) ------------------------------------
+export {
+  DRAFT_TTL_MS,
+  INTAKE_PII_FIELDS,
+  saveDraft,
+  loadDraft,
+  clearDraft,
+  stripForPersist,
+} from "./store/drafts.js";
+
+// --- intake form + gate models --------------------------------------------
+export { SchemaForm } from "./intake/SchemaForm.js";
+export { IntakeForm } from "./intake/IntakeForm.js";
+export { classifyGate } from "./intake/gateModel.js";
+export type { GateModel } from "./intake/gateModel.js";
+export {
+  INTAKE_FIELD_NAMES,
+  REQUIRED_FIELD_NAMES,
+  validateField,
+  buildFormDecisionContent,
+} from "./intake/formModel.js";
+
+// --- gate + rail components -----------------------------------------------
+export { ApprovalPrompt } from "./gate/ApprovalPrompt.js";
+export { AssistantTurn as AssistantTurnView } from "./rail/AssistantTurn.js";
+export { IntakeScopeNoticeCard } from "./rail/IntakeScopeNotice.js";
+export { parseSlashCommand } from "./rail/slashCommand.js";
+
+// --- home --------------------------------------------------------------
+export { runDisabled } from "./home/PipelineLedger.js";
+export { toSnapshot, vehicleLabel, formatLocation, SUMMARY_EXCLUDED_KEYS } from "./home/profileView.js";
+
+// --- launch ----------------------------------------------------------------
+export { launchIntake } from "./launch.js";

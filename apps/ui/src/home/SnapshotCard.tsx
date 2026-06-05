@@ -1,0 +1,49 @@
+/**
+ * SnapshotCard — the active-search snapshot (FRONTEND_LAYOUT §6 Hero). Shows
+ * Year/Make/Model/trim · location · Dealers/Threads/Best-OTD + a "View search
+ * file" link. Reused on the profile route (§R6 SnapshotCard reuse). It consumes
+ * the dealer-SAFE ProfileSnapshot — which has NO budget accessor — so budget can
+ * never leak into this summary surface (FRONTEND §8.3 / CLAUDE.md §9).
+ */
+
+import { Link } from "../router.js";
+import { formatLocation, vehicleLabel, type ProfileSnapshot } from "./profileView.js";
+
+export function SnapshotCard({ snapshot }: { snapshot: ProfileSnapshot }): JSX.Element {
+  const vehicle = vehicleLabel(snapshot);
+  return (
+    <section className="card snapshot-card" data-testid="snapshot-card">
+      <h3>Active search</h3>
+      <dl>
+        <dt>Vehicle</dt>
+        <dd data-testid="snapshot-vehicle">{vehicle || "—"}</dd>
+        <dt>Location</dt>
+        <dd data-testid="snapshot-location">{formatLocation(snapshot.location) ?? "—"}</dd>
+        <dt>Dealers</dt>
+        <dd>{snapshot.dealerCount ?? 0}</dd>
+        <dt>Threads</dt>
+        <dd>{snapshot.threadCount ?? 0}</dd>
+        <dt>Best OTD</dt>
+        <dd>{snapshot.bestOtd !== null ? `$${snapshot.bestOtd.toLocaleString()}` : "—"}</dd>
+      </dl>
+      {snapshot.id !== null && (
+        <Link to={`/profiles/${snapshot.id}`} data-testid="snapshot-view-file">
+          View search file →
+        </Link>
+      )}
+    </section>
+  );
+}
+
+/** Shown when there is NO active profile yet (first-file preview). */
+export function FirstFilePreviewCard(): JSX.Element {
+  return (
+    <section className="card" data-testid="first-file-preview">
+      <h3>Your search file</h3>
+      <p className="muted">
+        Start a search and AutoBroker builds a living file here — the vehicle, your
+        location, the dealers it contacts, and the best out-the-door price found.
+      </p>
+    </section>
+  );
+}

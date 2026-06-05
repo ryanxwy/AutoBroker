@@ -1,0 +1,103 @@
+/**
+ * gateModel — classify an awaiting_user suspend payload (spec_inline) into the
+ * typed gate variant the UI renders (FRONTEND_LAYOUT §8.2). intake has ONE form
+ * suspend (data_collection) plus three SEMANTIC suspends, all on the same SSE
+ * awaiting_user channel, discriminated by `spec_inline.kind`
+ * (searchProfileIntake.ts suspend payloads):
+ *
+ *   - data_collection   → the IntakeForm (§5). {kind, form_kind, spec_hint,
+ *                         seed_fields} — seed_fields prefill the form.
+ *   - force_override    → trim invalid but user insists. {kind, question, trim,
+ *                         reason}. resume {action:'force_override',reason} |
+ *                         {action:'revise',trim} | {action:'retry_step'} |
+ *                         {action:'decline'}.
+ *   - ambiguous_location→ multi-candidate ask-pick OR (裁定⑨) geocode FAILURE.
+ *                         {kind, candidates:[{index,label}], failure_reason,
+ *                         stored_candidates, effective_query}. When `candidates`
+ *                         is empty AND `failure_reason` is set → the 裁定⑨
+ *                         re-fill branch (location flagged + reason + retry).
+ *                         resume {action:'pick',picked_index} |
+ *                         {action:'retry',retry_query} | {action:'decline'}.
+ *   - malformed_tool_call → #1244 fail-closed HITL. {kind, signals}. resume
+ *                         {action:'retry_step'} | {action:'decline'}.
+ *
+ * The classification is structural (reads named keys defensively off the open
+ * wire record) — never regexes a function name out of prose (#1244 discipline).
+ */
+
+export interface LocationCandidate {
+  index: number;
+  label: string;
+}
+
+export type GateModel =
+  | { kind: "data_collection"; seedFields: Record<string, unknown> | null }
+  | { kind: "force_override"; question: string; trim: string; reason: string }
+  | {
+      kind: "ambiguous_location";
+      candidates: LocationCandidate[];
+      effectiveQuery: string | null;
+    }
+  // 裁定⑨: geocode parse/no-result/retry-exhausted → re-fill the form, location
+  // field flagged, failure reason shown, user retries (resume retry_query).
+  | { kind: "location_failure"; failureReason: string; effectiveQuery: string | null }
+  | { kind: "malformed_tool_call"; signals: string[] }
+  | { kind: "unknown"; raw: Record<string, unknown> | null };
+
+function str(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+/** Classify a spec_inline payload into a typed gate model (§8.2). */
+export function classifyGate(specInline: Record<string, unknown> | null): GateModel {
+  if (specInline === null) return { kind: "unknown", raw: null };
+  const kind = specInline["kind"];
+
+  if (kind === "data_collection") {
+    const seed = specInline["seed_fields"];
+    return {
+      kind: "data_collection",
+      seedFields: seed !== null && typeof seed === "object" ? (seed as Record<string, unknown>) : null,
+    };
+  }
+
+  if (kind === "force_override") {
+    return {
+      kind: "force_override",
+      question: str(specInline["question"]) ?? "This trim did not pass validation. Continue anyway?",
+      trim: str(specInline["trim"]) ?? "",
+      reason: str(specInline["reason"]) ?? "",
+    };
+  }
+
+  if (kind === "ambiguous_location") {
+    const rawCandidates = specInline["candidates"];
+    const candidates: LocationCandidate[] = Array.isArray(rawCandidates)
+      ? rawCandidates.flatMap((c) => {
+          if (c === null || typeof c !== "object") return [];
+          const rec = c as Record<string, unknown>;
+          const index = rec["index"];
+          const label = str(rec["label"]);
+          if (typeof index !== "number" || label === null) return [];
+          return [{ index, label }];
+        })
+      : [];
+    const failureReason = str(specInline["failure_reason"]);
+    const effectiveQuery = str(specInline["effective_query"]);
+    // 裁定⑨ split: no candidates + a failure reason → the re-fill branch.
+    if (candidates.length === 0 && failureReason !== null) {
+      return { kind: "location_failure", failureReason, effectiveQuery };
+    }
+    return { kind: "ambiguous_location", candidates, effectiveQuery };
+  }
+
+  if (kind === "malformed_tool_call") {
+    const rawSignals = specInline["signals"];
+    const signals = Array.isArray(rawSignals)
+      ? rawSignals.filter((s): s is string => typeof s === "string")
+      : [];
+    return { kind: "malformed_tool_call", signals };
+  }
+
+  return { kind: "unknown", raw: specInline };
+}

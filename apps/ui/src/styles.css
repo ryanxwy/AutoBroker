@@ -1,0 +1,192 @@
+/*
+ * styles — design tokens + structural layout (FRONTEND_LAYOUT §11.5
+ * "broker's-desk" discipline). One stylesheet; class-based, no framework. Tokens
+ * are CSS custom properties so the palette can evolve without touching markup.
+ * Visuals are deliberately minimal — the M2 deliverable is structure + the
+ * load-bearing gate/form/scope-notice surfaces, not a finished skin.
+ */
+
+:root {
+  --bg: #0f1419;
+  --surface: #1a212b;
+  --surface-2: #222c38;
+  --border: #2d3a48;
+  --text: #e7edf3;
+  --text-muted: #9aa9b8;
+  --accent: #4f9cf9;
+  --accent-strong: #2f7fe0;
+  --danger: #e05260;
+  --danger-bg: #3a1f24;
+  --ok: #4caf72;
+  --warn: #e0a64f;
+  --radius: 8px;
+  --gap: 12px;
+  --rail-width: 380px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3 { margin: 0 0 0.5rem; font-weight: 600; }
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+.btn-danger { background: var(--danger-bg); border-color: var(--danger); color: var(--text); }
+
+input[type="text"], input[type="email"], input[type="tel"], input[type="number"] {
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  width: 100%;
+}
+input[aria-invalid="true"] { border-color: var(--danger); }
+
+/* ---- app shell (§2) ---------------------------------------------------- */
+.app-shell { display: flex; flex-direction: column; height: 100%; }
+.topbar {
+  display: flex; align-items: center; gap: var(--gap);
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.topbar .wordmark { font-weight: 700; letter-spacing: 0.5px; }
+.topbar .spacer { flex: 1; }
+.running-pill {
+  font-size: 12px; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 999px; padding: 2px 10px;
+}
+.app-body { display: flex; flex: 1; min-height: 0; }
+.app-main { flex: 1; overflow: auto; padding: 24px; min-width: 0; }
+.chat-rail {
+  width: var(--rail-width); flex: 0 0 var(--rail-width);
+  border-left: 1px solid var(--border); background: var(--surface);
+  display: flex; flex-direction: column; min-height: 0;
+}
+
+.backend-banner {
+  background: var(--danger-bg); color: var(--text);
+  border-bottom: 1px solid var(--danger); padding: 8px 16px; font-size: 13px;
+}
+
+/* ---- home (§3 / §6) ---------------------------------------------------- */
+.hero { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 24px; }
+@media (min-width: 768px) { .hero { grid-template-columns: 1.2fr 1fr; } }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+}
+.snapshot-card dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0; }
+.snapshot-card dt { color: var(--text-muted); }
+
+.what-next { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+.ledger-row {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 8px; background: var(--surface);
+}
+.ledger-row summary { padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+.ledger-row .stage-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.ledger-row .row-body { padding: 0 14px 12px 46px; color: var(--text-muted); }
+
+.wizard { border: 1px dashed var(--accent); }
+.wizard ol { margin: 8px 0 0; padding-left: 20px; }
+
+/* ---- chat rail turns (§4) --------------------------------------------- */
+.rail-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.conversation { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+.turn { border-radius: var(--radius); padding: 10px 12px; }
+.turn.user { background: var(--surface-2); align-self: flex-end; max-width: 85%; }
+.turn.assistant { background: var(--surface); border: 1px solid var(--border); }
+.turn .zone-gate { margin-bottom: 10px; } /* gate ALWAYS above text (§4.1/§8) */
+.turn .zone-text { white-space: pre-wrap; }
+.turn .zone-milestones { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
+.turn .zone-activity { margin-top: 8px; font-size: 13px; color: var(--accent); font-style: italic; }
+.turn .zone-meta { margin-top: 8px; font-size: 11px; color: var(--text-muted); }
+.milestone-ok::before { content: "✓ "; color: var(--ok); }
+.milestone-fail { color: var(--danger); }
+.milestone-fail::before { content: "✗ "; }
+
+.pin-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 8px; font-size: 12px;
+}
+
+.scope-notice {
+  background: var(--surface-2); border: 1px solid var(--warn);
+  border-left-width: 4px; border-radius: var(--radius); padding: 12px; margin-bottom: 12px;
+}
+.scope-notice ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* ---- intake form (§5) ------------------------------------------------- */
+.intake-form { display: flex; flex-direction: column; gap: 12px; }
+.form-section { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.form-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+.field label { display: block; font-size: 13px; margin-bottom: 4px; }
+.field .req-mark { color: var(--danger); margin-left: 2px; }
+.field .field-error { color: var(--danger); font-size: 12px; margin-top: 2px; }
+.field .pii-hint { color: var(--warn); font-size: 11px; margin-top: 2px; }
+.field.paired { border-left: 2px solid var(--border); padding-left: 8px; }
+.radiogroup { display: flex; gap: 12px; flex-wrap: wrap; }
+.radiogroup label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.form-footer { display: flex; align-items: center; gap: 12px; }
+.completeness { color: var(--text-muted); font-size: 13px; }
+details.optional summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+
+.resume-banner {
+  background: var(--surface-2); border: 1px solid var(--accent);
+  border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+
+/* ---- gates (§8) -------------------------------------------------------- */
+.gate-card {
+  background: var(--surface-2); border: 1px solid var(--accent);
+  border-radius: var(--radius); padding: 12px;
+}
+.gate-card.sensitive { border-color: var(--danger); }
+.gate-card.failure { border-color: var(--danger); }
+.gate-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.candidate-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.candidate-list label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+
+.chat-input { border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 8px; }
+.chat-input textarea {
+  flex: 1; resize: none; font: inherit; background: var(--surface);
+  color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;
+}
+
+.muted { color: var(--text-muted); }
+.danger-text { color: var(--danger); }

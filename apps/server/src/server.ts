@@ -26,7 +26,7 @@ import { IntakeRunService } from "./intakeRuns.js";
 import { SessionService } from "./sessions.js";
 import { DuplicateRunIdError, RailSessionStore, createRailMemory } from "@autobroker/workflows";
 import { registerRoutes, RouteError } from "./routes.js";
-import { registerStatic, sendSpaFallback } from "./static.js";
+import { resolveStaticServing, registerStaticPlugin, sendSpaFallback } from "./static.js";
 
 /** The assembled server + the live collaborators tests poke at directly. */
 export interface BuiltServer {
@@ -89,11 +89,13 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
 
   registerRoutes(app, { intake, pubsub, sessions });
 
-  // Single-port prod serving: serve apps/ui/dist statically with SPA fallback,
-  // EXCLUDING /api (§3 全局前置). Registered AFTER the API routes so /api/* always
-  // wins; the SPA fallback (notFoundHandler below) only catches non-/api GETs.
-  // No-op when dist is absent (dev = Vite on 5173 proxies /api → 8100).
-  const serving = await registerStatic(app);
+  // Single-port prod serving: resolve apps/ui/dist serving info NOW (sync, no
+  // registration) so the notFoundHandler below can close over it. The plugin
+  // itself is registered LAST — an awaited register() BOOTS the instance and a
+  // setErrorHandler/setNotFoundHandler installed after that is silently ignored
+  // (2026-06-05 regression: API error envelopes degraded to Fastify defaults
+  // whenever dist existed, i.e. exactly the production shape).
+  const serving = resolveStaticServing();
 
   // Unified error envelope (§13.2). Order: typed RouteError → ZodError →
   // DuplicateRunIdError → fallback 500.
@@ -144,6 +146,9 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
       .code(404)
       .send(errorEnvelope("not_found", `no route ${req.method} ${req.url}`));
   });
+
+  // Register the static plugin LAST (boots the instance — see note above).
+  if (serving !== null) await registerStaticPlugin(app, serving);
 
   return { app, pubsub, intake, sessions, recovery };
 }

@@ -94,6 +94,21 @@ describe("single-port SPA serving (dist present)", () => {
     expect(body.error.code).toBe("not_found");
   });
 
+  it("REGRESSION 2026-06-05: typed RouteError envelopes survive static registration", async () => {
+    // An awaited @fastify/static register() BOOTS the instance; handlers set
+    // after that are silently ignored, degrading API errors to Fastify's flat
+    // default shape ({statusCode, code, error, message}) whenever a dist
+    // existed — i.e. exactly the production shape. The fix registers the plugin
+    // LAST. This pins the §13.2 nested envelope WITH static serving active.
+    server = await buildServer({ quiet: true });
+    const r = await server.app.inject({ method: "GET", url: "/api/sessions/no-such-id" });
+    expect(r.statusCode).toBe(404);
+    const body = r.json<{ error?: { code?: string }; statusCode?: number }>();
+    expect(body.error).toBeTypeOf("object"); // nested envelope, not Fastify default
+    expect(body.error?.code).toBe("not_found");
+    expect(body.statusCode).toBeUndefined(); // the flat default shape is absent
+  });
+
   it("a non-GET unknown route → JSON 404 (no SPA shell for POST)", async () => {
     server = await buildServer({ quiet: true });
     const r = await server.app.inject({ method: "POST", url: "/sessions/abc" });
