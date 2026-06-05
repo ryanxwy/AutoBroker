@@ -134,6 +134,11 @@ interface Claim {
  *  decisionId) and the claim table keyed by decisionId. */
 interface RunState {
   skill: string;
+  /** The session (Mastra thread) this run is associated with, or null for a
+   *  headless start with no rail. M2-minimal: the run↔session link is recorded
+   *  here so status/turn rendering can find it; full turn-model rendering is the
+   *  UI's read (BACKEND_SERVICES §6.1 skill_runs.session_id ↔ thread metadata). */
+  sessionId: string | null;
   /** The step id + decisionId of the CURRENTLY pending suspend, or null when the
    *  run is running/terminal. The form-decision must reference this decisionId. */
   pending: { step: string; decisionId: string } | null;
@@ -206,6 +211,7 @@ export class IntakeRunService {
     const decisionId = randomUUID();
     this.runs.set(runId, {
       skill: INTAKE_SKILL,
+      sessionId: null,
       pending: { step, decisionId },
       terminal: false,
       claims: new Map(),
@@ -224,7 +230,11 @@ export class IntakeRunService {
    * Returns the runId. A DuplicateRunIdError from startRunGuarded propagates
    * (the route maps it to 409).
    */
-  async start(args: { runId?: string; input: IntakeStartInput }): Promise<{ runId: string }> {
+  async start(args: {
+    runId?: string;
+    input: IntakeStartInput;
+    sessionId?: string | null;
+  }): Promise<{ runId: string }> {
     const runId = args.runId ?? randomUUID();
 
     // First frame: init {run_id, skill, driver_kind} (the pubsub injects
@@ -234,6 +244,7 @@ export class IntakeRunService {
 
     this.runs.set(runId, {
       skill: INTAKE_SKILL,
+      sessionId: args.sessionId ?? null,
       pending: null,
       terminal: false,
       claims: new Map(),
@@ -537,6 +548,12 @@ export class IntakeRunService {
     return this.runs.get(runId)?.pending ?? null;
   }
 
+  /** The session (Mastra thread) this run is linked to, or null (M2 run↔session
+   *  association; BACKEND_SERVICES §6.1 skill_runs.session_id ↔ thread metadata). */
+  sessionOf(runId: string): string | null {
+    return this.runs.get(runId)?.sessionId ?? null;
+  }
+
   /**
    * The status summary for GET /api/skill-runs/:id: the product-projected status,
    * the current pending suspend (if any), and the full SSE event backlog. Reads
@@ -548,6 +565,7 @@ export class IntakeRunService {
     run_id: string;
     skill: string;
     status: string;
+    session_id: string | null;
     pending: { step: string; decision_id: string } | null;
     events: unknown[];
   } | null> {
@@ -570,6 +588,7 @@ export class IntakeRunService {
       run_id: runId,
       skill: tracked?.skill ?? INTAKE_SKILL,
       status,
+      session_id: tracked?.sessionId ?? null,
       pending: pending ? { step: pending.step, decision_id: pending.decisionId } : null,
       events: this.pubsub.snapshot(runId),
     };

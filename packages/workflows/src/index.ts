@@ -113,3 +113,16 @@ export {
   REGISTERED_WORKFLOWS,
   REGISTERED_WORKFLOW_IDS,
 } from "./registeredWorkflows.js";
+
+// M2: the chat-rail Memory thread store (sessions = Mastra Memory threads). The
+// ONLY construction of @mastra/memory Memory — apps do session CRUD through the
+// product-shaped RailSessionStore facade and never import @mastra/* (dep wall).
+// OM is configured rail-only with its model PINNED to DeepSeek via resolveModel
+// (USER DIRECTIVE 2026-06-05 — never the @mastra default Gemini).
+export {
+  createRailMemory,
+  RailSessionStore,
+  RAIL_RESOURCE_ID,
+  PIN_METADATA_KEY,
+  type RailSession,
+} from "./railMemory.js";

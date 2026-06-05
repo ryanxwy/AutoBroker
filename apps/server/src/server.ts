@@ -23,14 +23,17 @@ import { ZodError } from "zod";
 import { boot, type BootResult } from "./boot.js";
 import { RunPubSub } from "./runPubSub.js";
 import { IntakeRunService } from "./intakeRuns.js";
-import { DuplicateRunIdError } from "@autobroker/workflows";
+import { SessionService } from "./sessions.js";
+import { DuplicateRunIdError, RailSessionStore, createRailMemory } from "@autobroker/workflows";
 import { registerRoutes, RouteError } from "./routes.js";
+import { registerStatic, sendSpaFallback } from "./static.js";
 
 /** The assembled server + the live collaborators tests poke at directly. */
 export interface BuiltServer {
   app: FastifyInstance;
   pubsub: RunPubSub;
   intake: IntakeRunService;
+  sessions: SessionService;
   recovery: BootResult["recovery"];
 }
 
@@ -62,6 +65,13 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   const pubsub = new RunPubSub();
   const intake = new IntakeRunService(mastra, pubsub);
 
+  // sessions = Mastra Memory threads (§3.1/§6). The rail Memory is constructed in
+  // the workflows layer (createRailMemory — the ONLY @mastra/memory construction;
+  // OM model pinned to DeepSeek, USER DIRECTIVE 2026-06-05) so the app never
+  // imports @mastra. The store + service own thread CRUD + the wire projection +
+  // the D-AI-6 intake fork.
+  const sessions = new SessionService(new RailSessionStore(createRailMemory()));
+
   // Crash-and-resume (M1 EXIT 2): re-attach every suspended run recoverOnBoot
   // found, so a form-decision can resume it in THIS fresh process. M1 policy for
   // stale 'running' rows is report+leave (boot logged them); only the cleanly
@@ -77,7 +87,13 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
     logger: false,
   });
 
-  registerRoutes(app, { intake, pubsub });
+  registerRoutes(app, { intake, pubsub, sessions });
+
+  // Single-port prod serving: serve apps/ui/dist statically with SPA fallback,
+  // EXCLUDING /api (§3 全局前置). Registered AFTER the API routes so /api/* always
+  // wins; the SPA fallback (notFoundHandler below) only catches non-/api GETs.
+  // No-op when dist is absent (dev = Vite on 5173 proxies /api → 8100).
+  const serving = await registerStatic(app);
 
   // Unified error envelope (§13.2). Order: typed RouteError → ZodError →
   // DuplicateRunIdError → fallback 500.
@@ -119,12 +135,15 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
     reply.code(500).send(errorEnvelope("internal", "internal error"));
   });
 
-  // Unknown route → 404 in the same envelope.
+  // Unknown route → SPA fallback (a non-/api GET serves index.html so a
+  // client-side route resolves) else the 404 envelope. /api/* and non-GET always
+  // 404 as JSON (sendSpaFallback returns false for them).
   app.setNotFoundHandler((req, reply) => {
+    if (sendSpaFallback(serving, req, reply)) return;
     reply
       .code(404)
       .send(errorEnvelope("not_found", `no route ${req.method} ${req.url}`));
   });
 
-  return { app, pubsub, intake, recovery };
+  return { app, pubsub, intake, sessions, recovery };
 }

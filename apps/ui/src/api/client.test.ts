@@ -1,0 +1,221 @@
+/**
+ * client.test — zod decode of the typed client against CAPTURED wire fixtures.
+ * The fixtures are literal JSON shapes copied from the server integration tests
+ * (server.integration.test.ts) + the route/service source — fixed INPUT fixtures
+ * of OUR OWN wire (per the task brief: capturing the wire envelope, not an LLM
+ * trace). A mock fetch returns each fixture; we assert the client decodes it (or
+ * throws the typed ApiError on a non-2xx / schema-mismatch).
+ *
+ * Pure (node env) — no DOM. The SSE hook's DOM tests live in useRunStream.test.ts.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import { ApiClient, ApiError } from "./client.js";
+
+/** Build a mock fetch that returns one canned Response for any URL. */
+function mockFetch(status: number, body: unknown): typeof fetch {
+  const fn = async (): Promise<Response> =>
+    new Response(body === undefined ? "" : JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  return fn as unknown as typeof fetch;
+}
+
+/** A fetch that records the request it received, for body/URL assertions. */
+function spyFetch(status: number, body: unknown): {
+  fetch: typeof fetch;
+  calls: Array<{ url: string; init: RequestInit | undefined }>;
+} {
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+  const fn = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    calls.push({ url: String(url), init });
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  return { fetch: fn as unknown as typeof fetch, calls };
+}
+
+// ---------------------------------------------------------------------------
+// Captured fixtures — literal shapes the M1 server emits (cited inline).
+// ---------------------------------------------------------------------------
+
+/** GET /api/skills → [SKILL_MANIFEST] (routes.ts:78-86, returned at :279). */
+const SKILLS_FIXTURE = [
+  {
+    name: "search_profile_intake",
+    version: "m1-v1",
+    summary: "Create a new-car search profile from a slash form or freeform prose.",
+    inputs: ["input_mode", "freeform_text", "seed_fields"],
+    outputs: "search_profile",
+    sensitive: false,
+    retries: 0,
+  },
+];
+
+/** GET /api/mode → { active_db, data_dir } (routes.ts:287). */
+const MODE_FIXTURE = {
+  active_db: "/tmp/autobroker-xyz/autobroker.db",
+  data_dir: "/tmp/autobroker-xyz",
+};
+
+/** GET /api/skill-runs/:id → status summary (intakeRuns.ts:569-575). The
+ *  awaiting_user@collect state captured from startSlashToCollect. */
+const STATUS_AWAITING_FIXTURE = {
+  run_id: "run-1",
+  skill: "search_profile_intake",
+  status: "awaiting_approval",
+  pending: { step: "collect", decision_id: "dec-1" },
+  events: [
+    {
+      ts: "2026-06-05T00:00:00.000Z",
+      kind: "init",
+      payload: { run_id: "run-1", skill: "search_profile_intake", driver_kind: "deepseek_apikey" },
+    },
+    {
+      ts: "2026-06-05T00:00:00.100Z",
+      kind: "awaiting_user",
+      payload: { form_kind: "data_collection", spec_inline: {}, decision_id: "dec-1", step: "collect" },
+    },
+  ],
+};
+
+/** POST /api/skill-runs → 201 { run_id } (routes.ts:154). */
+const START_ACK_FIXTURE = { run_id: "run-1" };
+
+/** form-decision accept ack (intakeRuns.ts:403). */
+const ACCEPT_ACK_FIXTURE = { action: "accept", content: { make: "Hyundai" } };
+/** form-decision decline ack (intakeRuns.ts:386-388). */
+const DECLINE_ACK_FIXTURE = { action: "decline", content: null };
+
+/** GET /api/profiles/:id → a snake_case row (routes.ts:268; columns vary). */
+const PROFILE_ROW_FIXTURE = {
+  search_profile_id: "sp-1",
+  make: "Hyundai",
+  model: "Tucson",
+  year: 2026,
+  latitude: 33.6695,
+  longitude: -117.7669,
+  status: "active",
+};
+
+/** The §13.2 error envelope (server.ts:38-52). */
+const ERROR_ENVELOPE_FIXTURE = {
+  error: { code: "decision_conflict", message: "decision already consumed", run_id: "run-1" },
+};
+
+describe("ApiClient decode — captured wire fixtures", () => {
+  it("listSkills decodes the manifest array", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, SKILLS_FIXTURE) });
+    const skills = await client.listSkills();
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.name).toBe("search_profile_intake");
+    expect(skills[0]!.sensitive).toBe(false);
+  });
+
+  it("getMode decodes { active_db, data_dir }", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, MODE_FIXTURE) });
+    const mode = await client.getMode();
+    expect(mode.data_dir).toBe("/tmp/autobroker-xyz");
+  });
+
+  it("runStatus decodes the awaiting_approval summary incl. pending + events", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, STATUS_AWAITING_FIXTURE) });
+    const summary = await client.runStatus("run-1");
+    expect(summary.status).toBe("awaiting_approval");
+    expect(summary.pending?.step).toBe("collect");
+    expect(summary.pending?.decision_id).toBe("dec-1");
+    expect(summary.events[0]!.kind).toBe("init");
+    expect(summary.events[0]!.payload["driver_kind"]).toBe("deepseek_apikey");
+  });
+
+  it("runStatus decodes a null pending (running/terminal)", async () => {
+    const fixture = { ...STATUS_AWAITING_FIXTURE, status: "running", pending: null };
+    const client = new ApiClient({ fetchImpl: mockFetch(200, fixture) });
+    const summary = await client.runStatus("run-1");
+    expect(summary.pending).toBeNull();
+  });
+
+  it("startRun decodes the 201 { run_id } and posts the snake_case body", async () => {
+    const { fetch, calls } = spyFetch(201, START_ACK_FIXTURE);
+    const client = new ApiClient({ fetchImpl: fetch });
+    const ack = await client.startRun({ skill: "search_profile_intake", input_mode: "slash" });
+    expect(ack.run_id).toBe("run-1");
+    expect(calls[0]!.url).toBe("/api/skill-runs");
+    expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({
+      skill: "search_profile_intake",
+      input_mode: "slash",
+    });
+  });
+
+  it("formDecision decodes the accept ack", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, ACCEPT_ACK_FIXTURE) });
+    const ack = await client.formDecision("run-1", {
+      decision_id: "dec-1",
+      decision: { action: "accept", content: { make: "Hyundai" } },
+    });
+    expect(ack.action).toBe("accept");
+    expect(ack.content).toEqual({ make: "Hyundai" });
+  });
+
+  it("formDecision decodes the decline ack (content null)", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, DECLINE_ACK_FIXTURE) });
+    const ack = await client.formDecision("run-1", {
+      decision_id: "dec-1",
+      decision: { action: "decline" },
+    });
+    expect(ack.action).toBe("decline");
+    expect(ack.content).toBeNull();
+  });
+
+  it("getProfile decodes an open snake_case row", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, PROFILE_ROW_FIXTURE) });
+    const row = await client.getProfile("sp-1");
+    expect(row["make"]).toBe("Hyundai");
+    expect(row["search_profile_id"]).toBe("sp-1");
+  });
+
+  it("listProfiles decodes an array and threads the status query", async () => {
+    const { fetch, calls } = spyFetch(200, [PROFILE_ROW_FIXTURE]);
+    const client = new ApiClient({ fetchImpl: fetch });
+    const rows = await client.listProfiles("active");
+    expect(rows).toHaveLength(1);
+    expect(calls[0]!.url).toBe("/api/profiles?status=active");
+  });
+});
+
+describe("ApiClient error decode — §13.2 envelope → ApiError", () => {
+  it("a 409 envelope decodes into a typed ApiError with code + envelope", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(409, ERROR_ENVELOPE_FIXTURE) });
+    await expect(client.formDecision("run-1", { decision_id: "d", decision: { action: "decline" } }))
+      .rejects.toMatchObject({ status: 409, code: "decision_conflict", name: "ApiError" });
+  });
+
+  it("a 400 content_invalid envelope carries the field pointer", async () => {
+    const envelope = {
+      error: { code: "content_invalid", message: "request body invalid", field: "/input_mode" },
+    };
+    const client = new ApiClient({ fetchImpl: mockFetch(400, envelope) });
+    try {
+      await client.startRun({ skill: "search_profile_intake", input_mode: "slash" });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).field).toBe("/input_mode");
+    }
+  });
+
+  it("a non-envelope gateway error → synthetic http_<status> code", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(502, undefined) });
+    await expect(client.getMode()).rejects.toMatchObject({ status: 502, code: "http_502" });
+  });
+
+  it("a 2xx body that fails the wire schema → decode_error ApiError", async () => {
+    // skills array with a manifest missing required fields.
+    const client = new ApiClient({ fetchImpl: mockFetch(200, [{ name: "x" }]) });
+    await expect(client.listSkills()).rejects.toMatchObject({ code: "decode_error" });
+  });
+});

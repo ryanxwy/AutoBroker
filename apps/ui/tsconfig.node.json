@@ -1,0 +1,14 @@
+{
+  // Build-tool config: typechecks vite.config.ts (Node context, not the browser
+  // bundle). Kept composite so apps/ui/tsconfig.json can reference it under
+  // `tsc --build`. No DOM lib here — this file runs in Node during the build.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist/node",
+    "rootDir": ".",
+    "tsBuildInfoFile": "./dist/node/.tsbuildinfo",
+    "noEmit": false
+  },
+  "include": ["vite.config.ts"]
+}

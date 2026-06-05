@@ -20,6 +20,13 @@ export { boot, type BootResult } from "./boot.js";
 export { RunPubSub, type SseEvent, type EventKind, EVENT_KINDS } from "./runPubSub.js";
 export { projectStatus, MASTRA_RUN_STATUSES, type MastraRunStatus } from "./statusProjection.js";
 export { IntakeRunService } from "./intakeRuns.js";
+export {
+  SessionService,
+  toSessionResponse,
+  type SessionResponse,
+  type IntakeScopeNotice,
+  type IntakeForkResult,
+} from "./sessions.js";
 
 /** Default bind: 127.0.0.1:8100 (the trust-boundary host; §11 / BRIEF §4). */
 const HOST = "127.0.0.1";

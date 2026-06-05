@@ -3,15 +3,22 @@
   // Project-references enforce the single-direction dependency wall:
   //   core -> model -> workflows -> tools -> app.
   // The SPA talks HTTP/SSE to apps/server; it shares only core contracts.
+  //
+  // This is a BROWSER bundle (Vite), so on top of the NodeNext baseline we add
+  // the DOM libs and react-jsx. NodeNext module resolution is kept (so relative
+  // imports carry the `.js` suffix) — Vite's bundler resolver accepts those and
+  // maps `.js` -> `.ts`/`.tsx` source, so a single suffix style works for BOTH
+  // `tsc --build` (the repo typecheck gate) and `vite build`. vite.config.ts is
+  // built by the sibling tsconfig.node.json (a build-tool file, not app source).
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../../packages/core" }
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [{ "path": "../../packages/core" }, { "path": "./tsconfig.node.json" }]
 }

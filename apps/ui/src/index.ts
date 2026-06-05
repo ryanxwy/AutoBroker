@@ -1,15 +1,34 @@
 /**
- * @autobroker/ui — Layer 5 React/Vite dashboard SPA. PLACEHOLDER.
+ * @autobroker/ui — Layer 5 React/Vite dashboard SPA.
  *
- * Phase-0 deliverable (PHASE_0_foundation §2): a React SPA placeholder. The
- * real surface is React/Vite with the AI SDK UI chat rail (one chat rail = one
- * Mastra Memory thread) talking HTTP + SSE to @autobroker/server. The UI never
- * touches the product DB or external APIs — it renders server state only.
+ * The runnable surface is the Vite entry (index.html → src/main.tsx → <App/>).
+ * This barrel exposes the testable, framework-thin pieces (the typed API client,
+ * the single SSE hook, the chat store, the wire schemas) so tests and a future
+ * desktop shell import a stable entry. The UI never touches the product DB or
+ * external APIs — it renders server state over /api + SSE only (five-layer wall).
  *
  * Approval UX rule (non-negotiable): the human approval for the 3 irreversible
- * skills is NEVER hidden on any surface; the gate renders before the prose.
+ * skills is NEVER hidden on any surface; the gate renders before the prose. That
+ * lands with the gate components in M2-run2.
  */
 
-// TODO(phase-1+): Vite + React + AI SDK UI chat rail. Placeholder so the app
-// layer exists in the build graph.
-export {};
+export { ApiClient, ApiError, apiClient } from "./api/client.js";
+export type { ApiClientOptions } from "./api/client.js";
+
+export { useRunStream, __resetRunStreamRegistryForTests } from "./api/useRunStream.js";
+export type {
+  RunStreamState,
+  AwaitingUserPayload,
+  UseRunStreamOptions,
+} from "./api/useRunStream.js";
+
+export { useChat } from "./store/useChat.js";
+export type {
+  Session,
+  Turn,
+  UserTurn,
+  AssistantTurn,
+  Milestone,
+} from "./store/useChat.js";
+
+export * from "./api/wire.js";
