@@ -35,7 +35,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { loadCase, cellIdFor, type Case, type CaseStep, type CaseResume } from "./cases.js";
+import { loadCase, cellIdFor, PROVIDER_DRIVER_KIND, type Case, type CaseStep, type CaseResume } from "./cases.js";
 import { buildRunDetail, type RunDetail } from "./detail.js";
 import { assertDriverKindLockStep } from "./driverKind.js";
 import {
@@ -485,7 +485,9 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     // the SUT's emitted init frame. A case anchor that disagrees with the
     // provider-derived label is a case-authoring bug → fail loud HERE, not at
     // scoring.
-    const expectDriverKind = c.provider === "deepseek" ? ("deepseek_apikey" as const) : fail(`no driver_kind label for provider ${c.provider} (M4)`);
+    // Provider-derived label from the two-place lock-step map (extends to all 3
+    // first-class providers for M4 cross-provider smoke; deepseek stays default).
+    const expectDriverKind = PROVIDER_DRIVER_KIND[c.provider] ?? fail(`no driver_kind label for provider ${c.provider}`);
     const anchorExpect = step.anchors.find((a) => a.kind === "driver_kind")?.expect;
     if (anchorExpect !== undefined && anchorExpect !== expectDriverKind) {
       fail(

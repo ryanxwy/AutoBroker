@@ -76,6 +76,24 @@ describe("case loader", () => {
     expect(dk).toMatchObject({ kind: "driver_kind", expect: "deepseek_apikey" });
   });
 
+  it("loads the M4 cross-provider slash variants (anthropic_apikey / openai_apikey)", () => {
+    const a = loadCase(join(CASES, "search_profile_intake.slash_anthropic.toml"));
+    expect(a.provider).toBe("anthropic");
+    expect(a.steps[0]!.anchors.find((x) => x.kind === "driver_kind")).toMatchObject({
+      kind: "driver_kind",
+      expect: "anthropic_apikey",
+    });
+    expect(cellIdFor(a, a.steps[0]!)).toBe("live/search_profile_intake/anthropic/B/slash");
+
+    const o = loadCase(join(CASES, "search_profile_intake.slash_openai.toml"));
+    expect(o.provider).toBe("openai");
+    expect(o.steps[0]!.anchors.find((x) => x.kind === "driver_kind")).toMatchObject({
+      kind: "driver_kind",
+      expect: "openai_apikey",
+    });
+    expect(cellIdFor(o, o.steps[0]!)).toBe("live/search_profile_intake/openai/B/slash");
+  });
+
   it("resolves the collect resume content from narrative.profile (18 strict fields)", () => {
     const c = loadCase(join(CASES, "search_profile_intake.slash.toml"));
     const resume = c.steps[0]!.resume.find((r) => r.on === "data_collection")!;

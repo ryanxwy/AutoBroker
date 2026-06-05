@@ -16,10 +16,13 @@
  *     single EventSource.onmessage consumer can switch on payload.kind).
  *
  * FIRST FRAME = init {run_id, skill, driver_kind} (§4.2/§5.3, D-B4): the
- * driver_kind is INJECTED HERE = 'deepseek_apikey' — the two-place lock-step note
- * (D-B4): this emitter and the harness evaluator's driver_kind anchor expectation
- * must change together; the value is the default api-key lane label
- * (core HARNESS_DRIVER_KINDS includes it). anthropic_apikey/openai_apikey are M4.
+ * driver_kind is INJECTED HERE, DERIVED from the active provider via core's
+ * providerDriverKind(DEFAULT_PROVIDER) — the two-place lock-step note (D-B4):
+ * this emitter and the harness runner's driver_kind anchor expectation both
+ * derive from the SAME core map (harness/cases.ts PROVIDER_DRIVER_KIND), so the
+ * wire value and the anchor expectation can never silently drift. With the
+ * 2026-06-02 DeepSeek-default override this resolves to 'deepseek_apikey';
+ * anthropic_apikey/openai_apikey come online with the M4 cross-provider lanes.
  *
  * SINGLE-TERMINAL-FRAME INVARIANT (§4.4, the load-bearing "wire wins" rule):
  *   - terminal kinds are EXACTLY three: done | error | aborted (§4.4; `declined`
@@ -34,9 +37,12 @@
  * (snapshot) then live events, taken under one lock so nothing is missed or
  * doubled. Reconnect = re-subscribe to the same run (no Last-Event-ID, no id:).
  *
- * Dependency wall: app layer. Imports core (the SkillRunStatus type only,
- * indirectly via EVENT_KINDS) — NEVER @mastra, NEVER the product DB.
+ * Dependency wall: app layer. Imports core (DEFAULT_PROVIDER + providerDriverKind
+ * for the init-frame driver_kind derivation, and the HarnessDriverKind type) —
+ * NEVER @mastra, NEVER the product DB.
  */
+
+import { DEFAULT_PROVIDER, providerDriverKind, type HarnessDriverKind } from "@autobroker/core";
 
 /**
  * The closed EVENT_KINDS set (§4.2 frozenset). M1 emits a subset; the full set is
@@ -82,9 +88,14 @@ export interface SseEvent {
   payload: Record<string, unknown>;
 }
 
-/** The driver_kind injected into the init frame (D-B4, two-place lock-step). The
- *  default api-key lane label; anthropic_apikey/openai_apikey are M4 TODOs. */
-export const INIT_DRIVER_KIND = "deepseek_apikey" as const;
+/** The DEFAULT driver_kind for the init frame (D-B4 two-place lock-step). The
+ *  REAL per-run value is injected by the caller (IntakeRunService derives it
+ *  from policy() — the provider the skill's useCases actually route to), so a
+ *  registry-string provider swap flips the wire label in lock-step with the
+ *  harness runner's expectDriverKind (review HIGH 2026-06-05: a frozen
+ *  module-level constant silently pinned every run to deepseek_apikey). This
+ *  constant remains only as the no-caller default and the unit-test anchor. */
+export const INIT_DRIVER_KIND: HarnessDriverKind = providerDriverKind(DEFAULT_PROVIDER);
 
 /** A live subscriber's queue: an async iterator the HTTP route drains. New events
  *  pushed after subscribe arrive here; the snapshot covers everything before. */
@@ -175,13 +186,13 @@ export class RunPubSub {
    * {run_id, skill, driver_kind} — with driver_kind injected here (D-B4). Idempotent
    * per run: a second call is a no-op (the init frame is emitted exactly once).
    */
-  attachInit(runId: string, skill: string): void {
+  attachInit(runId: string, skill: string, driverKind: HarnessDriverKind = INIT_DRIVER_KIND): void {
     if (this.channels.has(runId)) return;
     const channel: RunChannel = { log: [], terminal: false, queues: new Set() };
     this.channels.set(runId, channel);
     this.append(runId, {
       kind: "init",
-      payload: { run_id: runId, skill, driver_kind: INIT_DRIVER_KIND },
+      payload: { run_id: runId, skill, driver_kind: driverKind },
     });
   }
 

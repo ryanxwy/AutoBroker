@@ -27,8 +27,15 @@
 
 /**
  * Ledger label for any cost_usd priced off THIS table snapshot. Bump this string
- * (and the rates below) when DeepSeek re-prices; historical rows keep their own
- * recorded label so a re-price never rewrites history.
+ * (and the rates below) when any provider re-prices; historical rows keep their
+ * own recorded label so a re-price never rewrites history.
+ *
+ * NOTE: the "deepseek-" prefix is the original (DeepSeek-first) snapshot name; it
+ * is the TABLE-VERSION label, not a provider filter — the 2026-06 snapshot now
+ * also carries the official Anthropic + OpenAI rows below (added for M4
+ * cross-provider smoke, fetched 2026-06-05). It is kept verbatim because the
+ * ledger snapshot semantics key off this exact string across the harness +
+ * test_run_records; a rename is a deliberate table-version bump, not done here.
  */
 export const PRICING_SOURCE = "deepseek-2026-06" as const;
 
@@ -74,6 +81,46 @@ export const PRICING: Readonly<Record<string, ModelRate>> = {
     inputUsdPerMTok: 0.435,
     outputUsdPerMTok: 0.87,
     cacheHitInputUsdPerMTok: 0.003625,
+  },
+
+  // Anthropic — official pricing page (fetched 2026-06-05,
+  // platform.claude.com/docs/en/about-claude/pricing). Base input / output /
+  // cache-hit (cache read = 0.1x base input). Keyed by the alias model ids the
+  // registry binds (claude-haiku-4-5 / claude-sonnet-4-6 / claude-opus-4-8).
+  "claude-haiku-4-5": {
+    inputUsdPerMTok: 1.0,
+    outputUsdPerMTok: 5.0,
+    cacheHitInputUsdPerMTok: 0.1,
+  },
+  "claude-sonnet-4-6": {
+    inputUsdPerMTok: 3.0,
+    outputUsdPerMTok: 15.0,
+    cacheHitInputUsdPerMTok: 0.3,
+  },
+  "claude-opus-4-8": {
+    inputUsdPerMTok: 5.0,
+    outputUsdPerMTok: 25.0,
+    cacheHitInputUsdPerMTok: 0.5,
+  },
+
+  // OpenAI — official model docs (fetched 2026-06-05,
+  // developers.openai.com/api/docs/models/{gpt-5.4-mini,gpt-5.4,gpt-5.5}).
+  // input / output / cached-input. Keyed by the alias model ids the registry
+  // binds (gpt-5.4-mini / gpt-5.4 / gpt-5.5).
+  "gpt-5.4-mini": {
+    inputUsdPerMTok: 0.75,
+    outputUsdPerMTok: 4.5,
+    cacheHitInputUsdPerMTok: 0.075,
+  },
+  "gpt-5.4": {
+    inputUsdPerMTok: 2.5,
+    outputUsdPerMTok: 15.0,
+    cacheHitInputUsdPerMTok: 0.25,
+  },
+  "gpt-5.5": {
+    inputUsdPerMTok: 5.0,
+    outputUsdPerMTok: 30.0,
+    cacheHitInputUsdPerMTok: 0.5,
   },
 } as const;
 

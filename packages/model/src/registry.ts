@@ -50,8 +50,9 @@ const deepseek = createDeepSeek();
  * tool_choice is rejected in thinking mode.
  *
  * Cross-provider aliases are intentionally present for the first-class lanes.
- * Their exact ids/capability rows are still verified in the M4 cross-provider
- * smoke milestone before they are treated as acceptance-grade.
+ * Their exact ids/capability rows were confirmed against the official Anthropic
+ * + OpenAI model docs (fetched 2026-06-05) for the M4 cross-provider smoke
+ * milestone; the live calls themselves still gate on an explicit go.
  */
 export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, typeof SEPARATOR> =
   createProviderRegistry(
@@ -69,22 +70,38 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
       fallbackProvider: deepseek,
     }),
 
+    // Anthropic ids confirmed against the official model overview (fetched
+    // 2026-06-05, platform.claude.com/docs/.../models/overview). The prior
+    // strings were STALE: claude-sonnet-4-5 → superseded by claude-sonnet-4-6,
+    // claude-opus-4-1 → superseded by claude-opus-4-8 (and 4-1 is now a $15/MTok
+    // legacy model). claude-haiku-4-5 is still current (alias of the dated
+    // -20251001 snapshot). All three support tools + structured outputs + vision.
+    // reasoner→sonnet-4-6 (extended thinking; opus-4-8 has adaptive thinking but
+    // we reserve it for the strong tier per cost).
     anthropic: customProvider({
       languageModels: {
         cheap: anthropic("claude-haiku-4-5"),
-        chat: anthropic("claude-sonnet-4-5"),
-        strong: anthropic("claude-opus-4-1"),
-        reasoner: anthropic("claude-sonnet-4-5"),
+        chat: anthropic("claude-sonnet-4-6"),
+        strong: anthropic("claude-opus-4-8"),
+        reasoner: anthropic("claude-sonnet-4-6"),
       },
       fallbackProvider: anthropic,
     }),
 
+    // OpenAI ids confirmed against the official model docs (fetched 2026-06-05,
+    // developers.openai.com/api/docs/models). The prior strings were STALE: the
+    // gpt-4.1 family and o3 are superseded by the GPT-5.x line. gpt-5.4 is the
+    // default reasoning workhorse (effort none/low/medium/high/xhigh),
+    // gpt-5.4-mini the cheapest capable tier, gpt-5.5 the strongest. The whole
+    // GPT-5.x family is reasoning-capable, so reasoner→gpt-5.4 (not a separate
+    // o-series id; no o-series model is listed in the current docs). All support
+    // tools + structured outputs + vision.
     openai: customProvider({
       languageModels: {
-        cheap: openai("gpt-4.1-mini"),
-        chat: openai("gpt-4.1"),
-        strong: openai("o3"),
-        reasoner: openai("o3"),
+        cheap: openai("gpt-5.4-mini"),
+        chat: openai("gpt-5.4"),
+        strong: openai("gpt-5.5"),
+        reasoner: openai("gpt-5.4"),
       },
       fallbackProvider: openai,
     }),

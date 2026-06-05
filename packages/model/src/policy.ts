@@ -44,6 +44,13 @@ export const USE_CASES = [
   "intake_freeform_prefill",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
+  /**
+   * M4 cross-provider smoke probe. Routes to a structured-output-with-tools
+   * provider (Anthropic) so the harness exercises the NATIVE `output_object`
+   * strategy end-to-end — the counterpart to foundation_probe's emit_result
+   * (DeepSeek) lane. The live calls themselves gate on an explicit go.
+   */
+  "cross_provider_smoke",
 ] as const;
 export type UseCase = (typeof USE_CASES)[number];
 
@@ -64,6 +71,10 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   intake_trim_verify: "deepseek.chat",
   intake_freeform_prefill: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
+  // Routes to anthropic.chat (supportsOutputObjectWithTools:true) so the harness
+  // takes the NATIVE output_object strategy. Swapping to "openai.chat" is a
+  // one-string change that keeps the same strategy (both rows are true).
+  cross_provider_smoke: "anthropic.chat",
 };
 
 /**
@@ -92,8 +103,79 @@ const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
     supportsVision: false,
     reportsUsageTokens: true,
   },
-  // TODO: anthropic.* (strictJsonSchema:true, supportsOutputObjectWithTools:true,
-  //       supportsVision:true) and openai.* rows.
+
+  // Anthropic rows (M4 cross-provider smoke). Verified 2026-06-05 against the
+  // official structured-outputs doc (platform.claude.com/.../structured-outputs):
+  // Claude supports structured JSON output (output_config.format json_schema) AND
+  // tool use in the SAME request ("call tools with guaranteed-valid parameters
+  // AND return structured JSON responses"), via constrained decoding / strict
+  // schema. GA on Haiku 4.5 / Sonnet 4.6 / Opus 4.8 (the ids the registry binds).
+  // All current Claude models support vision (model overview: "text and image
+  // input … and vision") and report usage tokens. So:
+  // supportsOutputObjectWithTools:true (→ output_object strategy), strictJsonSchema:true.
+  "anthropic.cheap": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+  "anthropic.chat": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+  "anthropic.strong": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+  "anthropic.reasoner": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+
+  // OpenAI rows (M4 cross-provider smoke). Verified 2026-06-05 against the
+  // official model docs (developers.openai.com/api/docs/models) + the
+  // structured-outputs/function-calling guides: the GPT-5.x family supports
+  // Structured Outputs (response_format json_schema, strict) together with
+  // function/tool calling, plus vision (text+image input) and usage reporting.
+  // So supportsOutputObjectWithTools:true, strictJsonSchema:true.
+  "openai.cheap": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+  "openai.chat": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+  "openai.strong": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
+  "openai.reasoner": {
+    supportsToolCalls: true,
+    supportsOutputObjectWithTools: true,
+    strictJsonSchema: true,
+    supportsVision: true,
+    reportsUsageTokens: true,
+  },
 };
 
 export interface PolicyResolution {

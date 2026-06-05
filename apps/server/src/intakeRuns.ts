@@ -45,7 +45,8 @@
 
 import { randomUUID } from "node:crypto";
 
-import { SearchProfileIntakeInputSchema } from "@autobroker/core";
+import { SearchProfileIntakeInputSchema, providerDriverKind } from "@autobroker/core";
+import { policy } from "@autobroker/model";
 import {
   startRunGuarded,
   CollectResumeSchema,
@@ -65,6 +66,15 @@ type MastraInstance = ReturnType<typeof createMastraInstance>;
 const INTAKE_WORKFLOW_ID = "search_profile_intake";
 /** The single skill name M1 exposes. */
 export const INTAKE_SKILL = "search_profile_intake" as const;
+
+/** The driver_kind for intake runs, DERIVED from the provider policy() actually
+ *  routes the skill's LLM useCases to (intake_trim_verify is the representative
+ *  — both intake useCases share one alias). A registry-string provider swap
+ *  (USE_CASE_ALIAS edit) flips this label in lock-step with the harness
+ *  runner's expectDriverKind (D-B4; review HIGH 2026-06-05). */
+export function intakeDriverKind(): ReturnType<typeof providerDriverKind> {
+  return providerDriverKind(policy("intake_trim_verify").provider);
+}
 
 /** The start-intake input (task BUILD §5 / route §3.2 body shape). */
 export interface IntakeStartInput {
@@ -207,7 +217,7 @@ export class IntakeRunService {
     const step = entry[0];
     const payload = entry[1].suspendPayload ?? {};
 
-    this.pubsub.attachInit(runId, INTAKE_SKILL);
+    this.pubsub.attachInit(runId, INTAKE_SKILL, intakeDriverKind());
     const decisionId = randomUUID();
     this.runs.set(runId, {
       skill: INTAKE_SKILL,
@@ -240,7 +250,7 @@ export class IntakeRunService {
     // First frame: init {run_id, skill, driver_kind} (the pubsub injects
     // driver_kind). attachInit is idempotent; a re-used runId without a prior run
     // would already have a channel — but startRunGuarded below rejects a dup id.
-    this.pubsub.attachInit(runId, INTAKE_SKILL);
+    this.pubsub.attachInit(runId, INTAKE_SKILL, intakeDriverKind());
 
     this.runs.set(runId, {
       skill: INTAKE_SKILL,

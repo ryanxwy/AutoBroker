@@ -151,8 +151,25 @@ export const DriverKindSchema = z.enum(DRIVER_KINDS);
 export const HARNESS_DRIVER_KINDS = [
   ...DRIVER_KINDS,
   "deepseek_apikey",
-  // TODO: add anthropic_apikey / openai_apikey labels when those test lanes
-  // are wired through the runner PROVIDER_DRIVER_KIND map (Phase 0).
+  // anthropic_apikey / openai_apikey are the M4 cross-provider test labels.
+  // Wired through the runner PROVIDER_DRIVER_KIND map (harness/cases.ts) and the
+  // server's provider→driver_kind derivation (apps/server runPubSub
+  // PROVIDER_DRIVER_KIND). DeepSeek stays the default-resolved label.
+  "anthropic_apikey",
+  "openai_apikey",
 ] as const;
 export type HarnessDriverKind = (typeof HARNESS_DRIVER_KINDS)[number];
 export const HarnessDriverKindSchema = z.enum(HARNESS_DRIVER_KINDS);
+
+/**
+ * Map an api-key `Provider` to its harness `driver_kind` anchor label
+ * (`{provider}_apikey`). The SINGLE source of truth for the provider→label
+ * derivation behind the two-place lock-step (D-B4): the server's init-frame
+ * emitter and the harness runner both derive their `driver_kind` from THIS map
+ * (apps/server runPubSub + harness/cases.ts), so the wire value and the anchor
+ * expectation can never silently drift. DeepSeek resolves to `deepseek_apikey`
+ * (the default), anthropic/openai to their M4 cross-provider labels.
+ */
+export function providerDriverKind(provider: Provider): HarnessDriverKind {
+  return `${provider}_apikey` as HarnessDriverKind;
+}

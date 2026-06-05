@@ -1,0 +1,81 @@
+# harness/cases/search_profile_intake.slash_anthropic.toml — the M4 cross-provider
+# slash case, ANTHROPIC lane. Identical to search_profile_intake.slash.toml in
+# every anchor EXCEPT provider = "anthropic" (which drives the driver_kind anchor
+# to "anthropic_apikey" via the two-place lock-step PROVIDER_DRIVER_KIND map). The
+# live calls themselves gate on an explicit go; this case only proves the wiring +
+# the cross-provider driver_kind anchor loads green.
+
+[meta]
+id = "search_profile_intake_slash_anthropic"
+archetype = "B"            # Phase-1 browser cluster; intake itself drives goplaces (HTTP), not Browser #2.
+skills = ["search_profile_intake"]
+risk_group = "E"           # read-only cluster → approve_safe.
+
+[narrative]
+session_origin = "fresh_unpinned"   # intake creates + pins; never inherits an old pin.
+input_mode = "slash"
+provider = "anthropic"
+
+# The corpus profile (BRIEF §4). budget_max is INTERNAL-ONLY — collected, never
+# dealer-facing. phone_policy 'fake' by default. All 18 strict fields present.
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 25
+budget_max = 0
+follow_up_phone = "555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create and pin the Tucson profile on the Anthropic lane — cross-provider smoke."
+gate_policy = "approve_safe"   # read-only cluster; intake never trips the mutation gate.
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"   # fill the form from the profile table.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "anthropic_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "audit_log"
+scope = "profile"
+action = "search_profile_intake"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # keystone, tolerance 0.
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

@@ -17,7 +17,10 @@
  *   - Zod authority: a tool call with schema-violating args → ZodError + ledger
  *     fail_reason 'zod_validation' (model output is advisory, Zod is the law);
  *   - NULL-not-$0: usage undefined → costUsd null + pricingSource 'unavailable';
- *   - output_object strategy gate → HarnessNotImplementedError (M4 deliverable).
+ *   - output_object lane (M4): a useCase routing to a supportsOutputObjectWithTools
+ *     provider drives the NATIVE structured-output path → Zod-validated object,
+ *     priced, ONE ledger row; the #1244 processor (expectsToolCall:false) stays
+ *     harmless on the clean `stop` finish; Zod authority still rejects drift.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
  * the committed migration is applied to the throwaway DB; the harness writes
@@ -32,17 +35,16 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import type { CapabilityFlags } from "@autobroker/core";
 import {
-  chooseStructuredOutputStrategy,
   MalformedToolCallAbort,
   makeProseDumpModel,
   makeStaticToolCallModel,
+  makeStructuredObjectModel,
   type HarnessGenerateInput,
 } from "@autobroker/model";
 import { openDb, type Db } from "@autobroker/tools";
 
-import { harness, HarnessNotImplementedError, type HarnessLedgerContext } from "./harness.js";
+import { harness, type HarnessLedgerContext } from "./harness.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -247,30 +249,96 @@ describe("harness.generate — NULL-not-$0", () => {
   });
 });
 
-describe("harness.generate — output_object strategy gate (M4 deliverable)", () => {
-  // No policy alias today routes to supportsOutputObjectWithTools:true (every
-  // DeepSeek alias is false per #1244), so the harness's HarnessNotImplementedError
-  // branch is not reachable through policy() yet. We assert the gate's two halves
-  // faithfully: (1) the pure strategy helper routes such capabilities to
-  // 'output_object', and (2) the harness exports the typed error the branch
-  // throws. When an anthropic/openai alias lands in M4, an end-to-end case
-  // replaces this. (Per task: use the strategy helper directly; do NOT add a
-  // fake alias to policy.ts.)
-  it("a supportsOutputObjectWithTools:true capability routes to 'output_object'", () => {
-    const caps: CapabilityFlags = {
-      supportsToolCalls: true,
-      supportsOutputObjectWithTools: true,
-      strictJsonSchema: true,
-      supportsVision: true,
-      reportsUsageTokens: true,
+describe("harness.generate — native output_object lane (M4 cross-provider)", () => {
+  // The `cross_provider_smoke` useCase routes to anthropic.chat
+  // (supportsOutputObjectWithTools:true), so harness.generate takes the NATIVE
+  // structured-output path: Mastra drives `structuredOutput:{schema}`, the fake
+  // model returns a JSON-text response (the v3 shape the path consumes,
+  // live-probed 2026-06-05), and result.object is parsed + Zod-validated. The
+  // #1244 processor is attached with expectsToolCall:false so the clean `stop`
+  // finish does NOT false-trip. No live network.
+  const objectLedger: HarnessLedgerContext = {
+    runId: "run-output-object-1",
+    skill: "cross_provider_smoke",
+    layer: "L2",
+    provider: "anthropic",
+    // a priced anthropic id so cost is computed (claude-sonnet-4-6 is in PRICING).
+    modelAlias: "claude-sonnet-4-6",
+    promptVersion: null,
+    schemaVersion: null,
+  };
+
+  function objectInput(
+    over: Partial<HarnessGenerateInput<typeof quoteSchema>> = {},
+  ): HarnessGenerateInput<typeof quoteSchema> {
+    return {
+      useCase: "cross_provider_smoke",
+      schema: quoteSchema,
+      prompt: "Return the Tucson high temperature as a structured result.",
+      hitlAvailable: false,
+      ...over,
     };
-    expect(chooseStructuredOutputStrategy(caps)).toBe("output_object");
+  }
+
+  it("clean native object → Zod-validated result, priced, ONE ledger row (fail_reason null)", async () => {
+    const model = makeStructuredObjectModel({
+      object: { city: "Tucson", high: 100 },
+      modelId: "claude-sonnet-4-6",
+      usage: { inputTokens: 1000, outputTokens: 250 },
+    });
+
+    const out = await harness.generate(objectInput(), objectLedger, { model, db });
+
+    expect("object" in out).toBe(true);
+    if (!("object" in out)) return;
+    expect(out.object).toEqual({ city: "Tucson", high: 100 });
+    expect(out.usage.pricingSource).toBe("computed");
+    expect(out.usage.costUsd).not.toBeNull();
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("deepseek-2026-06");
+    expect(rows[0]?.price_input_per_mtok).toBe(3.0); // sonnet-4-6 base input rate.
   });
 
-  it("HarnessNotImplementedError is the typed gate the harness throws on that route", () => {
-    const err = new HarnessNotImplementedError("output_object strategy lands in M4");
-    expect(err).toBeInstanceOf(Error);
-    expect(err.name).toBe("HarnessNotImplementedError");
+  it("Zod authority: a native object that violates the contract → ZodError + ledger 'zod_validation'", async () => {
+    const strictSchema = z
+      .object({ city: z.string(), high: z.number() })
+      .refine((v) => v.high <= 50, { message: "high must be <= 50" });
+
+    const model = makeStructuredObjectModel({
+      object: { city: "Tucson", high: 100 }, // passes shape, fails the refinement.
+      modelId: "claude-sonnet-4-6",
+    });
+
+    await expect(
+      harness.generate(
+        { useCase: "cross_provider_smoke", schema: strictSchema, prompt: "x", hitlAvailable: false },
+        objectLedger,
+        { model, db },
+      ),
+    ).rejects.toBeInstanceOf(z.ZodError);
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBe("zod_validation");
+  });
+
+  it("#1244 stays harmless: a clean structured `stop` finish does NOT false-trip", async () => {
+    // The processor runs with expectsToolCall:false on this lane, so the
+    // finish_reason/empty-tool-call signals are gated off (live-probed: with
+    // expectsToolCall:true the same turn WOULD trip). The run succeeds, no abort.
+    const model = makeStructuredObjectModel({
+      object: { city: "Tucson", high: 88 },
+      modelId: "claude-sonnet-4-6",
+    });
+
+    const out = await harness.generate(objectInput(), objectLedger, { model, db });
+    expect("object" in out).toBe(true);
+    if (!("object" in out)) return;
+    expect(out.object).toEqual({ city: "Tucson", high: 88 });
+    expect(ledgerRows()[0]?.fail_reason).toBeNull();
   });
 });
 

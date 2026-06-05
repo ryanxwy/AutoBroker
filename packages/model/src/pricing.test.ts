@@ -18,14 +18,23 @@ describe("PRICING table", () => {
     expect(PRICING_SOURCE).toBe("deepseek-2026-06");
   });
 
-  it("carries the two officially-priced DeepSeek V4 ids", () => {
+  it("carries the officially-priced ids for all three first-class providers", () => {
+    // DeepSeek (default) + the Anthropic/OpenAI rows added for M4 cross-provider
+    // smoke (official pages, fetched 2026-06-05). Keyed by the concrete ids the
+    // registry binds.
     expect(Object.keys(PRICING).sort()).toEqual([
+      "claude-haiku-4-5",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.5",
     ]);
   });
 
-  it("stores raw per-MTok constants from the official source", () => {
+  it("stores raw per-MTok constants from the official DeepSeek source", () => {
     expect(PRICING["deepseek-v4-flash"]).toEqual({
       inputUsdPerMTok: 0.14,
       outputUsdPerMTok: 0.28,
@@ -35,6 +44,42 @@ describe("PRICING table", () => {
       inputUsdPerMTok: 0.435,
       outputUsdPerMTok: 0.87,
       cacheHitInputUsdPerMTok: 0.003625,
+    });
+  });
+
+  it("stores the official Anthropic rates (claude-haiku-4-5 / sonnet-4-6 / opus-4-8)", () => {
+    expect(PRICING["claude-haiku-4-5"]).toEqual({
+      inputUsdPerMTok: 1.0,
+      outputUsdPerMTok: 5.0,
+      cacheHitInputUsdPerMTok: 0.1,
+    });
+    expect(PRICING["claude-sonnet-4-6"]).toEqual({
+      inputUsdPerMTok: 3.0,
+      outputUsdPerMTok: 15.0,
+      cacheHitInputUsdPerMTok: 0.3,
+    });
+    expect(PRICING["claude-opus-4-8"]).toEqual({
+      inputUsdPerMTok: 5.0,
+      outputUsdPerMTok: 25.0,
+      cacheHitInputUsdPerMTok: 0.5,
+    });
+  });
+
+  it("stores the official OpenAI rates (gpt-5.4-mini / gpt-5.4 / gpt-5.5)", () => {
+    expect(PRICING["gpt-5.4-mini"]).toEqual({
+      inputUsdPerMTok: 0.75,
+      outputUsdPerMTok: 4.5,
+      cacheHitInputUsdPerMTok: 0.075,
+    });
+    expect(PRICING["gpt-5.4"]).toEqual({
+      inputUsdPerMTok: 2.5,
+      outputUsdPerMTok: 15.0,
+      cacheHitInputUsdPerMTok: 0.25,
+    });
+    expect(PRICING["gpt-5.5"]).toEqual({
+      inputUsdPerMTok: 5.0,
+      outputUsdPerMTok: 30.0,
+      cacheHitInputUsdPerMTok: 0.5,
     });
   });
 });

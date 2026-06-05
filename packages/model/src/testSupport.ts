@@ -180,3 +180,34 @@ export function makeProseDumpModel(opts: {
     usage: opts.usage ?? DEFAULT_USAGE,
   });
 }
+
+/**
+ * A model for the NATIVE structured-output (`output_object`) lane — the
+ * Anthropic/OpenAI path Mastra drives with `structuredOutput: { schema }`.
+ *
+ * Live-probed against @mastra/core@1.41.0 (offline fake-model probe, 2026-06-05):
+ * `agent.generate(prompt, { structuredOutput: { schema } })` injects a NATIVE
+ * `responseFormat: { type: 'json', schema }` into the model call (NOT prompt
+ * injection, NOT a second structuring agent), registers NO tools, and the model
+ * is expected to return the result as a plain JSON TEXT response with
+ * finishReason `stop`. Mastra then parses that text into `result.object`. So this
+ * fake mirrors a clean provider on that path: ONE text part carrying `opts.object`
+ * serialized as JSON, finishReason `stop`, no tool calls. (Drives the real
+ * agent → real structured-output parse → real `.object`, same as a clean
+ * Anthropic/OpenAI turn — not a hand-rolled fake of the result.)
+ */
+export function makeStructuredObjectModel(opts: {
+  object: unknown;
+  modelId?: string;
+  usage?: SimpleUsage;
+}): LanguageModel {
+  const content: LanguageModelV3Content[] = [
+    { type: "text", text: JSON.stringify(opts.object) },
+  ];
+  return makeStaticModel({
+    modelId: opts.modelId ?? "structured-object",
+    content,
+    finishReason: { unified: "stop", raw: "stop" },
+    usage: opts.usage ?? DEFAULT_USAGE,
+  });
+}

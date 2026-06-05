@@ -30,7 +30,7 @@ export type {
 
 // TEST SUPPORT ONLY — fake LanguageModel factories so other layers can unit-test
 // agent loops without importing `ai` (the dep wall keeps `ai` types in model).
-export { makeStaticToolCallModel, makeProseDumpModel } from "./testSupport.js";
+export { makeStaticToolCallModel, makeProseDumpModel, makeStructuredObjectModel } from "./testSupport.js";
 
 // #1244 fail-closed malformed-tool-call detector (loop-level safety boundary).
 export {

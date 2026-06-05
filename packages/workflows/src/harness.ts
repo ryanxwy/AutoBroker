@@ -13,9 +13,10 @@
  * CONTROL FLOW (AI_ORCH §3.3 — control-flow stages):
  *   1. policy(useCase) → alias + capabilities; resolveModel(alias) → LanguageModel
  *      (fail-LOUD inherited from policy()).
- *   2. chooseStructuredOutputStrategy(capabilities): 'output_object' is not built
- *      until M4 cross-provider smoke → throw a typed HarnessNotImplementedError
- *      (never silently fall back to emit_result).
+ *   2. chooseStructuredOutputStrategy(capabilities): 'output_object'
+ *      (supportsOutputObjectWithTools:true — Anthropic/OpenAI) dispatches to the
+ *      NATIVE structured-output path (generateOutputObject); 'emit_result'
+ *      (DeepSeek) runs the single-tool discipline. Never cross the two strategies.
  *   3. emit_result path: ONE Mastra `createTool` named 'emit_result' whose
  *      inputSchema is the caller's Zod contract; its execute closure captures the
  *      Mastra-validated args. NO other tools. Per-request the call forces:
@@ -122,19 +123,6 @@ export interface HarnessLedgerContext {
   schemaVersion: string | null;
 }
 
-/**
- * Thrown when a useCase routes to the `output_object` strategy. That path
- * (native Output.object + tools on Anthropic/OpenAI) lands in M4 cross-provider
- * smoke. We throw LOUD rather than silently emit_result — emitting the wrong
- * strategy would defeat the whole #1244 capability gate.
- */
-export class HarnessNotImplementedError extends Error {
-  constructor(detail: string) {
-    super(`harness.generate not implemented for this route: ${detail}`);
-    this.name = "HarnessNotImplementedError";
-  }
-}
-
 /** The fixed name of the single structured-output tool (emit_result discipline). */
 const EMIT_RESULT_TOOL = "emit_result" as const;
 
@@ -183,8 +171,9 @@ export interface HarnessTestOverrides {
  * → drive the Mastra Agent through the #1244 fail-closed processor → assert the
  * tool turn (belt) → Zod-validate the captured args → price + write one ledger
  * row. Resolves to a Zod-validated object, or a HarnessSuspend (HITL fail-closed),
- * or throws MalformedToolCallAbort / ZodError / HarnessNotImplementedError (each
- * recorded with its own fail_reason).
+ * or throws MalformedToolCallAbort / ZodError (each recorded with its own
+ * fail_reason). Dispatches to the native output_object path when the routed model
+ * supports structured object output with tools (Anthropic / OpenAI).
  */
 async function generate<TSchema extends z.ZodTypeAny>(
   input: HarnessGenerateInput<TSchema>,
@@ -212,15 +201,13 @@ async function generate<TSchema extends z.ZodTypeAny>(
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 
-  // Stage 2 — strategy gate. output_object is an M4 deliverable; refuse LOUD.
+  // Stage 2 — strategy gate. supportsOutputObjectWithTools:true (Anthropic /
+  // OpenAI) routes to the NATIVE structured-output path (M4 cross-provider
+  // smoke); DeepSeek's false routes to the emit_result discipline below. The
+  // pure selector owns the #1244 decision; this branch only dispatches.
   const strategy = chooseStructuredOutputStrategy(route.capabilities);
   if (strategy === "output_object") {
-    // No ledger row: nothing ran (no model call, no usage). The throw IS the
-    // signal; writing a $0/usage-missing row here would fake a run that never
-    // happened.
-    throw new HarnessNotImplementedError(
-      "output_object strategy lands in M4 cross-provider smoke",
-    );
+    return generateOutputObject(input, ledger, model, modelId, startedAt, _testOverrides);
   }
 
   // Stage 3 — the single emit_result tool. Its execute closure captures the
@@ -426,6 +413,177 @@ async function generate<TSchema extends z.ZodTypeAny>(
 }
 
 /**
+ * The NATIVE structured-output (`output_object`) lane — used when the routed
+ * model can mix structured object output with tools
+ * (`supportsOutputObjectWithTools === true`: Anthropic / OpenAI per their docs,
+ * verified 2026-06-05). Instead of the emit_result single-tool discipline, Mastra
+ * drives the model with `structuredOutput: { schema }`, which (live-probed against
+ * @mastra/core@1.41.0, offline 2026-06-05) injects a NATIVE
+ * `responseFormat: { type:'json', schema }` into the model call, registers NO
+ * tools, and parses the model's JSON-text response into `result.object`.
+ *
+ * Same discipline as emit_result on every cross-cutting axis:
+ *   - Zod AUTHORITY (stage 5): `result.object` is advisory; we re-run
+ *     input.schema.parse over it and fail 'zod_validation' on drift.
+ *   - #1244 processor STILL attached, but with `expectsToolCall: () => false`:
+ *     this lane legitimately finishes with `stop` + no tool call, so the
+ *     finish_reason / empty-tool-calls signals must NOT fire (they would
+ *     false-trip every clean structured turn — live-probed C2). Only a
+ *     tool-shaped blob in content can still trip, which is harmless on a clean
+ *     provider and a real #1244 catch if one ever appears. Fail-closed mapping
+ *     (HITL suspend / no-HITL MalformedToolCallAbort) is identical.
+ *   - LEDGER: exactly ONE test_run_records row on every branch (success AND every
+ *     failure), cost NULL-not-$0, wall-clock always recorded — same writer path.
+ *   - NO DeepSeek thinking providerOptions here (this lane is never DeepSeek; the
+ *     #1244 emit_result thinking-off constraint is a DeepSeek-only concern).
+ */
+async function generateOutputObject<TSchema extends z.ZodTypeAny>(
+  input: HarnessGenerateInput<TSchema>,
+  ledger: HarnessLedgerContext,
+  model: unknown,
+  modelId: string,
+  startedAt: number,
+  _testOverrides: HarnessTestOverrides | undefined,
+): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
+  // Prompt routed through the canonical-message translator (R7), same as the
+  // emit_result lane.
+  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+
+  const agent = new Agent({
+    id: "harness-output-object",
+    name: "harness-output-object",
+    instructions:
+      "Produce the final result as a structured object that satisfies the provided schema.",
+    model: model as AgentModelConfig,
+    // No tools: native structured output is the result-delivery mechanism here.
+  });
+
+  // Stage 4 — the agent call. structuredOutput drives the native responseFormat.
+  // The #1244 processor runs with expectsToolCall:false (this lane's legitimate
+  // finish is `stop` + object, not a tool call). Review F1 parity: a THROW from
+  // the model call (provider 5xx / transport) is a run that HAPPENED — ledger one
+  // row (usage unknown ⇒ NULL-not-$0) before propagating.
+  const result = await agent
+    .generate(messages, {
+      structuredOutput: { schema: input.schema, jsonPromptInjection: false },
+      outputProcessors: [
+        malformedToolCallProcessor({
+          hitlAvailable: input.hitlAvailable,
+          expectsToolCall: () => false,
+        }) as OutputProcessorOrWorkflow<MalformedToolCallTripMetadata>,
+      ],
+      modelSettings: { temperature: 0 },
+    })
+    .catch((err: unknown) => {
+      // Zod AUTHORITY on the native lane: Mastra validates result.object against
+      // the supplied schema itself and THROWS its own MastraError (id
+      // STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED, carrying the real ZodError as
+      // `cause`) when the model's object violates the contract — live-probed
+      // 2026-06-05 against @mastra/core@1.41.0. That IS the "invalid model output
+      // ⇒ ZodError, fail_reason zod_validation" contract the emit_result lane
+      // upholds; surface it identically (ledger 'zod_validation', throw the
+      // underlying ZodError) instead of leaking the framework error. Any OTHER
+      // throw is a real model-call/transport failure (F1 parity): ledger it by
+      // its error name and propagate verbatim.
+      const zodCause = structuredOutputZodCause(err);
+      writeTestRunRecord(
+        {
+          runId: ledger.runId,
+          skill: ledger.skill,
+          createdAt: createdAtBucket(),
+          layer: ledger.layer,
+          provider: ledger.provider,
+          modelAlias: ledger.modelAlias,
+          costUsd: null,
+          latencyMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          pricingSource: "unavailable",
+          priceInputPerMtok: null,
+          priceOutputPerMtok: null,
+          promptVersion: ledger.promptVersion,
+          schemaVersion: ledger.schemaVersion,
+          failReason:
+            zodCause !== null ? "zod_validation" : err instanceof Error ? err.name : "model_call_failed",
+        },
+        ..._dbArg(_testOverrides),
+      );
+      throw zodCause ?? err;
+    });
+
+  const durationMs = Date.now() - startedAt;
+
+  const promptTokens = result.usage?.inputTokens ?? null;
+  const completionTokens = result.usage?.outputTokens ?? null;
+  const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
+  const priceColumns = pricingColumns(modelId, pricingSource);
+
+  const writeLedger = (failReason: string | null): void => {
+    writeTestRunRecord(
+      {
+        runId: ledger.runId,
+        skill: ledger.skill,
+        createdAt: createdAtBucket(),
+        layer: ledger.layer,
+        provider: ledger.provider,
+        modelAlias: ledger.modelAlias,
+        costUsd,
+        latencyMs: durationMs,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        pricingSource,
+        priceInputPerMtok: priceColumns.input,
+        priceOutputPerMtok: priceColumns.output,
+        promptVersion: ledger.promptVersion,
+        schemaVersion: ledger.schemaVersion,
+        failReason,
+      },
+      ..._dbArg(_testOverrides),
+    );
+  };
+
+  // Stage 4b/5 — #1244 fail-closed (same mapping as emit_result). A tripped
+  // processor RESOLVES with result.tripwire populated (live-probed; not a throw).
+  const trip = readMalformedTrip(result.tripwire);
+  if (trip !== null) {
+    writeLedger("malformed_tool_call");
+    if (input.hitlAvailable) {
+      return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
+    }
+    throw new MalformedToolCallAbort(trip.signals);
+  }
+
+  // Stage 5 — Zod AUTHORITY. result.object is advisory; input.schema is the law.
+  // A missing object (clean finish but no parsed structure) or a schema violation
+  // both fail 'zod_validation' — never fall through to an unvalidated object.
+  let object: z.infer<TSchema>;
+  try {
+    object = input.schema.parse(result.object) as z.infer<TSchema>;
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      writeLedger("zod_validation");
+    } else {
+      writeLedger(err instanceof Error ? err.name : "unknown_error");
+    }
+    throw err;
+  }
+
+  // Success — one ledger row, no fail reason.
+  writeLedger(null);
+
+  return {
+    object,
+    usage: {
+      costUsd,
+      durationMs,
+      pricingSource: pricingSource === "unavailable" ? "unavailable" : "computed",
+      promptTokens,
+      completionTokens,
+    },
+  };
+}
+
+/**
  * Read a malformed-tool-call trip out of the resolved result's `tripwire` field.
  * Returns the typed metadata when this processor fired, else null. We trust the
  * STRUCTURED metadata our own processor set (reason + signals), never string-match
@@ -483,6 +641,35 @@ function toZodError(validationError: { message: string }): z.ZodError {
       message: validationError.message,
     },
   ]);
+}
+
+/** Mastra error id thrown when native structured output fails schema validation. */
+const STRUCTURED_OUTPUT_VALIDATION_ID = "STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED" as const;
+
+/**
+ * If `err` is Mastra's native structured-output schema-validation failure
+ * (id STRUCTURED_OUTPUT_SCHEMA_VALIDATION_FAILED, live-probed 2026-06-05),
+ * return the underlying ZodError it carries on `cause` so the harness can surface
+ * the Zod-authority failure as a real ZodError (matching the emit_result lane).
+ * Returns null for any other error (a true model-call / transport failure).
+ *
+ * We key on the STRUCTURED, stable Mastra error `id` + a ZodError `cause` — never
+ * a message string-match. When the id matches but `cause` is not a ZodError
+ * (defensive), we synthesize a ZodError carrying the message so the contract
+ * "invalid model output ⇒ ZodError" still holds.
+ */
+function structuredOutputZodCause(err: unknown): z.ZodError | null {
+  if (
+    err === null ||
+    typeof err !== "object" ||
+    (err as { id?: unknown }).id !== STRUCTURED_OUTPUT_VALIDATION_ID
+  ) {
+    return null;
+  }
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof z.ZodError) return cause;
+  const message = err instanceof Error ? err.message : "structured output schema validation failed";
+  return toZodError({ message });
 }
 
 /**

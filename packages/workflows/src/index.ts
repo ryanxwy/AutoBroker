@@ -59,7 +59,6 @@ export {
 // owned here (归属裁定 2026-06-04). emit_result discipline + #1244 fail-closed.
 export {
   harness,
-  HarnessNotImplementedError,
   type HarnessLedgerContext,
 } from "./harness.js";
 

@@ -21,7 +21,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { HARNESS_DRIVER_KINDS, type HarnessDriverKind } from "@autobroker/core";
+import { HARNESS_DRIVER_KINDS, PROVIDERS, providerDriverKind, type HarnessDriverKind } from "@autobroker/core";
 import { z } from "zod";
 
 import type { AnchorSpec } from "./evaluator.js";
@@ -126,12 +126,13 @@ export interface Case {
 }
 
 /** Map provider → the driver_kind label asserted by the driver_kind anchor (the
- *  two-place lock-step value, §11). DeepSeek = deepseek_apikey; anthropic/openai
- *  labels are M4 TODOs in the product enum — kept here for the case→expect map. */
-export const PROVIDER_DRIVER_KIND: Record<string, HarnessDriverKind> = {
-  deepseek: "deepseek_apikey",
-  // anthropic_apikey / openai_apikey are M4 — not yet in HARNESS_DRIVER_KINDS.
-};
+ *  two-place lock-step value, §11). Derived from core's providerDriverKind so the
+ *  runner's expectDriverKind, this case→expect map, and the server's init-frame
+ *  emitter all key off ONE source. DeepSeek = deepseek_apikey (default);
+ *  anthropic_apikey / openai_apikey are the M4 cross-provider labels. */
+export const PROVIDER_DRIVER_KIND: Record<string, HarnessDriverKind> = Object.fromEntries(
+  PROVIDERS.map((p) => [p, providerDriverKind(p)]),
+);
 
 /** Refine one raw anchor block into the evaluator AnchorSpec union (fail LOUD on a
  *  malformed/unknown anchor — a typo in a case must never silently skip a check). */

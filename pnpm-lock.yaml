@@ -39,6 +39,9 @@ importers:
       '@autobroker/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@autobroker/model':
+        specifier: workspace:*
+        version: link:../../packages/model
       '@autobroker/tools':
         specifier: workspace:*
         version: link:../../packages/tools
