@@ -44,3 +44,12 @@ export {
   type MalformedToolCallProcessorOptions,
   type MalformedToolCallTripMetadata,
 } from "./malformedToolCallProcessor.js";
+
+// Spike-5: the library-mode Mastra instance (storage = mastra.db on disk, D1
+// dual-DB never-co-write). No dev server, no Cloud.
+export {
+  createMastraInstance,
+  getMastra,
+  resetMastraForTests,
+  type CreateMastraInstanceOptions,
+} from "./mastra.js";

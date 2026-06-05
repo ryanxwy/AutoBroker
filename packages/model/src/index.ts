@@ -34,3 +34,15 @@ export {
   MALFORMED_TOOL_CALL_REASON,
 } from "./malformedToolCall.js";
 export type { ToolTurnView, MalformedSignal } from "./malformedToolCall.js";
+
+// Self-managed pricing table + usage→cost helper (NULL-not-$0; ledger snapshot).
+export { PRICING, PRICING_SOURCE, computeCostUsd } from "./pricing.js";
+export type { ModelRate } from "./pricing.js";
+
+// Minimal M0 canonical-message → ModelMessage translator (flat text, fail-LOUD).
+export {
+  CANONICAL_ROLES,
+  toModelMessages,
+  UnsupportedCanonicalMessageError,
+} from "./messages.js";
+export type { CanonicalMessage, CanonicalRole } from "./messages.js";

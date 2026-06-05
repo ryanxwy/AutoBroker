@@ -40,6 +40,13 @@ export {
 // DB (single connection factory, re-exported from @autobroker/db).
 export { openDb, resolveDataDir, type Db } from "./db.js";
 
+// test_run_records ledger writer — the ONE write path (NULL-not-$0 enforced).
+export {
+  writeTestRunRecord,
+  SilentZeroCostError,
+  type TestRunRecordInsert,
+} from "./testRunRecords.js";
+
 // Pure offer math.
 export {
   validateOfferMath,
