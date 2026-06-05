@@ -2,21 +2,25 @@
   "name": "@autobroker/server",
   "version": "0.0.0",
   "private": true,
-  "description": "Layer 5 (app) — backend HTTP + SSE skill-run stream. Owns the embedded-host boot-recovery routine (telemetry kill -> deterministic tool re-registration -> suspended-run re-attach -> restart()/cancel() per age policy). Placeholder until Phase-0 spike 2.",
+  "description": "Layer 5 (app) — backend HTTP + SSE skill-run stream. Owns the embedded-host boot-recovery routine (telemetry kill -> deterministic tool re-registration -> suspended-run re-attach -> restart()/cancel() per age policy), the per-run SSE pubsub, the Mastra->product status projection, and the three-phase idempotent form-decision claim. Never imports @mastra directly (workflows-layer exports only) and never opens the product DB (tools closures only).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "@autobroker/core": "workspace:*",
     "@autobroker/tools": "workspace:*",
-    "@autobroker/workflows": "workspace:*"
+    "@autobroker/workflows": "workspace:*",
+    "fastify": "^5",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^4.0.0"
   }
 }

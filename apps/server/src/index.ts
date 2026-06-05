@@ -1,25 +1,43 @@
 /**
- * @autobroker/server — Layer 5 backend HTTP + SSE shell. PLACEHOLDER.
+ * @autobroker/server — Layer 5 backend HTTP + SSE entrypoint.
  *
- * Phase-0 deliverable (PHASE_0_foundation §2): apps/ holds server + Electron +
- * React SPA placeholders; the server owns the BOOT-RECOVERY routine, because
- * automatic recovery exists only inside `mastra dev` — an embedded library-mode
- * host must re-derive it itself:
+ * Boots the embedded library-mode host (telemetry kill → Mastra instance →
+ * storage init → boot recovery) and listens on 127.0.0.1:8100 (configurable via
+ * PORT). The trust boundary (§11): 127.0.0.1 only — no externally reachable port
+ * but this one.
  *
- *   1. telemetry kill — set MASTRA_TELEMETRY_DISABLED=1 BEFORE Mastra
- *      construction (zero PostHog egress, network-verified — INVARIANTS);
- *   2. deterministic tool re-registration by toolName (execute closures are
- *      not serialized; they are re-resolved at boot);
- *   3. listWorkflowRuns({status:'suspended'}) → re-attach the approval UI and
- *      resume via createRun({runId}).resume();
- *   4. listActiveWorkflowRuns() → per age policy restart() (per-step
- *      checkpoint resume) or cancel() (the reapStale replacement).
- *
- * The HTTP framework choice is a Phase-0 decision (Fastify v5 per the
- * ts-migration round); SSE drives the dashboard skill-run stream. All side
- * effects stay below, behind the @autobroker/tools L2 gate.
+ * The listen side-effect fires only when this module is the program entrypoint
+ * (`node dist/index.js`), never on import — so tests import buildServer() and
+ * drive inject()/an ephemeral listen() without this binding 8100.
  */
 
-// TODO(phase-0, spike 2): Mastra instance wiring + boot-recovery sequence +
-// HTTP/SSE surface. Placeholder so the app layer exists in the build graph.
-export {};
+import { pathToFileURL } from "node:url";
+
+import { buildServer, type BuiltServer } from "./server.js";
+
+export { buildServer, type BuiltServer } from "./server.js";
+export { boot, type BootResult } from "./boot.js";
+export { RunPubSub, type SseEvent, type EventKind, EVENT_KINDS } from "./runPubSub.js";
+export { projectStatus, MASTRA_RUN_STATUSES, type MastraRunStatus } from "./statusProjection.js";
+export { IntakeRunService } from "./intakeRuns.js";
+
+/** Default bind: 127.0.0.1:8100 (the trust-boundary host; §11 / BRIEF §4). */
+const HOST = "127.0.0.1";
+const DEFAULT_PORT = 8100;
+
+/** Boot + listen. Returns the built server (so a caller could close it). */
+export async function main(): Promise<BuiltServer> {
+  const port = Number(process.env.PORT ?? DEFAULT_PORT);
+  const built = await buildServer();
+  await built.app.listen({ host: HOST, port });
+  console.info(JSON.stringify({ server: "listening", host: HOST, port }));
+  return built;
+}
+
+// Entry guard: only listen when run directly (not on import).
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
