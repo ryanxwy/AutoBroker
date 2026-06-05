@@ -1,30 +1,36 @@
 /**
- * harness.generate — provider-neutral structured-generation probe/helper.
+ * harness.generate — provider-neutral structured-generation contract (Layer 2).
  *
- * STUB: provider-neutral helper for schema-valid structured output. Callers pass
- * a `useCase` (NOT a provider) and a Zod `schema`; policy() picks the alias and
- * the registry resolves the LanguageModel. Phase 0 wires the resolved model into
- * Mastra agents/workflows, which own the api-key loop end to end.
+ * OWNERSHIP (归属裁定 2026-06-04, plan-repo DECISIONS.html): the Mastra Agent
+ * loop lives in `@autobroker/workflows`; `@autobroker/model` keeps ONLY the pure
+ * pieces and the signature types. Concretely:
+ *   - model owns: useCase→alias policy, the structured-output STRATEGY choice
+ *     (`chooseStructuredOutputStrategy`), the #1244 detector / fail-closed
+ *     assertion, Zod post-validation surface, the cost/usage table, and the
+ *     canonical-message ↔ ModelMessage translator.
+ *   - workflows owns: the Mastra Agent loop end-to-end AND exports the runnable
+ *     `harness.generate` facade. It imports these types + helpers from here.
  *
- * Loop ownership: Mastra owns the agent loop. This helper owns provider policy,
- * structured-output strategy selection, Zod post-validation, usage accounting,
- * and the #1244 detector/Processor helpers attached to Mastra agents.
+ * Why the split: only the api-key lane lets the AI SDK own the tool loop, and
+ * Mastra is the framework that drives that loop. `@mastra/*` may only be
+ * imported in `@autobroker/workflows` (the five-layer wall), so the actual
+ * loop — and therefore the facade `const harness` — cannot live in this layer.
+ * This file is the typed seam between the two.
  *
- * Structured-output rule (currentTruth §"结构化输出机制"): when the routed model
- * cannot mix Output.object with tools (DeepSeek — #1244), use the single
- * `emit_result` tool (Zod-validated in-process) OR a two-phase pipeline
- * (tools-only loop, then a separate no-tools structured call).
- * NEVER mix structured object output with tools on such a model. The strategy is chosen
- * from `policy(useCase).capabilities.supportsOutputObjectWithTools`.
+ * Structured-output rule (currentTruth §"结构化输出机制" / #1244): when the
+ * routed model cannot mix `Output.object` with tools (DeepSeek — per-step
+ * json_schema injection provokes the text-dump), the workflows loop uses the
+ * single `emit_result` tool (Zod-validated in-process) instead of structured
+ * object output. NEVER mix structured object output with tools on such a model.
+ * The strategy is chosen HERE from
+ * `policy(useCase).capabilities.supportsOutputObjectWithTools` via
+ * `chooseStructuredOutputStrategy`, then honored by the loop.
  */
 
 import { z } from "zod";
-import { policy, type UseCase } from "./policy.js";
-import { resolveModel } from "./registry.js";
-import {
-  assertToolTurnOrFailClosed,
-  type MalformedSignal,
-} from "./malformedToolCall.js";
+import type { CapabilityFlags } from "@autobroker/core";
+import type { UseCase } from "./policy.js";
+import type { MalformedSignal } from "./malformedToolCall.js";
 
 export interface HarnessGenerateInput<TSchema extends z.ZodTypeAny> {
   /** Provider-neutral use-case; policy() maps it to a ModelAlias. */
@@ -62,40 +68,26 @@ export interface HarnessSuspend {
 }
 
 /**
- * Provider-neutral structured generation.
- *
- * Skeleton of the intended control flow (each step is TODO):
- *   1. const route = policy(input.useCase); const model = resolveModel(route.alias);
- *   2. choose structured-output strategy from route.capabilities:
- *        supportsOutputObjectWithTools ? Output.object+tools : emit_result tool.
- *   3. in the Mastra agent loop, after EACH tool-expecting step call
- *      assertToolTurnOrFailClosed(turn, hitlAvailable):
- *        - thrown MalformedToolCallAbort propagates (no HITL),
- *        - {suspend:true} returns a HarnessSuspend to the workflow layer.
- *   4. Zod post-validate against input.schema (belt-and-suspenders).
- *   5. compute usage -> cost via the self-managed pricing table; null+flag if
- *      the provider gave no usage.
- *
- * The signature is final; the body is intentionally unimplemented.
+ * The two structured-output strategies the workflows loop can run.
+ *   - `output_object`: native `Output.object` (+ tools) in one model step.
+ *   - `emit_result`:   a single `emit_result` tool carrying a Zod schema; the
+ *     ONLY safe path when the model cannot mix object output with tools.
  */
-export async function generate<TSchema extends z.ZodTypeAny>(
-  input: HarnessGenerateInput<TSchema>,
-): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
-  const route = policy(input.useCase);
-  const _model = resolveModel(route.alias);
-  void _model; // referenced so the wiring intent is type-checked; loop is TODO.
+export type StructuredOutputStrategy = "emit_result" | "output_object";
 
-  // The detector is part of this loop's contract; reference it so the import is
-  // load-bearing and the fail-closed seam is visible at the type level.
-  void assertToolTurnOrFailClosed;
-
-  // TODO(Phase 0): implement the api-key tool loop + emit_result / two-phase
-  // strategy selection + Zod post-validation + cost/time accounting per the
-  // control-flow skeleton above. Until then this entry is unimplemented.
-  throw new Error("harness.generate: not implemented (Phase 0 foundation stub)");
+/**
+ * Pure strategy selector — the load-bearing #1244 decision, kept in the model
+ * layer so the workflows loop never re-derives it.
+ *
+ * Returns `emit_result` exactly when the routed model CANNOT mix structured
+ * object output with tools (`supportsOutputObjectWithTools === false`, e.g.
+ * DeepSeek), and `output_object` otherwise. No provider names appear here; the
+ * decision is driven purely by the capability flag. (safetyInvariants §5.)
+ */
+export function chooseStructuredOutputStrategy(
+  capabilities: CapabilityFlags,
+): StructuredOutputStrategy {
+  return capabilities.supportsOutputObjectWithTools
+    ? "output_object"
+    : "emit_result";
 }
-
-/** Provider-neutral harness facade. Skills call `harness.generate({...})`. */
-export const harness = {
-  generate,
-} as const;

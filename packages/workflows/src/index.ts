@@ -53,3 +53,12 @@ export {
   resetMastraForTests,
   type CreateMastraInstanceOptions,
 } from "./mastra.js";
+
+// The runnable harness.generate facade (the M0 critical path): the Mastra Agent
+// loop end-to-end. Types + pure helpers live in @autobroker/model; the loop is
+// owned here (归属裁定 2026-06-04). emit_result discipline + #1244 fail-closed.
+export {
+  harness,
+  HarnessNotImplementedError,
+  type HarnessLedgerContext,
+} from "./harness.js";

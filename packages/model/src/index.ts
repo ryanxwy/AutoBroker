@@ -17,13 +17,20 @@ export { registry, resolveModel, defaultProvider } from "./registry.js";
 export { policy, USE_CASES } from "./policy.js";
 export type { UseCase, PolicyResolution } from "./policy.js";
 
-// Provider-neutral structured-generation entry (api-key lane owns the tool loop).
-export { harness, generate } from "./harness.js";
+// Provider-neutral harness contract: signature types + the pure structured-output
+// strategy selector. The runnable harness.generate facade + Mastra Agent loop
+// live in @autobroker/workflows (归属裁定 2026-06-04).
+export { chooseStructuredOutputStrategy } from "./harness.js";
 export type {
   HarnessGenerateInput,
   HarnessGenerateResult,
   HarnessSuspend,
+  StructuredOutputStrategy,
 } from "./harness.js";
+
+// TEST SUPPORT ONLY — fake LanguageModel factories so other layers can unit-test
+// agent loops without importing `ai` (the dep wall keeps `ai` types in model).
+export { makeStaticToolCallModel, makeProseDumpModel } from "./testSupport.js";
 
 // #1244 fail-closed malformed-tool-call detector (loop-level safety boundary).
 export {
