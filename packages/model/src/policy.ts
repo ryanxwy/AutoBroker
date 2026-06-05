@@ -28,8 +28,20 @@ export const USE_CASES = [
   "dealer_reply_extract",
   /** Render a Telegram headline from already-computed audit flags (Phase 1). */
   "quote_audit_headline",
-  /** Verify trim at intake; force-override is audited (Phase 1 root dep). */
-  "search_profile_intake",
+  /**
+   * Intake trim-verify (M1, AI_ORCH §4.2): LLM checks whether `trim` truly
+   * exists for the make/model/year and, when not, suggests real alternatives.
+   * Its {valid,...} output drives the force-override audit branch. Both intake
+   * useCases route to deepseek.chat (AI_ORCH §4.3, replacing the single
+   * `search_profile_intake` stub per BRIEF §4).
+   */
+  "intake_trim_verify",
+  /**
+   * Intake freeform prefill (M1, AI_ORCH §4.1): an EXTRACTION pass over a user's
+   * one-liner that pre-seeds the intake form. All-nullable subset; never extracts
+   * PII/budget (D-AI-3). Prefill only seeds the form — it never persists.
+   */
+  "intake_freeform_prefill",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
 ] as const;
@@ -45,7 +57,12 @@ export type UseCase = (typeof USE_CASES)[number];
 const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   dealer_reply_extract: "deepseek.chat",
   quote_audit_headline: "deepseek.cheap",
-  search_profile_intake: "deepseek.chat",
+  // Both intake LLM passes route to deepseek.chat (deepseek-v4-flash, temp 0,
+  // per-step thinking:disabled + named tool_choice — emit_result hard constraint,
+  // AI_ORCH §11.2 / §4.3). emit_result strategy (supportsOutputObjectWithTools
+  // false) is shared with every DeepSeek alias — no Output.object + tools mix.
+  intake_trim_verify: "deepseek.chat",
+  intake_freeform_prefill: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
 };
 

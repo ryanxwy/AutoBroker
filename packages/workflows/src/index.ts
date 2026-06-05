@@ -80,3 +80,36 @@ export {
   type RecoverOnBootOptions,
   type StartRunGuardedArgs,
 } from "./runtimeGlue.js";
+
+// M1: the search_profile_intake skill workflow (the first skill) — one flat
+// linear createWorkflow, 8 steps, no nested workflow. The test-only deps seam is
+// exported so the offline in-stack tests drive the real suspend/resume chain.
+export {
+  searchProfileIntakeWorkflow,
+  SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
+  __setIntakeDepsForTests,
+  __resetIntakeDepsForTests,
+  type IntakeWorkflowDeps,
+} from "./searchProfileIntake.js";
+
+// The intake skill contracts (emit schemas + resume schemas + prompt builders),
+// co-located with the skill (skill-local, single-use; see header rationale).
+export {
+  IntakePrefillSchema,
+  TrimVerifyResultSchema,
+  CollectResumeSchema,
+  ForceOverrideResumeSchema,
+  AmbiguousLocationResumeSchema,
+  MalformedRetryResumeSchema,
+  buildPrefillPrompt,
+  buildTrimVerifyPrompt,
+  type IntakePrefill,
+  type TrimVerifyResult,
+} from "./intakeContracts.js";
+
+// The registered-workflows map for createMastraInstance({ workflows }) and the
+// ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
+export {
+  REGISTERED_WORKFLOWS,
+  REGISTERED_WORKFLOW_IDS,
+} from "./registeredWorkflows.js";
