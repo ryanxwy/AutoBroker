@@ -27,9 +27,9 @@
  * the @autobroker/tools L2 gate.
  */
 
-// Spike-1 ESM/dependency smoke (offline half) is DONE: @mastra/core@1.38.0 +
-// @mastra/memory@1.20.1 + @mastra/libsql@1.12.0 are installed as an EXACT
-// date-matched trio (2026-06-02) — the published peer ranges are looser than
+// Spike-1 ESM/dependency smoke (offline half) is DONE: @mastra/core@1.41.0 +
+// @mastra/memory@1.20.2 + @mastra/libsql@1.12.1 are installed as an EXACT
+// date-matched trio (bumped-then-frozen 2026-06-04 ruling) — the published peer ranges are looser than
 // reality (libsql@1.12.1 imports NotificationsStorage that core@1.38 lacks;
 // mastra#10602-class residue), so bump all three together or none.
 // `Mastra` / `Memory` / `LibSQLStore` / `createWorkflow` (subpath
@@ -62,3 +62,21 @@ export {
   HarnessNotImplementedError,
   type HarnessLedgerContext,
 } from "./harness.js";
+
+// Spikes 2 & 7: runtime glue — boot recovery (suspended re-attach + stale
+// 'running' restart/cancel) and the duplicate-runId guard. Thin wrappers over
+// the Mastra instance/workflow/run API (D4: no engine seam).
+export {
+  recoverOnBoot,
+  restartStaleRun,
+  cancelStaleRun,
+  startRunGuarded,
+  resetRuntimeGlueForTests,
+  DuplicateRunIdError,
+  type BootRecoveryReport,
+  type UnclassifiedRun,
+  type ReattachableSuspendedRun,
+  type StaleRunningRun,
+  type RecoverOnBootOptions,
+  type StartRunGuardedArgs,
+} from "./runtimeGlue.js";
