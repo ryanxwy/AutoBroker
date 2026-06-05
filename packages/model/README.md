@@ -22,13 +22,13 @@ core → model → workflows → tools → app
 
 | File | Owns |
 | --- | --- |
-| `src/registry.ts` | `createProviderRegistry({ deepseek, anthropic, openai })` with `customProvider` tier aliases; `resolveModel(alias)` returns AI SDK 6 `LanguageModel` instances for Mastra agents |
+| `src/registry.ts` | `createProviderRegistry({ deepseek, anthropic, openai })` with `customProvider` capability aliases; `resolveModel(alias)` returns AI SDK 6 `LanguageModel` instances for Mastra agents |
 | `src/policy.ts` | `policy(useCase) → { alias, provider, capabilities }` — workflows name only a `useCase` |
 | `src/harness.ts` | `harness.generate({ useCase, schema, prompt, hitlAvailable })` — provider-neutral structured-generation/probe helper; Phase 0 wires resolved models into Mastra workflows |
 | `src/malformedToolCall.ts` | the **#1244 fail-closed** malformed-tool-call detector/Processor helpers (`detectMalformedToolCall`, `assertToolTurnOrFailClosed`, `MalformedToolCallAbort`) |
 | `src/index.ts` | the public re-export surface |
 
-## Provider policy (2026-06-03 current)
+## Provider policy (2026-06-04 current)
 
 **DeepSeek is the DEFAULT api-key provider AND the live-harness test agent.**
 **Anthropic and OpenAI are equally first-class, switchable api-key lanes** — the
@@ -47,12 +47,18 @@ package enforces no privacy gate.
 ### Aliases and routing
 
 A `ModelAlias` is `{provider}.{tier}` (from `@autobroker/core`), e.g.
-`deepseek.cheap`, `anthropic.strong`. The registry separator is `.` so an alias
+`deepseek.cheap`, `anthropic.strong`. These are model-capability aliases, not
+per-provider L1-L5 harness tiering. The registry separator is `.` so an alias
 string *is* a registry key. Skills/workflows never name a provider — they call
 `policy(useCase)`; swapping the model behind a use-case is an edit in
 `policy.ts`/`registry.ts`, nowhere else. `policy()` is **fail-loud**: an unmapped
 use-case or a missing `CapabilityFlags` row throws rather than silently
 down-routing.
+
+DeepSeek ids are pinned now (`deepseek-v4-flash` / `deepseek-v4-pro`).
+Anthropic/OpenAI aliases are present because those lanes are first-class, but
+their exact ids and `CapabilityFlags` rows remain an M4 cross-provider smoke
+obligation before acceptance.
 
 ## Mastra owns the api-key agent loop
 
@@ -80,10 +86,12 @@ Driven by `CapabilityFlags.supportsOutputObjectWithTools`:
 
 ## #1244 fail-closed detector
 
-`malformedToolCall.ts` is a **safety boundary**, not a convenience. DeepSeek
-intermittently emits a tool call as plain text in `content`. If the loop treats
-that as "no tool call → final prose", an approval gate that should fire never
-does — and that lands on the 3 irreversible mutation skills.
+`malformedToolCall.ts` is a **safety boundary**, not a convenience. Live probes
+on 2026-06-04 narrowed the #1244 trigger: pure tool loops were clean (0/56), but
+mixing structured output (`response_format` / JSON schema) with tools produced
+27/36 silent tool-skips and 2/36 plain-text dumps. If the loop treats that as
+"no tool call → final prose", an approval gate that should fire never does —
+and that lands on the 3 irreversible mutation skills.
 
 Policy, enforced after every tool-expecting step:
 
@@ -106,7 +114,9 @@ pnpm --filter @autobroker/model typecheck
 
 `ai@^6` is intentional (not v7 — `LanguageModelV4` would break V3-spec community
 providers). CI adds a major-bump ignore. Provider adapters: `@ai-sdk/anthropic`,
-`@ai-sdk/openai`, `@ai-sdk/deepseek`. Phase 0 must pin DeepSeek aliases to the
-current explicit ids: `deepseek-v4-flash` for the default/cheap path and
-`deepseek-v4-pro` for the reasoner/strong path. Thinking is default-off for
-schema-bound skill pipelines.
+`@ai-sdk/openai`, `@ai-sdk/deepseek`. Phase 0 pins DeepSeek aliases to the
+current explicit ids: `deepseek-v4-flash` for default/chat/cheap/reasoner and
+`deepseek-v4-pro` for strong. Thinking is a per-call parameter: chat/rail
+defaults to thinking ON + `reasoning_effort:"high"`, while schema-bound
+`emit_result` steps force thinking OFF + `temperature:0` because named/forced
+tool choice is rejected in thinking mode.

@@ -2,9 +2,9 @@
  * Provider registry (Layer 2).
  *
  * STUB: wires the three first-class api-key providers behind a single
- * `createProviderRegistry`, exposing tier aliases so callers resolve a model by
- * a provider-neutral `{provider}.{tier}` ModelAlias string. Swapping the
- * concrete model behind a tier is a one-string edit here.
+ * `createProviderRegistry`, exposing capability aliases so callers resolve a
+ * model by a provider-neutral `{provider}.{tier}` ModelAlias string. Swapping
+ * the concrete model behind an alias is a one-string edit here.
  *
  * Override (2026-06-02): DeepSeek is the DEFAULT api-key provider AND the
  * live-harness test agent. Anthropic + OpenAI are equally first-class,
@@ -18,6 +18,8 @@
  *   - subscription/CLI-spawn lanes still do not fire an in-process loop over our
  *     tools (T1), so their side-effect gate routes through the same L2 handler.
  *   - alias = `{provider}.{tier}`, tier in { reasoner, chat, cheap, strong }.
+ *     These are model-capability aliases, not the forbidden per-provider L1-L5
+ *     harness tiering.
  */
 
 import { anthropic } from "@ai-sdk/anthropic";
@@ -39,13 +41,17 @@ const deepseek = createDeepSeek();
 /**
  * Tier -> concrete model bindings per provider.
  *
- * DeepSeek ids are pinned per D3 (ARCH_PROVIDER_ROUTER, 2026-06-03): the
- * deepseek-chat/deepseek-reasoner aliases deprecate 2026-07-24. V4 thinking is
- * a REQUEST PARAMETER on a shared model id (extra_body thinking:enabled +
- * reasoning_effort), not a separate "-thinking" model — so the reasoner tier
- * binds the same deepseek-v4-flash id and the thinking flag is set per-call
- * (v4-pro only for the hardest planning useCases). cheap/chat/strong run
- * thinking-OFF (explicit), temperature:0 for structured pipelines.
+ * DeepSeek ids are pinned per D3 (ARCH_PROVIDER_ROUTER, revised 2026-06-04):
+ * the deepseek-chat/deepseek-reasoner aliases deprecate 2026-07-24. V4 thinking
+ * is a REQUEST PARAMETER on a shared model id, not a separate "-thinking" model.
+ * This registry binds model ids only; call sites set thinking per step:
+ * chat/rail defaults to thinking ON + reasoning_effort:"high", while structured
+ * emit_result steps force thinking OFF + temperature:0 because named/forced
+ * tool_choice is rejected in thinking mode.
+ *
+ * Cross-provider aliases are intentionally present for the first-class lanes.
+ * Their exact ids/capability rows are still verified in the M4 cross-provider
+ * smoke milestone before they are treated as acceptance-grade.
  */
 export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, typeof SEPARATOR> =
   createProviderRegistry(
