@@ -65,7 +65,7 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
 
     anthropic: customProvider({
       languageModels: {
-        cheap: anthropic("claude-haiku-4-5"), // TODO: confirm ids per catalog
+        cheap: anthropic("claude-haiku-4-5"),
         chat: anthropic("claude-sonnet-4-5"),
         strong: anthropic("claude-opus-4-1"),
         reasoner: anthropic("claude-sonnet-4-5"),
@@ -75,7 +75,7 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
 
     openai: customProvider({
       languageModels: {
-        cheap: openai("gpt-4.1-mini"), // TODO: confirm ids per catalog
+        cheap: openai("gpt-4.1-mini"),
         chat: openai("gpt-4.1"),
         strong: openai("o3"),
         reasoner: openai("o3"),
