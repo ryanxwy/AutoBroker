@@ -8,11 +8,9 @@ load-bearing work and humans approving anything irreversible.
 This repository is the **full-TypeScript rebuild** of AutoBroker. It is built
 from the ground up, one skill at a time in dependency × risk order, against the
 frozen legacy Python implementation (`../AutoBroker-Python`) as a read-only
-parity oracle. The current source-of-intent is the 2026-06-03 browser-first
-plan: Mastra 1.x owns orchestration and durable workflow state, AI SDK 6 is the
-provider layer, and React/Vite is the local UI surface before the optional
-Electron shell. See `../AutoBroker-dev-plan` for the canonical phase plan,
-architecture mirror, and live-harness standard.
+parity oracle. Mastra 1.x owns orchestration and durable workflow state, AI
+SDK 6 is the provider layer, and React/Vite is the local UI surface before the
+optional Electron shell.
 
 ---
 
@@ -95,18 +93,7 @@ invariant set.
 
 ---
 
-## The plan
-
-The canonical phase plan, architecture decisions (`DECISIONS.html`), live-harness
-standard, and daily progress reports live in the docs repo next door:
-
-- **`../AutoBroker-dev-plan`** — phases (0–6), architecture mirror, harness
-  standard, daily reports. The current plan is revised 2026-06-03 to
-  browser-first: Phase 0 Mastra backbone; Phase 1 deterministic core + intake;
-  Phase 2 browser service + scans; Phase 3 email service + LLM extraction;
-  Phase 4 orchestration/reporting; Phase 5 irreversible fake-send; Phase 6
-  optional Electron. That repo describes *what to build and in what order*;
-  this repo answers *what is actually built today*.
+## Legacy parity
 
 The legacy Python implementation is frozen at **`../AutoBroker-Python`** and is
 read-only until all 17 skills reach parity-GREEN, at which point AutoBroker (TS)
