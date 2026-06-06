@@ -1,28 +1,27 @@
 /**
- * routes — the M1 Fastify route table (BACKEND_SERVICES §3, §7, §13.2). All
- * routes under /api, bound 127.0.0.1 by the server. Request bodies validated
- * with Zod (manual parse, NOT Fastify JSON-schema — keeps zod v4 as the single
- * validator and the §13.2 envelope shapes exact). The error envelope is centralized
- * in the server's setErrorHandler; handlers throw typed errors.
+ * routes — the Fastify route table. All routes under /api, bound 127.0.0.1 by
+ * the server. Request bodies validated with Zod (manual parse, NOT Fastify
+ * JSON-schema — keeps zod v4 as the single validator and the error-envelope
+ * shapes exact). The error envelope is centralized in the server's
+ * setErrorHandler; handlers throw typed errors.
  *
- * M1 SCOPE (the swimlane "headless intake GREEN"): start intake, status, SSE
- * stream, form-decision (three-phase claim), profiles read, skills manifest,
- * mode. The task brief's headless start uses POST /api/skill-runs directly
- * (delta vs §3.2's POST /sessions/{id}/turns, which routes intake through the
- * rail) — recorded in api_findings.
+ * Intake surface: start intake, status, SSE stream, form-decision (three-phase
+ * claim), profiles read, skills manifest, mode. The headless start uses POST
+ * /api/skill-runs directly (rather than routing intake through the rail via POST
+ * /sessions/{id}/turns).
  *
- * M2 SCOPE (sessions-as-thread projection, §3.1/§6): sessions CRUD (POST/GET/
+ * Sessions surface (sessions-as-thread projection): sessions CRUD (POST/GET/
  * GET:id/PATCH/DELETE), the PATCH pin null-vs-omitted semantic, list-by-pin
- * (?pinned_profile_id) for the 0/1/2+ counts, and the D-AI-6 intake fork wired
- * onto POST /api/skill-runs (from_session_id forks a fresh unpinned session +
- * carries an IntakeScopeNotice when the source was pinned). Sessions are Mastra
- * Memory threads behind the SessionService → workflows RailSessionStore facade;
- * this route layer owns the wire-case projection only.
+ * (?pinned_profile_id) for the 0/1/2+ counts, and the intake fork wired onto
+ * POST /api/skill-runs (from_session_id forks a fresh unpinned session + carries
+ * an IntakeScopeNotice when the source was pinned). Sessions are Mastra Memory
+ * threads behind the SessionService → workflows RailSessionStore facade; this
+ * route layer owns the wire-case projection only.
  *
- * WIRE CASE CONTRACT (§3): request fields camelCase where the route table says so;
- * for the headless M1 start the task BUILD body is snake_case (input_mode,
- * freeform_text, seed_fields) matching the workflow input — kept verbatim. Response
- * profile views are snake_case (SearchProfileView mirrors the DB column case, §3.3).
+ * WIRE CASE CONTRACT: request fields camelCase where the route table says so;
+ * the headless start body is snake_case (input_mode, freeform_text, seed_fields)
+ * matching the workflow input — kept verbatim. Response profile views are
+ * snake_case (SearchProfileView mirrors the DB column case).
  *
  * Dependency wall: app layer. Imports core (schemas), tools (DB reads via openDb +
  * resolveDataDir + the resolver) — NEVER @mastra, NEVER drizzle/better-sqlite3
@@ -34,6 +33,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import { openDb, resolveDataDir, type Db } from "@autobroker/tools";
+
+import { IMPLEMENTED_SKILLS } from "@autobroker/skills";
 
 import {
   IntakeRunService,
@@ -47,24 +48,24 @@ import type { RunPubSub } from "./runPubSub.js";
 import { DuplicateRunIdError } from "@autobroker/workflows";
 import type { SessionService, IntakeScopeNotice } from "./sessions.js";
 
-/** The headless start body (task BUILD §5). skill is fixed to the one M1 skill.
- *  M2: an optional `session_id` links the run to a rail session (thread). When
- *  the run is started from a PINNED session, the caller passes the SOURCE session
- *  id as `from_session_id` so the route forks a fresh unpinned session (D-AI-6)
- *  and the run links to the FORK, not the source. */
+/** The headless start body. skill is fixed to the one registered skill.
+ *  An optional `session_id` links the run to a rail session (thread). When the
+ *  run is started from a PINNED session, the caller passes the SOURCE session id
+ *  as `from_session_id` so the route forks a fresh unpinned session and the run
+ *  links to the FORK, not the source. */
 const StartBodySchema = z.object({
-  skill: z.literal("search_profile_intake"),
+  skill: z.literal(INTAKE_SKILL),
   input_mode: z.enum(["slash", "freeform"]),
   freeform_text: z.string().nullable().optional(),
   seed_fields: z.record(z.string(), z.unknown()).nullable().optional(),
-  /** Link the run directly to an existing session (M2 association). */
+  /** Link the run directly to an existing session (run↔session association). */
   session_id: z.string().nullable().optional(),
   /** The session intake was TRIGGERED from (slash/freeform). When pinned, the
    *  route forks a fresh unpinned session and carries an IntakeScopeNotice. */
   from_session_id: z.string().nullable().optional(),
 });
 
-/** POST /api/sessions body (camelCase per §6.2). */
+/** POST /api/sessions body (camelCase). */
 const CreateSessionBodySchema = z
   .object({
     title: z.string().nullable().optional(),
@@ -72,9 +73,9 @@ const CreateSessionBodySchema = z
   })
   .strict();
 
-/** PATCH /api/sessions/:id body (camelCase per §6.2). The null-vs-omitted
- *  semantic (§3.1) is preserved by reading the parsed object's OWN-key presence
- *  below — Zod `.optional()` keeps an omitted key absent vs an explicit null. */
+/** PATCH /api/sessions/:id body (camelCase). The null-vs-omitted semantic is
+ *  preserved by reading the parsed object's OWN-key presence below — Zod
+ *  `.optional()` keeps an omitted key absent vs an explicit null. */
 const PatchSessionBodySchema = z
   .object({
     title: z.string().nullable().optional(),
@@ -82,7 +83,7 @@ const PatchSessionBodySchema = z
   })
   .strict();
 
-/** A typed route error mapped to the §13.2 envelope by the server's handler. */
+/** A typed route error mapped to the error envelope by the server's handler. */
 export class RouteError extends Error {
   readonly code: string;
   readonly status: number;
@@ -110,19 +111,22 @@ export interface RouteDeps {
   sessions: SessionService;
 }
 
-/** The static skill manifest (§3.4) — projected from the one registered skill. */
-const SKILL_MANIFEST = {
-  name: INTAKE_SKILL,
+/** The skill manifest list — projected from the implemented registry entries.
+ *  name/summary/inputs/outputs come from @autobroker/skills; sensitive derives
+ *  from the registry riskClass (read_only → not sensitive); version/retries are
+ *  this API's manifest metadata. The wire shape is unchanged. */
+const SKILL_MANIFEST = IMPLEMENTED_SKILLS.map((s) => ({
+  name: s.id,
   version: "m1-v1",
-  summary: "Create a new-car search profile from a slash form or freeform prose.",
-  inputs: ["input_mode", "freeform_text", "seed_fields"],
-  outputs: "search_profile",
-  sensitive: false,
+  summary: s.summary,
+  inputs: s.inputs,
+  outputs: s.outputs,
+  sensitive: s.riskClass !== "read_only",
   retries: 0,
-} as const;
+}));
 
 /** Parse a body with a Zod schema, throwing a 400 content_invalid RouteError with
- *  a JSON-pointer field on failure (the unified §13.2 shape). */
+ *  a JSON-pointer field on failure (the unified error-envelope shape). */
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -146,8 +150,8 @@ function withDb<T>(fn: (db: Db) => T): T {
   }
 }
 
-/** Read one profile row by id as the snake_case SearchProfileView (§3.3). Returns
- *  null when absent. Goes through openDb (tools); raw better-sqlite3 select. */
+/** Read one profile row by id as the snake_case SearchProfileView. Returns null
+ *  when absent. Goes through openDb (tools); raw better-sqlite3 select. */
 function readProfileRow(db: Db, id: string): Record<string, unknown> | null {
   const row = db.$client
     .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
@@ -155,13 +159,14 @@ function readProfileRow(db: Db, id: string): Record<string, unknown> | null {
   return row ?? null;
 }
 
-/** List profile rows (snake_case views), newest-first by ROWID (§3.3 / resolver
- *  ROWID DESC ruling). status filter: active|deleted|all (default excludes none at
- *  M1 — there is no soft-delete column yet; we return all and let the UI count). */
+/** List profile rows (snake_case views), newest-first by ROWID (matching the
+ *  resolver's ROWID DESC ordering). status filter: active|deleted|all (default
+ *  excludes none — there is no soft-delete column yet; we return all and let the
+ *  UI count). */
 function listProfileRows(db: Db, status: string | undefined): Record<string, unknown>[] {
-  // M1 has no `deleted` lifecycle column; the status query param is accepted for
-  // forward-compat but only 'active' meaningfully filters (status='active' OR
-  // NULL = v1-implicit-active, per the resolver). Default = all rows.
+  // There is no `deleted` lifecycle column yet; the status query param is accepted
+  // for forward-compat but only 'active' meaningfully filters (status='active' OR
+  // NULL = implicit-active, matching the resolver). Default = all rows.
   let sql = "SELECT * FROM search_profiles";
   if (status === "active") {
     sql += " WHERE status = 'active' OR status IS NULL";
@@ -171,7 +176,7 @@ function listProfileRows(db: Db, status: string | undefined): Record<string, unk
 }
 
 /**
- * Register all M1 routes on the Fastify instance under /api.
+ * Register all routes on the Fastify instance under /api.
  */
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { intake, pubsub, sessions } = deps;
@@ -185,11 +190,11 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       seed_fields: body.seed_fields ?? null,
     };
 
-    // INTAKE FORK (D-AI-6 / 裁定⑧): intake never inherits/sets a pin. When the
-    // caller passes a `from_session_id` (the session intake was triggered from),
-    // fork a FRESH UNPINNED session; if the source was pinned, carry a
-    // non-skippable IntakeScopeNotice. The run links to the FORK. When the caller
-    // passes an explicit `session_id` (already-unpinned rail) we link to it
+    // INTAKE FORK (intake-from-pinned fork rule): intake never inherits/sets a
+    // pin. When the caller passes a `from_session_id` (the session intake was
+    // triggered from), fork a FRESH UNPINNED session; if the source was pinned,
+    // carry a non-skippable IntakeScopeNotice. The run links to the FORK. When the
+    // caller passes an explicit `session_id` (already-unpinned rail) we link to it
     // directly (no fork). Headless (neither) → no session link.
     let sessionId: string | null = body.session_id ?? null;
     let scopeNotice: IntakeScopeNotice | null = null;
@@ -203,8 +208,8 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       const { runId } = await intake.start({ input, sessionId });
       reply.code(201);
       // The IntakeScopeNotice rides the start response so the rail can render it
-      // as the forked session's first system part (non-skippable, 裁定⑧). null
-      // when the fork came from an unpinned/absent source (nothing to confuse).
+      // as the forked session's first system part (non-skippable). null when the
+      // fork came from an unpinned/absent source (nothing to confuse).
       return { run_id: runId, session_id: sessionId, scope_notice: scopeNotice };
     } catch (err) {
       if (err instanceof DuplicateRunIdError) {
@@ -231,7 +236,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const { id } = req.params as { id: string };
     const sub = pubsub.subscribe(id);
     if (sub === null) {
-      // 404 when the run is unknown to the pubsub (not live, §3.2).
+      // 404 when the run is unknown to the pubsub (not live).
       throw new RouteError("no_skill_run", 404, `no skill run ${id}`);
     }
 
@@ -247,11 +252,11 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     });
 
     const writeFrame = (ev: { ts: string; kind: string; payload: unknown }): void => {
-      // §4.1: data: <compact-json>\n\n — NO event: named line.
+      // SSE frame: data: <compact-json>\n\n — NO event: named line.
       raw.write(`data: ${JSON.stringify(ev)}\n\n`);
     };
 
-    // Replay the ordered backlog (§4.3), then live frames from the queue.
+    // Replay the ordered backlog, then live frames from the queue.
     for (const ev of sub.snapshot) writeFrame(ev);
 
     if (sub.isTerminal || sub.queue === null) {
@@ -328,9 +333,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return row;
   });
 
-  // ---- GET /api/skills — static manifest (§3.4) ----------------------------
+  // ---- GET /api/skills — manifest of implemented skills --------------------
   app.get("/api/skills", async () => {
-    return [SKILL_MANIFEST];
+    return SKILL_MANIFEST;
   });
 
   // ---- GET /api/mode — harness preflight {active_db, data_dir} -------------
@@ -342,7 +347,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
 
   // ========================================================================
-  // sessions (chat-rail = Mastra Memory threads) — M2 (§3.1, §6)
+  // sessions (chat-rail = Mastra Memory threads).
   // Request bodies camelCase; response bodies snake_case (SessionResponse).
   // ========================================================================
 
@@ -375,14 +380,14 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return session;
   });
 
-  // ---- PATCH /api/sessions/:id — pin/title (null-vs-omitted, §3.1) ---------
+  // ---- PATCH /api/sessions/:id — pin/title (null-vs-omitted) ---------------
   app.patch("/api/sessions/:id", async (req: FastifyRequest, _reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const body = parseBody(PatchSessionBodySchema, req.body);
     // null-vs-omitted: read OWN-key presence on the parsed object. Zod
     // `.optional()` keeps an omitted key ABSENT (not present-undefined), so
     // `"pinnedProfileId" in body` distinguishes "field sent (maybe null → clear)"
-    // from "field omitted (leave as-is)". A present null/"" clears the pin (§3.1).
+    // from "field omitted (leave as-is)". A present null/"" clears the pin.
     const changes: { title?: { value: string | null }; pin?: { value: string | null } } = {};
     if ("title" in body) changes.title = { value: body.title ?? null };
     if ("pinnedProfileId" in body) changes.pin = { value: body.pinnedProfileId ?? null };

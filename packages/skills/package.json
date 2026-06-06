@@ -2,10 +2,21 @@
   "name": "@autobroker/skills",
   "version": "0.0.0",
   "private": true,
-  "description": "The 17 AutoBroker skill definitions — built one-at-a-time by dependency × risk order. Each skill = contract (core Zod) + SKILL.md + emit_result binding + fallback-gate mapping. One skill = one commit. (No skill impls yet — placeholder.)",
+  "description": "The 17 AutoBroker skill definitions — the typed SkillDef registry (single cross-layer source of skill identity) plus a per-skill SKILL.md human doc. Pure data + types: imports no framework, so both the server and the UI can consume it.",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {},
   "devDependencies": {

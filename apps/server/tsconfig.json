@@ -13,6 +13,7 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../../packages/core" },
+    { "path": "../../packages/skills" },
     { "path": "../../packages/workflows" },
     { "path": "../../packages/tools" }
   ]

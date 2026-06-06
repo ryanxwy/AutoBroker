@@ -42,6 +42,9 @@ importers:
       '@autobroker/model':
         specifier: workspace:*
         version: link:../../packages/model
+      '@autobroker/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@autobroker/tools':
         specifier: workspace:*
         version: link:../../packages/tools
@@ -128,6 +131,9 @@ importers:
       '@autobroker/server':
         specifier: workspace:*
         version: link:../apps/server
+      '@autobroker/skills':
+        specifier: workspace:*
+        version: link:../packages/skills
       '@autobroker/tools':
         specifier: workspace:*
         version: link:../packages/tools

@@ -15,6 +15,7 @@
   "dependencies": {
     "@autobroker/core": "workspace:*",
     "@autobroker/model": "workspace:*",
+    "@autobroker/skills": "workspace:*",
     "@autobroker/tools": "workspace:*",
     "@autobroker/workflows": "workspace:*",
     "@fastify/static": "^9",

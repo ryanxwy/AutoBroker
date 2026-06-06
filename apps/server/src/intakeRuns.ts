@@ -1,15 +1,15 @@
 /**
- * intakeRuns — the app-side intake run service (BACKEND_SERVICES §5/§7/§12).
- * Starts the search_profile_intake workflow, translates its suspend/resume
- * progress into runPubSub SSE events, and owns the three-phase idempotent
- * form-decision claim. This is the "runtime glue" wiring on the app side: it
- * drives the workflows-layer Mastra run through the EXPORTED glue functions
+ * intakeRuns — the app-side intake run service. Starts the
+ * search_profile_intake workflow, translates its suspend/resume progress into
+ * runPubSub SSE events, and owns the three-phase idempotent form-decision claim.
+ * This is the "runtime glue" wiring on the app side: it drives the
+ * workflows-layer Mastra run through the EXPORTED glue functions
  * (startRunGuarded) — it never imports @mastra directly (the Mastra/run types
  * flow in by inference from the workflows exports) and never opens the product DB.
  *
- * RUN DRIVE LOOP (§12 swimlane): a run can suspend MULTIPLE times (collect form,
- * force-override gate, ambiguous-location ask-pick, #1244 malformed). Each
- * start()/resume() returns a WorkflowResult discriminated on status:
+ * RUN DRIVE LOOP: a run can suspend MULTIPLE times (collect form, force-override
+ * gate, ambiguous-location ask-pick, #1244 malformed). Each start()/resume()
+ * returns a WorkflowResult discriminated on status:
  *   - suspended → emit awaiting_user{decision_id, form_kind, spec_inline, ...}
  *     from result.steps[suspendedStep].suspendPayload; the run waits for a
  *     form-decision that resumes that step. We DO NOT loop here — the human is
@@ -18,9 +18,9 @@
  *     aborted (status projects to `declined`); else emit text(summary) + done.
  *   - failed/tripwire → emit error{reason}.
  *
- * THE THREE-PHASE IDEMPOTENT CLAIM (§7.2, the 2026-06-04 ruling: in-memory claim
- * map + Mastra snapshot as durable truth). The claim is keyed (runId, decisionId)
- * — the decisionId rides each awaiting_user frame so the form echoes it back.
+ * THE THREE-PHASE IDEMPOTENT CLAIM (in-memory claim map + Mastra snapshot as
+ * durable truth). The claim is keyed (runId, decisionId) — the decisionId rides
+ * each awaiting_user frame so the form echoes it back.
  *   - Phase 1 (lock): pending → processing. Reject a double-claim of a DIFFERENT
  *     body (409 decision_conflict); REPLAY the stored ack for the SAME body once
  *     consumed (200, idempotent — NOT a second Mastra resume; a second resume of
@@ -47,8 +47,10 @@ import { randomUUID } from "node:crypto";
 
 import { SearchProfileIntakeInputSchema, providerDriverKind } from "@autobroker/core";
 import { policy } from "@autobroker/model";
+import { INTAKE_SKILL_ID } from "@autobroker/skills";
 import {
   startRunGuarded,
+  SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
   AmbiguousLocationResumeSchema,
@@ -62,28 +64,28 @@ import { projectStatus, type MastraRunStatus } from "./statusProjection.js";
 
 type MastraInstance = ReturnType<typeof createMastraInstance>;
 
-/** The intake workflow id (must match SEARCH_PROFILE_INTAKE_WORKFLOW_ID). */
-const INTAKE_WORKFLOW_ID = "search_profile_intake";
-/** The single skill name M1 exposes. */
-export const INTAKE_SKILL = "search_profile_intake" as const;
+/** The intake workflow id — the workflows-layer constant (the run driver key). */
+const INTAKE_WORKFLOW_ID = SEARCH_PROFILE_INTAKE_WORKFLOW_ID;
+/** The single skill name this service exposes — the registry's intake id. */
+export const INTAKE_SKILL = INTAKE_SKILL_ID;
 
 /** The driver_kind for intake runs, DERIVED from the provider policy() actually
  *  routes the skill's LLM useCases to (intake_trim_verify is the representative
  *  — both intake useCases share one alias). A registry-string provider swap
  *  (USE_CASE_ALIAS edit) flips this label in lock-step with the harness
- *  runner's expectDriverKind (D-B4; review HIGH 2026-06-05). */
+ *  runner's expectDriverKind. */
 export function intakeDriverKind(): ReturnType<typeof providerDriverKind> {
   return providerDriverKind(policy("intake_trim_verify").provider);
 }
 
-/** The start-intake input (task BUILD §5 / route §3.2 body shape). */
+/** The start-intake input (the route start body shape). */
 export interface IntakeStartInput {
   input_mode: "slash" | "freeform";
   freeform_text: string | null;
   seed_fields: Record<string, unknown> | null;
 }
 
-/** A typed error the route maps to its HTTP code (the error envelope, §13.2). */
+/** A typed error the route maps to its HTTP code (the error envelope). */
 export class FormDecisionError extends Error {
   readonly code: string;
   readonly status: number;
@@ -114,7 +116,7 @@ export class UnknownRunError extends Error {
   }
 }
 
-/** The form-decision request body (§7.1). */
+/** The form-decision request body. */
 export const FormDecisionBodySchema = z.object({
   decision_id: z.string().min(1),
   decision: z.object({
@@ -130,7 +132,7 @@ interface AckSnapshot {
   body: Record<string, unknown>;
 }
 
-/** A claim's lifecycle (§7.2 three-phase). */
+/** A claim's lifecycle (three-phase). */
 type ClaimPhase = "processing" | "consumed";
 interface Claim {
   phase: ClaimPhase;
@@ -145,9 +147,9 @@ interface Claim {
 interface RunState {
   skill: string;
   /** The session (Mastra thread) this run is associated with, or null for a
-   *  headless start with no rail. M2-minimal: the run↔session link is recorded
-   *  here so status/turn rendering can find it; full turn-model rendering is the
-   *  UI's read (BACKEND_SERVICES §6.1 skill_runs.session_id ↔ thread metadata). */
+   *  headless start with no rail. The run↔session link is recorded here so
+   *  status/turn rendering can find it; full turn-model rendering is the UI's read
+   *  (skill_runs.session_id ↔ thread metadata). */
   sessionId: string | null;
   /** The step id + decisionId of the CURRENTLY pending suspend, or null when the
    *  run is running/terminal. The form-decision must reference this decisionId. */
@@ -165,7 +167,7 @@ function formKindFor(payload: Record<string, unknown>): string {
   return typeof kind === "string" ? kind : "data_collection";
 }
 
-/** Stable body key for same-vs-different claim detection (§7.2 Phase 1). */
+/** Stable body key for same-vs-different claim detection (Phase 1). */
 function bodyKeyOf(body: FormDecisionBody): string {
   // Canonical: action + sorted-key content JSON. decline/cancel have no content.
   const content = body.decision.content ?? null;
@@ -190,9 +192,9 @@ export class IntakeRunService {
   }
 
   /**
-   * Re-attach a suspended run recovered by recoverOnBoot after a fresh boot (M1
-   * EXIT 2, crash-and-resume). The Mastra snapshot (mastra.db) is the durable
-   * truth — the workflow + step closures were re-registered by module import,
+   * Re-attach a suspended run recovered by recoverOnBoot after a fresh boot
+   * (crash-and-resume). The Mastra snapshot (mastra.db) is the durable truth —
+   * the workflow + step closures were re-registered by module import,
    * the run is re-attachable. This re-builds the in-memory run state + a fresh
    * decisionId for the pending suspend, re-emits the init + awaiting_user frames
    * into a fresh pubsub channel, so a form-decision can resume the SAME run in
@@ -273,8 +275,8 @@ export class IntakeRunService {
   }
 
   /**
-   * Submit a form-decision (the three-phase idempotent claim, §7.2). Returns the
-   * 200 ack body. Throws FormDecisionError (mapped to the §13.2 codes) on any
+   * Submit a form-decision (the three-phase idempotent claim). Returns the 200
+   * ack body. Throws FormDecisionError (mapped to the error-envelope codes) on any
    * non-200 path, or UnknownRunError (404) for an untracked run.
    */
   async formDecision(runId: string, body: FormDecisionBody): Promise<Record<string, unknown>> {
@@ -289,7 +291,7 @@ export class IntakeRunService {
     // ----- Phase 1 lookup (lock): a KNOWN (run_id, decision_id) is resolved by
     // the claim table FIRST — an idempotent replay / conflict for an
     // already-seen decision must succeed even after the run later went terminal
-    // (§7.2: the consumed-snapshot replay is the idempotency guarantee). Only a
+    // (the consumed-snapshot replay is the idempotency guarantee). Only a
     // decisionId that is neither a known claim NOR the current pending suspend
     // falls through to the terminal / not-found guards.
     const existing = run.claims.get(decisionId);
@@ -327,10 +329,10 @@ export class IntakeRunService {
     }
 
     // ----- Phase 1 (lock): claim pending → processing -----------------------
-    // Crash semantics (2026-06-04 ruling: in-memory claim + Mastra snapshot as
-    // durable truth): a crash mid-`processing` drops this Map entry; on reboot
-    // `reattach` mints a FRESH decisionId off the snapshot's pending suspend,
-    // so a post-crash resubmit can never collide with the lost claim.
+    // Crash semantics (in-memory claim + Mastra snapshot as durable truth): a
+    // crash mid-`processing` drops this Map entry; on reboot `reattach` mints a
+    // FRESH decisionId off the snapshot's pending suspend, so a post-crash
+    // resubmit can never collide with the lost claim.
     run.claims.set(decisionId, { phase: "processing", bodyKey: key });
 
     // ----- Phase 2 (no lock): dispatch handler + Mastra resume --------------
@@ -379,17 +381,17 @@ export class IntakeRunService {
   }
 
   /**
-   * The data_collection handler (§7.3, _handle_kind_data_collection equivalent).
-   * accept → validate content against SearchProfileIntakeInputSchema.strict and
-   * map to the collect step's submit resumeData; decline/cancel → the step's
-   * decline resumeData + a {action, content:null} ack (terminal-non-write).
+   * The data_collection handler (the legacy _handle_kind_data_collection
+   * equivalent). accept → validate content against
+   * SearchProfileIntakeInputSchema.strict and map to the collect step's submit
+   * resumeData; decline/cancel → the step's decline resumeData + a {action,
+   * content:null} ack (terminal-non-write).
    *
    * The non-collect suspends (force-override gate, ambiguous-location, malformed)
-   * resume with their own typed resume schemas; the form action vocabulary maps
-   * per §7 / route table: force_override/revise/retry_step (gate), pick/retry
-   * (location), retry_step (malformed). The route validates against the EXPORTED
-   * resume schemas; here we just thread content through to the right schema by
-   * step.
+   * resume with their own typed resume schemas; the form action vocabulary maps:
+   * force_override/revise/retry_step (gate), pick/retry (location), retry_step
+   * (malformed). The route validates against the EXPORTED resume schemas; here we
+   * just thread content through to the right schema by step.
    */
   private dispatchDataCollection(
     step: string,
@@ -397,7 +399,7 @@ export class IntakeRunService {
   ): { resumeData: unknown; ackBody: Record<string, unknown> } {
     const { action, content } = decision;
 
-    // decline/cancel are terminal-non-write on ANY suspend step (§7.3).
+    // decline/cancel are terminal-non-write on ANY suspend step.
     if (action === "decline" || action === "cancel") {
       // Every step's resume schema accepts a bare {action:'decline'} member
       // (collect also accepts 'cancel'); normalize cancel → decline for the
@@ -411,7 +413,7 @@ export class IntakeRunService {
 
     // accept — the content shape depends on the suspended step.
     if (step === "collect") {
-      // The intake form: validate against the strict 18-field schema (§7.3).
+      // The intake form: validate against the strict 18-field schema.
       const parsed = SearchProfileIntakeInputSchema.safeParse(content ?? {});
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
@@ -483,7 +485,7 @@ export class IntakeRunService {
       const payload = entry?.[1]?.suspendPayload ?? {};
       const decisionId = randomUUID();
       run.pending = { step, decisionId };
-      // awaiting_user{form_kind, spec_inline, decision_id, ...} (§4.2/§5.3).
+      // awaiting_user{form_kind, spec_inline, decision_id, ...}.
       this.pubsub.append(runId, {
         kind: "awaiting_user",
         payload: {
@@ -499,8 +501,8 @@ export class IntakeRunService {
     if (r.status === "success") {
       const outcome = r.result?.outcome;
       if (outcome === "declined") {
-        // A decline is terminal: wire kind aborted (§4.4) → status projects
-        // declined (the app metadata is the decline outcome).
+        // A decline is terminal: wire kind aborted → status projects declined
+        // (the app metadata is the decline outcome).
         run.terminal = true;
         this.pubsub.append(runId, {
           kind: "aborted",
@@ -508,7 +510,7 @@ export class IntakeRunService {
         });
         return;
       }
-      // Created: plain-speak summary then done (§12.1 confirm step).
+      // Created: plain-speak summary then done (the confirm step).
       run.terminal = true;
       this.pubsub.append(runId, {
         kind: "text",
@@ -518,7 +520,7 @@ export class IntakeRunService {
       return;
     }
 
-    // failed | tripwire | bailed → error (§4.2/§5.3, #1244 hard-abort path).
+    // failed | tripwire | bailed → error (the #1244 hard-abort path).
     if (r.status === "failed" || r.status === "tripwire" || r.status === "bailed") {
       run.terminal = true;
       this.pubsub.append(runId, {
@@ -538,7 +540,8 @@ export class IntakeRunService {
     // (The drive loop is event-driven via form-decision; nothing to emit here.)
   }
 
-  /** Build the confirm plain-speak summary (budget excluded — §9). */
+  /** Build the confirm plain-speak summary (budget red-line: budget is never
+   *  surfaced in user/dealer-facing copy). */
   private summaryText(result: unknown): string {
     const r = result as { vehicle?: string; location?: string; profileId?: string } | undefined;
     if (r?.vehicle === undefined) return "Search profile created.";
@@ -558,8 +561,8 @@ export class IntakeRunService {
     return this.runs.get(runId)?.pending ?? null;
   }
 
-  /** The session (Mastra thread) this run is linked to, or null (M2 run↔session
-   *  association; BACKEND_SERVICES §6.1 skill_runs.session_id ↔ thread metadata). */
+  /** The session (Mastra thread) this run is linked to, or null (run↔session
+   *  association; skill_runs.session_id ↔ thread metadata). */
   sessionOf(runId: string): string | null {
     return this.runs.get(runId)?.sessionId ?? null;
   }
@@ -567,7 +570,7 @@ export class IntakeRunService {
   /**
    * The status summary for GET /api/skill-runs/:id: the product-projected status,
    * the current pending suspend (if any), and the full SSE event backlog. Reads
-   * the live Mastra run status via getWorkflowRunById and applies the §5/§6
+   * the live Mastra run status via getWorkflowRunById and applies the status
    * projection. A run this service does not track but that lives in storage still
    * resolves (re-attached after a boot); null only when storage has no such run.
    */
@@ -606,7 +609,7 @@ export class IntakeRunService {
 
   /** True when the run's terminal frame was an aborted-for-decline (vs done/error
    *  /abort). Read off the pubsub backlog: a decline lands as aborted{reason:
-   *  'user_declined'}. Used to project declined vs aborted (§5). */
+   *  'user_declined'}. Used to project declined vs aborted. */
   private lastTerminalWasDecline(runId: string): boolean {
     const log = this.pubsub.snapshot(runId);
     for (let i = log.length - 1; i >= 0; i -= 1) {

@@ -13,6 +13,7 @@
   "dependencies": {
     "@autobroker/core": "workspace:*",
     "@autobroker/db": "workspace:*",
+    "@autobroker/skills": "workspace:*",
     "@autobroker/tools": "workspace:*",
     "@autobroker/server": "workspace:*",
     "@autobroker/workflows": "workspace:*",

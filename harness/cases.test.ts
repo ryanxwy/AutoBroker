@@ -1,12 +1,14 @@
 /**
- * cases.test.ts — TOML parse + case loading (task BUILD §7 "TOML parse tests").
+ * cases.test.ts — TOML parse + case loading.
  * Parses the committed case files + inline snippets into typed Cases and asserts
  * the anchor specs, resume scripts, and cell_id derivation.
  */
 
+import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { SKILLS } from "@autobroker/skills";
 import { describe, expect, it } from "vitest";
 
 import { cellIdFor, loadCase, parseCase } from "./cases.js";
@@ -76,7 +78,7 @@ describe("case loader", () => {
     expect(dk).toMatchObject({ kind: "driver_kind", expect: "deepseek_apikey" });
   });
 
-  it("loads the M4 cross-provider slash variants (anthropic_apikey / openai_apikey)", () => {
+  it("loads the cross-provider slash variants (anthropic_apikey / openai_apikey)", () => {
     const a = loadCase(join(CASES, "search_profile_intake.slash_anthropic.toml"));
     expect(a.provider).toBe("anthropic");
     expect(a.steps[0]!.anchors.find((x) => x.kind === "driver_kind")).toMatchObject({
@@ -159,4 +161,21 @@ describe("case loader", () => {
     `;
     expect(() => parseCase(src)).toThrow(/unknown anchor kind/);
   });
+});
+
+describe("case skill ids ∈ registry", () => {
+  const REGISTRY_IDS = new Set(SKILLS.map((s) => s.id));
+  const files = readdirSync(CASES).filter((f) => f.endsWith(".toml"));
+
+  it("has case files to check", () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  for (const f of files) {
+    it(`${f}: every meta.skills[] and step.skill is a registry id`, () => {
+      const c = loadCase(join(CASES, f));
+      for (const id of c.skills) expect(REGISTRY_IDS).toContain(id);
+      for (const step of c.steps) expect(REGISTRY_IDS).toContain(step.skill);
+    });
+  }
 });

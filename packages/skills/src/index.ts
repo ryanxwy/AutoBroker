@@ -1,0 +1,21 @@
+/**
+ * @autobroker/skills — the skill manifest layer.
+ *
+ * Pure data + types: the typed SkillDef registry that is the single cross-layer
+ * source of skill identity. Imports no framework (no AI SDK / Mastra / Drizzle /
+ * HTTP), so both the server and the UI can consume it. Per-skill human docs live
+ * in <skill>/SKILL.md beside this src/.
+ */
+
+export {
+  SKILLS,
+  IMPLEMENTED_SKILLS,
+  INTAKE_SKILL_ID,
+  getSkill,
+} from "./registry.js";
+export type {
+  SkillDef,
+  SkillPhase,
+  SkillRiskClass,
+  SkillStatus,
+} from "./registry.js";
