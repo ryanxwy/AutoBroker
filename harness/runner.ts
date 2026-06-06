@@ -1,6 +1,6 @@
 /**
- * runner — the `pnpm harness` CLI + the self-contained run loop (HARNESS_FRAMEWORK
- * §4/§13). It IS the Orchestrator+Driver+Monitor folded into one process: it boots
+ * runner — the `pnpm harness` CLI + the self-contained run loop.
+ * It IS the Orchestrator+Driver+Monitor folded into one process: it boots
  * the REAL server (a child process on an ephemeral port), runs the isolation
  * preflight (fail-closed, zero network until it passes), the driver_kind self-check
  * (gate ⑦), then per case-step: snapshot-before → POST start → drive the resume[]
@@ -9,12 +9,12 @@
  * (the SUT writes the ledger row per LLM call; the harness only reads it for the
  * cost_and_time anchor + export_daily) and NEVER calls a provider directly.
  *
- * SUBCOMMANDS (§4.1): intake | case | suite. CLI:
+ * SUBCOMMANDS: intake | case | suite. CLI:
  *   pnpm harness intake [--case <name>] [--provider deepseek]
  *                       [--gate-policy approve_safe] [--max-seconds 900]
  *                       [--db <path>] [--dry-run]
  *
- * --dry-run (§7): boot the server with the DI seam DISABLED but STOP before the
+ * --dry-run: boot the server with the DI seam DISABLED but STOP before the
  * first live call — proving the wiring end-to-end minus spend. It runs preflight +
  * the driver_kind self-check + the /api/mode read, then exits 0 WITHOUT POSTing a
  * scoring turn that would call DeepSeek/geocode.
@@ -402,7 +402,7 @@ async function evaluateStep(args: {
     close();
   }
 
-  // S1/S2/S3 cross-check, encoded automatically (§8):
+  // S1/S2/S3 cross-check, encoded automatically:
   //   S1 = SSE terminal text (Driver-observed).
   //   S2 = re-pulled read API (Monitor-observed, refresh-confirmed).
   //   S3 = backend ground truth (read-only SQLite profile-scoped delta).
@@ -486,7 +486,7 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     // provider-derived label is a case-authoring bug → fail loud HERE, not at
     // scoring.
     // Provider-derived label from the two-place lock-step map (extends to all 3
-    // first-class providers for M4 cross-provider smoke; deepseek stays default).
+    // first-class providers for cross-provider smoke; deepseek stays default).
     const expectDriverKind = PROVIDER_DRIVER_KIND[c.provider] ?? fail(`no driver_kind label for provider ${c.provider}`);
     const anchorExpect = step.anchors.find((a) => a.kind === "driver_kind")?.expect;
     if (anchorExpect !== undefined && anchorExpect !== expectDriverKind) {

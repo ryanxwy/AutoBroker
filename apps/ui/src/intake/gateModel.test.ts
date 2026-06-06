@@ -1,7 +1,7 @@
 /**
- * gateModel.test — the suspend-payload classifier (FRONTEND_LAYOUT §8.2). Each
- * spec_inline.kind maps to the right gate variant, and the 裁定⑨ split (empty
- * candidates + failure_reason → location_failure) is exercised.
+ * gateModel.test — the suspend-payload classifier. Each
+ * spec_inline.kind maps to the right gate variant, and the location-failure split
+ * (empty candidates + failure_reason → location_failure) is exercised.
  */
 
 import { describe, expect, it } from "vitest";
@@ -45,7 +45,7 @@ describe("gateModel — classification", () => {
     }
   });
 
-  it("裁定⑨: empty candidates + failure_reason → location_failure", () => {
+  it("location-failure: empty candidates + failure_reason → location_failure", () => {
     const g = classifyGate({
       kind: "ambiguous_location",
       candidates: [],

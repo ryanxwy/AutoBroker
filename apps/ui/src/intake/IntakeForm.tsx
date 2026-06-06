@@ -1,6 +1,6 @@
 /**
  * IntakeForm — the turn-level wiring that dispatches an awaiting_user suspend to
- * the right surface (FRONTEND_LAYOUT §5.5 / §8.2). It classifies the suspend's
+ * the right surface. It classifies the suspend's
  * spec_inline (gateModel.classifyGate) and renders either the data_collection
  * SchemaForm or one of the three semantic gates. The decision_id is injected from
  * the part and echoed back verbatim on every resume; the runId keys the draft.
@@ -9,7 +9,7 @@
  * BEFORE the prose text zone (the AssistantTurn lays the zones in that order).
  *
  * The resume call is the parent's `onDecision(content, action)` — it posts
- * form-decision (same-run Mastra resume, §5.7). One path only (no respawn).
+ * form-decision (same-run Mastra resume). One path only (no respawn).
  */
 
 import { classifyGate } from "./gateModel.js";
@@ -95,7 +95,7 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
       );
     default:
       // Unknown suspend kind → fail VISIBLE (never silently pass) with the raw
-      // spec so the user/operator can see what arrived (§5.9 graceful degrade).
+      // spec so the user/operator can see what arrived (graceful degrade).
       return (
         <div className="gate-card" data-testid="gate-unknown" role="alert">
           <strong>This step needs your input.</strong>

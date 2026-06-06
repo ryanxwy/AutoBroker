@@ -1,7 +1,7 @@
 /**
  * detail — normalize the SUT's SSE stream (+ status projection) into one RunDetail
- * shape the evaluator scores (HARNESS_FRAMEWORK §6.3). Legacy mode_a_transcript.py
- * "归一任一 provider 的事件流成一个 detail 形状" — here the source is the backend's
+ * shape the evaluator scores. Like the legacy mode_a_transcript.py, this normalizes
+ * any provider's event stream into one detail shape — here the source is the backend's
  * SSE envelope { ts, kind, payload } (data:-only frames, replay-on-subscribe), so
  * one EventSource-style drain gives the full 0→terminal sequence even after the run
  * already finished.
@@ -13,7 +13,7 @@
  *      EXACTLY done|error|aborted.
  *   2. GET /api/skill-runs/:id — the STATUS PROJECTION. A user DECLINE lands on the
  *      wire as `aborted{reason:'user_declined'}` but the product status is
- *      `declined` (runPubSub §4.4 + statusProjection). So terminalStatus is read
+ *      `declined` (runPubSub + statusProjection). So terminalStatus is read
  *      from the projected status (which distinguishes declined from aborted), not
  *      from the bare wire kind. run_status anchor depends on this.
  *
@@ -21,7 +21,7 @@
  * wire. Per-LLM-call usage is written to test_run_records by the SUT's harness.generate
  * (one row per call, keyed by runId). So RunDetail.usage is left null here; the
  * cost_and_time anchor reads the ledger rows for runId via the read-only DB channel
- * (evaluator.ts), NOT from the SSE stream. Recorded as an api_finding.
+ * (evaluator.ts), NOT from the SSE stream. (Live-observed: the done frame is empty.)
  *
  * Dependency wall: harness layer. Uses global fetch only; no DB handle, no provider
  * call, no @mastra/@ai-sdk/playwright import.
@@ -29,7 +29,7 @@
 
 import type { HarnessDriverKind } from "@autobroker/core";
 
-/** One SSE frame, mirroring the backend SseEvent shape (runPubSub.ts §4.1). */
+/** One SSE frame, mirroring the backend SseEvent shape (runPubSub.ts). */
 export interface SseEnvelope {
   ts: string;
   kind: string;
@@ -50,7 +50,7 @@ export interface RunUsage {
   pricingSource: "computed" | "unavailable";
 }
 
-/** The normalized run detail — the single shape evalAnchor scores (§6.1). */
+/** The normalized run detail — the single shape evalAnchor scores. */
 export interface RunDetail {
   runId: string;
   terminalStatus: TerminalStatus;
@@ -59,20 +59,20 @@ export interface RunDetail {
   sawBrowserActivity: boolean;
   sawApprovalGate: boolean;
   /** gate-before-prose: true when an awaiting_user/approval frame precedes the
-   *  FIRST prose `text` frame (§8 / M2 assert_gate_before_prose). */
+   *  FIRST prose `text` frame (assert_gate_before_prose). */
   gateBeforeProse: boolean;
   sawMalformedToolCall: boolean;
   usage: RunUsage;
 }
 
-/** SSE kinds that count as an approval/HITL gate render (§6.2 approval_gate). */
+/** SSE kinds that count as an approval/HITL gate render (approval_gate anchor). */
 const APPROVAL_KINDS = new Set(["awaiting_user", "awaiting_permission", "approval_required"]);
 
 /** Terminal WIRE kinds (runPubSub TERMINAL_EVENT_KINDS). `declined` is NOT here —
  *  it is a status projection of an `aborted{user_declined}` frame. */
 const TERMINAL_WIRE_KINDS = new Set(["done", "error", "aborted"]);
 
-/** A browser.* frame or a tool_call whose name matches a browser driver (§6.2). */
+/** A browser.* frame or a tool_call whose name matches a browser driver (browser_activity anchor). */
 function isBrowserEvent(ev: SseEnvelope): boolean {
   if (ev.kind.startsWith("browser.")) return true;
   if (ev.kind === "tool_call") {

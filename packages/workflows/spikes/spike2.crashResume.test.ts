@@ -1,6 +1,6 @@
 /**
  * SPIKE-2 (crash-and-resume + boot recovery + dup-runId guard) & SPIKE-7 (deny
- * path). PHASE_0 spikes 2 & 7; M0 exit criterion "crash-and-resume 回环".
+ * path). Proves the crash-and-resume recovery loop.
  *
  * WHAT THIS PROVES, and HOW the proof is honest:
  *   The whole point is durability ACROSS A PROCESS BOUNDARY. So the run that

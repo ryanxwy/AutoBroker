@@ -1,6 +1,6 @@
 /**
- * formModel — pure form model for the schema-driven IntakeForm (FRONTEND_LAYOUT
- * §5.2-§5.4). Derives the ordered field list + sections from the single source
+ * formModel — pure form model for the schema-driven IntakeForm.
+ * Derives the ordered field list + sections from the single source
  * (core INTAKE_FIELD_META), maps each field to one of the 7 widgets, validates
  * per-field for instant feedback (the AUTHORITATIVE check is the server's
  * SearchProfileIntakeInputSchema.strict() on form-decision — this is UI sugar),
@@ -19,9 +19,9 @@ import {
   type IntakeSection,
 } from "@autobroker/core";
 
-/** The 7 UI widgets (FRONTEND §5.2). The widget is derived here from the field's
+/** The 7 UI widgets. The widget is derived here from the field's
  *  type + name (core's IntakeFieldMeta carries label/required/sensitivity/section
- *  but not the widget enum — the §5.1 widget map is a UI concern). */
+ *  but not the widget enum — the widget map is a UI concern). */
 export type Widget =
   | "text"
   | "number"
@@ -31,7 +31,7 @@ export type Widget =
   | "segmented"
   | "boolean-int";
 
-/** The widget for a field (FRONTEND §5.1 widget map, verbatim). */
+/** The widget for a field (the widget map). */
 const WIDGET_BY_FIELD: Record<IntakeFieldName, Widget> = {
   make: "text",
   model: "text",
@@ -53,7 +53,7 @@ const WIDGET_BY_FIELD: Record<IntakeFieldName, Widget> = {
   current_brand_owner: "boolean-int",
 };
 
-/** Per-field placeholder hints (FRONTEND §5.1; UI sugar only). */
+/** Per-field placeholder hints (UI sugar only). */
 const PLACEHOLDER_BY_FIELD: Partial<Record<IntakeFieldName, string>> = {
   make: "Hyundai",
   model: "Tucson Hybrid",
@@ -61,7 +61,7 @@ const PLACEHOLDER_BY_FIELD: Partial<Record<IntakeFieldName, string>> = {
   location_query: "Irvine, CA 92614",
 };
 
-/** Enum option labels for the `segmented` widgets (FRONTEND §5.1 optionLabels). */
+/** Enum option labels for the `segmented` widgets. */
 const ENUM_OPTIONS: Partial<Record<IntakeFieldName, { value: string; label: string }[]>> = {
   phone_policy: PhonePolicySchema.options.map((v) => ({
     value: v,
@@ -113,26 +113,26 @@ function isEmpty(v: unknown): boolean {
   return v === null || v === undefined || (typeof v === "string" && v.trim() === "");
 }
 
-/** Email shape: an `@` with a TLD-ish tail (FRONTEND §5.2 isValidEmailShape). */
+/** Email shape: an `@` with a TLD-ish tail. */
 export function isValidEmailShape(v: unknown): boolean {
   return typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 }
 
-/** Phone shape: ≥7 digits (FRONTEND §5.2 isValidPhoneShape). */
+/** Phone shape: ≥7 digits. */
 export function isValidPhoneShape(v: unknown): boolean {
   if (typeof v !== "string") return false;
   return v.replace(/\D/g, "").length >= 7;
 }
 
 /** The allowed years for the year-segmented widget: [now, now+1] (constraint
- *  current-or-next, §5.2). `now` is injectable for deterministic tests. */
+ *  current-or-next). `now` is injectable for deterministic tests. */
 export function allowedYears(now = new Date()): [number, number] {
   const y = now.getFullYear();
   return [y, y + 1];
 }
 
 /** Validate one field — returns a message string or null (valid). Mirrors the
- *  legacy validateField (§5.4); the server's strict() Zod is authoritative. */
+ *  legacy validateField; the server's strict() Zod is authoritative. */
 export function validateField(
   name: IntakeFieldName,
   value: unknown,
@@ -160,18 +160,18 @@ export const REQUIRED_FIELD_NAMES = INTAKE_FIELD_NAMES.filter(
   (n) => INTAKE_FIELD_META[n].required,
 );
 
-/** Count how many required fields are currently filled (drives the §5.3 meter). */
+/** Count how many required fields are currently filled (drives the completeness meter). */
 export function requiredCompleteCount(values: FormValues, now = new Date()): number {
   return REQUIRED_FIELD_NAMES.filter((n) => validateField(n, values[n], now) === null).length;
 }
 
-/** All required fields valid → submit allowed (§5.4 allRequiredValid). */
+/** All required fields valid → submit allowed. */
 export function allRequiredValid(values: FormValues, now = new Date()): boolean {
   return REQUIRED_FIELD_NAMES.every((n) => validateField(n, values[n], now) === null);
 }
 
 /**
- * Build the form-decision `content` from the form values (§5.7). Optional empties
+ * Build the form-decision `content` from the form values. Optional empties
  * coerce to null; required empties stay (the server rejects them). Number widgets
  * coerce numeric strings; boolean-int stays 0|1; the year stays a number. The
  * server re-validates with .strict(), so this only needs to be shape-faithful.

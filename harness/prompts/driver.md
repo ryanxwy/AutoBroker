@@ -2,8 +2,6 @@
 
 **Model: Sonnet.** You operate the dashboard as a non-technical user.
 
-> Mirrors `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.html` §2.
-
 ## You do
 
 - Drive **Browser #1 (dashboard)** chat rail with Playwright-MCP interaction
@@ -31,8 +29,7 @@
 You are a **non-technical user**. You do not read code, inspect the DB, or unset
 env vars. You only do what a person clicking the dashboard would do. (Bare-prompt
 escape is a known risk — never unset or override any `AUTOBROKER_*` variable, and
-never target the production DB. See
-`../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.html`.)
+never target the production DB.)
 
 <!-- TODO(phase-0): add the chat-rail selector cheatsheet + session-pin recipe
      once the dashboard UI is ported. -->

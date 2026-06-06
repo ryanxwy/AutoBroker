@@ -1,7 +1,8 @@
 /**
- * dbReads — the harness's ONLY DB touch, and it is STRICTLY READ-ONLY (the S3
- * ground-truth channel, HARNESS_FRAMEWORK §3 / §15). The trust-boundary rule:
- * "harness 改 DB 的唯一途径是经 SUT 的 HTTP 让产品代码改;它自己只读." So this
+ * dbReads — the harness's ONLY DB touch, and it is STRICTLY READ-ONLY (the
+ * ground-truth channel). The trust-boundary rule: the harness's only way to CHANGE
+ * the DB is through the SUT's HTTP, letting product code do the write; the harness
+ * itself only reads. So this
  * module opens an @autobroker/db connection and runs SELECTs ONLY — never an
  * INSERT/UPDATE/DELETE. The ledger ROW for each LLM call is WRITTEN by the SUT
  * (packages/tools writeTestRunRecord, called from harness.generate); the harness
@@ -24,7 +25,7 @@
 
 import { openDb, type Db } from "@autobroker/db";
 
-/** The product tables the anchors snapshot/scan (HARNESS_FRAMEWORK §6/§7). */
+/** The product tables the anchors snapshot/scan. */
 export const SNAPSHOT_TABLES = ["search_profiles", "audit_log", "lead_submissions"] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
@@ -33,7 +34,7 @@ export interface TableCounts {
   /** Profile-scoped: rows whose search_profile_id = the run's profile (or, for
    *  search_profiles, the row whose PK = the profile id). null profileId → 0. */
   profile: Record<string, number>;
-  /** Global counts (fallback only; profile-scoped is the rule — §R5). */
+  /** Global counts (fallback only; profile-scoped is the rule). */
   global: Record<string, number>;
 }
 
@@ -140,7 +141,7 @@ export function countAuditRows(
 }
 
 /**
- * The no_external_mutation KEYSTONE DB scan (§6.4). Counts the rows that would
+ * The no_external_mutation KEYSTONE DB scan. Counts the rows that would
  * indicate a real outbound side effect — tolerance is ZERO. Two DB signals (the
  * event signal is scanned in the evaluator off RunDetail):
  *   - lead_submissions with outcome='submitted'  (a real submitted lead)

@@ -1,12 +1,12 @@
 /**
- * preflight — the isolation + env envelope gate (HARNESS_FRAMEWORK §4.3 + §10).
+ * preflight — the isolation + env envelope gate.
  *
  * Every assertion is FAIL-CLOSED: the runner calls assertPreflight() as its very
  * first act and exits 1 on ANY miss, with ZERO network touched before it passes
- * (the §10 "进任何 run 之前" rule). This mirrors legacy assert_server_sandbox_db /
+ * (the "before any run" rule). This mirrors legacy assert_server_sandbox_db /
  * assert_isolated, retargeted to the parity dir ~/.autobroker-ts.
  *
- * The seven gates (HARNESS_FRAMEWORK §4.3 / §10.1, in order):
+ * The seven gates (in order):
  *   ① AUTOBROKER_DATA_DIR isolated — under ~/.autobroker-ts, NEVER production
  *      ~/.autobroker; the --db path resolves under it.
  *   ② BLOCK fuse armed — AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS === "1" (exact "1").
@@ -17,7 +17,8 @@
  *      NEVER printed. STOP rather than silently degrade to another lane.
  *   ⑥ server active DB matches — GET /api/mode → active_db === resolve(--db); a
  *      PRODUCTION_DB path is rejected.
- *   ⑦ driver_kind self-check (the R2 two-place lock-step) — probe one run-init SSE
+ *   ⑦ driver_kind self-check (the two-place lock-step: driver_kind must match in
+ *      both the run-init SSE frame and the policy-derived provider) — probe one run-init SSE
  *      frame and assert init.payload.driver_kind === the case expectation BEFORE
  *      any scoring. Lives in driverKind.ts (it needs a live run); this module owns
  *      gates ①–⑥, the env/DB envelope that fires with zero network.
@@ -93,7 +94,7 @@ export function assertDataDirIsolated(opts: Pick<PreflightOpts, "db">): void {
   }
   const db = resolve(expandTilde(opts.db));
 
-  // Hard rule (invariant #11, §10): never the production ~/.autobroker tree.
+  // Hard rule (invariant #11): never the production ~/.autobroker tree.
   const productionDir = join(homedir(), ".autobroker");
   const parityDir = join(homedir(), ".autobroker-ts");
   if (isUnder(db, productionDir) && !isUnder(db, parityDir)) {

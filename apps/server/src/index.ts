@@ -3,8 +3,8 @@
  *
  * Boots the embedded library-mode host (telemetry kill → Mastra instance →
  * storage init → boot recovery) and listens on 127.0.0.1:8100 (configurable via
- * PORT). The trust boundary (§11): 127.0.0.1 only — no externally reachable port
- * but this one.
+ * PORT). The trust boundary: 127.0.0.1 only — no externally reachable port but
+ * this one.
  *
  * The listen side-effect fires only when this module is the program entrypoint
  * (`node dist/index.js`), never on import — so tests import buildServer() and
@@ -28,7 +28,7 @@ export {
   type IntakeForkResult,
 } from "./sessions.js";
 
-/** Default bind: 127.0.0.1:8100 (the trust-boundary host; §11 / BRIEF §4). */
+/** Default bind: 127.0.0.1:8100 (the trust-boundary host). */
 const HOST = "127.0.0.1";
 const DEFAULT_PORT = 8100;
 

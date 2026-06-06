@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
- * IntakeGates.test — the semantic gate components (FRONTEND_LAYOUT §8.2). Covers
- * the ambiguous-location candidate radio list + pick dispatch, the 裁定⑨ location
+ * IntakeGates.test — the semantic gate components. Covers
+ * the ambiguous-location candidate radio list + pick dispatch, the location
  * failure banner (flagged field + reason + retry dispatch), and the force-override
  * confirm bar (reason required → force_override resume).
  */
@@ -41,7 +41,7 @@ describe("AmbiguousLocationPicker", () => {
   });
 });
 
-describe("LocationFailureBanner (裁定⑨)", () => {
+describe("LocationFailureBanner (coordinate-resolution invariant)", () => {
   it("flags the location field, shows the failure reason, and retry dispatches retry_query", () => {
     const onResume = vi.fn();
     const gate = {

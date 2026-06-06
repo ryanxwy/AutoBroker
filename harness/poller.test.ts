@@ -1,5 +1,5 @@
 /**
- * poller.test.ts — the Approver impls (HARNESS_FRAMEWORK §9). deny_all is airtight;
+ * poller.test.ts — the Approver impls. deny_all is airtight;
  * approve_safe is fail-OPEN denylist for the read-only cluster (DENY a recognized
  * mutation/arbitrary-code marker, allow-once otherwise). The deny path IS the test.
  */

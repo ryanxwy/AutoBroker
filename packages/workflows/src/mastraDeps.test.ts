@@ -1,8 +1,8 @@
 /**
- * L1 smoke — Mastra backbone dependency trio (spike-1 ESM residue defense).
+ * L1 smoke — Mastra backbone dependency trio (ESM residue defense).
  *
  * The three @mastra/* packages are pinned EXACTLY as a date-matched trio
- * (core@1.41.0 + memory@1.20.2 + libsql@1.12.1, bump-then-freeze 2026-06-04): their
+ * (core@1.41.0 + memory@1.20.2 + libsql@1.12.1): their
  * published peer ranges are looser than reality (libsql@1.12.1 imports
  * core-internal symbols that core@1.38 lacks — mastra#10602-class residue).
  * This test freezes "the trio imports under NodeNext ESM" so any future bump
@@ -28,7 +28,7 @@ describe("Mastra backbone trio — ESM import smoke", () => {
     expect(typeof mem.Memory).toBe("function");
   });
 
-  it("@mastra/libsql resolves LibSQLStore (mastra.db carve-out, D1)", async () => {
+  it("@mastra/libsql resolves LibSQLStore (mastra.db carve-out)", async () => {
     const libsql = await import("@mastra/libsql");
     expect(typeof libsql.LibSQLStore).toBe("function");
   });

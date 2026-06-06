@@ -1,13 +1,12 @@
 /**
- * runPubSub — the per-run SSE event log + subscriber fan-out (BACKEND_SERVICES
- * §4 + §5). Replaces the legacy self-built SkillRunRegistry's
- * subscribers/append_event with an in-memory replay buffer fed by the runtime
- * glue and drained by the HTTP /stream route. Pure in-memory at M1: the Mastra
- * workflow snapshot (mastra.db) is the DURABLE truth; this buffer is the live
- * fan-out only, rebuilt from scratch each boot (§5 "实时态集中到一个有重放语义的
- * 缓冲里").
+ * runPubSub — the per-run SSE event log + subscriber fan-out. Replaces the
+ * legacy self-built SkillRunRegistry's subscribers/append_event (legacy
+ * sse.py:91-118) with an in-memory replay buffer fed by the runtime glue and
+ * drained by the HTTP /stream route. Pure in-memory: the Mastra workflow snapshot
+ * (mastra.db) is the DURABLE truth; this buffer is the live fan-out only, rebuilt
+ * from scratch each boot.
  *
- * THE SSE ENVELOPE (§4.1, verbatim from legacy sse.py:91-118):
+ * THE SSE ENVELOPE:
  *   every frame = { ts:<ISO-8601 UTC>, kind:<EVENT_KIND>, payload:{...} }
  *   - append() stamps `ts`, asserts `kind ∈ EVENT_KINDS` (an unknown kind THROWS
  *     — the caller cannot drift), and payload is always an object (default {}).
@@ -15,27 +14,27 @@
  *     is NO `event:` named line (all frames ride the default message handler so a
  *     single EventSource.onmessage consumer can switch on payload.kind).
  *
- * FIRST FRAME = init {run_id, skill, driver_kind} (§4.2/§5.3, D-B4): the
- * driver_kind is INJECTED HERE, DERIVED from the active provider via core's
- * providerDriverKind(DEFAULT_PROVIDER) — the two-place lock-step note (D-B4):
- * this emitter and the harness runner's driver_kind anchor expectation both
- * derive from the SAME core map (harness/cases.ts PROVIDER_DRIVER_KIND), so the
- * wire value and the anchor expectation can never silently drift. With the
- * 2026-06-02 DeepSeek-default override this resolves to 'deepseek_apikey';
- * anthropic_apikey/openai_apikey come online with the M4 cross-provider lanes.
+ * FIRST FRAME = init {run_id, skill, driver_kind}: the driver_kind is INJECTED
+ * HERE, DERIVED from the active provider via core's
+ * providerDriverKind(DEFAULT_PROVIDER) — two-place lock-step: this emitter and
+ * the harness runner's driver_kind anchor expectation both derive from the SAME
+ * core map (harness/cases.ts PROVIDER_DRIVER_KIND), so the wire value and the
+ * anchor expectation can never silently drift. With DeepSeek as the default
+ * provider this resolves to 'deepseek_apikey'; anthropic_apikey/openai_apikey
+ * come online with the cross-provider lanes.
  *
- * SINGLE-TERMINAL-FRAME INVARIANT (§4.4, the load-bearing "wire wins" rule):
- *   - terminal kinds are EXACTLY three: done | error | aborted (§4.4; `declined`
- *     is a STATUS projection, NOT a wire kind — a decline lands as `aborted` on
- *     the wire and `declined` in the status projection, delta recorded). Decline
- *     metadata rides the aborted frame payload (reason) + the status projection.
+ * SINGLE-TERMINAL-FRAME INVARIANT (the load-bearing "wire wins" rule):
+ *   - terminal kinds are EXACTLY three: done | error | aborted (`declined` is a
+ *     STATUS projection, NOT a wire kind — a decline lands as `aborted` on the
+ *     wire and `declined` in the status projection). Decline metadata rides the
+ *     aborted frame payload (reason) + the status projection.
  *   - once a terminal frame lands, every later append is DISCARDED with a
  *     console.warn (wire wins). A status-only terminal re-entry after a wire
  *     terminal is ignored too.
  *
- * REPLAY-ON-SUBSCRIBE (§4.3): a late subscriber gets the FULL ordered backlog
- * (snapshot) then live events, taken under one lock so nothing is missed or
- * doubled. Reconnect = re-subscribe to the same run (no Last-Event-ID, no id:).
+ * REPLAY-ON-SUBSCRIBE: a late subscriber gets the FULL ordered backlog (snapshot)
+ * then live events, taken under one lock so nothing is missed or doubled.
+ * Reconnect = re-subscribe to the same run (no Last-Event-ID, no id:).
  *
  * Dependency wall: app layer. Imports core (DEFAULT_PROVIDER + providerDriverKind
  * for the init-frame driver_kind derivation, and the HarnessDriverKind type) —
@@ -45,8 +44,8 @@
 import { DEFAULT_PROVIDER, providerDriverKind, type HarnessDriverKind } from "@autobroker/core";
 
 /**
- * The closed EVENT_KINDS set (§4.2 frozenset). M1 emits a subset; the full set is
- * declared so an unknown kind throws (no drift). browser.* and the SDK-only
+ * The closed EVENT_KINDS set. Intake emits a subset; the full set is declared so
+ * an unknown kind throws (no drift). browser.* and the SDK-only
  * approval/permission kinds are listed for completeness but never emitted by
  * intake.
  */
@@ -74,27 +73,28 @@ export const EVENT_KINDS = [
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
-/** The three terminal wire kinds (§4.4). A run's stream ends after exactly one. */
+/** The three terminal wire kinds. A run's stream ends after exactly one. */
 export const TERMINAL_EVENT_KINDS = ["done", "error", "aborted"] as const;
 export type TerminalEventKind = (typeof TERMINAL_EVENT_KINDS)[number];
 
 const EVENT_KIND_SET = new Set<string>(EVENT_KINDS);
 const TERMINAL_SET = new Set<string>(TERMINAL_EVENT_KINDS);
 
-/** One SSE frame (§4.1). */
+/** One SSE frame. */
 export interface SseEvent {
   ts: string;
   kind: EventKind;
   payload: Record<string, unknown>;
 }
 
-/** The DEFAULT driver_kind for the init frame (D-B4 two-place lock-step). The
- *  REAL per-run value is injected by the caller (IntakeRunService derives it
- *  from policy() — the provider the skill's useCases actually route to), so a
+/** The DEFAULT driver_kind for the init frame (two-place lock-step). The REAL
+ *  per-run value is injected by the caller (IntakeRunService derives it from
+ *  policy() — the provider the skill's useCases actually route to), so a
  *  registry-string provider swap flips the wire label in lock-step with the
- *  harness runner's expectDriverKind (review HIGH 2026-06-05: a frozen
- *  module-level constant silently pinned every run to deepseek_apikey). This
- *  constant remains only as the no-caller default and the unit-test anchor. */
+ *  harness runner's expectDriverKind. GOTCHA: this must stay a no-caller default
+ *  only — relying on this frozen module-level constant per run silently pins every
+ *  run to deepseek_apikey. It remains only as the default and the unit-test
+ *  anchor. */
 export const INIT_DRIVER_KIND: HarnessDriverKind = providerDriverKind(DEFAULT_PROVIDER);
 
 /** A live subscriber's queue: an async iterator the HTTP route drains. New events
@@ -108,8 +108,8 @@ export interface SseQueue {
   [Symbol.asyncIterator](): AsyncIterator<SseEvent>;
 }
 
-/** What subscribe() returns under one lock (§4.3): the ordered backlog, a live
- *  queue (only attached when not yet terminal), and whether already terminal. */
+/** What subscribe() returns under one lock: the ordered backlog, a live queue
+ *  (only attached when not yet terminal), and whether already terminal. */
 export interface Subscription {
   snapshot: SseEvent[];
   queue: SseQueue | null;
@@ -124,8 +124,8 @@ interface RunChannel {
   queues: Set<SseQueue>;
 }
 
-/** Build an unbounded async queue (§4.4: queue is unbounded — backpressure is
- *  memory growth, events are never dropped). */
+/** Build an unbounded async queue (backpressure is memory growth — events are
+ *  never dropped). */
 function makeQueue(): SseQueue {
   const buffer: SseEvent[] = [];
   let closed = false;
@@ -171,7 +171,7 @@ function makeQueue(): SseQueue {
 /**
  * The per-run pubsub. One instance per server process; `attachInit` opens a
  * channel, `append` adds frames (terminal-aware), `subscribe` joins a late
- * reader with replay. In-memory only (M1).
+ * reader with replay. In-memory only.
  */
 export class RunPubSub {
   private readonly channels = new Map<string, RunChannel>();
@@ -183,7 +183,7 @@ export class RunPubSub {
 
   /**
    * Open the run's channel and emit the MANDATORY first frame — init
-   * {run_id, skill, driver_kind} — with driver_kind injected here (D-B4). Idempotent
+   * {run_id, skill, driver_kind} — with driver_kind injected here. Idempotent
    * per run: a second call is a no-op (the init frame is emitted exactly once).
    */
   attachInit(runId: string, skill: string, driverKind: HarnessDriverKind = INIT_DRIVER_KIND): void {
@@ -198,9 +198,9 @@ export class RunPubSub {
 
   /**
    * Append an event. Stamps `ts`, validates `kind` (unknown → throw, no drift),
-   * enforces the single-terminal-frame invariant (§4.4): after a terminal frame,
-   * later appends are discarded with a console.warn (wire wins). Returns true when
-   * the event was appended, false when discarded post-terminal.
+   * enforces the single-terminal-frame invariant: after a terminal frame, later
+   * appends are discarded with a console.warn (wire wins). Returns true when the
+   * event was appended, false when discarded post-terminal.
    */
   append(runId: string, ev: { kind: EventKind; payload?: Record<string, unknown> }): boolean {
     const channel = this.channels.get(runId);
@@ -208,11 +208,11 @@ export class RunPubSub {
       throw new Error(`runPubSub.append: no channel for run '${runId}' (attachInit first)`);
     }
     if (!EVENT_KIND_SET.has(ev.kind)) {
-      // Caller cannot drift the closed kind set (§4.1 makeEvent semantics).
+      // Caller cannot drift the closed kind set.
       throw new Error(`runPubSub.append: unknown event kind '${ev.kind}'`);
     }
     if (channel.terminal) {
-      // wire wins: a terminal frame already landed; discard + warn (§4.4).
+      // wire wins: a terminal frame already landed; discard + warn.
       console.warn(
         `runPubSub: discarding '${ev.kind}' append after terminal frame for run '${runId}' (wire wins)`,
       );
@@ -249,7 +249,7 @@ export class RunPubSub {
   }
 
   /**
-   * Subscribe a late reader (§4.3). Under one synchronous critical section
+   * Subscribe a late reader. Under one synchronous critical section
    * (single-threaded JS — the map ops are atomic) it returns the ordered snapshot
    * and, only when not yet terminal, a live queue for subsequent frames. An
    * already-terminal run returns snapshot + null queue (the route replays then

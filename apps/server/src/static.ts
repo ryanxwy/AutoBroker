@@ -1,19 +1,18 @@
 /**
- * static — single-port production serving of the dashboard SPA (BACKEND_SERVICES
- * §3 全局前置: "单端口生产同进程服务 apps/ui/dist + SPA fallback(排除 /api、
- * /assets);dev = Vite 5173 代理 /api → 8100").
+ * static — single-port production serving of the dashboard SPA. In prod one Node
+ * process on 127.0.0.1:8100 serves both the JSON/SSE API and the built React SPA;
+ * in dev the SPA is served by Vite on :5173, which proxies /api → :8100.
  *
- * In PROD one Node process on 127.0.0.1:8100 serves both the JSON/SSE API and the
- * built React SPA. This module registers @fastify/static over `apps/ui/dist` for
- * real asset files (JS/CSS/images, correct content-types via `send`), and exposes
- * an SPA-fallback helper the server's notFoundHandler calls so a client-side
- * route (e.g. /sessions/abc) returns index.html instead of a 404 — WITHOUT
- * shadowing /api (those 404 as the JSON error envelope).
+ * This module registers @fastify/static over `apps/ui/dist` for real asset files
+ * (JS/CSS/images, correct content-types via `send`), and exposes an SPA-fallback
+ * helper the server's notFoundHandler calls so a client-side route (e.g.
+ * /sessions/abc) returns index.html instead of a 404 — WITHOUT shadowing /api
+ * (those 404 as the JSON error envelope).
  *
- * DEV note (documented, not wired here): in dev the SPA is served by Vite on
- * :5173, which proxies /api → :8100; that Vite config is B1's. This module only
- * matters for the single-port prod build, and is a NO-OP when `apps/ui/dist` is
- * absent (no build artifact yet) so dev/test boots are unaffected.
+ * DEV note (documented, not wired here): the dev Vite proxy lives in the UI
+ * package's Vite config. This module only matters for the single-port prod build,
+ * and is a NO-OP when `apps/ui/dist` is absent (no build artifact yet) so dev/test
+ * boots are unaffected.
  *
  * Dependency wall: app layer. Imports @fastify/static (an app-layer HTTP dep) +
  * node fs/path. Never @mastra, never the product DB.
@@ -107,7 +106,7 @@ export function sendSpaFallback(
   reply: FastifyReply,
 ): boolean {
   if (serving === null) return false;
-  // Never shadow the API surface — /api/* 404s stay JSON envelopes (§3).
+  // Never shadow the API surface — /api/* 404s stay JSON envelopes.
   if (req.url.startsWith("/api/") || req.url === "/api") return false;
   // Only GET/HEAD navigations get the SPA shell; other verbs 404 normally.
   if (req.method !== "GET" && req.method !== "HEAD") return false;

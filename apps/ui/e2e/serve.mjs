@@ -19,7 +19,7 @@
  *
  * Per-scenario stub control: a single mutable `scenario` object drives both
  * stubs; the runner flips it via a test-only control route (POST /__e2e/scenario)
- * registered on the SAME app OUTSIDE /api (so the §3 /api wall is untouched). The
+ * registered on the SAME app OUTSIDE /api (so the /api wall is untouched). The
  * stubs read it per-call, so a single long-lived process serves all five
  * scenarios deterministically (a `failed → resolved` retry is just a flip).
  *
@@ -179,7 +179,7 @@ __setIntakeDepsForTests({
 
 const built = await buildServer({ quiet: true });
 
-// Test-only control route, OUTSIDE /api (the §3 wall is untouched). The runner
+// Test-only control route, OUTSIDE /api (the /api wall is untouched). The runner
 // POSTs { location?, trimValid? } to flip the scenario between/within runs.
 built.app.post("/__e2e/scenario", async (req, reply) => {
   const body = (req.body ?? {}) /** @type {Partial<Scenario>} */;

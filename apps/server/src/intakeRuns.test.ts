@@ -1,7 +1,7 @@
 /**
  * intakeRuns unit tests — the three-phase idempotent form-decision claim state
- * machine (BACKEND_SERVICES §7.2), isolated from the real Mastra workflow + DB
- * by a minimal fake Mastra instance. The integration suite exercises the claim
+ * machine, isolated from the real Mastra workflow + DB by a minimal fake Mastra
+ * instance. The integration suite exercises the claim
  * through the REAL stack; these pin the claim-table transitions directly,
  * including the decision_in_flight race that an in-process inject cannot hit
  * synchronously.
@@ -115,7 +115,7 @@ async function startedToCollect(
   return { svc, pubsub, runId, decisionId: pending!.decisionId };
 }
 
-describe("formDecision — idempotent replay (§7.2 Phase 1 consumed-same-body)", () => {
+describe("formDecision — idempotent replay (Phase 1 consumed-same-body)", () => {
   it("a duplicate accept with the SAME body replays the prior ack (no second resume)", async () => {
     const { svc, runId, decisionId } = await startedToCollect([SUSPEND_COLLECT, SUCCESS_CREATED]);
 
@@ -150,7 +150,7 @@ describe("formDecision — idempotent replay (§7.2 Phase 1 consumed-same-body)"
   });
 });
 
-describe("formDecision — in-flight + not-found + terminal guards (§7.2)", () => {
+describe("formDecision — in-flight + not-found + terminal guards", () => {
   it("a concurrent claim while one is processing → 409 decision_in_flight", async () => {
     // Make resume() hang so the first claim stays in 'processing'.
     const pubsub = new RunPubSub();
@@ -231,7 +231,7 @@ describe("formDecision — in-flight + not-found + terminal guards (§7.2)", () 
   });
 });
 
-describe("formDecision — decline terminal projection (§4.4 / §5)", () => {
+describe("formDecision — decline terminal projection", () => {
   it("decline → aborted wire frame + the run reads declined in status summary", async () => {
     const { svc, pubsub, runId, decisionId } = await startedToCollect([
       SUSPEND_COLLECT,

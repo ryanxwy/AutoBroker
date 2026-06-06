@@ -1,5 +1,5 @@
 /**
- * NotFound — the '*' route (FRONTEND_LAYOUT §2). A minimal dead-end with a link
+ * NotFound — the '*' route. A minimal dead-end with a link
  * home.
  */
 

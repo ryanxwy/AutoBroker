@@ -1,5 +1,5 @@
 /**
- * slashCommand.test — the pure slash parser (FRONTEND_LAYOUT §4.3).
+ * slashCommand.test — the pure slash parser.
  */
 
 import { describe, expect, it } from "vitest";

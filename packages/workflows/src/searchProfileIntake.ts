@@ -1,17 +1,17 @@
 /**
- * search_profile_intake — the M1 skill workflow (AI_ORCH §2, BACKEND_SERVICES
- * §12.1). ONE flat linear Mastra `createWorkflow`: 8 named steps chained with
+ * search_profile_intake — the first skill workflow. ONE flat linear Mastra
+ * `createWorkflow`: 8 named steps chained with
  * `.then()`, no nested workflow (flatness is the design convention — the old
  * nested-resume defect cluster #4630/#5650/#6065 is fixed in 1.x, but flatness
  * stays the rule; a structural test asserts no nested step here).
  *
- * STEP MAP (AI_ORCH §2.1):
+ * STEP MAP:
  *   0 prefill           — conditional (freeform launch only): harness.generate
  *                         (intake_freeform_prefill) seeds the form. Slash launch
- *                         passes through. Prefill OUTPUT NEVER PERSISTS (D-AI-3).
+ *                         passes through. Prefill OUTPUT NEVER PERSISTS.
  *   1 collect           — suspend ① (data_collection). resume submit|decline|cancel.
  *                         decline/cancel → terminal {outcome:'declined'}, and every
- *                         later step short-circuits → ZERO writes (D-AI-4).
+ *                         later step short-circuits → ZERO writes.
  *   2 validate          — pure: SearchProfileIntakeInputSchema.strict().parse.
  *   3 trimVerify        — skip when trim null; else harness.generate
  *                         (intake_trim_verify).
@@ -21,9 +21,10 @@
  *                         RE-SUSPENDS the gate with the new trim + new attestation
  *                         (fail-closed) — it NEVER proceeds unaudited.
  *   5 resolveLocation   — goplaces.resolveLocation. resolved → carry coords;
- *                         ambiguous/failed (裁定⑨) → suspend ③ (same channel);
+ *                         ambiguous/failed → suspend ③ (same channel);
  *                         resume pick | retry (re-resolve) | decline. NEVER carries
- *                         NULL coords forward. The shown candidate list + effective
+ *                         NULL coords forward (coordinate-resolution invariant).
+ *                         The shown candidate list + effective
  *                         query ride the suspend payload (read back via suspendData)
  *                         so a `pick` indexes the SAME list shown (no re-resolution,
  *                         no Google re-order nondeterminism); a `retry`'s new list
@@ -37,7 +38,7 @@
  * sees the full evolving picture; a step that should not run (declined, or a
  * conditional that doesn't apply) returns the state UNCHANGED (pass-through). This
  * is how a flat linear chain encodes conditional branches "inside the step
- * closure" (AI_ORCH §2 design convention) without a nested workflow.
+ * closure" without a nested workflow.
  *
  * SUSPEND/RESUME (live-probed @mastra/core@1.41): a suspending step runs TWICE —
  * once with `resumeData === undefined` (it calls `suspend(payload)` and the run
@@ -46,20 +47,20 @@
  * `runId` directly (ExecuteFunctionParams.runId) — that is the ledger runId for
  * each harness.generate call.
  *
- * #1244 (D-AI-5): harness.generate returns a HarnessSuspend (not a throw) when a
+ * #1244: harness.generate returns a HarnessSuspend (not a throw) when a
  * malformed tool call is detected and hitlAvailable=true; the LLM steps map that
  * to a malformed_tool_call suspend with a {retry_step|decline} resume. With no
  * HITL it throws MalformedToolCallAbort and the run fails — but intake always runs
  * with hitlAvailable=true (the rail/form is the human).
  *
- * FORCED-AUDIT PERSISTENCE (D-AI-AUDIT-PERSIST, product ruling 2026-06-04): a
+ * FORCED-AUDIT PERSISTENCE (product ruling 2026-06-04): a
  * confirmed `force_override` writes its 'intake_verification_forced' audit row
  * IMMEDIATELY at step 4. If the user LATER declines (e.g. at resolveLocation), the
  * run terminates declined with ZERO search_profiles writes — but the forced-audit
  * row REMAINS. This is INTENDED, not a leak: a decision that genuinely happened
  * (the user forced an unverified trim) stays audited even when the surrounding run
- * later aborts. Anchor vocabulary: "decline 零 search_profiles 写; force 必写
- * forced audit". The forced-audit row is NOT linked to a profile id
+ * later aborts. Invariant: decline writes zero search_profiles rows; a confirmed
+ * force always writes the forced-audit row. The forced-audit row is NOT linked to a profile id
  * (searchProfileId: null) — the profile does not exist yet at force-override time
  * (persist is step 6), so there is nothing to point at.
  *
@@ -162,7 +163,7 @@ export function __resetIntakeDepsForTests(): void {
 }
 
 // ---------------------------------------------------------------------------
-// ledger identity for the intake LLM calls (AI_ORCH §4 / BACKEND §12.1)
+// ledger identity for the intake LLM calls
 // ---------------------------------------------------------------------------
 
 /** Build the per-call ledger context from the step's runId (live-probed: a step
@@ -183,7 +184,8 @@ function intakeLedger(runId: string): HarnessLedgerContext {
 // the threaded workflow state (each step's input == prior step's output)
 // ---------------------------------------------------------------------------
 
-/** Resolved geo carried forward after step 5 (裁定⑨: never null past resolve). */
+/** Resolved geo carried forward after step 5 (coordinate-resolution invariant:
+ *  never null past resolve). */
 const ResolvedCoordsSchema = z.object({
   latitude: z.number(),
   longitude: z.number(),
@@ -230,8 +232,7 @@ const IntakeStateSchema = z.object({
 });
 type IntakeState = z.infer<typeof IntakeStateSchema>;
 
-/** The workflow input (task BUILD spec shape; LLD §2.2 used sessionId/launchMode
- *  — delta recorded). */
+/** The workflow input shape. */
 const IntakeInputSchema = z.object({
   input_mode: z.enum(["slash", "freeform"]),
   freeform_text: z.string().nullable(),
@@ -304,14 +305,14 @@ const prefillStep = createStep({
     };
 
     // Slash launch (or no prose) skips prefill entirely — the form renders with
-    // the caller-supplied seed (or empty). Prefill is freeform-only (D-AI-3).
+    // the caller-supplied seed (or empty). Prefill is freeform-only.
     if (inputData.input_mode !== "freeform" || inputData.freeform_text === null) {
       return base;
     }
 
     // On resume from a malformed_tool_call suspend: decline → pass through with an
-    // empty seed (prefill failure is Class 2, the form fills it — D-AI-5). retry
-    // falls through to re-run the generate below.
+    // empty seed (prefill failure is transient/recoverable — the form fills it).
+    // retry falls through to re-run the generate below.
     if (resumeData !== undefined && resumeData.action === "decline") {
       return base;
     }
@@ -321,7 +322,7 @@ const prefillStep = createStep({
       intakeLedger(runId),
     );
 
-    // #1244 fail-closed (D-AI-5): a malformed tool call suspends to the human.
+    // #1244 fail-closed: a malformed tool call suspends to the human.
     if (isHarnessSuspend(result)) {
       return (await suspend({ kind: "malformed_tool_call", signals: result.signals })) as never;
     }
@@ -356,7 +357,7 @@ const collectStep = createStep({
     const state = asState(inputData);
 
     // First pass: render the form (gate before prose — the suspend payload is the
-    // form spec; AI_ORCH §7.2). No resume yet → suspend.
+    // form spec). No resume yet → suspend.
     if (resumeData === undefined) {
       return (await suspend({
         kind: "data_collection",
@@ -366,7 +367,7 @@ const collectStep = createStep({
       })) as never;
     }
 
-    // decline/cancel → terminal declined, zero write (D-AI-4). Mark and let every
+    // decline/cancel → terminal declined, zero write. Mark and let every
     // later step pass through.
     if (resumeData.action === "decline" || resumeData.action === "cancel") {
       return { ...state, declined: true };
@@ -461,7 +462,7 @@ const trimVerifyStep = createStep({
 
     const r = await runTrimVerify(fields, runId);
     if ("malformed" in r) {
-      // #1244 fail-closed (D-AI-5): suspend to the human (retry_step | decline).
+      // #1244 fail-closed: suspend to the human (retry_step | decline).
       return (await suspend({ kind: "malformed_tool_call", signals: r.signals })) as never;
     }
     return { ...state, trimVerdict: r.verdict };
@@ -517,7 +518,7 @@ const forceOverrideStep = createStep({
     const approvedTrim = carded ? carded.trim : (fields.trim ?? "");
     const approvedAttestation = carded ? carded.reason : trimVerdict.attestation;
 
-    // First pass: render the approval card (gate before prose, AI_ORCH §7.2).
+    // First pass: render the approval card (gate before prose).
     if (resumeData === undefined) {
       return (await suspend({
         kind: "force_override",
@@ -534,7 +535,8 @@ const forceOverrideStep = createStep({
     if (resumeData.action === "force_override") {
       // Audited: the user knowingly kept an unverified trim (reason REQUIRED). The
       // forced-audit row writes IMMEDIATELY and is NOT linked to a profile id (the
-      // profile does not exist yet — see file header D-AI-AUDIT-PERSIST ruling).
+      // profile does not exist yet — see the forced-audit persistence note in the
+      // file header).
       withDb((db) =>
         writeAuditLog(db, {
           action: AUDIT_ACTIONS.intakeVerificationForced,
@@ -589,7 +591,7 @@ const forceOverrideStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 5 — resolveLocation (tools/goplaces, suspend ③: ambiguous + 裁定⑨ fail)
+// step 5 — resolveLocation (tools/goplaces, suspend ③: ambiguous + geocode fail)
 // ---------------------------------------------------------------------------
 
 /** Map a goplaces GeoLocation to the persist-layer ResolvedCoordinates shape. */
@@ -706,8 +708,9 @@ const resolveLocationStep = createStep({
       })) as never;
     }
 
-    // failed (裁定⑨): no_result / network_exhausted / api_error → SAME suspend
-    // channel, NEVER carry NULL coords forward. resume retry|decline.
+    // failed (coordinate-resolution invariant): no_result / network_exhausted /
+    // api_error → SAME suspend channel, NEVER carry NULL coords forward.
+    // resume retry|decline.
     return (await suspend({
       kind: "ambiguous_location",
       candidates: [],
@@ -733,9 +736,10 @@ const persistStep = createStep({
     const fields = state.fields as SearchProfileIntakeInput;
     const coords = state.coordinates;
     if (coords === null) {
-      // Defensive: resolveLocation must have produced coords or suspended (裁定⑨).
-      // Never reach persist with null coords — fail LOUD rather than NULL-to-DB.
-      throw new Error("persist: coordinates not resolved (裁定⑨ invariant breached)");
+      // Defensive: resolveLocation must have produced coords or suspended
+      // (coordinate-resolution invariant). Never reach persist with null coords —
+      // fail LOUD rather than NULL-to-DB.
+      throw new Error("persist: coordinates not resolved (coordinate-resolution invariant breached)");
     }
 
     const resolved: ResolvedCoordinates = {

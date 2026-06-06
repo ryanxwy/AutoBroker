@@ -1,11 +1,10 @@
 /**
- * useApi — a minimal async-data hook over the typed ApiClient (FRONTEND_LAYOUT §9.1
- * "服务端缓存" row). The spec names TanStack Query for this slice, but pulling in
- * @tanstack/react-query (a real runtime dependency) for a handful of one-shot GETs
- * (skills / profiles / mode / status) is more machinery than this milestone needs;
- * a ~40-line useAsync with refetch + cancel-on-unmount covers the read paths
- * without a new dep (recorded in design_notes). Query keys / cache invalidation /
- * background refetch are a post-M2 upgrade if the read surface grows.
+ * useApi — a minimal async-data hook over the typed ApiClient (the server-state
+ * cache). Pulling in @tanstack/react-query (a real runtime dependency) for a
+ * handful of one-shot GETs (skills / profiles / mode / status) is more machinery
+ * than this needs; a ~40-line useAsync with refetch + cancel-on-unmount covers
+ * the read paths without a new dep. Query keys / cache invalidation /
+ * background refetch are a later upgrade if the read surface grows.
  *
  * Dependency wall: app/ui layer. react + the typed client only.
  */

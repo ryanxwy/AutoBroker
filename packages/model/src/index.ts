@@ -19,7 +19,7 @@ export type { UseCase, PolicyResolution } from "./policy.js";
 
 // Provider-neutral harness contract: signature types + the pure structured-output
 // strategy selector. The runnable harness.generate facade + Mastra Agent loop
-// live in @autobroker/workflows (归属裁定 2026-06-04).
+// live in @autobroker/workflows (the layer-ownership decision).
 export { chooseStructuredOutputStrategy } from "./harness.js";
 export type {
   HarnessGenerateInput,
@@ -46,7 +46,7 @@ export type { ToolTurnView, MalformedSignal } from "./malformedToolCall.js";
 export { PRICING, PRICING_SOURCE, computeCostUsd } from "./pricing.js";
 export type { ModelRate } from "./pricing.js";
 
-// Minimal M0 canonical-message → ModelMessage translator (flat text, fail-LOUD).
+// Minimal canonical-message → ModelMessage translator (flat text, fail-LOUD).
 export {
   CANONICAL_ROLES,
   toModelMessages,

@@ -1,16 +1,15 @@
 /**
  * harness.generate — the runnable structured-generation facade (Layer 3).
  *
- * OWNERSHIP (归属裁定 2026-06-04, plan-repo DECISIONS.html): only the api-key
- * lane lets the AI SDK own the tool loop, and Mastra is the framework that drives
- * that loop. `@mastra/*` may only be imported in `@autobroker/workflows` (the
- * five-layer wall), so the runnable facade — the Mastra Agent loop end-to-end —
- * lives HERE. `@autobroker/model` keeps only the pure pieces and the signature
- * types (HarnessGenerateInput/Result/Suspend, chooseStructuredOutputStrategy, the
- * #1244 detector, pricing, the canonical-message translator); this file imports
- * them and wires the loop.
+ * OWNERSHIP: only the api-key lane lets the AI SDK own the tool loop, and Mastra
+ * is the framework that drives that loop. `@mastra/*` may only be imported in
+ * `@autobroker/workflows` (the five-layer wall), so the runnable facade — the
+ * Mastra Agent loop end-to-end — lives HERE. `@autobroker/model` keeps only the
+ * pure pieces and the signature types (HarnessGenerateInput/Result/Suspend,
+ * chooseStructuredOutputStrategy, the #1244 detector, pricing, the
+ * canonical-message translator); this file imports them and wires the loop.
  *
- * CONTROL FLOW (AI_ORCH §3.3 — control-flow stages):
+ * CONTROL FLOW:
  *   1. policy(useCase) → alias + capabilities; resolveModel(alias) → LanguageModel
  *      (fail-LOUD inherited from policy()).
  *   2. chooseStructuredOutputStrategy(capabilities): 'output_object'
@@ -23,11 +22,11 @@
  *        - named tool_choice { type:'tool', toolName:'emit_result' }
  *        - DeepSeek thinking DISABLED (providerOptions.deepseek.thinking.type)
  *        - temperature 0 (modelSettings)
- *      Platform constraint (裁定⑤ / §11.2, live-verified 2026-06-04): DeepSeek
- *      thinking mode REJECTS a named/forced tool_choice, so an emit_result step
- *      MUST disable thinking per-request. The real provider key is
- *      `@ai-sdk/deepseek`'s `deepseekLanguageModelOptions.thinking.type` =
- *      'disabled' (confirmed in the .d.ts, not guessed).
+ *      Platform constraint (live-verified 2026-06-04): DeepSeek thinking mode
+ *      REJECTS a named/forced tool_choice, so an emit_result step MUST disable
+ *      thinking per-request. The real provider key is `@ai-sdk/deepseek`'s
+ *      `deepseekLanguageModelOptions.thinking.type` = 'disabled' (confirmed in the
+ *      .d.ts, not guessed).
  *   4. Construct a Mastra Agent and call agent.generate with
  *      outputProcessors:[malformedToolCallProcessor({hitlAvailable, expectsToolCall:()=>true})].
  *   4b/5. #1244 fail-closed. CRITICAL behavioral fact (live-probed against
@@ -38,13 +37,13 @@
  *      RESOLVED field — we do not try/catch a throw on this lane. When
  *      result.tripwire.metadata.reason === 'malformed_tool_call':
  *        hitlAvailable → return HarnessSuspend; no HITL → throw the typed
- *        MalformedToolCallAbort(signals). (See api_findings for the alternate
- *        workflow-step path that DOES throw — not the path agent.generate takes.)
+ *        MalformedToolCallAbort(signals). (The alternate workflow-step path DOES
+ *        throw — that is not the path agent.generate takes.)
  *      Belt (stage 4b): if the run did NOT trip yet the emit_result capture is
  *      still empty, run the pure detector over the real finishReason /
  *      toolCallCount / final text — ledger first, then suspend or abort, NEVER
- *      fall through to prose (review F2 2026-06-05: detect→ledger→act ordering).
- *   6. (stage 5, Zod authority) the model output is advisory; input.schema is the
+ *      fall through to prose (detect→ledger→act ordering).
+ *   6. (Zod authority) the model output is advisory; input.schema is the
  *      law. Mastra validates emit_result's args against that schema at the TOOL
  *      BOUNDARY before execute (live-probed) — a contract violation is recorded
  *      as a typed ValidationError in toolResults with finishReason still
@@ -53,15 +52,15 @@
  *      message string-match) and surfaces it as a ZodError, fail_reason
  *      'zod_validation'. On the success path it additionally re-runs
  *      input.schema.parse(captured) as defense-in-depth (same verdict on drift).
- *   7. (stage 6, ledger) EVERY call — success AND every failure branch — writes
+ *   7. (ledger) EVERY call — success AND every failure branch — writes
  *      exactly ONE test_run_records row through @autobroker/tools'
  *      writeTestRunRecord (the single ledger write path; SQLite invariant).
  *      Cost is NULL-not-$0: usage missing → costUsd null + pricingSource
  *      'unavailable'. Wall-clock durationMs is always recorded.
  *
- * Prompt: input.prompt is a flat string at M0; it is routed through the model
+ * Prompt: input.prompt is a flat string; it is routed through the model
  * layer's toModelMessages([{role:'user',...}]) so the canonical-message ↔
- * ModelMessage translator is load-bearing on this lane (AI_ORCH R7).
+ * ModelMessage translator is load-bearing on this lane.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/model (pure
  * helpers + types), @autobroker/tools (the ledger writer — the ONLY DB path),
@@ -102,7 +101,7 @@ type AgentModelConfig = ConstructorParameters<typeof Agent>[0]["model"];
 /**
  * Caller-supplied ledger identity for the one test_run_records row this run
  * writes. REQUIRED (no invented defaults — fail-loud beats a silent placeholder
- * that fakes provenance): the M0 probe / each skill passes its own. Members
+ * that fakes provenance): each skill passes its own. Members
  * mirror the table's caller-owned columns (packages/db testRunRecords).
  */
 export interface HarnessLedgerContext {
@@ -157,7 +156,7 @@ function concreteModelId(model: unknown): string {
  * test drive the REAL Agent → REAL processor → REAL ledger chain against a
  * deterministic fake model and an isolated tmp DB, without a vitest module mock
  * (the agent/processor/tripwire/ledger path stays genuinely exercised — that is
- * the in-stack evidence M0 requires). See design_notes for why this over a mock.
+ * the in-stack evidence we require): a real chain over a fake model, not a mock.
  */
 export interface HarnessTestOverrides {
   /** Inject a fake LanguageModel (use @autobroker/model testSupport factories). */
@@ -202,8 +201,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
   const modelId = concreteModelId(model);
 
   // Stage 2 — strategy gate. supportsOutputObjectWithTools:true (Anthropic /
-  // OpenAI) routes to the NATIVE structured-output path (M4 cross-provider
-  // smoke); DeepSeek's false routes to the emit_result discipline below. The
+  // OpenAI) routes to the NATIVE structured-output path; DeepSeek's false routes
+  // to the emit_result discipline below. The
   // pure selector owns the #1244 decision; this branch only dispatches.
   const strategy = chooseStructuredOutputStrategy(route.capabilities);
   if (strategy === "output_object") {
@@ -228,7 +227,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
     },
   });
 
-  // Stage 9 — prompt routed through the canonical-message translator (R7).
+  // Stage 9 — prompt routed through the canonical-message translator.
   const messages = toModelMessages([{ role: "user", content: input.prompt }]);
 
   const agent = new Agent({
@@ -343,7 +342,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // #1244 processor correctly does NOT trip — a tool WAS called). That rejection
   // IS the Zod-authority failure ("hallucinated/invalid fields fail loud"); we
   // surface it as a ZodError and ledger it 'zod_validation'. (model output is
-  // advisory; the schema is the law — AI_ORCH §3.3 stage 5.)
+  // advisory; the schema is the law.)
   if (!capturedSeen) {
     const validationError = findToolInputValidationError(result.toolResults);
     if (validationError !== null) {
@@ -445,7 +444,7 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   startedAt: number,
   _testOverrides: HarnessTestOverrides | undefined,
 ): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
-  // Prompt routed through the canonical-message translator (R7), same as the
+  // Prompt routed through the canonical-message translator, same as the
   // emit_result lane.
   const messages = toModelMessages([{ role: "user", content: input.prompt }]);
 

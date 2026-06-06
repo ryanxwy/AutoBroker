@@ -1,9 +1,9 @@
 /**
  * L1 unit tests — self-managed pricing table + computeCostUsd.
  *
- * Freezes the NULL-not-$0 contract (HARNESS_FRAMEWORK §"成本/时间度量"; vercel/ai
- * #3932): null tokens or an unknown model id ⇒ { costUsd: null, pricingSource:
- * "unavailable" }, never a silent $0. Pure arithmetic — no LLM, no I/O.
+ * Freezes the NULL-not-$0 cost-metering contract (vercel/ai #3932): null tokens
+ * or an unknown model id ⇒ { costUsd: null, pricingSource: "unavailable" },
+ * never a silent $0. Pure arithmetic — no LLM, no I/O.
  */
 
 import { describe, expect, it } from "vitest";
@@ -19,7 +19,7 @@ describe("PRICING table", () => {
   });
 
   it("carries the officially-priced ids for all three first-class providers", () => {
-    // DeepSeek (default) + the Anthropic/OpenAI rows added for M4 cross-provider
+    // DeepSeek (default) + the Anthropic/OpenAI rows added for the cross-provider
     // smoke (official pages, fetched 2026-06-05). Keyed by the concrete ids the
     // registry binds.
     expect(Object.keys(PRICING).sort()).toEqual([

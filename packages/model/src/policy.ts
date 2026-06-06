@@ -6,9 +6,6 @@
  * `useCase`; they never hard-code a provider. Changing which model serves a
  * useCase is an edit here, not in any skill.
  *
- * (architectureStack §"Provider 路由 / Agent lane": "workflows 只认 useCase 不
- * 硬编码 provider 名".)
- *
  * Override (2026-06-02): default routing targets DeepSeek tiers; Anthropic and
  * OpenAI are switchable by changing the alias string. No privacy gate.
  */
@@ -29,23 +26,22 @@ export const USE_CASES = [
   /** Render a Telegram headline from already-computed audit flags (Phase 1). */
   "quote_audit_headline",
   /**
-   * Intake trim-verify (M1, AI_ORCH §4.2): LLM checks whether `trim` truly
-   * exists for the make/model/year and, when not, suggests real alternatives.
-   * Its {valid,...} output drives the force-override audit branch. Both intake
-   * useCases route to deepseek.chat (AI_ORCH §4.3, replacing the single
-   * `search_profile_intake` stub per BRIEF §4).
+   * Intake trim-verify: LLM checks whether `trim` truly exists for the
+   * make/model/year and, when not, suggests real alternatives. Its {valid,...}
+   * output drives the force-override audit branch. Both intake useCases route to
+   * deepseek.chat (they replaced an earlier single intake stub useCase).
    */
   "intake_trim_verify",
   /**
-   * Intake freeform prefill (M1, AI_ORCH §4.1): an EXTRACTION pass over a user's
-   * one-liner that pre-seeds the intake form. All-nullable subset; never extracts
-   * PII/budget (D-AI-3). Prefill only seeds the form — it never persists.
+   * Intake freeform prefill: an EXTRACTION pass over a user's one-liner that
+   * pre-seeds the intake form. All-nullable subset; never extracts PII/budget.
+   * Prefill only seeds the form — it never persists.
    */
   "intake_freeform_prefill",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
   /**
-   * M4 cross-provider smoke probe. Routes to a structured-output-with-tools
+   * Cross-provider smoke probe. Routes to a structured-output-with-tools
    * provider (Anthropic) so the harness exercises the NATIVE `output_object`
    * strategy end-to-end — the counterpart to foundation_probe's emit_result
    * (DeepSeek) lane. The live calls themselves gate on an explicit go.
@@ -65,9 +61,10 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   dealer_reply_extract: "deepseek.chat",
   quote_audit_headline: "deepseek.cheap",
   // Both intake LLM passes route to deepseek.chat (deepseek-v4-flash, temp 0,
-  // per-step thinking:disabled + named tool_choice — emit_result hard constraint,
-  // AI_ORCH §11.2 / §4.3). emit_result strategy (supportsOutputObjectWithTools
-  // false) is shared with every DeepSeek alias — no Output.object + tools mix.
+  // per-step thinking:disabled + named tool_choice — emit_result hard constraint:
+  // DeepSeek thinking mode rejects a named/forced tool_choice). emit_result
+  // strategy (supportsOutputObjectWithTools false) is shared with every DeepSeek
+  // alias — no Output.object + tools mix.
   intake_trim_verify: "deepseek.chat",
   intake_freeform_prefill: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
@@ -83,7 +80,8 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
  *
  * Key fact baked in: DeepSeek MUST NOT mix Output.object with tools
  * (`supportsOutputObjectWithTools: false`) — per-step json_schema injection
- * provokes the #1244 text-dump. (currentTruth §"结构化输出机制")
+ * provokes the #1244 text-dump (mixing structured output with tools is the
+ * trigger; pure tool loops are clean).
  *
  * TODO: fill in real per-alias flags for every registered tier; values below are
  * representative stubs for the DeepSeek defaults.
@@ -104,7 +102,7 @@ const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
     reportsUsageTokens: true,
   },
 
-  // Anthropic rows (M4 cross-provider smoke). Verified 2026-06-05 against the
+  // Anthropic rows (cross-provider smoke). Verified 2026-06-05 against the
   // official structured-outputs doc (platform.claude.com/.../structured-outputs):
   // Claude supports structured JSON output (output_config.format json_schema) AND
   // tool use in the SAME request ("call tools with guaranteed-valid parameters
@@ -142,7 +140,7 @@ const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
     reportsUsageTokens: true,
   },
 
-  // OpenAI rows (M4 cross-provider smoke). Verified 2026-06-05 against the
+  // OpenAI rows (cross-provider smoke). Verified 2026-06-05 against the
   // official model docs (developers.openai.com/api/docs/models) + the
   // structured-outputs/function-calling guides: the GPT-5.x family supports
   // Structured Outputs (response_format json_schema, strict) together with
@@ -189,7 +187,7 @@ export interface PolicyResolution {
  * Resolve a useCase to its alias + provider + capabilities.
  *
  * Fail-LOUD: an unmapped useCase or a missing capability row throws rather than
- * silently down-routing to a default. (No silent fallbacks — safetyInvariants.)
+ * silently down-routing to a default. (No silent fallbacks.)
  */
 export function policy(useCase: UseCase): PolicyResolution {
   const alias = USE_CASE_ALIAS[useCase];

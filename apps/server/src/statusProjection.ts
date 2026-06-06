@@ -1,8 +1,7 @@
 /**
  * statusProjection — Mastra's 10-value WorkflowRunStatus → the product's 7-value
- * core SkillRunStatus (BACKEND_SERVICES §5/§6, AI_ORCHESTRATION run-status
- * projection). "The product never re-implements a status machine; it renames
- * one" (core/types.ts SKILL_RUN_STATUSES comment).
+ * core SkillRunStatus. "The product never re-implements a status machine; it
+ * renames one" (core/types.ts SKILL_RUN_STATUSES comment).
  *
  * The 10 live-probed Mastra 1.41 statuses (mastra.ts / runtimeGlue header):
  *   running | success | failed | tripwire | suspended | waiting | pending |
@@ -11,24 +10,23 @@
  * The 7 product statuses (core SKILL_RUN_STATUSES):
  *   pending | running | awaiting_approval | done | error | declined | aborted
  *
- * THE SUSPENDED FORK (§5/§6, the load-bearing distinction): a Mastra `suspended`
- * run is ALWAYS a HITL pause, but the PRODUCT splits it by WHICH suspend payload
- * kind is pending — a `data_collection` / `ambiguous_location` form maps to
+ * THE SUSPENDED FORK (the load-bearing distinction): a Mastra `suspended` run is
+ * ALWAYS a HITL pause, but the PRODUCT splits it by WHICH suspend payload kind is
+ * pending — a `data_collection` / `ambiguous_location` form maps to
  * `awaiting_approval` (the product's single HITL-suspend projection used for the
- * form gate and approval gates alike; core's enum has no separate
- * `awaiting_user`, see core/types.ts — the LLD's "awaiting_user/awaiting_approval
- * distinction" lives in the SSE *event* vocabulary, not the run-status enum, so
- * both collapse onto `awaiting_approval` here — delta recorded). A
- * `malformed_tool_call` suspend is also `awaiting_approval` (HITL #1244
- * fail-closed). With no pending payload kind we still report `awaiting_approval`
- * (a suspended run is, by definition, awaiting a human).
+ * form gate and approval gates alike; core's enum has no separate `awaiting_user`,
+ * see core/types.ts — the awaiting_user/awaiting_approval distinction lives in the
+ * SSE *event* vocabulary, not the run-status enum, so both collapse onto
+ * `awaiting_approval` here). A `malformed_tool_call` suspend is also
+ * `awaiting_approval` (HITL #1244 fail-closed). With no pending payload kind we
+ * still report `awaiting_approval` (a suspended run is, by definition, awaiting a
+ * human).
  *
  * canceled → the app decides declined-vs-aborted from its own metadata (a user
  * decline at a form vs a stale-run cancel); the projection itself maps bare
  * `canceled` to `aborted` and lets the caller override to `declined` when it
- * knows the cancel came from a decline outcome (BACKEND_SERVICES §5 "app 侧元数据
- * 区分 declined vs aborted"). `bailed` (an internal early-exit) → `error`.
- * `tripwire` (a guard trip, e.g. the #1244 Processor) → `error`.
+ * knows the cancel came from a decline outcome. `bailed` (an internal early-exit)
+ * → `error`. `tripwire` (a guard trip, e.g. the #1244 Processor) → `error`.
  *
  * Pure: no Mastra import (it takes the status string + an optional payload-kind
  * hint), no I/O. Unit-tested across all 10 inputs.

@@ -1,8 +1,7 @@
 /**
  * L1 unit tests — test_run_records ledger writer (NULL-not-$0 keystone).
  *
- * Freezes the cost-metering contract (HARNESS_FRAMEWORK "NULL-not-$0";
- * AI_ORCH §3.3 stage 6; BACKEND_SERVICES §14 M0 ledger writer):
+ * Freezes the cost-metering contract (NULL-not-$0; usage tokens → cost):
  *   (a) costUsd: null round-trips as SQL NULL — never coerced to 0;
  *   (b) a normal row with a real costUsd round-trips intact;
  *   (c) the fail-LOUD guard rejects cost_usd = 0 + pricing_source = 'unavailable'
@@ -45,9 +44,9 @@ let tmpDir: string;
 let db: Db;
 
 beforeAll(() => {
-  // M1 GAP (api_findings): openDb() does NOT create the data dir if missing
-  // (client.ts has an explicit TODO(phase-0) for create-dir-if-missing). The
-  // test therefore mkdtemp's the dir itself before opening.
+  // GAP: openDb() does NOT create the data dir if missing (client.ts has an
+  // explicit TODO(phase-0) for create-dir-if-missing). The test therefore
+  // mkdtemp's the dir itself before opening.
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-ledger-"));
   mkdirSync(tmpDir, { recursive: true });
   process.env[DATA_DIR] = tmpDir;

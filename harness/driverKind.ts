@@ -1,6 +1,7 @@
 /**
- * driverKind — the R2 two-place lock-step self-check (HARNESS_FRAMEWORK §11 / §4.3
- * gate ⑦). The single most dangerous porting trap: the run-init SSE emitter and the
+ * driverKind — the two-place lock-step self-check (driver_kind must match in both
+ * the run-init SSE frame and the policy-derived provider; preflight gate ⑦). The
+ * single most dangerous porting trap: the run-init SSE emitter and the
  * evaluator's driver_kind expectation are two SEPARATE word lists coupled only by
  * convention; changing one without the other SILENTLY breaks the anchor. So BEFORE
  * any scoring, the runner probes ONE run-init frame and asserts

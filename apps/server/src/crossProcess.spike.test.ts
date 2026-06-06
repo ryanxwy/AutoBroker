@@ -1,6 +1,6 @@
 /**
- * Cross-process crash-and-resume spike (M1 EXIT 2): "form-suspend 杀进程重启后可
- * resume;decline/cancel 零写入" (BACKEND_SERVICES M1 swimlane).
+ * Cross-process crash-and-resume spike: a form-suspend survives a process kill +
+ * restart and can be resumed; decline/cancel produce zero writes.
  *
  * child A boots the REAL server (ephemeral port, tmp data dir) → POST start →
  * reach awaiting_user@collect → SIGKILL. child B boots fresh on the SAME data dir
@@ -138,7 +138,7 @@ function runChildB(runId: string): Promise<Record<string, unknown>> {
   });
 }
 
-describe("M1 EXIT 2 — cross-process crash-and-resume", () => {
+describe("cross-process crash-and-resume", () => {
   it(
     "childA start→suspend→SIGKILL; childB recovers→decline→declined, zero writes",
     async () => {

@@ -1,13 +1,11 @@
 # @autobroker/workflows
 
-> Status: Phase 0 alignment target, 2026-06-03. The source-of-intent is now
-> **Mastra 1.x as the workflow backbone**. The pre-Phase-0 self-built
+> Status: Phase 0 alignment target, 2026-06-03. The workflow backbone is
+> **Mastra 1.x**. The pre-Phase-0 self-built
 > `SkillRun` / `HarnessWorkflowRuntime` scaffold has been deleted; this package
 > now owns the Mastra integration shell and runtime-glue surface. Layer 3 of the
-> five-layer monorepo (`core -> model -> workflows -> tools -> app`). Sibling plans:
-> [tools package](../tools/README.md) (the only side-effect layer), and the
-> canonical phase plan in the dev-plan repo at
-> `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/phases/index.html`.
+> five-layer monorepo (`core -> model -> workflows -> tools -> app`). Sibling
+> package: [tools](../tools/README.md), the only side-effect layer.
 
 ## What this package becomes
 

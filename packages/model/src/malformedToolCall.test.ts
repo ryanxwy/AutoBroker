@@ -1,7 +1,7 @@
 /**
  * L1 unit tests — #1244 malformed-tool-call detector (safety boundary).
  *
- * Freezes the fail-closed contract (INVARIANTS / safetyInvariants §2):
+ * Freezes the fail-closed contract:
  *   finish_reason != tool_calls OR empty tool_calls OR tool-shaped blob in
  *   content ⇒ suspend under HITL, typed MalformedToolCallAbort without HITL.
  *   NEVER regex-extract-and-execute. Pure functions — no LLM, no I/O.

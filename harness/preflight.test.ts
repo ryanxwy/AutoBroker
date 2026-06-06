@@ -1,7 +1,7 @@
 /**
  * preflight.test.ts — each isolation gate violation maps to a fail-closed
  * PreflightError (the runner exits 1 on any). NO network for gates ①–⑤; gate ⑥
- * uses an injected fetch. (task BUILD §7 "each violation → exit-1 path".)
+ * uses an injected fetch. (Each violation maps to its exit-1 path.)
  */
 
 import { homedir } from "node:os";

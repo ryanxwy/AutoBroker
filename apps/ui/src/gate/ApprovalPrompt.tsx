@@ -1,7 +1,7 @@
 /**
- * ApprovalPrompt — the run-level approval gate (FRONTEND_LAYOUT §8.1, build-now).
+ * ApprovalPrompt — the run-level approval gate.
  * Renders on an `approval_required` decision: Approve / Approve all / Deny /
- * Cancel. Two load-bearing safety rules (CLAUDE.md §8-9 / BRIEF §2):
+ * Cancel. Two load-bearing safety rules (see CLAUDE.md):
  *
  *   - "Approve all" is HIDDEN for a SENSITIVE event (no batch-approval of a
  *     mutating/sensitive tool) — `sensitive` also renders the danger frame.
@@ -9,8 +9,8 @@
  *     turn's GATE zone, structurally before the prose.
  *
  * intake is read/local-write in this slice (no MutationKind) so it does NOT
- * normally trigger this — but the component is build-now per §8.1 so a gated
- * tool surfaces correctly the moment one lands. Presentational: the parent owns
+ * normally trigger this — but the component is built now so a gated tool
+ * surfaces correctly the moment one lands. Presentational: the parent owns
  * the resume call. Stable data-testid on every action.
  */
 

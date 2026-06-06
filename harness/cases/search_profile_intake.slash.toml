@@ -1,5 +1,5 @@
-# harness/cases/search_profile_intake.slash.toml — the canonical L2 slash case (案例 A).
-# Round 1 of the per-skill 2-round standard (裁定⑦): pure skill input via the form
+# harness/cases/search_profile_intake.slash.toml — the canonical slash case (case A).
+# Round 1 of this skill's two-round harness: pure skill input via the form
 # (input_mode=slash, NO prefill). The 6+1 GREEN anchor subset for intake.
 #
 # Form content = [narrative.profile] (the strict 18-field intake schema: the 6
@@ -18,7 +18,7 @@ session_origin = "fresh_unpinned"   # intake creates + pins; never inherits an o
 input_mode = "slash"
 provider = "deepseek"
 
-# The corpus profile (BRIEF §4). budget_max is INTERNAL-ONLY — collected, never
+# The corpus profile. budget_max is INTERNAL-ONLY — collected, never
 # dealer-facing. phone_policy 'fake' by default. All 18 strict fields present.
 [narrative.profile]
 make = "Hyundai"

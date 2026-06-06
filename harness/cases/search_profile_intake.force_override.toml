@@ -5,7 +5,7 @@
 # The resume script is two-phase by SUSPEND KIND: first answer the data_collection
 # form (submit the profile with the bogus trim), then answer the force_override
 # suspend with action="force_override" + a reason. The audited path writes an
-# 'intake_verification_forced' audit row IMMEDIATELY (D-AI-AUDIT-PERSIST). The
+# 'intake_verification_forced' audit row IMMEDIATELY. The
 # approval_gate anchor proves the gate rendered (awaiting_user before prose).
 #
 # NOTE (live nondeterminism): the gate only fires if the live LLM rejects the trim.
@@ -70,7 +70,7 @@ kind = "approval_gate"
 [[steps.anchors]]
 kind = "table_min_rows"
 table = "audit_log"
-scope = "global"                          # forced-audit row has search_profile_id=NULL (D-AI-AUDIT-PERSIST) → count unscoped by action.
+scope = "global"                          # forced-audit row has search_profile_id=NULL → count unscoped by action.
 action = "intake_verification_forced"
 delta_min = 1
 

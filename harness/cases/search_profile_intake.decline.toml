@@ -1,6 +1,6 @@
 # harness/cases/search_profile_intake.decline.toml — case C (decline / zero write).
 # The user declines/cancels at the data_collection form → terminal `declined`,
-# ZERO writes (D-AI-4). Anchors: run_status=["declined"], exact delta 0 on
+# ZERO writes. Anchors: run_status=["declined"], exact delta 0 on
 # search_profiles, keystone clean.
 
 [meta]

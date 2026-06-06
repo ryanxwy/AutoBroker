@@ -1,8 +1,7 @@
 /**
- * runPubSub unit tests — the per-run SSE log + fan-out invariants
- * (BACKEND_SERVICES §4): init driver_kind injection, replay-on-subscribe
- * ordering, the single-terminal-frame discard ("wire wins"), and unknown-kind
- * rejection. Pure in-memory.
+ * runPubSub unit tests — the per-run SSE log + fan-out invariants: init
+ * driver_kind injection, replay-on-subscribe ordering, the single-terminal-frame
+ * discard ("wire wins"), and unknown-kind rejection. Pure in-memory.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -16,7 +15,7 @@ async function drain(queue: AsyncIterable<SseEvent>): Promise<SseEvent[]> {
   return out;
 }
 
-describe("runPubSub — init frame (driver_kind injection, D-B4)", () => {
+describe("runPubSub — init frame (driver_kind injection)", () => {
   it("attachInit emits init{run_id, skill, driver_kind='deepseek_apikey'} as frame 0", () => {
     const ps = new RunPubSub();
     ps.attachInit("r1", "search_profile_intake");
@@ -47,7 +46,7 @@ describe("runPubSub — init frame (driver_kind injection, D-B4)", () => {
   });
 });
 
-describe("runPubSub — replay-on-subscribe ordering (§4.3)", () => {
+describe("runPubSub — replay-on-subscribe ordering", () => {
   it("a late subscriber gets the FULL ordered backlog then live events", async () => {
     const ps = new RunPubSub();
     ps.attachInit("r1", "search_profile_intake");
@@ -84,7 +83,7 @@ describe("runPubSub — replay-on-subscribe ordering (§4.3)", () => {
   });
 });
 
-describe("runPubSub — single-terminal-frame invariant (§4.4, wire wins)", () => {
+describe("runPubSub — single-terminal-frame invariant (wire wins)", () => {
   it("appends after a terminal frame are DISCARDED with a warn", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const ps = new RunPubSub();
@@ -118,7 +117,7 @@ describe("runPubSub — single-terminal-frame invariant (§4.4, wire wins)", () 
   });
 });
 
-describe("runPubSub — unknown kind rejection (no drift, §4.1)", () => {
+describe("runPubSub — unknown kind rejection (no drift)", () => {
   it("append with an unknown kind throws", () => {
     const ps = new RunPubSub();
     ps.attachInit("r1", "search_profile_intake");

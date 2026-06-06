@@ -1,16 +1,16 @@
 /**
  * serverHost — boot the REAL @autobroker/server on an ephemeral 127.0.0.1 port for
- * the live harness (HARNESS_FRAMEWORK §1/§3). Spawned as a CHILD PROCESS by runner.ts
+ * the live harness. Spawned as a CHILD PROCESS by runner.ts
  * (the e2e serve.mjs pattern) so the harness drives a genuine HTTP/SSE server in a
  * separate process — black-box, exactly the SUT a user runs.
  *
  * KEY DIFFERENCE FROM apps/ui/e2e/serve.mjs: the live harness boots WITHOUT the DI
- * stubs — `live = real geocode + real DeepSeek` (task BUILD). The two external
+ * stubs — `live = real geocode + real DeepSeek`. The two external
  * collaborators (resolveLocation / harnessGenerate) keep their REAL implementations.
  * The only thing this host arranges is ISOLATION (a throwaway DB under
  * ~/.autobroker-ts) + the migration + a seed account, and it prints the port.
  *
- * DRY-RUN MODE (--dry-run, task BUILD §7): boot the server with the test DI seam
+ * DRY-RUN MODE (--dry-run): boot the server with the test DI seam
  * DISABLED (NOT stubbed) but STOP before the first live call — i.e. boot, print the
  * port, and let the runner prove the wiring end-to-end MINUS spend (the runner runs
  * preflight + driver_kind self-check + a no-LLM read of /api/mode and exits before

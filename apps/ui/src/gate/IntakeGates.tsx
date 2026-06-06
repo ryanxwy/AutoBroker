@@ -1,6 +1,6 @@
 /**
  * IntakeGates — the gate-stack projection components for intake's three SEMANTIC
- * suspends (FRONTEND_LAYOUT §8.2). Each takes a typed GateModel variant and a
+ * suspends. Each takes a typed GateModel variant and a
  * resume dispatcher; the resume content maps to the workflow's exported resume
  * schemas (intakeContracts.ts):
  *
@@ -10,14 +10,16 @@
  *   - AmbiguousLocationPicker → AmbiguousLocationResumeSchema:
  *       {action:'pick', picked_index} | {action:'retry', retry_query} |
  *       {action:'decline'}
- *   - LocationFailureBanner (裁定⑨) → AmbiguousLocationResumeSchema:
+ *   - LocationFailureBanner → AmbiguousLocationResumeSchema:
  *       {action:'retry', retry_query} | {action:'decline'} — the location field
  *       is flagged, the failure reason shown, the user re-fills (retry_query).
+ *       (coordinate-resolution invariant: coordinates must be resolved before
+ *       persist; geocode failure suspends, never silently passes.)
  *   - MalformedRetry → MalformedRetryResumeSchema:
  *       {action:'retry_step'} | {action:'decline'}
  *
  * These render as the assistant turn's GATE zone — structurally BEFORE the text
- * zone (§4.1 / §8: gate before prose). Every node has a stable data-testid.
+ * zone (gate before prose). Every node has a stable data-testid.
  */
 
 import { useState } from "react";
@@ -151,8 +153,9 @@ export function AmbiguousLocationPicker({
   );
 }
 
-/** 裁定⑨ location failure: geocode parse/no-result/exhausted → re-fill. The
- *  location field is flagged, the failure reason is shown, the user retries. */
+/** location failure (coordinate-resolution invariant): geocode
+ *  parse/no-result/exhausted → re-fill. The location field is flagged, the
+ *  failure reason is shown, the user retries. */
 export function LocationFailureBanner({
   gate,
   submitting,

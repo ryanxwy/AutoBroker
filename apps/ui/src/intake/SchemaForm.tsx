@@ -1,22 +1,22 @@
 /**
- * SchemaForm — the single schema-driven intake form (FRONTEND_LAYOUT §5.3). Renders
+ * SchemaForm — the single schema-driven intake form. Renders
  * ONE <form> with a required "Car & contact" section + a collapsed
  * "Optional / Buyer context" <details>, a completeness meter, and one
- * "Submit intake" button — NOT a per-question wizard (§5). Field set + order +
+ * "Submit intake" button — NOT a per-question wizard. Field set + order +
  * sections + widgets all derive from core's INTAKE_FIELD_META (no codegen). It:
  *
  *   - seeds initial values from the prefill `seedFields` (freeform launch) on
  *     mount, then restores a same-runId localStorage draft over the seed (the
- *     draft is the user's later edit; §5.6) — PII fields come back EMPTY (they
+ *     draft is the user's later edit) — PII fields come back EMPTY (they
  *     were stripped at persist) and show a "cleared for privacy" hint.
  *   - autosaves a PII-stripped draft (debounced) keyed by the STABLE runId.
  *   - validates per-field for instant feedback; the server's strict() Zod is the
- *     authority on form-decision (§5.4).
+ *     authority on form-decision.
  *   - on submit builds the form-decision content and calls onSubmit (the parent
- *     posts form-decision → same-run resume; §5.7). decline maps to action
+ *     posts form-decision → same-run resume). decline maps to action
  *     'decline' (terminal, zero write).
  *
- * Every assertable node has a stable data-testid (M3 ui_checks).
+ * Every assertable node has a stable data-testid (UI checks).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -85,7 +85,7 @@ export function SchemaForm({
   });
   const [touched, setTouched] = useState<Set<string>>(new Set());
 
-  // Debounced PII-stripped autosave keyed by the stable runId (§5.6).
+  // Debounced PII-stripped autosave keyed by the stable runId.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (saveTimer.current !== null) clearTimeout(saveTimer.current);
@@ -112,7 +112,7 @@ export function SchemaForm({
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
     if (!allRequiredValid(values)) {
-      // Mark every required field touched so all errors surface (§5.4).
+      // Mark every required field touched so all errors surface.
       setTouched(new Set(REQUIRED_FIELD_NAMES));
       return;
     }

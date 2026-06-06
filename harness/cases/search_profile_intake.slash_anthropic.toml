@@ -1,4 +1,4 @@
-# harness/cases/search_profile_intake.slash_anthropic.toml — the M4 cross-provider
+# harness/cases/search_profile_intake.slash_anthropic.toml — the cross-provider
 # slash case, ANTHROPIC lane. Identical to search_profile_intake.slash.toml in
 # every anchor EXCEPT provider = "anthropic" (which drives the driver_kind anchor
 # to "anthropic_apikey" via the two-place lock-step PROVIDER_DRIVER_KIND map). The
@@ -16,7 +16,7 @@ session_origin = "fresh_unpinned"   # intake creates + pins; never inherits an o
 input_mode = "slash"
 provider = "anthropic"
 
-# The corpus profile (BRIEF §4). budget_max is INTERNAL-ONLY — collected, never
+# The corpus profile. budget_max is INTERNAL-ONLY — collected, never
 # dealer-facing. phone_policy 'fake' by default. All 18 strict fields present.
 [narrative.profile]
 make = "Hyundai"

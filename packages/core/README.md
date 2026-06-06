@@ -2,9 +2,8 @@
 
 > Status: Phase 0 (foundation) · 2026-06-03 · Layer 1 of the AutoBroker (TS)
 > five-layer monorepo. Owns the **pure TYPES + Zod contracts** every other layer
-> shares. Sits below `@autobroker/model`. Canonical architecture lives in the
-> plan repo: `../../../AutoBroker-dev-plan/ts-rebuild/architecture/ARCH_OVERVIEW.html`
-> and `ARCH_STRUCTURED_OUTPUT.html`.
+> shares. Sits below `@autobroker/model`. The five-layer dependency rule and the
+> structured-output conventions are summarized in CLAUDE.md.
 
 Layer 1 (`core`) is the bottom of the one-way dependency chain:
 
@@ -41,7 +40,7 @@ without dragging a runtime into the type layer.
 | `src/schema/searchProfile.ts` | `SearchProfileSchema` — one `(account, brand)` new-car search |
 | `src/index.ts` | the public re-export surface |
 
-## Schema conventions (per `ARCH_STRUCTURED_OUTPUT`)
+## Schema conventions
 
 Output schemas are written to the **lowest common denominator** across the three
 providers' JSON-Schema subsets:
@@ -63,8 +62,7 @@ The **product** `DriverKind` enum is `agent | shell | codex_cli`.
 `deepseek_apikey` is **not** a product driver — it is a **harness-only** label
 (`HarnessDriverKind`) emitted by the live-harness runner and asserted by the
 `driver_kind` anchor. DeepSeek runs through the ordinary api-key **model lane**,
-not a bespoke driver. See
-`../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/ANCHORS.html`.
+not a bespoke driver.
 
 ## Provider defaults
 

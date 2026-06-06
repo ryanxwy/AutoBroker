@@ -1,10 +1,10 @@
 /**
- * widgets — the 7 dumb/controlled intake field widgets (FRONTEND_LAYOUT §5.2).
+ * widgets — the 7 dumb/controlled intake field widgets.
  * Each is a pure controlled input that takes a typed value + onChange + invalid
  * state; no widget reaches the store or the network. A single hand-written switch
  * maps a FieldDescriptor.widget to its component (no generic JSON-Schema→React
- * renderer; §5.2). Every assertable node carries a stable data-testid keyed by the
- * field name (M3 ui_checks depend on these).
+ * renderer). Every assertable node carries a stable data-testid keyed by the
+ * field name (UI checks depend on these).
  */
 
 import { allowedYears, type FieldDescriptor } from "./formModel.js";
@@ -142,7 +142,7 @@ function BooleanIntToggle({ desc, value, onChange, onBlur }: WidgetProps): JSX.E
   );
 }
 
-/** Render the widget for a descriptor (the §5.2 hand-written switch). */
+/** Render the widget for a descriptor (the hand-written switch). */
 export function FieldWidget(props: WidgetProps): JSX.Element {
   switch (props.desc.widget) {
     case "text":

@@ -1,14 +1,14 @@
 /**
- * App — the M2 app shell (FRONTEND_LAYOUT §2/§3). TopBar + routed main + the docked
- * ChatRail + a backend-unreachable banner. It owns:
+ * App — the app shell. TopBar + routed main + the docked ChatRail + a
+ * backend-unreachable banner. It owns:
  *
  *   - routing (the tiny hand-rolled router): '/' → Home, '/runs/:id' → run view,
  *     '/profiles/:id' → ProfileWorkspace placeholder, '*' → NotFound.
- *   - the four intake entries → launchIntake (fresh unpinned session, §6.2/§10):
+ *   - the four intake entries → launchIntake (fresh unpinned session):
  *     POST start → capture {run_id, session_id, scope_notice} → create a client
  *     session + assistant turn bound to run_id → render the scope notice as the
  *     fork's first part → navigate to /runs/:run_id.
- *   - REFRESH RECOVERY (M2 exit): on mount at /runs/:id with no in-store turn,
+ *   - REFRESH RECOVERY: on mount at /runs/:id with no in-store turn,
  *     re-create the session+turn for that run so the single SSE hook re-subscribes
  *     (server replays the full backlog) and the form draft restores from
  *     localStorage — a mid-form refresh loses nothing but the stripped PII.
@@ -29,6 +29,10 @@ import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { navigate, useRoute } from "./router.js";
 import { useChat } from "./store/useChat.js";
 
+// Pre-load fallback only: the live skill list comes from GET /api/skills
+// (knownSkills below). This literal is used until that fetch resolves; the UI
+// does not import @autobroker/skills (it would pull the manifest into the
+// browser bundle for no runtime gain — the server already serves it).
 const INTAKE_SKILL = "search_profile_intake";
 
 export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.Element {
@@ -50,7 +54,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // ---- launch (the four intake entries + slash/freeform) -------------------
   const doLaunch = (mode: LaunchMode, userText?: string): void => {
     setLaunchError(null);
-    // Always fork a fresh unpinned session from the current one (§10).
+    // Always fork a fresh unpinned session from the current one.
     const fromSessionId = useChat.getState().activeSessionId;
     launchIntake(client, { mode, fromSessionId })
       .then((ack) => {
@@ -73,9 +77,9 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   };
 
   const startIntakeFresh = (): void => doLaunch({ kind: "slash" });
-  // M2: search_profile_intake is the only registered skill, so every slash launch
-  // is a fresh intake (slash direct, no prefill). A later slice routes non-intake
-  // slashes to their own skills.
+  // search_profile_intake is the only registered skill today, so every slash
+  // launch is a fresh intake (slash direct, no prefill). A later slice routes
+  // non-intake slashes to their own skills.
   const onSlash = (skill: string): void => doLaunch({ kind: "slash" }, `/${skill}`);
   const onFreeform = (text: string): void => doLaunch({ kind: "freeform", freeformText: text }, text);
 

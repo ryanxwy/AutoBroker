@@ -1,10 +1,10 @@
 /**
- * Home — the fuller home landing page (FRONTEND_LAYOUT §6). Composes Hero +
+ * Home — the fuller home landing page. Composes Hero +
  * Snapshot/FirstFile + WhatHappensNext + PipelineLedger + WelcomeWizard. Reads
  * profiles + skills via the typed client (useAsync). The active profile (newest
  * row) drives the snapshot + heuristic cards; budget never appears (the snapshot
- * projection has no budget accessor, §8.3). All four intake entries funnel through
- * the parent's onStartIntake (launchIntakeWithFreshSession, §6.2).
+ * projection has no budget accessor). All four intake entries funnel through
+ * the parent's onStartIntake (launchIntakeWithFreshSession).
  */
 
 import type { ApiClient } from "../api/client.js";

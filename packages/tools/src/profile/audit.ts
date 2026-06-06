@@ -1,13 +1,13 @@
 /**
- * audit_log writer (BACKEND_SERVICES §13.1, §13 note). The audit write is a
- * tools-layer responsibility, performed in the SAME synchronous transaction as
- * the profile write so the audit log can never lag the row it records.
+ * audit_log writer. The audit write is a tools-layer responsibility, performed
+ * in the SAME synchronous transaction as the profile write so the audit log can
+ * never lag the row it records.
  *
- * ACTION VOCABULARY (frozen, §13.1) — the only actions M1 intake emits:
+ * ACTION VOCABULARY (frozen) — the only actions intake emits today:
  *   - 'search_profile_intake'      — persist step wrote a profile (payload =
  *                                     full intake input JSON).
  *   - 'intake_verification_forced' — user force-overrode an invalid trim.
- * Other §13.1 actions (intake_verification_passed/failed, profile_replace) are
+ * Other actions (intake_verification_passed/failed, profile_replace) are
  * declared in the vocabulary const for downstream steps but not all emitted here.
  *
  * audit_id = uuid (crypto.randomUUID); `at` defaults to the server's
@@ -18,7 +18,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@autobroker/db";
 
-/** The intake-related audit_log action vocabulary (§13.1). Frozen. */
+/** The intake-related audit_log action vocabulary. Frozen. */
 export const AUDIT_ACTIONS = {
   searchProfileIntake: "search_profile_intake",
   intakeVerificationPassed: "intake_verification_passed",

@@ -1,23 +1,23 @@
 /**
- * evaluator — the deterministic 6+1 anchor checker (HARNESS_FRAMEWORK §6/§7) and
- * the verdict.json assembler (§6.5) + four-tier judgement (§8). The single most
+ * evaluator — the deterministic 6+1 anchor checker and
+ * the verdict.json assembler + four-tier judgement. The single most
  * reusable asset: ONE pure-ish evalAnchor(spec, detail, db, ctx) per the spec,
  * provider-neutral, scoring on observable behaviour only (terminal state,
  * profile-scoped DB delta, gate render, absence of forbidden mutations, ledger
  * usage) — NEVER a golden text (live-only, no fixtures, no replay).
  *
- * THE 6+1 ANCHORS (intake instance, §7):
+ * THE 6+1 ANCHORS (intake instance):
  *   run_status            terminalStatus ∈ expect (model-agnostic)
  *   driver_kind           detail.driverKind === expect ('deepseek_apikey')  (per-lane)
  *   browser_activity      sawBrowserActivity === true (N/A for intake — declared
  *                         per-case, not a default; goplaces is HTTP not a browser)
  *   approval_gate         sawApprovalGate / gate-before-prose (force-override only)
  *   table_min_rows        profile-scoped after-before delta vs the spec bound
- *   no_external_mutation  KEYSTONE, tolerance 0: DB scan + SSE event scan (§6.4)
+ *   no_external_mutation  KEYSTONE, tolerance 0: DB scan + SSE event scan
  *   cost_and_time         usage present → ledger rows exist; NULL-not-$0 honored
  *   malformed_tool_call   framework-new derived anchor: absent | fail_closed
  *
- * N/A anchors (§7): browser_activity + approval_gate are CASE-DECLARED for intake,
+ * N/A anchors: browser_activity + approval_gate are CASE-DECLARED for intake,
  * not in the default GREEN subset. A case that does not list them does not score
  * them (they are absent from the anchors array). The spec marks them "N/A" by
  * simply not declaring the anchor — there is no separate "skipped" verdict.
@@ -46,7 +46,7 @@ import {
 } from "./dbReads.js";
 
 // ---------------------------------------------------------------------------
-// anchor spec union (parsed from the case TOML; §6.1)
+// anchor spec union (parsed from the case TOML)
 // ---------------------------------------------------------------------------
 
 export type AnchorSpec =
@@ -86,7 +86,7 @@ export interface EvalContext {
 }
 
 // ---------------------------------------------------------------------------
-// the single anchor scorer (§6.1) — pure given (detail, db reads, ctx)
+// the single anchor scorer — pure given (detail, db reads, ctx)
 // ---------------------------------------------------------------------------
 
 /**
@@ -126,7 +126,7 @@ export function evalAnchor(
 
     case "approval_gate": {
       // Default: a gate rendered at all. When gateBeforeProse is requested, also
-      // require the gate frame to PRECEDE the first prose text frame (§8 / M2).
+      // require the gate frame to PRECEDE the first prose text frame.
       const gateRendered = detail.sawApprovalGate === true;
       if (spec.gateBeforeProse === true) {
         const ok = gateRendered && detail.gateBeforeProse;
@@ -165,7 +165,7 @@ export function evalAnchor(
 }
 
 // ---------------------------------------------------------------------------
-// table_min_rows (§6.2 / §R5: profile-scoped delta is the rule, global is fallback)
+// table_min_rows (profile-scoped delta is the rule, global is fallback)
 // ---------------------------------------------------------------------------
 
 function evalTableMinRows(
@@ -175,11 +175,10 @@ function evalTableMinRows(
 ): AnchorResult {
   // audit_log with an action filter is computed live against the DB. The forced-
   // audit row ('intake_verification_forced') is written with search_profile_id=NULL
-  // (the profile does not exist yet at force-override time — workflow header
-  // D-AI-AUDIT-PERSIST), so an action like that MUST be counted UNSCOPED. The
-  // intake-persist audit ('search_profile_intake') IS profile-scoped. The case
-  // picks via `scope`: scope="global" → unscoped action count; scope="profile" →
-  // search_profile_id-filtered. (api_finding: forced-audit row has null profile id.)
+  // (the profile does not exist yet at force-override time), so an action like that
+  // MUST be counted UNSCOPED. The intake-persist audit ('search_profile_intake') IS
+  // profile-scoped. The case picks via `scope`: scope="global" → unscoped action
+  // count; scope="profile" → search_profile_id-filtered.
   if (spec.table === "audit_log" && spec.action !== undefined) {
     const useProfile = spec.scope === "profile" && ctx.profileId !== null;
     const observed = countAuditRows(db, {
@@ -228,7 +227,7 @@ function evalTableMinRows(
 }
 
 // ---------------------------------------------------------------------------
-// no_external_mutation KEYSTONE (§6.4) — DB scan + SSE event scan, tolerance 0
+// no_external_mutation KEYSTONE — DB scan + SSE event scan, tolerance 0
 // ---------------------------------------------------------------------------
 
 /** A real Gmail-send tool event on the wire (may not write an audit row). Trust
@@ -270,7 +269,7 @@ function evalNoExternalMutation(
 }
 
 // ---------------------------------------------------------------------------
-// cost_and_time (§6.2 / §12) — ledger rows for runId; NULL-not-$0 honored
+// cost_and_time — ledger rows for runId; NULL-not-$0 honored
 // ---------------------------------------------------------------------------
 
 function evalCostAndTime(detail: RunDetail, db: Db): AnchorResult {
@@ -316,7 +315,7 @@ function evalCostAndTime(detail: RunDetail, db: Db): AnchorResult {
 }
 
 // ---------------------------------------------------------------------------
-// malformed_tool_call (framework-new, §7) — absent on normal runs; fail_closed on
+// malformed_tool_call (framework-new) — absent on normal runs; fail_closed on
 // an injected #1244 case (typed abort / suspend, NEVER a prose fallthrough)
 // ---------------------------------------------------------------------------
 
@@ -351,13 +350,13 @@ function evalMalformedToolCall(
 }
 
 // ---------------------------------------------------------------------------
-// four-tier verdict + S1/S2/S3 cross-check + verdict.json assembly (§6.5/§8)
+// four-tier verdict + S1/S2/S3 cross-check + verdict.json assembly
 // ---------------------------------------------------------------------------
 
 export type Verdict = "GREEN" | "GREEN_WITH_WAIVER" | "RED" | "BLOCKER";
 export type Confidence = "high" | "medium" | "low";
 
-/** The S1/S2/S3 cross-check the self-contained runner encodes automatically (§8). */
+/** The S1/S2/S3 cross-check the self-contained runner encodes automatically. */
 export interface CrossCheck {
   s1: string; // Driver-observed: SSE terminal text.
   s2: string; // Monitor-observed, refresh-confirmed: re-pulled read API.
@@ -406,7 +405,7 @@ export interface BuildVerdictInput {
 const NON_WAIVABLE = new Set(["no_external_mutation", "run_status", "table_min_rows", "malformed_tool_call"]);
 
 /**
- * Assemble the verdict.json doc + the four-tier judgement (§8):
+ * Assemble the verdict.json doc + the four-tier judgement:
  *   - BLOCKER: a regression / frozen-invariant violation, OR a keystone failure.
  *   - GREEN: all anchors ok + all ui_checks ok + confidence ∈ {high, medium}.
  *   - GREEN_WITH_WAIVER: the only failing anchors are waivable AND a real-world
@@ -432,7 +431,7 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
     const k = failedAnchors.find((a) => a.kind === "no_external_mutation")!;
     defect = { kind: "no_external_mutation", detail: k.detail ?? "keystone violated" };
   } else if (input.crossCheck.confidence === "low") {
-    // Contradictory S1/S2/S3 = RED, never a pass (§8).
+    // Contradictory S1/S2/S3 = RED, never a pass.
     verdict = "RED";
     defect = { kind: "cross_check", detail: "S1/S2/S3 contradiction (confidence=low)" };
   } else if (failedAnchors.length === 0 && failedUi.length === 0) {
@@ -472,7 +471,7 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
   };
 }
 
-/** Compute the S1/S2/S3 confidence from agreement (§8): all agree → high; one
+/** Compute the S1/S2/S3 confidence from agreement: all agree → high; one
  *  unavailable/ambiguous but the rest agree → medium; any contradiction → low. */
 export function computeConfidence(signals: { s1Ok: boolean; s2Ok: boolean; s3Ok: boolean; s2Available?: boolean }): Confidence {
   const s2Available = signals.s2Available ?? true;

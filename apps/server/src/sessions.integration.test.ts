@@ -1,7 +1,7 @@
 /**
- * In-process integration tests — the M2 sessions backend (BACKEND_SERVICES §3.1
- * + §6, AI_ORCHESTRATION §8/§9 + D-AI-6 / 裁定⑧). Drives the REAL Fastify app via
- * inject(): REAL session routes → REAL SessionService → REAL workflows-layer
+ * In-process integration tests — the sessions backend. Drives the REAL Fastify
+ * app via inject(): REAL session routes → REAL SessionService → REAL
+ * workflows-layer
  * RailSessionStore → REAL @mastra/memory Memory threads on an ISOLATED tmp
  * mastra.db. Covers:
  *   - sessions CRUD (POST/GET/GET:id/PATCH/DELETE) + the camelCase-req /
@@ -144,7 +144,7 @@ async function createSession(body: Record<string, unknown>): Promise<SessionResp
 // CRUD + wire-case
 // ---------------------------------------------------------------------------
 
-describe("sessions CRUD + wire-case (§3.1/§6.2)", () => {
+describe("sessions CRUD + wire-case", () => {
   it("POST create (camelCase req) → snake_case SessionResponse; pin lands", async () => {
     const created = await createSession({ title: "Tucson hunt", pinnedProfileId: "prof-1" });
     // snake_case response shape, verbatim.
@@ -189,10 +189,10 @@ describe("sessions CRUD + wire-case (§3.1/§6.2)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PATCH pin null-vs-omitted (§3.1, load-bearing)
+// PATCH pin null-vs-omitted (load-bearing)
 // ---------------------------------------------------------------------------
 
-describe("PATCH pin null-vs-omitted (§3.1)", () => {
+describe("PATCH pin null-vs-omitted", () => {
   async function patch(id: string, body: Record<string, unknown>): Promise<SessionResp> {
     const r = await server.app.inject({ method: "PATCH", url: `/api/sessions/${id}`, payload: body });
     expect(r.statusCode).toBe(200);
@@ -236,10 +236,10 @@ describe("PATCH pin null-vs-omitted (§3.1)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// list-by-pin (?pinned_profile_id) + 0/1/2+ counts (D-B5)
+// list-by-pin (?pinned_profile_id) + 0/1/2+ counts
 // ---------------------------------------------------------------------------
 
-describe("list-by-pin + 0/1/2+ counts (§3.1 / D-B5)", () => {
+describe("list-by-pin + 0/1/2+ counts", () => {
   it("GET ?pinned_profile_id filters; counts drive the 0/1/2+ branch", async () => {
     await createSession({ title: "a", pinnedProfileId: "prof-A" });
     await createSession({ title: "b", pinnedProfileId: "prof-A" });
@@ -272,10 +272,10 @@ describe("list-by-pin + 0/1/2+ counts (§3.1 / D-B5)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// intake from a PINNED session → forks NEW unpinned + IntakeScopeNotice (D-AI-6)
+// intake from a PINNED session → forks NEW unpinned + IntakeScopeNotice
 // ---------------------------------------------------------------------------
 
-describe("intake fork from pinned session (D-AI-6 / 裁定⑧)", () => {
+describe("intake fork from pinned session", () => {
   it("pinned source → NEW unpinned session + IntakeScopeNotice (3 points); source UNTOUCHED", async () => {
     const pinned = await createSession({ title: "Tucson workspace", pinnedProfileId: "prof-existing" });
 
@@ -320,7 +320,7 @@ describe("intake fork from pinned session (D-AI-6 / 裁定⑧)", () => {
     const sourceAfter = await server.app.inject({ method: "GET", url: `/api/sessions/${pinned.id}` });
     expect(sourceAfter.json<SessionResp>().pinned_profile_id).toBe("prof-existing");
 
-    // The run is linked to the FORK, not the source (M2 association).
+    // The run is linked to the FORK, not the source (run↔session association).
     const runStatus = await server.app.inject({ method: "GET", url: `/api/skill-runs/${body.run_id}` });
     expect(runStatus.json<{ session_id: string | null }>().session_id).toBe(body.session_id);
   });

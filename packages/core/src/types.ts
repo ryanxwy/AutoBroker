@@ -5,9 +5,9 @@
  * (no `ai`, no `@mastra/*`, no `drizzle-orm`, no `playwright`). See ./index.ts
  * and the package README for the layer contract.
  *
- * Grounded in the ts-rebuild plan repo's 2026-06-03 architecture docs:
- * DeepSeek remains the default api-key provider/live-harness test agent, and
- * Mastra owns orchestration while this package stays framework-free.
+ * Grounded in the project's architecture decisions (see CLAUDE.md): DeepSeek is
+ * the default api-key provider/live-harness test agent, and Mastra owns
+ * orchestration while this package stays framework-free.
  */
 
 import { z } from "zod";
@@ -19,7 +19,6 @@ import { z } from "zod";
 // workflows/skills only ever name a `useCase`; policy() maps useCase ->
 // ModelAlias, and the model-layer registry maps ModelAlias -> a concrete
 // LanguageModel. Swapping providers is a one-string change in the registry.
-// (architectureStack §"Provider 路由 / Agent lane")
 
 /** Providers AutoBroker supports as first-class, switchable api-key lanes. */
 export const PROVIDERS = ["deepseek", "anthropic", "openai"] as const;
@@ -71,7 +70,7 @@ export const DEFAULT_PROVIDER: Provider = "deepseek";
 //
 // Used to fail-loud or down-route. Each provider supports a different subset of
 // JSON-Schema features; structured-output decisions key off these flags rather
-// than hard-coding provider names. (architectureStack §"结构化输出 / 校验")
+// than hard-coding provider names.
 
 export const CapabilityFlagsSchema = z
   .object({
@@ -86,7 +85,7 @@ export const CapabilityFlagsSchema = z
     /** Native vision input available (else fall back to OCR — transient, traced). */
     supportsVision: z.boolean(),
     /** Provider emits usage tokens we can price into cost_usd (else NULL + flag,
-     *  never silently $0). (currentTruth §"成本/时间度量") */
+     *  never silently $0). */
     reportsUsageTokens: z.boolean(),
     // TODO: add reasoning/thinking budget flags, max context window, JSON-mode
     // vs tool-call mode, structured-output strictness sub-levels as skills land.
@@ -102,11 +101,11 @@ export type CapabilityFlags = z.infer<typeof CapabilityFlagsSchema>;
 //
 // Mastra has its own workflow/run statuses. This vocabulary is the product's
 // projected status contract so UI, harness, tools, and reports do not drift.
-// Per ARCH_ORCHESTRATION_SESSIONS: "the product never re-implements a status
-// machine; it renames one" — Mastra's 10-value run status projects onto these
-// 7 (success → done, suspended → awaiting_approval, failed → error,
-// canceled → aborted/declined with app metadata, …). `awaiting_approval` is
-// the HITL suspend projection used for semantic or irreversible gates.
+// The product never re-implements a status machine; it renames one — Mastra's
+// 10-value run status projects onto these 7 (success → done, suspended →
+// awaiting_approval, failed → error, canceled → aborted/declined with app
+// metadata, …). `awaiting_approval` is the HITL suspend projection used for
+// semantic or irreversible gates.
 
 export const SKILL_RUN_STATUSES = [
   "pending",
@@ -132,12 +131,11 @@ export const SkillRunStatusSchema = z.enum(SKILL_RUN_STATUSES);
 // DriverKind — PRODUCT enum vs HARNESS label
 // ---------------------------------------------------------------------------
 //
-// NOTE (per task spec + harness-standard/ANCHORS): the *product* DriverKind enum
-// is { agent | shell | codex_cli }. `deepseek_apikey` is a HARNESS-only label
-// emitted by the runner and asserted by the `driver_kind` anchor (it must stay
-// in lockstep with the runner's PROVIDER_DRIVER_KIND map). It is intentionally
-// NOT a product driver — DeepSeek runs through the ordinary api-key model lane,
-// not a bespoke driver.
+// NOTE: the *product* DriverKind enum is { agent | shell | codex_cli }.
+// `deepseek_apikey` is a HARNESS-only label emitted by the runner and asserted
+// by the `driver_kind` anchor (it must stay in lockstep with the runner's
+// PROVIDER_DRIVER_KIND map). It is intentionally NOT a product driver —
+// DeepSeek runs through the ordinary api-key model lane, not a bespoke driver.
 
 export const DRIVER_KINDS = ["agent", "shell", "codex_cli"] as const;
 export type DriverKind = (typeof DRIVER_KINDS)[number];
@@ -146,12 +144,12 @@ export const DriverKindSchema = z.enum(DRIVER_KINDS);
 /**
  * Harness-only `driver_kind` anchor labels. Superset of the product enum plus
  * the per-provider test labels (e.g. `deepseek_apikey`). Asserted by the
- * harness evaluator's driver_kind anchor; see harness-standard/ANCHORS.html.
+ * harness evaluator's driver_kind anchor.
  */
 export const HARNESS_DRIVER_KINDS = [
   ...DRIVER_KINDS,
   "deepseek_apikey",
-  // anthropic_apikey / openai_apikey are the M4 cross-provider test labels.
+  // anthropic_apikey / openai_apikey are the cross-provider test labels.
   // Wired through the runner PROVIDER_DRIVER_KIND map (harness/cases.ts) and the
   // server's provider→driver_kind derivation (apps/server runPubSub
   // PROVIDER_DRIVER_KIND). DeepSeek stays the default-resolved label.
@@ -164,11 +162,11 @@ export const HarnessDriverKindSchema = z.enum(HARNESS_DRIVER_KINDS);
 /**
  * Map an api-key `Provider` to its harness `driver_kind` anchor label
  * (`{provider}_apikey`). The SINGLE source of truth for the provider→label
- * derivation behind the two-place lock-step (D-B4): the server's init-frame
- * emitter and the harness runner both derive their `driver_kind` from THIS map
+ * derivation behind the two-place lock-step: the server's init-frame emitter
+ * and the harness runner both derive their `driver_kind` from THIS map
  * (apps/server runPubSub + harness/cases.ts), so the wire value and the anchor
  * expectation can never silently drift. DeepSeek resolves to `deepseek_apikey`
- * (the default), anthropic/openai to their M4 cross-provider labels.
+ * (the default), anthropic/openai to their cross-provider labels.
  */
 export function providerDriverKind(provider: Provider): HarnessDriverKind {
   return `${provider}_apikey` as HarnessDriverKind;

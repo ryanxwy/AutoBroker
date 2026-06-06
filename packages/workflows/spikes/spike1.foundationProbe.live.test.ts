@@ -1,14 +1,14 @@
 /**
- * SPIKE-1 (LIVE HALF) — real-key DeepSeek foundation_probe (PHASE_0_foundation).
+ * SPIKE-1 (LIVE HALF) — real-key DeepSeek foundation probe.
  *
- * M0 EXIT CRITERION #1: "真实 .env key 的 DeepSeek probe 返回 Zod-valid 对象".
- * M0 DELIVERABLE: the FIRST `test_run_records` row, written through the real
+ * Foundation goal #1: a real .env-key DeepSeek probe returns a Zod-valid object.
+ * Deliverable: the FIRST `test_run_records` row, written through the real
  * production ledger path into the REAL parity DB (~/.autobroker-ts/autobroker.db).
  *
  * Two LIVE probes, DeepSeek ONLY, gated behind AUTOBROKER_SPIKE_LIVE=1 so they
  * never run in CI / a normal `pnpm test`:
  *
- *   PROBE A — emit_result through harness.generate (the real M0 exit).
+ *   PROBE A — emit_result through harness.generate (the real foundation goal).
  *     useCase 'foundation_probe' → policy routes to deepseek.cheap
  *     (deepseek-v4-flash). A small flat all-required Zod object is requested. The
  *     run goes through the COMMITTED harness.generate facade: real Agent → real
@@ -17,8 +17,8 @@
  *     DELIBERATE CARVE-OUT (the ONE place this spike writes to the parity dir):
  *       we do NOT inject a test DB and do NOT override AUTOBROKER_DATA_DIR, so the
  *       single ledger row lands in the REAL ~/.autobroker-ts/autobroker.db through
- *       the production openDb() path — that landed row IS the M0 "首行
- *       test_run_records" deliverable. Everything else about the parity DB is
+ *       the production openDb() path — that landed row IS the first-ever
+ *       test_run_records deliverable. Everything else about the parity DB is
  *       read-only; we add exactly ONE row per probe-run (a bounded retry may add
  *       up to 2). We NEVER touch the legacy production ~/.autobroker.
  *
@@ -31,7 +31,7 @@
  *       migration against the parity DB (that would collide with the legacy
  *       tables already present).
  *
- *   PROBE B — thinking-ON tool loop reasoning_content round-trip (AI_ORCH R3).
+ *   PROBE B — thinking-ON tool loop reasoning_content round-trip.
  *     NOT through harness.generate (that lane forces thinking DISABLED by design).
  *     We build a Mastra Agent directly (resolveModel('deepseek.chat') →
  *     deepseek-v4-flash), give it ONE trivial tool, and call agent.generate with
@@ -99,7 +99,7 @@ const MIGRATION_SQL = join(
 );
 const PARITY_DB = join(homedir(), ".autobroker-ts", "autobroker.db");
 
-/** Today's run-window id for the ledger row (M0 deliverable provenance). */
+/** Today's run-window id for the ledger row (deliverable provenance). */
 function todayStamp(): string {
   return new Date().toISOString().slice(0, 10).replace(/-/g, "");
 }
@@ -194,9 +194,8 @@ describe.skipIf(!LIVE)("spike1 PROBE A — foundation_probe → ledger row in th
     const ledger: HarnessLedgerContext = {
       runId,
       skill: "foundation_probe",
-      // L2 = single-skill live (TEST_LAYERS.html: "Step 5 DeepSeek-live lands
-      // L2"). This is a single skill driven live through harness.generate; L1 is
-      // the zero-LLM floor (does not apply to a live LLM call).
+      // L2 = a single skill driven live through harness.generate; L1 is the
+      // zero-LLM floor (does not apply to a live LLM call).
       layer: "L2",
       provider: "deepseek",
       modelAlias: "deepseek.cheap",
@@ -259,13 +258,13 @@ describe.skipIf(!LIVE)("spike1 PROBE A — foundation_probe → ledger row in th
   }, 120_000);
 
   afterAll(() => {
-    // No teardown: the carve-out row is the M0 deliverable and is intentionally
+    // No teardown: the carve-out row is the deliverable and is intentionally
     // KEPT in the parity DB. We never delete it and never drop the table.
   });
 
-  it("returns a Zod-valid object (M0 exit #1)", () => {
+  it("returns a Zod-valid object", () => {
     expect(probeA).toBeDefined();
-    // The harness already Zod-parsed it; assert the shape anyway (M0 exit #1).
+    // The harness already Zod-parsed it; assert the shape anyway.
     const parsed = probeSchema.safeParse(probeA!.object);
     expect(parsed.success).toBe(true);
     expect(typeof probeA!.object.city).toBe("string");
@@ -273,7 +272,7 @@ describe.skipIf(!LIVE)("spike1 PROBE A — foundation_probe → ledger row in th
     expect(typeof probeA!.object.brand).toBe("string");
   });
 
-  it("landed the ledger row in the REAL parity DB (M0 deliverable: 首行 test_run_records)", () => {
+  it("landed the ledger row in the REAL parity DB (first-ever test_run_records row)", () => {
     expect(probeA!.row).not.toBeNull();
     expect(probeA!.row!.run_id).toBe(probeA!.runId);
     expect(probeA!.row!.skill).toBe("foundation_probe");
@@ -299,7 +298,7 @@ describe.skipIf(!LIVE)("spike1 PROBE A — foundation_probe → ledger row in th
 });
 
 // ---------------------------------------------------------------------------
-// PROBE B — thinking-ON Mastra tool loop, reasoning_content round-trip (AI_ORCH R3)
+// PROBE B — thinking-ON Mastra tool loop, reasoning_content round-trip
 // ---------------------------------------------------------------------------
 
 interface ProbeBResult {
@@ -315,9 +314,9 @@ let probeB: ProbeBResult | undefined;
 describe.skipIf(!LIVE)("spike1 PROBE B — thinking-ON tool loop round-trips reasoning_content", () => {
   beforeAll(async () => {
     // resolveModel('deepseek.chat') → deepseek-v4-flash LanguageModel. Thinking is
-    // turned ON per-request below; we do NOT force a named tool_choice (thinking
-    // mode rejects forced tool_choice — 裁定⑤), only AUTO, so the model is free to
-    // reason then call the tool.
+    // turned ON per-request below; we do NOT force a named tool_choice (DeepSeek
+    // thinking mode rejects a forced/named tool_choice), only AUTO, so the model
+    // is free to reason then call the tool.
     const model = resolveModel("deepseek.chat");
 
     let toolCalls = 0;
@@ -349,7 +348,7 @@ describe.skipIf(!LIVE)("spike1 PROBE B — thinking-ON tool loop round-trips rea
     // turn 1 (reason → tool call), tool feed-back, turn 2 (reason → final text).
     // If Mastra does NOT round-trip turn-1 reasoning_content into the turn-2
     // request, DeepSeek hard-400s with a 'reasoning_content' error and this
-    // generate() REJECTS — which is exactly the failure R3 says to assert against.
+    // generate() REJECTS — which is exactly the failure this probe asserts against.
     const result = await agent.generate(
       "Tell me one interesting fact about Irvine, California.",
       {

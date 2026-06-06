@@ -1,7 +1,7 @@
 /**
- * L1 unit tests — openDb() create-dir-if-missing (B4).
+ * L1 unit tests — openDb() create-dir-if-missing.
  *
- * Freezes the M1 既定项 (BACKEND_SERVICES §13 M1; client.ts): the first intake
+ * Freezes the first-intake DB contract (see client.ts): the first intake
  * disk write must not fail on a fresh machine, so openDb() creates the resolved
  * data directory (recursive) before better-sqlite3 opens the file. Both the
  * AUTOBROKER_DATA_DIR default (dir holds autobroker.db) and the explicit

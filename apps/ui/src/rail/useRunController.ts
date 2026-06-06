@@ -1,17 +1,16 @@
 /**
  * useRunController — binds the single SSE hook to the chat store for one run, and
- * exposes the form-decision dispatcher (FRONTEND_LAYOUT §9.2/§9.5). It is the one
- * place that:
+ * exposes the form-decision dispatcher. It is the one place that:
  *
  *   - subscribes useRunStream(runId) (the ONLY EventSource per run) and writes
  *     each decoded frame into the bound assistant turn via applyRunFrame.
  *   - posts a form-decision (accept|decline|cancel) through the typed client to
- *     resume the SAME run (§5.7 — one path, no respawn), echoing the part's
+ *     resume the SAME run (one path, no respawn), echoing the part's
  *     decision_id verbatim.
  *
  * Reconnect/refresh recovery is inherited from useRunStream (replay-on-subscribe
  * + content dedupe); a fresh mount with a known runId re-subscribes and the server
- * replays the full backlog (M2 exit).
+ * replays the full backlog.
  *
  * Dependency wall: app/ui. react + the SSE hook + the typed client + the store.
  */

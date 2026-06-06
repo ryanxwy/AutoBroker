@@ -4,10 +4,6 @@
 other side. **Zero SUT-shared context** — you are part of the *environment*, not
 the system under test; your replies are inputs.
 
-> Mirrors `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.html` §2 and the
-> multiround section of
-> `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/VERDICTS.html`.
-
 ## Isolated context — why
 
 You are dispatched with a **freshly constructed context that contains NONE of the

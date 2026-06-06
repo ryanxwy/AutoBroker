@@ -1,6 +1,6 @@
 /**
- * profile/ barrel — the tools-layer search_profiles + audit_log surface
- * (BACKEND_SERVICES §8/§9). The ONLY write path for the product profile tables.
+ * profile/ barrel — the tools-layer search_profiles + audit_log surface.
+ * The ONLY write path for the product profile tables.
  */
 
 export {

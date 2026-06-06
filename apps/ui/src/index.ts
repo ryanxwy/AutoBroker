@@ -8,8 +8,7 @@
  * external APIs — it renders server state over /api + SSE only (five-layer wall).
  *
  * Approval UX rule (non-negotiable): the human approval for the 3 irreversible
- * skills is NEVER hidden on any surface; the gate renders before the prose. That
- * lands with the gate components in M2-run2.
+ * skills is NEVER hidden on any surface; the gate renders before the prose.
  */
 
 export { ApiClient, ApiError, apiClient } from "./api/client.js";
@@ -33,7 +32,7 @@ export type {
 
 export * from "./api/wire.js";
 
-// --- M2 shell + routes ----------------------------------------------------
+// --- shell + routes -------------------------------------------------------
 export { App } from "./App.js";
 export { matchRoute, navigate, useRoute, Link } from "./router.js";
 export type { Route } from "./router.js";

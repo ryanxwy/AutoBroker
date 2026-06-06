@@ -1,22 +1,22 @@
 /**
  * useChat — the Zustand store that is the single source of truth for the chat
- * rail's sessions / turns / runs state (FRONTEND_LAYOUT §9.1: "客户端会话状态").
+ * rail's sessions / turns / runs state (the client-side session state).
  * The single SSE hook (useRunStream) writes run frames into the active turn via
  * `applyRunFrame`; this store NEVER opens a second EventSource and never calls
  * the network itself — it holds client state only (the API client + the SSE hook
  * own I/O).
  *
- * SCOPE (B1): the store shape + the turn-update reducers the scaffold needs to
+ * SCOPE: the store shape + the turn-update reducers needed to
  * prove an end-to-end render path (a user turn → an assistant turn fed by the SSE
  * stream). The full chat-rail wiring — server-backed session bootstrap/switch/
- * archive/rename/pin (which need the M2 /api/sessions routes that do NOT exist
+ * archive/rename/pin (which need the /api/sessions routes that do NOT exist
  * yet, routes.ts has none) and the @ai-sdk/react part-stream integration — is
- * deferred to M2-run2 (recorded in api_findings / design_notes). No fake session
+ * deferred to a later slice. No fake session
  * fetch is wired here: a method that hit a missing route would lie.
  *
- * The assistant-turn shape follows §4.1 (three-zone: text / milestones /
+ * The assistant-turn shape is three-zone (text / milestones /
  * currentActivity) with the structured awaitingUser part replacing the legacy
- * scattered form* fields (§4.1 设计裁决).
+ * scattered form* fields.
  *
  * Dependency wall: app/ui layer. Imports zustand, core (the status enum), and the
  * SSE wire types only.
@@ -29,7 +29,7 @@ import type { SkillRunStatus } from "@autobroker/core";
 import type { AwaitingUserPayload } from "../api/useRunStream.js";
 import type { SseEvent } from "../api/wire.js";
 
-/** One completed tool in an assistant turn's milestones zone (§4.1). */
+/** One completed tool in an assistant turn's milestones zone. */
 export interface Milestone {
   toolName: string;
   label: string;
@@ -43,7 +43,7 @@ export interface UserTurn {
   text: string;
 }
 
-/** An assistant turn — the three-zone model (§4.1). `runId` is the stable server
+/** An assistant turn — the three-zone model. `runId` is the stable server
  *  id (the draft key); `clientId` is re-minted per transcript fetch. */
 export interface AssistantTurn {
   clientId: string;
@@ -60,8 +60,8 @@ export interface AssistantTurn {
 
 export type Turn = UserTurn | AssistantTurn;
 
-/** A chat session = one rail = one Mastra Memory thread = one search profile
- *  (FRONTEND_LAYOUT §4). B1 models the client shape; server hydration is M2. */
+/** A chat session = one rail = one Mastra Memory thread = one search profile.
+ *  This models the client shape; server hydration lands in a later slice. */
 export interface Session {
   sessionId: string;
   title: string;
@@ -86,7 +86,7 @@ interface ChatState {
   // --- run frame application (the SSE hook calls this) ---
   /** Apply one decoded SSE frame to the assistant turn bound to `runId`. The
    *  single reducer that translates the wire envelope into the three-zone view
-   *  + the structured awaitingUser/error parts (§9.3). */
+   *  + the structured awaitingUser/error parts. */
   applyRunFrame(runId: string, ev: SseEvent): void;
   /** Set a turn's projected status directly (e.g. from a GET status poll). */
   setRunStatus(runId: string, status: SkillRunStatus): void;

@@ -1,8 +1,8 @@
 /**
  * L1 unit tests — chooseStructuredOutputStrategy (the #1244 strategy gate).
  *
- * Freezes the pure decision (safetyInvariants §5 / 归属裁定 2026-06-04): the
- * model layer picks emit_result vs output_object SOLELY from the capability flag
+ * Freezes the pure decision (the layer-ownership decision): the model layer
+ * picks emit_result vs output_object SOLELY from the capability flag
  * `supportsOutputObjectWithTools`, never from a provider name. Pure function —
  * no LLM, no I/O, no framework.
  */

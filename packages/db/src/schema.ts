@@ -1,8 +1,8 @@
 /**
  * AutoBroker product schema — drizzle-kit pull baseline + manual corrections.
  *
- * PROVENANCE (ARCH_PERSISTENCE.html "DB 驱动 + schema 迁移"): introspected from
- * the COLD-COPIED oracle SQLite (~/.autobroker-ts/autobroker.db, produced by
+ * PROVENANCE: introspected from the COLD-COPIED legacy SQLite
+ * (~/.autobroker-ts/autobroker.db, produced by
  * ../../scripts/cold-copy-sqlite.sh — copy-not-share, never two-way sync).
  * All 23 legacy Alembic revisions are discarded; the introspected DB is the
  * single source of truth. `alembic_version` is excluded declaratively via
@@ -36,7 +36,7 @@
  *
  * IMPORT RULE: this package is the ONLY layer (with packages/tools delegating
  * here) permitted to touch SQLite. core/ must never import drizzle.
- * (ARCH_OVERVIEW.html five-layer one-way dependency rule.)
+ * (The five-layer one-way dependency rule — see CLAUDE.md.)
  */
 
 import { sqliteTable, uniqueIndex, check, text, integer, real, numeric, index, primaryKey } from "drizzle-orm/sqlite-core"

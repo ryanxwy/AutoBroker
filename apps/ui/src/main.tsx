@@ -1,7 +1,5 @@
 /**
- * main — the React root (FRONTEND_LAYOUT §3 component tree: `main.tsx`). B1 ships
- * a minimal root mounting <App/>; the QueryClientProvider + React Router land
- * with the routed shell in M2-run2. The UI never touches the product DB or
+ * main — the React root. Mounts <App/>. The UI never touches the product DB or
  * external APIs — it renders server state over /api + SSE only.
  */
 

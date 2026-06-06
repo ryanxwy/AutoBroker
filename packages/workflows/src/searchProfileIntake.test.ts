@@ -1,5 +1,5 @@
 /**
- * In-stack tests — the search_profile_intake flat workflow (M1).
+ * In-stack tests — the search_profile_intake flat workflow.
  *
  * These drive the REAL flat Mastra createWorkflow → REAL createRun/start/resume
  * suspend/resume chain (in-process against a tmp mastra.db) → REAL step closures,
@@ -11,14 +11,14 @@
  * else (the workflow engine, suspend/resume serialization, the DB write + audit
  * row, the Zod validate step) is genuinely exercised.
  *
- * Coverage (task BUILD §5):
+ * Coverage:
  *   - slash happy path           → exactly 1 profile row + 1 audit row, success.
  *   - freeform path              → prefill seeds; PII/budget absent by schema.
  *   - decline at collect         → zero rows anywhere, terminal declined.
  *   - force-override             → audit 'intake_verification_forced' + created.
  *   - force-override decline     → zero profile rows.
  *   - ambiguous location         → suspend → pick(1) → created with picked coords.
- *   - 裁定⑨ failure              → suspend (NOT null coords) → retry → created;
+ *   - geocode failure            → suspend (NOT null coords) → retry → created;
  *                                   and decline → zero rows.
  *   - flat-shape structural check (no nested workflow step).
  *
@@ -295,7 +295,7 @@ describe("search_profile_intake — freeform path", () => {
 // decline at collect → zero rows, terminal declined
 // ---------------------------------------------------------------------------
 
-describe("search_profile_intake — decline at collect (D-AI-4)", () => {
+describe("search_profile_intake — decline at collect", () => {
   it("decline → terminal declined, ZERO rows in search_profiles AND audit_log", async () => {
     wireDeps({
       harnessGenerate: harnessStub({ valid: true }),
@@ -481,8 +481,8 @@ describe("search_profile_intake — force-override", () => {
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
     expect(resumed.result.outcome).toBe("declined");
-    expect(rowCount("search_profiles")).toBe(0); // decline 零 search_profiles 写.
-    expect(auditCount("intake_verification_forced")).toBe(1); // force 必写 forced audit.
+    expect(rowCount("search_profiles")).toBe(0); // decline writes zero search_profiles rows.
+    expect(auditCount("intake_verification_forced")).toBe(1); // force always writes the forced-audit row.
   });
 });
 
@@ -601,10 +601,10 @@ describe("search_profile_intake — ambiguous location", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 裁定⑨ geocode failure
+// coordinate-resolution invariant: geocode failure
 // ---------------------------------------------------------------------------
 
-describe("search_profile_intake — 裁定⑨ geocode failure (never null coords)", () => {
+describe("search_profile_intake — geocode failure (never null coords)", () => {
   it("failed(no_result) → suspend (NOT proceeded) → retry → resolved → created", async () => {
     const failed: GoplacesResult = {
       kind: "failed",
@@ -668,14 +668,14 @@ describe("search_profile_intake — 裁定⑨ geocode failure (never null coords
 });
 
 // ---------------------------------------------------------------------------
-// #1244 fail-closed → suspend (D-AI-5)
+// #1244 fail-closed → suspend
 // ---------------------------------------------------------------------------
 
-describe("search_profile_intake — #1244 malformed_tool_call → suspend (D-AI-5)", () => {
+describe("search_profile_intake — #1244 malformed_tool_call → suspend", () => {
   it("trimVerify malformed → suspend → retry_step → re-verify ok → created", async () => {
     // First trim_verify call fail-closed-suspends (HarnessSuspend, hitlAvailable
     // true); the retry_step re-runs trimVerify and the second call returns a
-    // verdict. The harness itself returns the suspend (D-AI-2: suspend not thrown);
+    // verdict. The harness itself returns the suspend (suspend not thrown);
     // the workflow maps it to a malformed_tool_call Mastra suspend.
     let calls = 0;
     const harnessGenerate = (async (input: { useCase: string }) => {

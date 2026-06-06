@@ -1,5 +1,6 @@
 /**
- * Typed three-branch profile resolver (BACKEND_SERVICES §9, CLAUDE.md §6).
+ * Typed three-branch profile resolver (the profile-ASK three-branch rule — see
+ * CLAUDE.md).
  *
  * The profile-ASK three-branch contract used to be skill markdown prose with no
  * function enforcing 1/0/2+ STOP semantics (readers.md:1404/1456). In full-TS it
@@ -10,12 +11,12 @@
  *   0 active                       → kind:'none'            → STOP, point to intake
  *   2+ active                      → kind:'ambiguous'       → STOP, ask by vehicle
  *
- * INTAKE EXEMPTION (§9.1, fig 9-1): intake itself does NOT call this — it is
+ * INTAKE EXEMPTION: intake itself does NOT call this — it is
  * CREATING the profile, so there is nothing to resolve. The three branches govern
  * DOWNSTREAM skills that act on an existing profile. Intake's own inverse guard
  * is the active unique index → ActiveSlotConflict (see profileService.create).
  *
- * NEWEST-ACTIVE TIEBREAK = ROWID DESC (§9.5, local ruling D-B8): the product
+ * NEWEST-ACTIVE TIEBREAK = ROWID DESC: the product
  * schema is frozen by the drizzle empty-diff CI gate — there is NO created_at
  * column to add, and the synth-hash id has no chronological order. SQLite ROWID
  * is the insertion order, so `ORDER BY rowid DESC` is the newest-active rule.
@@ -24,8 +25,8 @@
  * active filter treats NULL as active (status IS 'active' OR status IS NULL),
  * while terminal states (superseded/closed) are filtered out.
  *
- * W-C INVARIANT — never silently pick: every inferred_newest resolution is LOGGED
- * (structured trace record, §9.1), so an inferred pick is always auditable.
+ * NEVER SILENTLY PICK: every inferred_newest resolution is LOGGED (structured
+ * trace record), so an inferred pick is always auditable.
  *
  * SQLITE ACCESS: queries go through the raw better-sqlite3 handle (db.$client) —
  * tools must NOT import drizzle-orm operators (dependency-cruiser
@@ -41,7 +42,7 @@ import {
 } from "./errors.js";
 import type { SearchProfile } from "@autobroker/core";
 
-/** Discriminated resolver result (§9.1 verbatim signature). */
+/** Discriminated resolver result. */
 export type ResolveResult =
   | { kind: "pinned"; profile: SearchProfile }
   | { kind: "inferred_newest"; profile: SearchProfile }
@@ -49,7 +50,7 @@ export type ResolveResult =
   | { kind: "ambiguous"; candidates: SearchProfile[] };
 
 /**
- * Trace sink for inferred_newest resolutions (W-C: never silently pick). Default
+ * Trace sink for inferred_newest resolutions (never silently pick). Default
  * writes a structured line to the console; tests inject a spy to assert the log
  * fired. This is a trace span, not the audit_log (no DB write — resolution is a
  * read, the audit_log records mutations).
@@ -86,7 +87,7 @@ function isActiveStatus(status: string | null): boolean {
 }
 
 /**
- * resolveActiveProfile — the typed three-branch resolver (§9.1).
+ * resolveActiveProfile — the typed three-branch resolver.
  *
  * @param db    the tools-layer DB handle (the ONLY layer that touches SQLite).
  * @param args  { threadPin? } the session-pinned profile id, if any.
@@ -131,7 +132,7 @@ export function resolveActiveProfile(
 /**
  * Same three-branch logic, but THROWS the typed STOP errors instead of returning
  * a discriminated union — for call sites that demand a single profile and want
- * the error envelope (§13.2). `pinned`/`inferred_newest` return the profile;
+ * the error envelope. `pinned`/`inferred_newest` return the profile;
  * `none` → NoActiveProfileError; `ambiguous` → MultipleActiveProfilesError.
  */
 export function requireActiveProfile(

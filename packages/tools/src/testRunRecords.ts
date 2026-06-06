@@ -6,10 +6,9 @@
  *   Only packages/tools (and packages/db beneath it) may touch the product DB.
  *   Routes, CLI, workflows, and model code MUST delegate down into this writer —
  *   they never open the product DB connection themselves. The evaluator's
- *   "every call writes a row" rule (AI_ORCH §3.3 stage 6) funnels through here.
+ *   "every LLM call writes exactly one row" rule funnels through here.
  *
- * NULL-not-$0 DISCIPLINE (HARNESS_FRAMEWORK "NULL-not-$0"; BACKEND_SERVICES §14
- *   M0 ledger writer; AI_ORCH §3.3 stage 6 usage→cost):
+ * NULL-not-$0 DISCIPLINE (usage tokens → cost):
  *   Cost is the APPLICATION's own job: usage tokens × a self-managed pricing
  *   table → USD (AI SDK #3932 is wontfix — the SDK will not compute cost). When
  *   usage is unavailable the row is recorded as cost_usd = SQL NULL +

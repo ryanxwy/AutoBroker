@@ -1,8 +1,8 @@
 /**
  * test_run_records — the net-new cost/time + harness-result ledger.
  *
- * PROVENANCE (currentTruth "测试分层 L1–L5" + "成本/时间度量";
- *   risks "成本账本静默 $0/缺失 usage 骗趋势"; ANCHORS.html cost_and_time anchor):
+ * The cost ledger guards against silently recording $0 (or missing usage) and
+ * thereby faking a cost trend:
  *
  *   Every harness run lands one row here. Cost is the APPLICATION's own job:
  *   usage tokens × a self-managed pricing table → USD (AI SDK #3932 is wontfix,
@@ -32,7 +32,7 @@ import { sqliteTable, integer, text, real } from "drizzle-orm/sqlite-core";
 /**
  * STUB shape — finalize columns/indexes in Phase 0 alongside the evaluator's
  * cost_and_time anchor and harness/export_daily.ts (the daily JSON consumed by
- * ../../../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh).
+ * an external daily-report generator).
  */
 export const testRunRecords = sqliteTable("test_run_records", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -42,7 +42,7 @@ export const testRunRecords = sqliteTable("test_run_records", {
   skill: text("skill").notNull(),
   createdAt: text("created_at").notNull(), // ISO-8601, YYYY-MM-DD-derived bucket.
 
-  // ── test taxonomy (TEST_LAYERS.html) ─────────────────────────────────────
+  // ── test taxonomy ────────────────────────────────────────────────────────
   layer: text("layer").notNull(), // 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
   provider: text("provider").notNull(), // 'deepseek' (default) | 'anthropic' | 'openai'
   modelAlias: text("model_alias").notNull(), // e.g. 'deepseek-v4-flash'

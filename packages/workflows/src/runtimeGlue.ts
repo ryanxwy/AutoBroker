@@ -1,8 +1,8 @@
 /**
- * runtimeGlue — boot recovery + duplicate-runId guard (AI_ORCH M0).
+ * runtimeGlue — boot recovery + duplicate-runId guard.
  *
- * PHASE_0 spikes 2 & 7, M0 exit "crash-and-resume 回环". Per the D4 ruling there
- * is NO engine seam: these are THIN wrappers over the real @mastra/core@1.41
+ * Verified by the crash-and-resume recovery loop. There is NO engine seam: these
+ * are THIN wrappers over the real @mastra/core@1.41
  * instance/workflow API — never raw SQL into mastra.db. The glue REPORTS what
  * storage holds and ACTS only through the public run lifecycle methods.
  *
@@ -17,7 +17,7 @@
  * it re-hydrates a `Run` handle from the registered Workflow + the stored runId.
  *
  * The two failure shapes this module handles (live-probed against
- * @mastra/core@1.41.0 — see the spike report's api_findings):
+ * @mastra/core@1.41.0):
  *   - status 'suspended'  → a clean HITL pause. Re-attachable; return handles so
  *     the caller can resume({ resumeData }) through the L2 gate.
  *   - status 'running'    → a STALE row left by a process killed mid-flight (no
@@ -276,7 +276,7 @@ export interface StartRunGuardedArgs<TInput = unknown> {
  * re-submit only. Single-process serialization comes from the in-memory
  * ownership set + the single-Node-process topology (127.0.0.1:8100, one
  * server); a cross-process airtight guard would need a storage-level unique
- * constraint, which is Mastra's table, not ours (D1: never raw-SQL mastra.db).
+ * constraint, which is Mastra's table, not ours (never raw-SQL mastra.db).
  */
 export async function startRunGuarded<TInput = unknown>(
   workflow: Workflow,

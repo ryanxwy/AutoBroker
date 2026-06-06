@@ -1,12 +1,12 @@
 /**
- * Spike-5 — the Mastra instance (LIBRARY MODE), storage on disk.
+ * The Mastra instance (LIBRARY MODE), storage on disk.
  *
- * PHASE_0_foundation spike-5: "Mastra 实例 library mode + mastra.db 落盘". The
+ * A Mastra instance in library mode, persisting runtime state to mastra.db. The
  * instance runs as a plain in-process library — NO `mastra dev`, NO Hono/Cloud
  * server, NO bundler/deployer. It exists only so skill `createWorkflow`s and the
  * chat-rail Memory can persist durable state (suspend/resume snapshots, threads).
  *
- * D1 dual-DB never-co-write: framework runtime state lives in its OWN
+ * Dual-DB never-co-write: framework runtime state lives in its OWN
  * `mastra.db` (a dedicated @mastra/libsql file in ~/.autobroker-ts), beside —
  * never inside — the product `autobroker.db`. Mastra's `mastra_*` tables must
  * never appear in autobroker.db. We get the data dir from @autobroker/tools'

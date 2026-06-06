@@ -3,7 +3,7 @@
  * open snake_case ProfileRow (wire.ts ProfileRowSchema is a passthrough record;
  * routes.ts:262-275). The SnapshotCard / WhatHappensNext consume these.
  *
- * BUDGET INVARIANT (CLAUDE.md §9 / FRONTEND §8.3): budget_max is INTERNAL_ONLY —
+ * BUDGET INVARIANT (budget red-line, see CLAUDE.md): budget_max is INTERNAL_ONLY —
  * it is DELIBERATELY not read here. This module is the only profile-projection
  * the dealer-facing summary surfaces use, and it has no budget accessor, so a
  * summary/preview physically cannot render budget. INTAKE_INTERNAL_ONLY_FIELDS is
@@ -58,7 +58,7 @@ export function vehicleLabel(s: ProfileSnapshot): string {
   return [s.year, s.make, s.model, s.trim].filter((p) => p !== null && p !== "").join(" ").trim();
 }
 
-/** "city, ST" distillation for a location string (FRONTEND §7 formatLocation). */
+/** "city, ST" distillation for a location string. */
 export function formatLocation(loc: string | null): string | null {
   if (loc === null) return null;
   const parts = loc.split(",").map((p) => p.trim()).filter(Boolean);

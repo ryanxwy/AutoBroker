@@ -1,6 +1,6 @@
 /**
- * evaluator.test.ts — OFFLINE anchor + verdict tests (HARNESS_FRAMEWORK §6/§7/§8,
- * task BUILD §7). Scores each of the 6+1 anchors against fixture SSE transcripts
+ * evaluator.test.ts — OFFLINE anchor + verdict tests. Scores each of the 6+1
+ * anchors against fixture SSE transcripts
  * synthesized from the REAL committed wire shapes (init→awaiting_user→text→done,
  * init→awaiting_user→aborted{user_declined}) and an ISOLATED tmp DB whose rows
  * mimic what the SUT would have written. NO live server, NO LLM call.

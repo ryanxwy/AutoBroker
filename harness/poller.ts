@@ -1,12 +1,12 @@
 /**
- * poller — the background "answer the gate for the human" component (HARNESS_FRAMEWORK
- * §9). It implements the committed Approver interface (packages/tools gate/index.ts:
+ * poller — the background "answer the gate for the human" component.
+ * It implements the committed Approver interface (packages/tools gate/index.ts:
  * "in the live harness it is the deny_all poller") so the L2 in-process gate — which
  * is ALREADY implemented and fail-CLOSED — has an approver to consult on a mutating
  * action. This module ONLY supplies the Approver impls + the background poll loop;
  * it does not change the gate boundary.
  *
- * TWO POLICIES (§9.2):
+ * TWO POLICIES:
  *   deny_all     — unconditionally declines EVERY gate. The ONLY policy for the 3
  *                  irreversible skills + destructive skills. AIRTIGHT (no fail-open).
  *                  Scaffolded HERE for those later skills even though intake never
@@ -17,13 +17,13 @@
  *                  NEVER a proof — it must never point at a mutation-capable skill
  *                  (legacy gate_poller.py docstring).
  *
- * INTAKE REALITY (api_finding): intake is read-only and emits NO awaiting_permission
- * frame and the M1 SUT exposes NO /approvals route (only /form-decision). So for an
+ * INTAKE REALITY (live-observed): intake is read-only and emits NO awaiting_permission
+ * frame, and the intake SUT exposes NO /approvals route (only /form-decision). So for an
  * intake run the background poll loop has nothing to answer — it is a standby that
  * exits at the terminal frame. The force-override / decline paths are driven by the
- * case resume[] script through /form-decision (NOT the Approver) — the spec is
- * explicit: "poller 只处理 mutation gate,而 intake 的 force-override/decline 是
- * form-decision 应答,不经 Approver." The Approver impls land now so the later
+ * case resume[] script through /form-decision (NOT the Approver): the poller only
+ * answers mutation gates, while intake's force-override/decline are /form-decision
+ * responses that never pass through the Approver. The Approver impls land now so the later
  * mutation-capable skills (deny_all) plug straight in.
  *
  * Dependency wall: harness layer. Imports the Approver/GateRequest TYPES from
@@ -34,7 +34,7 @@ import type { Approver, GateRequest } from "@autobroker/tools";
 
 export type GatePolicy = "deny_all" | "approve_safe";
 
-/** deny_all — unconditionally decline. The deny path IS the test (§9.4). Airtight:
+/** deny_all — unconditionally decline. The deny path IS the test. Airtight:
  *  there is no branch that can return true. */
 export const denyAll: Approver = {
   async decide(_req: GateRequest): Promise<boolean> {

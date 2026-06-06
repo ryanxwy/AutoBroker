@@ -3,7 +3,7 @@
  *
  * STUB: key fields only; TODO markers flag what the full contract still owes.
  *
- * Design rules (architectureStack §"结构化输出 / 校验", ARCH_STRUCTURED_OUTPUT):
+ * Design rules (structured-output conventions):
  *   - FLAT shape (no nested objects) — lowest common denominator across the
  *     three providers' JSON-Schema subsets.
  *   - Every field REQUIRED with an EXPLICIT `null` for "not present" (never
@@ -15,8 +15,8 @@
  *   - Cross-field rules (financing_mode discriminant, Rule 1 cross-mode leakage,
  *     Rule 2 mode-required fields, ±$1 math reconciliation) are enforced in the
  *     `tools`/`calc` layer as POST-validation, NOT encoded as JSON-Schema the
- *     model sees. See PHASE_1 (deterministic calc) + PHASE_3
- *     (dealer_reply_extract) under the browser-first reorder.
+ *     model sees. Populated by the deterministic calc skills (phase 1) and the
+ *     dealer-reply extraction skill (phase 3).
  *
  * This file MUST NOT import any framework. Pure types + Zod only.
  */

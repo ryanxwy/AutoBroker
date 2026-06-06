@@ -1,10 +1,10 @@
 /**
- * L1 unit tests — M0 canonical-message → ModelMessage translator.
+ * L1 unit tests — canonical-message → ModelMessage translator.
  *
- * Freezes the M0 flat-text subset and the fail-LOUD contract (AI_ORCH R7;
- * safetyInvariants — no silent fallbacks): the three string-content roles map
- * 1:1, and anything outside the subset THROWS rather than being dropped or
- * coerced. Pure functions — no LLM, no I/O.
+ * Freezes the flat-text subset and the fail-LOUD contract (no silent
+ * fallbacks): the three string-content roles map 1:1, and anything outside the
+ * subset THROWS rather than being dropped or coerced. Pure functions — no LLM,
+ * no I/O.
  */
 
 import { describe, expect, it } from "vitest";
@@ -33,11 +33,11 @@ describe("toModelMessages", () => {
     expect(toModelMessages([])).toEqual([]);
   });
 
-  it("exposes exactly the three M0 roles", () => {
+  it("exposes exactly the three canonical roles", () => {
     expect([...CANONICAL_ROLES]).toEqual(["system", "user", "assistant"]);
   });
 
-  it("THROWS (never drops) on a role outside the M0 subset", () => {
+  it("THROWS (never drops) on a role outside the canonical subset", () => {
     const bad = [
       { role: "tool", content: "result blob" },
     ] as unknown as CanonicalMessage[];

@@ -1,5 +1,5 @@
 /**
- * L1 unit tests — SearchProfileSchema (full 33-column mirror, B1).
+ * L1 unit tests — SearchProfileSchema (full 33-column mirror).
  *
  * Pure Zod parse tests; no DB, no framework. Freezes:
  *   (a) a full 33-field sample row (every column present) parses;

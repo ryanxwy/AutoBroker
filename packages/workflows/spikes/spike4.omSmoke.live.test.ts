@@ -1,7 +1,7 @@
 /**
- * SPIKE-4 — Observational Memory (OM) × DeepSeek smoke (PHASE_0_foundation).
+ * SPIKE-4 — Observational Memory (OM) × DeepSeek smoke.
  *
- * Goal (from the spike brief): run deepseek-v4-flash as the OM Observer/Reflector
+ * Goal: run deepseek-v4-flash as the OM Observer/Reflector
  * over a LONG Tucson-corpus negotiation thread and answer two questions:
  *   1. Compression fidelity — do the HARD FACTS (dealer identities + OTD dollar
  *      figures + VIN-ish tokens + dates) survive compaction verbatim?
@@ -16,7 +16,7 @@
  * out-the-door QUOTE from a dealer, not the buyer's private budget.
  *
  * API surface used (researched in @mastra/memory@1.20.2 + @mastra/core@1.41.0
- * .d.ts — see api_findings in the spike report):
+ * .d.ts):
  *   - new Memory({ storage, options: { observationalMemory: { model, observation,
  *     reflection, scope } } })  — Memory wrapper owns store extraction.
  *   - memory.createThread({ resourceId, threadId, title })  (MastraMemory base).

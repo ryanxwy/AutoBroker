@@ -1,5 +1,5 @@
 /**
- * PinChip — 📌 {make model} with a ✕ unpin (FRONTEND_LAYOUT §4.2). Renders when
+ * PinChip — 📌 {make model} with a ✕ unpin. Renders when
  * the active session has a pinned profile. The unpin handler is the parent's (it
  * PATCHes the session pin to null); this is presentational. Stable data-testid.
  */

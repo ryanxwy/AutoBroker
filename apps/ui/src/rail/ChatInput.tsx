@@ -1,5 +1,5 @@
 /**
- * ChatInput — compose + slash parse + autocomplete (FRONTEND_LAYOUT §4.3). On
+ * ChatInput — compose + slash parse + autocomplete. On
  * submit it parses the input: a `ready` slash result launches that skill direct;
  * anything else (typing/unknown/non-slash prose) launches freeform. A `typing`
  * result renders the up-to-8 skill autocomplete dropdown (Tab completes the first

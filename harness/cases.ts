@@ -1,5 +1,5 @@
 /**
- * cases — load + Zod-validate a case TOML into a typed Case (HARNESS_FRAMEWORK §5).
+ * cases — load + Zod-validate a case TOML into a typed Case.
  * Three binding layers: [meta] (id / archetype / ordered skills[]), [narrative]
  * (session_origin / input_mode / provider / profile), [[steps]] (each with
  * resume[] scripts + an anchors[] tripwire array). The anchor specs are parsed
@@ -126,10 +126,10 @@ export interface Case {
 }
 
 /** Map provider → the driver_kind label asserted by the driver_kind anchor (the
- *  two-place lock-step value, §11). Derived from core's providerDriverKind so the
+ *  two-place lock-step value). Derived from core's providerDriverKind so the
  *  runner's expectDriverKind, this case→expect map, and the server's init-frame
  *  emitter all key off ONE source. DeepSeek = deepseek_apikey (default);
- *  anthropic_apikey / openai_apikey are the M4 cross-provider labels. */
+ *  anthropic_apikey / openai_apikey are the cross-provider labels. */
 export const PROVIDER_DRIVER_KIND: Record<string, HarnessDriverKind> = Object.fromEntries(
   PROVIDERS.map((p) => [p, providerDriverKind(p)]),
 );
@@ -264,7 +264,7 @@ export function loadCase(path: string): Case {
   return parseCase(readFileSync(path, "utf8"));
 }
 
-/** Build the §6.5 cell_id: live/{skill}/{provider}/{archetype}/{input_mode}. */
+/** Build the cell_id: live/{skill}/{provider}/{archetype}/{input_mode}. */
 export function cellIdFor(c: Case, step: CaseStep): string {
   return `live/${step.skill}/${c.provider}/${c.archetype}/${c.inputMode}`;
 }

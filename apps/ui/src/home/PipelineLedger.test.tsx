@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * PipelineLedger.test — the run-button gating invariant (FRONTEND_LAYOUT §6.1):
+ * PipelineLedger.test — the run-button gating invariant:
  * intake's Run button is NEVER disabled (it creates the profile), every other
  * skill's Run is disabled without a pinned profile.
  */

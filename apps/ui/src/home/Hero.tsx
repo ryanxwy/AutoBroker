@@ -1,7 +1,7 @@
 /**
- * Hero — the home headline + "Start a new search" CTA (FRONTEND_LAYOUT §6). The
+ * Hero — the home headline + "Start a new search" CTA. The
  * CTA is one of the four intake entries that funnel through
- * launchIntakeWithFreshSession (§6.2); here it calls the parent's onStartSearch.
+ * launchIntakeWithFreshSession; here it calls the parent's onStartSearch.
  */
 
 export function Hero({ onStartSearch }: { onStartSearch: () => void }): JSX.Element {

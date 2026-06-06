@@ -1,6 +1,6 @@
 /**
- * testSupport — OFFLINE test helpers for the harness unit tests (HARNESS_FRAMEWORK
- * §7 / task BUILD §7). Builds an ISOLATED tmp product DB with the committed migration
+ * testSupport — OFFLINE test helpers for the harness unit tests.
+ * Builds an ISOLATED tmp product DB with the committed migration
  * applied, plus fixture SSE frame sequences synthesized from the REAL wire shapes
  * (the committed server.integration.test.ts: init→awaiting_user→text→done for a
  * created run; init→awaiting_user→aborted{user_declined} for a decline).

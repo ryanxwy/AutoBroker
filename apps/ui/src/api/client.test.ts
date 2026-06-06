@@ -40,7 +40,7 @@ function spyFetch(status: number, body: unknown): {
 }
 
 // ---------------------------------------------------------------------------
-// Captured fixtures — literal shapes the M1 server emits (cited inline).
+// Captured fixtures — literal shapes the server emits (cited inline).
 // ---------------------------------------------------------------------------
 
 /** GET /api/skills → [SKILL_MANIFEST] (routes.ts:78-86, returned at :279). */
@@ -103,7 +103,7 @@ const PROFILE_ROW_FIXTURE = {
   status: "active",
 };
 
-/** The §13.2 error envelope (server.ts:38-52). */
+/** The unified error envelope (server.ts:38-52). */
 const ERROR_ENVELOPE_FIXTURE = {
   error: { code: "decision_conflict", message: "decision already consumed", run_id: "run-1" },
 };
@@ -188,7 +188,7 @@ describe("ApiClient decode — captured wire fixtures", () => {
   });
 });
 
-describe("ApiClient error decode — §13.2 envelope → ApiError", () => {
+describe("ApiClient error decode — error envelope → ApiError", () => {
   it("a 409 envelope decodes into a typed ApiError with code + envelope", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch(409, ERROR_ENVELOPE_FIXTURE) });
     await expect(client.formDecision("run-1", { decision_id: "d", decision: { action: "decline" } }))

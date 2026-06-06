@@ -1,12 +1,11 @@
 /**
- * boot — the embedded-host boot sequence (BACKEND_SERVICES §5/§14 M0-M1, the
- * runtimeGlue header's "boot recovery" contract). This is the app-layer caller
- * that owns the registry map and drives the workflows-layer glue; it never
- * imports @mastra directly (the Mastra instance type flows in via the
- * createMastraInstance return — inference only, no @mastra import statement) and
- * never opens the product DB.
+ * boot — the embedded-host boot sequence (the runtimeGlue header's "boot
+ * recovery" contract). This is the app-layer caller that owns the registry map
+ * and drives the workflows-layer glue; it never imports @mastra directly (the
+ * Mastra instance type flows in via the createMastraInstance return — inference
+ * only, no @mastra import statement) and never opens the product DB.
  *
- * SEQUENCE (task BUILD §1):
+ * SEQUENCE:
  *   1. MASTRA_TELEMETRY_DISABLED ??= '1' — defensive belt BEFORE construction
  *      (createMastraInstance also sets it with ??=, but we set it here too so the
  *      env is silent even if the app is booted by a path that constructs Mastra
@@ -19,13 +18,12 @@
  *      recoverOnBoot reads them (a fresh data dir has no mastra.db yet; reading
  *      run lists before init would surface a missing-table error).
  *   4. recoverOnBoot(mastra, { workflowIds: REGISTERED_WORKFLOW_IDS }) —
- *      re-attach suspended runs (report + leave per M1 policy; the
- *      restart/cancel wiring exists in glue for stale 'running' rows but M1 only
- *      REPORTS — it does not auto-restart/cancel, matching the swimlane's "report
- *      + leave").
+ *      re-attach suspended runs (current policy is report + leave; the
+ *      restart/cancel wiring exists in glue for stale 'running' rows but boot only
+ *      REPORTS — it does not auto-restart/cancel).
  *
  * Returns { mastra, recovery } for the server to wire routes against. The caller
- * decides what to do with recovery.stale / recovery.other (M1: log them).
+ * decides what to do with recovery.stale / recovery.other (currently: log them).
  */
 
 import {
@@ -67,7 +65,7 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   }
 
   // (4) Boot recovery — report suspended (re-attachable) + stale 'running' +
-  // other in-flight rows. M1 policy: REPORT + LEAVE (no auto-restart/cancel).
+  // other in-flight rows. Current policy: REPORT + LEAVE (no auto-restart/cancel).
   const recovery = await recoverOnBoot(mastra, { workflowIds: REGISTERED_WORKFLOW_IDS });
 
   if (!opts.quiet) {

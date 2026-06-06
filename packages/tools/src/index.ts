@@ -79,7 +79,7 @@ export {
 } from "./profile/goplaces.js";
 
 // Profile service — the ONLY write path for search_profiles + audit_log,
-// the typed three-branch resolver, fake-phone, and the core↔db adapter (§8/§9).
+// the typed three-branch resolver, fake-phone, and the core↔db adapter.
 export {
   rowToProfile,
   profileToRow,

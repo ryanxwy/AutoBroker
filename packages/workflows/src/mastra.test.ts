@@ -1,11 +1,10 @@
 /**
- * Spike-5 acceptance — Mastra library mode + mastra.db on disk.
+ * Acceptance — Mastra library mode + mastra.db on disk.
  *
- * Freezes the spike-5 / D1 contract (PHASE_0_foundation, INFRA M0 swimlane
- * "Mastra 实例 library mode + mastra.db 落盘"):
+ * Freezes the library-mode dual-DB contract:
  *   (a) constructing the instance and initializing storage lands a real
  *       `mastra.db` file in the active data dir (AUTOBROKER_DATA_DIR);
- *   (b) D1 dual-DB never-co-write: nothing here touches the product
+ *   (b) dual-DB never-co-write: nothing here touches the product
  *       `autobroker.db` — it must not even exist after the run (so mastra_*
  *       tables provably cannot have co-landed in it);
  *   (c) the telemetry env belt is armed after construction.
@@ -50,7 +49,7 @@ afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("createMastraInstance — library mode, mastra.db on disk (spike-5)", () => {
+describe("createMastraInstance — library mode, mastra.db on disk", () => {
   it("lands mastra.db in the data dir after storage init", async () => {
     const mastra = createMastraInstance();
 
@@ -67,12 +66,12 @@ describe("createMastraInstance — library mode, mastra.db on disk (spike-5)", (
     expect(statSync(mastraDb).size).toBeGreaterThan(0);
   });
 
-  it("D1 never-co-write: product autobroker.db is never created here", async () => {
+  it("never-co-write: product autobroker.db is never created here", async () => {
     const mastra = createMastraInstance();
     const storage = mastra.getStorage();
     await storage!.init();
 
-    // Nothing in spike-5 opens the product DB; the file must not exist, so
+    // Nothing here opens the product DB; the file must not exist, so
     // mastra_* tables provably cannot have co-landed in it.
     expect(existsSync(join(tmpDir, "autobroker.db"))).toBe(false);
   });

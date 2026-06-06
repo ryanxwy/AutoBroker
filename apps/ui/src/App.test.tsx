@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * App.test — the M2 shell integration path (FRONTEND_LAYOUT §2/§4/§6). Drives the
+ * App.test — the shell integration path. Drives the
  * real App with an injected ApiClient (mock fetch) + a mock EventSource so the
  * full chain runs without a network: home renders → "Start a new search" POSTs
  * start → the rail binds the run → the SSE awaiting_user frame surfaces the intake

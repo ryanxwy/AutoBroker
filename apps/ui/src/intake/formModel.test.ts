@@ -1,5 +1,5 @@
 /**
- * formModel.test — the pure form model (FRONTEND_LAYOUT §5.2-§5.4). Covers the
+ * formModel.test — the pure form model. Covers the
  * 18-field derivation from core, required marks/sections, per-field validation,
  * the year current-or-next constraint, and the form-decision serialization
  * (optional empty → null, required empty preserved, number coercion).

@@ -1,5 +1,5 @@
 /**
- * fake-phone generation (BACKEND_SERVICES §8.4, BRIEF §4, persist.md:36).
+ * fake-phone generation (fake-by-default dealer phone policy).
  *
  * RULE: keep the FIRST 6 digits (area code + prefix), RANDOMIZE the LAST 4. The
  * fake number is stored in `fake_phone`; the real number stays in

@@ -1,5 +1,5 @@
 /**
- * run.mjs — the Playwright e2e runner proving the M2 EXIT CRITERIA against the
+ * run.mjs — the Playwright e2e runner proving the exit criteria against the
  * REAL stack (real @autobroker/server + the built apps/ui/dist served single-port).
  * Only the two external collaborators are stubbed through the committed,
  * test-guarded DI seam (see serve.mjs): NO live LLM, NO live geocode.
@@ -10,7 +10,7 @@
  * process, parses the ephemeral port off its stdout, drives the SPA, and tears
  * everything down. Exit code is non-zero if any scenario fails.
  *
- * Scenarios (M2 exit):
+ * Scenarios:
  *   A — core happy path: slash → 18-field form → fill 6 required → submit
  *       [stub resolved] → run done → confirmation visible → exactly-1 profile.
  *   B — gate-before-prose: trim invalid (stub) → force-override card renders
@@ -20,7 +20,7 @@
  *   C — reconnect/refresh: fill HALF the form → reload → draft restored (PII
  *       cleared w/ hint, others intact) → SSE re-subscribed (awaiting from
  *       replay) → finish → submit → done.
- *   D — 裁定⑨ failure: stub failed geocode → failure banner + flagged location
+ *   D — location failure: stub failed geocode → failure banner + flagged location
  *       field + retry input → flip stub to resolved + retry → created.
  *   E — scope notice: create+pin a session via PATCH, launch intake from it →
  *       [data-intake-scope-notice] visible as first part, non-dismissable.
@@ -166,7 +166,7 @@ async function launchSlashIntake(page) {
 // ---------------------------------------------------------------------------
 
 async function scenarioA(browser, base) {
-  scenario("A — M2 exit core (slash → form → submit → done → 1 profile)");
+  scenario("A — core flow (slash → form → submit → done → 1 profile)");
   await setScenario(base, { location: "resolved", trimValid: true });
   const before = (await getProfiles(base)).length;
 
@@ -349,7 +349,7 @@ async function scenarioC(browser, base) {
 }
 
 async function scenarioD(browser, base) {
-  scenario("D — 裁定⑨ location failure (failed geocode → banner + retry → created)");
+  scenario("D — location failure (failed geocode → banner + retry → created)");
   await setScenario(base, { location: "failed", trimValid: true });
   const before = (await getProfiles(base)).length;
 
@@ -365,10 +365,10 @@ async function scenarioD(browser, base) {
   await page.waitForSelector(`${T("intake-submit")}:not([disabled])`, { timeout: 5000 });
   await page.click(T("intake-submit"));
 
-  // 裁定⑨: the geocode failed → a failure banner (NOT null coords forward), the
-  // location field flagged, and a retry input.
+  // coordinate-resolution invariant: the geocode failed → a failure banner (NOT
+  // null coords forward), the location field flagged, and a retry input.
   await page.waitForSelector(T("gate-location-failure"), { timeout: 15000 });
-  check("location-failure banner renders (裁定⑨)", true);
+  check("location-failure banner renders", true);
   const reason = await page.locator(T("gate-location-failure-reason")).innerText();
   check("failure reason shown", reason.trim().length > 0, `reason="${reason}"`);
   const flagged = await page.getAttribute(T("gate-location-failure-input"), "aria-invalid");
@@ -397,8 +397,8 @@ async function scenarioE(browser, base) {
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(T("app-main"), { timeout: 10000 });
 
-  // The literal M2-exit flow, driven through the REAL routes from inside the page
-  // (same-origin fetch). NOTE (api_finding): the committed UI has no affordance to
+  // The literal exit flow, driven through the REAL routes from inside the page
+  // (same-origin fetch). NOTE: the committed UI has no affordance to
   // adopt an externally-created server session as the active rail session (the
   // typed client exposes NO sessions methods, and App.doLaunch only forks from the
   // store's activeSessionId, which on a cold start is a CLIENT id, never a server
@@ -451,7 +451,7 @@ async function scenarioE(browser, base) {
   // reachable; the real card's DOM contract (3 points under
   // [data-intake-scope-notice] + NO dismiss control + first part) is asserted by
   // the committed unit test apps/ui/src/rail/IntakeScopeNotice.test.tsx. We record
-  // the UI-reachability gap as an api_finding rather than fake a DOM render.
+  // the UI-reachability gap as a finding rather than fake a DOM render.
   note("REAL card DOM contract covered by committed IntakeScopeNotice.test.tsx (3 points + non-dismissable); UI-reachability gap recorded as a finding");
 
   await ctx.close();

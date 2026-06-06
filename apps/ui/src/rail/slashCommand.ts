@@ -1,5 +1,5 @@
 /**
- * slashCommand — the pure slash parser (FRONTEND_LAYOUT §4.3). Syntax:
+ * slashCommand — the pure slash parser. Syntax:
  * "/" skill args? prose?, key=value coerced to args, trailing prose → note.
  * Returns a discriminated union the ChatInput dispatches on: only `ready` runs a
  * slash launch; everything else (typing/unknown/non-slash) → freeform launch.

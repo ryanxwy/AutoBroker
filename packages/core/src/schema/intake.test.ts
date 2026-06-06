@@ -1,5 +1,5 @@
 /**
- * L1 unit tests — SearchProfileIntakeInputSchema + INTAKE_FIELD_META (B1).
+ * L1 unit tests — SearchProfileIntakeInputSchema + INTAKE_FIELD_META.
  *
  * Pure Zod parse tests; no DB, no framework. Freezes:
  *   (a) the 18-field happy path parses (6 required + 12 nullable);
@@ -94,7 +94,7 @@ describe("SearchProfileIntakeInputSchema — 18 fields", () => {
   });
 });
 
-/** The frozen 18-field canonical UI render order (FRONTEND §5.1). */
+/** The frozen 18-field canonical UI render order. */
 const CANONICAL_ORDER: IntakeFieldName[] = [
   "make",
   "model",

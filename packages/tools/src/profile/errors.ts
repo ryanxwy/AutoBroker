@@ -1,7 +1,7 @@
 /**
- * Typed error surface for the profile service + resolver (BACKEND_SERVICES §9.3,
- * §13.2 error-envelope codes). Each carries a stable `code` that the HTTP error
- * plugin maps to the documented envelope { error: { field?, message, code } }.
+ * Typed error surface for the profile service + resolver (error-envelope codes).
+ * Each carries a stable `code` that the HTTP error plugin maps to the documented
+ * envelope { error: { field?, message, code } }.
  *
  * Error-class style mirrors the L2 gate (gate/index.ts): named subclasses of
  * Error with a `.name` set and a frozen literal `code`. FAIL-LOUD: these are
@@ -12,7 +12,7 @@
  * Intake tried to create a SECOND active profile for an (account, brand) that
  * already has one — rejected by the partial unique index
  * uq_search_profiles_active_account_brand (schema.ts:81). Surfaced to the UI as
- * Replace/Cancel. (§9.3, §13.2 → HTTP 409.)
+ * Replace/Cancel. (→ HTTP 409.)
  */
 export class ActiveSlotConflict extends Error {
   readonly code = "active_slot_conflict" as const;
@@ -34,8 +34,8 @@ export class ActiveSlotConflict extends Error {
 
 /**
  * An identity field (year, make, model, trim, location) was edited after the
- * first lead_submissions row referenced the profile — outside the typo window
- * (§9.4). The user must Replace (supersede) or Cancel. (§13.2 → HTTP 409.)
+ * first lead_submissions row referenced the profile — outside the typo window.
+ * The user must Replace (supersede) or Cancel. (→ HTTP 409.)
  */
 export class IdentityLockedError extends Error {
   readonly code = "identity_locked" as const;
@@ -50,28 +50,29 @@ export class IdentityLockedError extends Error {
   }
 }
 
-/** Identity fields that lock after the first outbound lead (§9.4). */
+/** Identity fields that lock after the first outbound lead. */
 export const IDENTITY_FIELDS = ["year", "make", "model", "trim", "location"] as const;
 
 /**
- * 裁定⑨: persist received a profile with NULL latitude/longitude. Coordinates
- * MUST be resolved upstream (workflow resolveLocation) before create — the
- * service is the LAST WALL and rejects loud, never NULL-coords-to-DB. (§8.3.)
+ * Coordinate-resolution invariant: persist received a profile with NULL
+ * latitude/longitude. Coordinates MUST be resolved upstream (workflow
+ * resolveLocation) before create — the service is the LAST WALL and rejects
+ * loud, never NULL-coords-to-DB.
  */
 export class CoordinatesNotResolvedError extends Error {
   readonly code = "coordinates_not_resolved" as const;
   constructor(public readonly profileId: string) {
     super(
       `coordinates_not_resolved: refusing to persist profile ${profileId} with ` +
-        `NULL latitude/longitude. 裁定⑨ — coordinates must be resolved before ` +
-        `persist; geocode failure suspends back to the form upstream.`,
+        `NULL latitude/longitude. Coordinates must be resolved before persist; ` +
+        `geocode failure suspends back to the form upstream, never silently passes.`,
     );
     this.name = "CoordinatesNotResolvedError";
   }
 }
 
 /**
- * The persist parity-minimum (year/make/model, §8.2) was not met when building a
+ * The persist parity-minimum (year/make/model) was not met when building a
  * row for INSERT. Distinct from the 6-field FORM contract (enforced in core's
  * SearchProfileIntakeInputSchema) — this is the looser service-side hard floor.
  */
@@ -89,8 +90,8 @@ export class MissingRequiredFieldError extends Error {
 }
 
 /**
- * Resolver found no active profile (§9.2, branch 0). STOP and point the user to
- * intake. (§13.2 has no dedicated code — the resolver result `kind:'none'`
+ * Resolver found no active profile (branch 0). STOP and point the user to
+ * intake. (No dedicated envelope code — the resolver result `kind:'none'`
  * carries this; the error form is for call sites that demand a profile.)
  */
 export class NoActiveProfileError extends Error {
@@ -105,8 +106,8 @@ export class NoActiveProfileError extends Error {
 }
 
 /**
- * Resolver found 2+ active profiles (§9.2, branch 2+). STOP and ask the user to
- * pick by vehicle name; `candidates` carries the list. (§13.2 ambiguous.)
+ * Resolver found 2+ active profiles (branch 2+). STOP and ask the user to
+ * pick by vehicle name; `candidates` carries the list. (Ambiguous.)
  */
 export class MultipleActiveProfilesError extends Error {
   readonly code = "multiple_active_profiles" as const;

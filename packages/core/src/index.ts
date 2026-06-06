@@ -34,7 +34,7 @@ export type {
   HarnessDriverKind,
 } from "./types.js";
 
-// Zod schemas (flat, required, explicit-null; per ARCH_STRUCTURED_OUTPUT).
+// Zod schemas (flat, required, explicit-null structured-output convention).
 export { DealerQuoteSchema, FinancingModeSchema } from "./schema/dealerQuote.js";
 export type { DealerQuote, FinancingMode } from "./schema/dealerQuote.js";
 

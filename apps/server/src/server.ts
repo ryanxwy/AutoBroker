@@ -1,14 +1,14 @@
 /**
  * server — assemble the Fastify v5 app: boot recovery → pubsub + intake service →
- * routes → the unified §13.2 error envelope + 404 handler. Exposes buildServer()
- * for in-process tests (fastify.inject / listen on an ephemeral port) and the
- * listen entrypoint in index.ts.
+ * routes → the unified error envelope + 404 handler. Exposes buildServer() for
+ * in-process tests (fastify.inject / listen on an ephemeral port) and the listen
+ * entrypoint in index.ts.
  *
- * ERROR ENVELOPE (§13.2): every error response is { error: { field?, message,
- * code } }. A typed RouteError carries its own code/status/field; a ZodError that
- * escapes a handler → 400 content_invalid with a JSON-pointer field; a
- * DuplicateRunIdError → 409; an unknown route or run → 404. fail-LOUD: an
- * un-typed error is a 500 with code 'internal' (never a silent 200).
+ * ERROR ENVELOPE: every error response is { error: { field?, message, code } }. A
+ * typed RouteError carries its own code/status/field; a ZodError that escapes a
+ * handler → 400 content_invalid with a JSON-pointer field; a DuplicateRunIdError →
+ * 409; an unknown route or run → 404. fail-LOUD: an un-typed error is a 500 with
+ * code 'internal' (never a silent 200).
  *
  * BINDING: 127.0.0.1 only (the trust boundary — no externally reachable port but
  * 8100). The port is configurable for tests (ephemeral 0).
@@ -37,7 +37,7 @@ export interface BuiltServer {
   recovery: BootResult["recovery"];
 }
 
-/** Shape the unified §13.2 error envelope. */
+/** Shape the unified error envelope. */
 function errorEnvelope(
   code: string,
   message: string,
@@ -65,17 +65,16 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   const pubsub = new RunPubSub();
   const intake = new IntakeRunService(mastra, pubsub);
 
-  // sessions = Mastra Memory threads (§3.1/§6). The rail Memory is constructed in
-  // the workflows layer (createRailMemory — the ONLY @mastra/memory construction;
-  // OM model pinned to DeepSeek, USER DIRECTIVE 2026-06-05) so the app never
-  // imports @mastra. The store + service own thread CRUD + the wire projection +
-  // the D-AI-6 intake fork.
+  // sessions = Mastra Memory threads. The rail Memory is constructed in the
+  // workflows layer (createRailMemory — the ONLY @mastra/memory construction; the
+  // OM model is pinned to DeepSeek) so the app never imports @mastra. The store +
+  // service own thread CRUD + the wire projection + the intake fork.
   const sessions = new SessionService(new RailSessionStore(createRailMemory()));
 
-  // Crash-and-resume (M1 EXIT 2): re-attach every suspended run recoverOnBoot
-  // found, so a form-decision can resume it in THIS fresh process. M1 policy for
-  // stale 'running' rows is report+leave (boot logged them); only the cleanly
-  // suspended runs are re-attached for resume.
+  // Crash-and-resume: re-attach every suspended run recoverOnBoot found, so a
+  // form-decision can resume it in THIS fresh process. Policy for stale 'running'
+  // rows is report+leave (boot logged them); only the cleanly suspended runs are
+  // re-attached for resume.
   for (const run of recovery.suspended) {
     await intake.reattach(run.runId);
   }
@@ -97,7 +96,7 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // whenever dist existed, i.e. exactly the production shape).
   const serving = resolveStaticServing();
 
-  // Unified error envelope (§13.2). Order: typed RouteError → ZodError →
+  // Unified error envelope. Order: typed RouteError → ZodError →
   // DuplicateRunIdError → fallback 500.
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof RouteError) {

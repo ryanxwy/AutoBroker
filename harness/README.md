@@ -1,14 +1,9 @@
 # harness/ — AutoBroker live-LLM harness (implementation)
 
 > Status: Phase 0 (foundation) · 2026-06-02 · SCAFFOLD. This directory is the
-> code-repo **implementation** of the live-LLM harness. The canonical
-> specification lives in the plan repo at
-> [`../../AutoBroker-dev-plan/ts-rebuild/harness-standard/`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/)
-> (STANDARD / ANCHORS / TEST_LAYERS / INVARIANTS / VERDICTS / CORPUS). Where code
-> and standard disagree, fix one to match the other — do not let them drift.
-
-This directory **mirrors** the plan repo's `harness-standard/`. The standard says
-what to build; this is where it gets built.
+> **implementation** of the live-LLM harness: it boots the real server in an
+> isolated process and scores each skill's behaviour against deterministic
+> anchors, live, with no fixtures or replay.
 
 ## Roles (five) — `prompts/`
 
@@ -43,8 +38,8 @@ the orchestration model.
       verify FakeGmailAdapter + isolated fake DB + `BLOCK_EXTERNAL_MUTATIONS=1`,
       else `deny_all`).
 - [ ] [`export_daily.ts`](export_daily.ts) — exports `test_run_records` for a
-      given day to stable JSON (already stubbed), consumed by the plan repo's
-      [`../../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh`](../../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh).
+      given day to stable JSON (already stubbed), consumed by an external
+      daily-report generator that reads `harness/exports/<date>.json`.
 
 ## Safety (frozen invariants — never relaxed)
 
@@ -55,6 +50,3 @@ the orchestration model.
 - Never touch the production `~/.autobroker/`; runs use an isolated throwaway DB.
 - Never set `AUTOBROKER_TEST_AUTO_APPROVE`.
 - Mode-A orchestration uses explicit harness framing — never a bare prompt.
-
-See [`../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.html`](../../AutoBroker-dev-plan/ts-rebuild/harness-standard/INVARIANTS.html)
-for the full set.

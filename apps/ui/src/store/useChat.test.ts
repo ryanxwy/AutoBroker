@@ -1,7 +1,7 @@
 /**
  * useChat.test — the Zustand chat store's turn reducers. Pure (node env): the
  * store is plain state, no DOM. Covers the wire-frame → three-zone projection
- * (§4.1) the SSE hook drives via applyRunFrame.
+ * the SSE hook drives via applyRunFrame.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -42,7 +42,7 @@ describe("useChat — sessions + turns", () => {
   });
 });
 
-describe("useChat — applyRunFrame three-zone reducer (§4.1)", () => {
+describe("useChat — applyRunFrame three-zone reducer", () => {
   beforeEach(() => {
     useChat.getState().createSession({ sessionId: "s1" });
     useChat.getState().appendAssistantTurn("run-1");

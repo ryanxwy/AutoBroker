@@ -1,20 +1,17 @@
 /**
  * SessionThread — the product projection of a dashboard chat-rail session.
  *
- * PROVENANCE (PHASE_0_foundation §2 core deliverables; ARCH_ORCHESTRATION_
- * SESSIONS §3 "Sessions = Memory threads"): one chat rail = one Mastra Memory
- * thread, bound to one search profile; the local user is the `resourceId`.
- * The pinned-profile binding lives in thread metadata + working memory — NOT
- * buried in the transcript (the oracle's per-turn pin-reminder workaround dies
- * here). Skill runs triggered from a rail link back via runId ↔ thread
- * metadata.
+ * Sessions are Memory threads: one chat rail = one Mastra Memory thread, bound
+ * to one search profile; the local user is the `resourceId`. The pinned-profile
+ * binding lives in thread metadata + working memory — NOT buried in the
+ * transcript (the legacy per-turn pin-reminder workaround dies here). Skill
+ * runs triggered from a rail link back via runId ↔ thread metadata.
  *
  * This is a PRODUCT contract (pure Zod, framework-free): Mastra's own thread
  * rows live in mastra.db and are never imported here — higher layers project
  * them onto this shape, exactly like SkillRunStatus projects run status.
  *
- * Schema style (ARCH_STRUCTURED_OUTPUT): flat, all fields required, explicit
- * null over optional.
+ * Schema style: flat, all fields required, explicit null over optional.
  */
 
 import { z } from "zod";

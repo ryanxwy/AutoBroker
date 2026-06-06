@@ -1,27 +1,27 @@
 /**
- * sessions — the app-side chat-rail session service (BACKEND_SERVICES §3.1 + §6,
- * AI_ORCHESTRATION §8/§9 + D-AI-6 / 裁定⑧). Sessions ARE Mastra Memory threads;
- * this service drives the workflows-layer RailSessionStore (the ONLY @mastra/
- * memory construction) and owns the WIRE-CASE projection + the intake-from-pinned
- * fork contract. It never imports @mastra directly (the RailSession product shape
- * flows in from the workflows export) and never opens the product DB.
+ * sessions — the app-side chat-rail session service. Sessions ARE Mastra Memory
+ * threads; this service drives the workflows-layer RailSessionStore (the ONLY
+ * @mastra/memory construction) and owns the WIRE-CASE projection + the
+ * intake-from-pinned fork contract. It never imports @mastra directly (the
+ * RailSession product shape flows in from the workflows export) and never opens
+ * the product DB.
  *
- * WIRE CASE (§3 / §6.2, load-bearing,逐字): request bodies are camelCase
- * (`pinnedProfileId`); response bodies are snake_case (`pinned_profile_id`). The
- * edge never normalizes — the UI store consumes the server's raw shape. The
- * SessionResponse projection (§6.2) is centralized here.
+ * WIRE CASE (load-bearing): request bodies are camelCase (`pinnedProfileId`);
+ * response bodies are snake_case (`pinned_profile_id`). The edge never
+ * normalizes — the UI store consumes the server's raw shape. The SessionResponse
+ * projection is centralized here.
  *
- * PATCH null-vs-omitted (§3.1, the load-bearing PATCH semantic): the route hands
- * this service a discriminator that distinguishes "field omitted" (leave as-is)
- * from "field present and null/empty" (clear the pin). An omitted pin NEVER
- * silently clears.
+ * PATCH null-vs-omitted (the load-bearing PATCH semantic): the route hands this
+ * service a discriminator that distinguishes "field omitted" (leave as-is) from
+ * "field present and null/empty" (clear the pin). An omitted pin NEVER silently
+ * clears.
  *
- * INTAKE FORK (D-AI-6 / 裁定⑧): starting intake from a PINNED session forks a NEW
- * UNPINNED session and renders a non-skippable IntakeScopeNotice as that new
- * session's first system part; intake itself never inherits or sets a pin. The
- * original session is left UNTOUCHED. Starting from an unpinned session (or
- * first-launch) forks a fresh unpinned session with NO notice (nothing to
- * confuse).
+ * INTAKE FORK (intake-from-pinned fork rule): starting intake from a PINNED
+ * session forks a NEW UNPINNED session and renders a non-skippable
+ * IntakeScopeNotice as that new session's first system part; intake itself never
+ * inherits or sets a pin. The original session is left UNTOUCHED. Starting from an
+ * unpinned session (or first-launch) forks a fresh unpinned session with NO notice
+ * (nothing to confuse).
  *
  * Dependency wall: app layer. Imports workflows (RailSessionStore + the intake
  * run service) — never @mastra, never the product DB.
@@ -34,7 +34,7 @@ import {
 
 import { INTAKE_SKILL } from "./intakeRuns.js";
 
-/** The snake_case SessionResponse wire shape (BACKEND_SERVICES §6.2). */
+/** The snake_case SessionResponse wire shape. */
 export interface SessionResponse {
   id: string;
   title: string | null;
@@ -46,7 +46,7 @@ export interface SessionResponse {
 
 /** Project a product RailSession onto the snake_case wire SessionResponse. The
  *  product never writes the frozen `sessions` table, so `archived` has no Mastra
- *  thread backing yet — it is always false at M2 (the wire field is preserved
+ *  thread backing yet — it is always false today (the wire field is preserved
  *  for shape compatibility; an archive lane is a later lifecycle skill). */
 export function toSessionResponse(s: RailSession): SessionResponse {
   return {
@@ -60,11 +60,11 @@ export function toSessionResponse(s: RailSession): SessionResponse {
 }
 
 /**
- * The IntakeScopeNotice structured part (裁定⑧, AI_ORCHESTRATION §8.3 / FRONTEND
- * §10). A non-skippable system notice rendered as the forked session's FIRST
- * message when intake is started from a pinned session. Three-point content,
- * verbatim per the LLD; `kind` lets a single SSE/transcript consumer switch on
- * it, and `[data-intake-scope-notice]` is the UI selector (M3 ui_checks).
+ * The IntakeScopeNotice structured part (intake-from-pinned fork rule). A
+ * non-skippable system notice rendered as the forked session's FIRST message when
+ * intake is started from a pinned session. Three-point content; `kind` lets a
+ * single SSE/transcript consumer switch on it, and `[data-intake-scope-notice]`
+ * is the UI selector.
  */
 export interface IntakeScopeNotice {
   kind: "intake_scope_notice";
@@ -72,13 +72,13 @@ export interface IntakeScopeNotice {
   source_pinned_profile_id: string;
   /** The new unpinned session intake will run in. */
   forked_session_id: string;
-  /** The three non-skippable points (LLD 裁定⑧). */
+  /** The three non-skippable points. */
   points: [string, string, string];
 }
 
-/** Build the three-point IntakeScopeNotice content (LLD 裁定⑧, verbatim intent).
- *  The pinned-profile label is left to the UI (it has the make/model); the
- *  backend carries the ids + the structural three points. */
+/** Build the three-point IntakeScopeNotice content. The pinned-profile label is
+ *  left to the UI (it has the make/model); the backend carries the ids + the
+ *  structural three points. */
 function buildIntakeScopeNotice(
   sourcePinnedProfileId: string,
   forkedSessionId: string,
@@ -95,8 +95,8 @@ function buildIntakeScopeNotice(
   };
 }
 
-/** The result of forking an intake session (§D-AI-6). `scopeNotice` is present
- *  ONLY when the fork came from a pinned source session. */
+/** The result of forking an intake session. `scopeNotice` is present ONLY when
+ *  the fork came from a pinned source session. */
 export interface IntakeForkResult {
   /** The new unpinned session intake will run in. */
   sessionId: string;
@@ -107,7 +107,7 @@ export interface IntakeForkResult {
 /**
  * SessionService — the app-side facade over the rail Memory thread store. Owns
  * the wire-case projection, the PATCH null-vs-omitted pin semantics, and the
- * intake-from-pinned fork (D-AI-6 / 裁定⑧).
+ * intake-from-pinned fork rule.
  */
 export class SessionService {
   constructor(private readonly store: RailSessionStore) {}
@@ -132,7 +132,7 @@ export class SessionService {
 
   /**
    * GET /api/sessions — list newest-first; an optional pinned_profile_id filters
-   * to that profile's sessions (list-by-pin, the 0/1/2+ count driver, D-B5).
+   * to that profile's sessions (list-by-pin, the 0/1/2+ count driver).
    */
   async list(filter?: { pinnedProfileId?: string }): Promise<SessionResponse[]> {
     const sessions = await this.store.listSessions(
@@ -142,10 +142,10 @@ export class SessionService {
   }
 
   /**
-   * PATCH /api/sessions/:id — title and/or pin, with null-vs-omitted semantics
-   * (§3.1). The CALLER passes discriminators ({value} present iff the field was
-   * sent); an omitted field is left as-is, a present null/empty clears the pin.
-   * Returns null when the thread is absent (route → 404).
+   * PATCH /api/sessions/:id — title and/or pin, with null-vs-omitted semantics.
+   * The CALLER passes discriminators ({value} present iff the field was sent); an
+   * omitted field is left as-is, a present null/empty clears the pin. Returns null
+   * when the thread is absent (route → 404).
    */
   async patch(
     threadId: string,
@@ -161,8 +161,9 @@ export class SessionService {
   }
 
   /**
-   * Fork an UNPINNED session to start intake (D-AI-6 / 裁定⑧). `fromSessionId`
-   * is the session the user triggered intake from (slash/freeform), if any:
+   * Fork an UNPINNED session to start intake (intake-from-pinned fork rule).
+   * `fromSessionId` is the session the user triggered intake from
+   * (slash/freeform), if any:
    *   - source session is PINNED → fork a fresh unpinned session AND build a
    *     non-skippable IntakeScopeNotice (the new session's first system part).
    *   - source session is unpinned, absent, or none (first-launch) → fork a
@@ -177,7 +178,7 @@ export class SessionService {
     }
 
     // Always a FRESH unpinned session (pinnedProfileId: null) — intake creates a
-    // new profile and must not inherit the old pin (D-AI-6).
+    // new profile and must not inherit the old pin.
     const forked = await this.store.createSession({
       title: `New ${INTAKE_SKILL}`,
       pinnedProfileId: null,

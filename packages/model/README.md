@@ -5,10 +5,6 @@
 > routing, model-id policy, provider-neutral structured-generation helpers, and
 > #1244 fail-closed detector/Processor helpers. Mastra owns orchestration and
 > the agent loop; this package supplies `LanguageModel` instances to Mastra.
-> Canonical architecture lives in the plan repo:
-> `../../../AutoBroker-dev-plan/ts-rebuild/architecture/DECISIONS.html`,
-> `ARCH_PROVIDER_ROUTER.html`, `ARCH_STRUCTURED_OUTPUT.html`, and the foundation
-> phase `../../../AutoBroker-dev-plan/ts-rebuild/phases/PHASE_0_foundation.html`.
 
 Layer 2 (`model`) is the only product layer that imports the AI SDK
 (`ai`, `@ai-sdk/*`). It depends on Layer 1 (`@autobroker/core`) and **must not**
@@ -57,7 +53,7 @@ down-routing.
 
 DeepSeek ids are pinned now (`deepseek-v4-flash` / `deepseek-v4-pro`).
 Anthropic/OpenAI aliases are present because those lanes are first-class, but
-their exact ids and `CapabilityFlags` rows remain an M4 cross-provider smoke
+their exact ids and `CapabilityFlags` rows remain a cross-provider smoke
 obligation before acceptance.
 
 ## Mastra owns the api-key agent loop

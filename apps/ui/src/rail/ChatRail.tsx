@@ -1,12 +1,13 @@
 /**
- * ChatRail — the chat-rail container (FRONTEND_LAYOUT §4). Renders the active
+ * ChatRail — the chat-rail container. Renders the active
  * session's turns (UserTurn + AssistantTurn three-zone), the non-skippable
- * IntakeScopeNotice as the forked session's FIRST part (裁定⑧), the PinChip when
- * the session has a pin, and the ChatInput (slash + freeform launch). It binds
- * exactly ONE run controller for the active run (the single-SSE-consumer rule).
+ * IntakeScopeNotice as the forked session's FIRST part (intake-from-pinned fork
+ * rule), the PinChip when the session has a pin, and the ChatInput (slash +
+ * freeform launch). It binds exactly ONE run controller for the active run (the
+ * single-SSE-consumer rule).
  *
  * The decision dispatcher flows from the run controller into the active
- * AssistantTurn so the gate/form resumes the SAME run (§5.7). Launch wiring
+ * AssistantTurn so the gate/form resumes the SAME run. Launch wiring
  * (slash/freeform → start → navigate) is the parent's (App), passed as onLaunch.
  */
 

@@ -1,9 +1,9 @@
 /**
- * client — the typed fetch client for every M1 route the dashboard calls. Each
+ * client — the typed fetch client for every route the dashboard calls. Each
  * method hits a real apps/server route (cited file:line), decodes the JSON
  * response with the wire Zod schema (so a server contract drift surfaces as a
  * loud decode error, never a silent any), and on a non-2xx decodes the unified
- * §13.2 error envelope into a typed ApiError.
+ * error envelope into a typed ApiError.
  *
  * Routes covered (apps/server/src/routes.ts):
  *   POST /api/skill-runs                     :144  startRun
@@ -16,9 +16,9 @@
  * The SSE stream (GET /api/skill-runs/:id/stream, :176) is NOT fetched here —
  * it is owned by the single EventSource hook (useRunStream.ts).
  *
- * `/api/sessions` is in the FRONTEND_LAYOUT §9 design but the M1 server exposes
+ * `/api/sessions` is in the design but the server exposes
  * NO sessions route yet (routes.ts has none) — a sessions client lands with the
- * M2 chat-rail server slice (recorded in api_findings). No stub call here: a
+ * chat-rail server slice. No stub call here: a
  * method that 404s would lie about the contract.
  *
  * Dependency wall: app/ui layer. Imports the wire schemas + zod only.
@@ -46,7 +46,7 @@ import {
   type StartRunBody,
 } from "./wire.js";
 
-/** A typed error carrying the decoded §13.2 envelope (server.ts:38-52). When the
+/** A typed error carrying the decoded error envelope (server.ts:38-52). When the
  *  body is NOT a valid envelope (e.g. a proxy 502 HTML page), `code` falls back
  *  to `http_<status>` and `envelope` is null. */
 export class ApiError extends Error {
@@ -112,7 +112,7 @@ export interface ApiClientOptions {
   fetchImpl?: typeof fetch;
 }
 
-/** The typed M1 API client. One instance is shared app-wide. */
+/** The typed API client. One instance is shared app-wide. */
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;

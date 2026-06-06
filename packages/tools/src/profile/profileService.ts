@@ -1,15 +1,14 @@
 /**
- * profileService — the ONLY write path for search_profiles + audit_log
- * (BACKEND_SERVICES §8, the tools-layer ★). Migrates the legacy
- * services/profile.py + search_profile_intake.py + intake.py responsibilities
- * into TS closures over the @autobroker/db handle.
+ * profileService — the ONLY write path for search_profiles + audit_log.
+ * Migrates the legacy services/profile.py + search_profile_intake.py + intake.py
+ * responsibilities into TS closures over the @autobroker/db handle.
  *
  * SQLITE INVARIANT: only packages/tools (and db beneath it) touch the product
  * DB. Routes / workflows / model delegate down here; they never open the
  * connection. Raw better-sqlite3 statements via db.$client — NO drizzle-orm
  * import (dependency-cruiser sqlite-only-in-db, severity error).
  *
- * PERSIST DISCIPLINE (§8.3, §8.4, 裁定⑨):
+ * PERSIST DISCIPLINE (coordinate-resolution invariant):
  *   - synth id = SHA-256 first-16-hex of make|model|trim|year|postal_code
  *     (computed AFTER location parse so postal_code is in the hash). The postal
  *     preference is the GEOCODED coordinates.postalCode (when goplaces returned
@@ -21,8 +20,8 @@
  *     as success with NO re-write (idempotent persist).
  *   - ActiveSlotConflict: a second active row for the same (account, brand) is
  *     rejected by the partial unique index → mapped to the typed error.
- *   - lat/lng REQUIRED at create (裁定⑨): NULL coords throw
- *     CoordinatesNotResolvedError — the service is the LAST WALL; upstream
+ *   - lat/lng REQUIRED at create (coordinate-resolution invariant): NULL coords
+ *     throw CoordinatesNotResolvedError — the service is the LAST WALL; upstream
  *     workflow already resolved/suspended on geocode failure.
  *   - fake-phone: policy 'fake' (default) → keep first 6, randomize last 4 into
  *     fake_phone; real number stays in follow_up_phone.
@@ -49,10 +48,10 @@ import {
 import { resolveActiveProfile, type ResolveResult } from "./resolver.js";
 
 // ---------------------------------------------------------------------------
-// LC-1 — pure validate (no DB) : validate_intake_payload parity (§8.2)
+// pure validate (no DB) : validate_intake_payload parity
 // ---------------------------------------------------------------------------
 
-/** Result of the pure validate pass (§8.1 signature). */
+/** Result of the pure validate pass. */
 export interface ValidateResult {
   ok: boolean;
   errors: readonly string[];
@@ -81,7 +80,7 @@ export function validate(input: unknown): ValidateResult {
 }
 
 // ---------------------------------------------------------------------------
-// location parsing (§8.3) — local regex; coords come from upstream goplaces
+// location parsing — local regex; coords come from upstream goplaces
 // ---------------------------------------------------------------------------
 
 /** Parsed city/state/postal from a raw location_query. country defaults US. */
@@ -96,9 +95,10 @@ const ZIP_ONLY = /^\s*(\d{5})(?:-\d{4})?\s*$/;
 const CITY_ST_ZIP = /^\s*([^,]+?),\s*([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?\s*$/;
 
 /**
- * Local-regex parse of a location_query (§8.3, profile.py:43). Handles a bare
- * 5(+4) ZIP and the "City, ST ZIP" form. Coordinates are NOT computed here — the
- * workflow's goplaces step resolves lat/lng before create (裁定⑨).
+ * Local-regex parse of a location_query (legacy parity: profile.py:43). Handles
+ * a bare 5(+4) ZIP and the "City, ST ZIP" form. Coordinates are NOT computed
+ * here — the workflow's goplaces step resolves lat/lng before create
+ * (coordinate-resolution invariant).
  */
 export function parseLocation(locationQuery: string | null): ParsedLocation {
   const base: ParsedLocation = { city: null, state: null, postalCode: null, country: "US" };
@@ -113,11 +113,11 @@ export function parseLocation(locationQuery: string | null): ParsedLocation {
 }
 
 // ---------------------------------------------------------------------------
-// synth id (§8.3) — deterministic, double-fire safe
+// synth id — deterministic, double-fire safe
 // ---------------------------------------------------------------------------
 
-/** SHA-256 first-16-hex of make|model|trim|year|postal_code (§8.3). Trim and
- *  postal default to empty string so the hash is stable for a fixed input. */
+/** SHA-256 first-16-hex of make|model|trim|year|postal_code. Trim and postal
+ *  default to empty string so the hash is stable for a fixed input. */
 export function synthProfileId(parts: {
   make: string;
   model: string;
@@ -134,8 +134,9 @@ export function synthProfileId(parts: {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolved geo the workflow MUST supply at create (裁定⑨). The service rejects
- * NULL lat/lng; resolvedAddress is optional echo from goplaces. `postalCode` is
+ * Resolved geo the workflow MUST supply at create (coordinate-resolution
+ * invariant). The service rejects NULL lat/lng; resolvedAddress is optional echo
+ * from goplaces. `postalCode` is
  * the geocoded postal (goplaces GeoLocation.postalCode) and, when present, is
  * preferred over the locally-parsed postal in the synth id (FIX 4). Omit (do not
  * bind undefined) under exactOptionalPropertyTypes.
@@ -150,7 +151,7 @@ export interface ResolvedCoordinates {
 export interface CreateOpts {
   actor?: string;
   reason?: string;
-  /** Resolved coordinates (裁定⑨ — required; NULL is rejected). */
+  /** Resolved coordinates (required; NULL is rejected). */
   coordinates: ResolvedCoordinates;
   /** RNG seam for the fake-phone last-4 (tests inject a seeded rng). */
   rng?: Rng;
@@ -191,14 +192,14 @@ const INSERT_PROFILE =
 // helpers
 // ---------------------------------------------------------------------------
 
-/** The sole accounts row's id, or null when 0 or 2+ exist (do not guess, §8.3). */
+/** The sole accounts row's id, or null when 0 or 2+ exist (do not guess). */
 function resolveSoleAccountId(db: Db): string | null {
   const rows = db.$client.prepare(SELECT_SOLE_ACCOUNT).all() as { account_id: string }[];
   return rows.length === 1 ? rows[0]!.account_id : null;
 }
 
 /** Build the validated SearchProfile from intake input + resolved coords +
- *  defaults (§8.3). The synth id is computed inside (postal_code in the hash). */
+ *  defaults. The synth id is computed inside (postal_code in the hash). */
 function buildProfile(
   db: Db,
   input: SearchProfileIntakeInput,
@@ -249,8 +250,8 @@ function buildProfile(
     acceptableTrimsJson: input.acceptable_trims_json,
     featurePreferencesJson: input.feature_preferences_json,
     accountId,
-    brand: input.make, // brand = make (active-uniqueness key, §8.3).
-    location: input.location_query, // location = location_query (§8.3).
+    brand: input.make, // brand = make (active-uniqueness key).
+    location: input.location_query, // location = location_query.
     status: "active",
     supersededBy: null,
     updatedAt: null,
@@ -277,7 +278,7 @@ function isUniqueConstraint(err: unknown): boolean {
 
 /**
  * Persist an intake input as EXACTLY 1 search_profiles row + 1 audit_log row,
- * idempotently. The full pipeline (§8.1): form .strict() validate → persist
+ * idempotently. The full pipeline: form .strict() validate → persist
  * parity-minimum → location parse → synth id → defaults → coord guard → INSERT +
  * audit, all in one transaction.
  *
@@ -292,7 +293,7 @@ export function create(
   // (1) Form-contract back-validation (.strict(), 6-field required, enums).
   const parsed = SearchProfileIntakeInputSchema.parse(input);
 
-  // (2) Persist parity-minimum hard floor (§8.2): year/make/model.
+  // (2) Persist parity-minimum hard floor: year/make/model.
   const lc = validate(parsed);
   if (!lc.ok) {
     const missing = ["make", "model", "year"].filter((f) =>
@@ -304,7 +305,7 @@ export function create(
   // (3) Build the row (location parse + synth id + defaults + fake phone).
   const profile = buildProfile(db, parsed, opts.coordinates, opts.rng);
 
-  // (4) 裁定⑨ coordinate guard — the LAST WALL. NULL coords never reach DB.
+  // (4) Coordinate guard — the LAST WALL. NULL coords never reach DB.
   if (profile.latitude === null || profile.longitude === null) {
     throw new CoordinatesNotResolvedError(profile.id);
   }
@@ -360,16 +361,16 @@ export function create(
 }
 
 // ---------------------------------------------------------------------------
-// resolve — three-branch (delegates to resolver.ts, §9)
+// resolve — three-branch (delegates to resolver.ts)
 // ---------------------------------------------------------------------------
 
-/** Three-branch resolve (§9); intake itself is exempt (it creates the profile). */
+/** Three-branch resolve; intake itself is exempt (it creates the profile). */
 export function resolveActive(db: Db, args: { threadPin?: string } = {}): ResolveResult {
   return resolveActiveProfile(db, args);
 }
 
 // ---------------------------------------------------------------------------
-// lifecycle — minimal-but-real (§9.4). intake needs the typo-window update +
+// lifecycle — minimal-but-real. intake needs the typo-window update +
 // identity-lock error surface; replace/close/restore signatures are fixed now.
 // ---------------------------------------------------------------------------
 
@@ -390,13 +391,13 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   financingPreference: "financing_preference", tradeInDescription: "trade_in_description",
 };
 
-/** Identity fields lock once the first lead references the profile (§9.4). */
+/** Identity fields lock once the first lead references the profile. */
 function identityLocked(db: Db, profileId: string): boolean {
   return db.$client.prepare(SELECT_FIRST_LEAD).get(profileId) !== undefined;
 }
 
 /**
- * In-place update within the typo window (§9.4). Editing an identity field
+ * In-place update within the typo window. Editing an identity field
  * (year/make/model/trim/location) AFTER the first lead_submissions row throws
  * IdentityLockedError — the user must replace() or cancel. Returns the updated
  * profile.
@@ -439,7 +440,7 @@ export function close(db: Db, id: string): void {
 
 /**
  * Restore a closed/superseded profile to 'active'. If the (account, brand) slot
- * is taken → ActiveSlotConflict (§8.1, restore note).
+ * is taken → ActiveSlotConflict.
  */
 export function restore(db: Db, id: string): SearchProfile {
   const row = db.$client.prepare(SELECT_BY_ID).get(id) as SearchProfileRow | undefined;
@@ -465,8 +466,8 @@ export function restore(db: Db, id: string): SearchProfile {
 
 /**
  * Replace: supersede the old profile and create a new active successor, writing
- * audit_log action 'profile_replace' (§9.4). M1 only needs the SIGNATURE +
- * audit action fixed; the full successor-creation belongs to a downstream skill.
+ * audit_log action 'profile_replace'. Intake only needs the SIGNATURE + audit
+ * action fixed; the full successor-creation belongs to a downstream skill.
  * Implemented minimally here: supersede old → create new → link → audit.
  *
  * ATOMIC (FIX 1): the supersede → create → link → audit sequence runs in ONE

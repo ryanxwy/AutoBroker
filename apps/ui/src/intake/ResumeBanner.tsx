@@ -1,5 +1,5 @@
 /**
- * ResumeBanner — "Pick up where you left off" (FRONTEND_LAYOUT §5.6). Surfaces when
+ * ResumeBanner — "Pick up where you left off". Surfaces when
  * a same-runId draft was restored on mount. Continue keeps the restored values
  * (just dismisses the banner); Start fresh clears the draft and resets to the
  * prefill seed. The relative "5m ago" is derived from the draft's savedAt.

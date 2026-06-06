@@ -1,13 +1,13 @@
-# harness/cases/search_profile_intake.freeform.toml — the freeform-prefill case (案例 B).
-# Round 2 of the per-skill 2-round standard (裁定⑦): freeform natural-language input
+# harness/cases/search_profile_intake.freeform.toml — the freeform-prefill case (case B).
+# Round 2 of this skill's two-round harness: freeform natural-language input
 # (input_mode=freeform). The prefill step extracts a seed via harness.generate
 # (intake_freeform_prefill), but the FORM STILL RENDERS for human confirmation —
-# prefill output NEVER persists directly (BRIEF §1.2 / D-AI-3). The collect resume
+# prefill output NEVER persists directly. The collect resume
 # submits the human-confirmed final values (the corpus profile).
 #
-# SEPARATE EVIDENCE (裁定⑦ / §R6): this lands in a DIFFERENT cell_id
+# SEPARATE EVIDENCE: this lands in a DIFFERENT cell_id
 # (input_mode=freeform) and MUST NOT be filled by the slash GREEN — both rounds
-# must each be GREEN for the skill's L2 to be complete.
+# (slash and freeform) must each be GREEN for the skill to be complete.
 
 [meta]
 id = "search_profile_intake_freeform"

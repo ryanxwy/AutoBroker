@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 /**
  * budgetRedaction.test — budget_max NEVER appears on a summary/preview surface
- * (FRONTEND_LAYOUT §8.3 / CLAUDE.md §9). The SnapshotCard + WhatHappensNext
- * consume the dealer-SAFE ProfileSnapshot, which has no budget accessor, so even
- * a profile row carrying budget_max cannot leak it into rendered summary text.
+ * (budget red-line: budget_max is internal-only, never dealer-facing — see
+ * CLAUDE.md). The SnapshotCard + WhatHappensNext consume the dealer-SAFE
+ * ProfileSnapshot, which has no budget accessor, so even a profile row carrying
+ * budget_max cannot leak it into rendered summary text.
  */
 
 import { describe, expect, it } from "vitest";

@@ -1,6 +1,6 @@
 /**
- * Spike child B (M1 EXIT 2, crash-and-resume) — boot a FRESH server on the SAME
- * tmp data dir after child A was SIGKILLed mid-suspend. recoverOnBoot finds the
+ * Spike child B (crash-and-resume) — boot a FRESH server on the SAME tmp data dir
+ * after child A was SIGKILLed mid-suspend. recoverOnBoot finds the
  * suspended run in mastra.db and re-attaches it; we then POST form-decision
  * decline on the recovered decisionId → terminal declined → ZERO writes.
  *

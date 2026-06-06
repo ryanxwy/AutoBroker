@@ -1,20 +1,20 @@
 /**
  * PipelineLedger — one numbered row per skill with an expandable body + a Run
- * button (FRONTEND_LAYOUT §6 / §6.1). THE load-bearing rule: the Run button is
+ * button. THE load-bearing rule: the Run button is
  * DISABLED when there is no pinned profile (profile-ASK 0-active branch, UI
  * projection) — EXCEPT search_profile_intake, which is NEVER disabled (it CREATES
- * a profile; the lone exemption, §6.1 / BRIEF §2). `runDisabled` encodes exactly
- * that. Stable data-testid per row + Run button (M3 ui_checks).
+ * a profile; the lone exemption). `runDisabled` encodes exactly
+ * that. Stable data-testid per row + Run button.
  */
 
 import type { SkillManifest } from "../api/wire.js";
 
-/** The §6.1 gating: only intake is always enabled; everything else needs a pin. */
+/** Run-button gating: only intake is always enabled; everything else needs a pin. */
 export function runDisabled(
   skillName: string,
   activePin: string | null,
 ): { disabled: boolean; tip?: string } {
-  if (skillName === "search_profile_intake") return { disabled: false }; // 唯独 intake 永不禁用.
+  if (skillName === "search_profile_intake") return { disabled: false }; // intake alone is never disabled.
   if (activePin === null) return { disabled: true, tip: "Pin a search first (run /search_profile_intake)." };
   return { disabled: false };
 }

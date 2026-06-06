@@ -5,8 +5,7 @@
 > repo: the Drizzle schema (introspected from a cold-copied legacy SQLite), the
 > better-sqlite3 connection, and the `test_run_records` cost/time ledger.
 > Mastra runtime state lives beside it in a dedicated `mastra.db`, not in this
-> product schema. Canonical decisions live in the dev-plan repo's
-> `ts-rebuild/architecture/ARCH_PERSISTENCE.html` and `DECISIONS.html`.
+> product schema.
 
 The product persistence layer for **AutoBroker** (the TS rebuild). Drizzle ORM
 over better-sqlite3. Only `packages/db` and `packages/tools` may touch the

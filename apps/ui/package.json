@@ -2,7 +2,7 @@
   "name": "@autobroker/ui",
   "version": "0.0.0",
   "private": true,
-  "description": "Layer 5 (app) — React/Vite + AI SDK UI chat rail (dashboard SPA). B1 scaffold: Vite + React 18 + TS strict, the typed API client, the single SSE hook (useRunStream), and the Zustand chat store. Components and @ai-sdk/react part-stream wiring land in M2-run2.",
+  "description": "Layer 5 (app) — React/Vite + AI SDK UI chat rail (dashboard SPA). Vite + React 18 + TS strict, the typed API client, the single SSE hook (useRunStream), and the Zustand chat store (hand-rolled SSE; AI SDK UI wiring not yet landed).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,14 +1,14 @@
 /**
- * AssistantTurn — the three-zone assistant turn renderer (FRONTEND_LAYOUT §4.1).
+ * AssistantTurn — the three-zone assistant turn renderer.
  * THE load-bearing UI invariant lives here: the zones are laid out in a FIXED
  * structural order — GATE zone, THEN text/prose zone, THEN milestones, THEN
  * current-activity, THEN meta. The gate is rendered before the prose by COMPONENT
- * STRUCTURE, never by sorting on timestamps (§4.1 / §8: gate-before-prose). Even
+ * STRUCTURE, never by sorting on timestamps (gate-before-prose). Even
  * if a `text` frame arrived before the `awaiting_user` frame in the stream, the
  * gate still renders above the prose because the zones are fixed JSX positions.
  *
- * The gate zone hosts either the IntakeForm (data_collection or a semantic gate,
- * §5/§8.2) or — when a future gated tool lands — an ApprovalPrompt. intake in
+ * The gate zone hosts either the IntakeForm (data_collection or a semantic gate)
+ * or — when a future gated tool lands — an ApprovalPrompt. intake in
  * this slice only produces awaiting_user, so the form/gate is the gate zone.
  *
  * Presentational w.r.t. I/O: it takes the AssistantTurn store shape + an
@@ -41,7 +41,7 @@ export function AssistantTurn({ turn, submitting, onDecision }: AssistantTurnPro
 
   return (
     <div className="turn assistant" data-testid="assistant-turn" data-status={turn.status}>
-      {/* ZONE 1 — GATE (structurally first; gate-before-prose §4.1/§8). */}
+      {/* ZONE 1 — GATE (structurally first; gate-before-prose). */}
       {showGate && turn.runId !== null && (
         <div className="zone-gate" data-testid="turn-zone-gate">
           <IntakeForm

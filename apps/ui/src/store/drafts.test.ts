@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * drafts.test — the intake draft store (FRONTEND_LAYOUT §5.6). Covers the three
+ * drafts.test — the intake draft store. Covers the three
  * load-bearing disciplines: PII + raw-text strip before persist, 24h TTL expiry,
  * and runId-keyed save/restore survival.
  */

@@ -1,12 +1,12 @@
 /**
  * toml — a minimal, focused TOML parser scoped to the harness case-file grammar
- * (HARNESS_FRAMEWORK §5). It is deliberately NOT a full TOML 1.0 implementation:
+ * (the case-TOML schema in cases.ts). It is deliberately NOT a full TOML 1.0 implementation:
  * it supports exactly the constructs the case schema uses — table headers
  * `[a.b]`, array-of-table headers `[[a.b]]`, key = value where value is a string,
  * integer, float, boolean, or a single-line array of those scalars, plus `#`
  * comments and blank lines. This keeps harness/ DEPENDENCY-FREE (no toml lib in
  * node_modules; same spirit as the hand-rolled apps/ui/e2e runner) and avoids a
- * network install during the offline M3-run1.
+ * network install during offline runs.
  *
  * Anything outside that grammar (multi-line arrays, inline tables, dotted keys,
  * datetimes) FAILS LOUD with a line number — better a clear parse error than a

@@ -5,10 +5,9 @@
 > browser, DB writes, pure calc/validators, and the **L2 in-process gate bridge**
 > (the single side-effect path) plus the **L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS`
 > env fuse**. Layer 4 of the five-layer monorepo
-> (`core → model → workflows → tools → app`). Sibling plans:
+> (`core → model → workflows → tools → app`). See also the
 > [workflows package](../workflows/README.md) (Layer 3, the Mastra orchestrator
-> that drives this gate), and the canonical phase plan at
-> `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/phases/index.html`.
+> that drives this gate).
 
 ## The side-effect invariant (the whole point of this package)
 

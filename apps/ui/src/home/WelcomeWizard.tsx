@@ -1,9 +1,9 @@
 /**
- * WelcomeWizard — the first-run wizard (FRONTEND_LAYOUT §6). Shows ONLY on a true
+ * WelcomeWizard — the first-run wizard. Shows ONLY on a true
  * first run: /api/profiles resolved + EMPTY + not previously dismissed (a
  * localStorage flag). Four steps (install Chrome / choose agent / connect Gmail /
  * install browser automation), closing with "run /search_profile_intake" — which
- * is the fourth intake entry (§6.2), funnelling through the parent's onStart.
+ * is the fourth intake entry, funnelling through the parent's onStart.
  */
 
 import { useState } from "react";

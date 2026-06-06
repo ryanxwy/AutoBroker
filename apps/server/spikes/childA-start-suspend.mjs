@@ -1,6 +1,6 @@
 /**
- * Spike child A (M1 EXIT 2, crash-and-resume) — boot the REAL server on an
- * ephemeral port + tmp data dir, start an intake run, reach the collect suspend
+ * Spike child A (crash-and-resume) — boot the REAL server on an ephemeral port +
+ * tmp data dir, start an intake run, reach the collect suspend
  * (awaiting_user), print RUNID + READY, then idle forever so the parent can
  * SIGKILL this process mid-suspend. The Mastra snapshot is durable in
  * <dataDir>/mastra.db; child B re-attaches from it.

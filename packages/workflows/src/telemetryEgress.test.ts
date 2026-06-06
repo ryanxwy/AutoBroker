@@ -1,8 +1,8 @@
 /**
- * SPIKE-6 — telemetry zero-egress verification (CI-able).
+ * Telemetry zero-egress verification (CI-able).
  *
- * PHASE_0_foundation spike-6: "MASTRA_TELEMETRY_DISABLED=1 + packet-level
- * verification of zero PostHog egress"; M0 exit "telemetry 零外发".
+ * Verifies MASTRA_TELEMETRY_DISABLED=1 produces zero PostHog egress at the
+ * packet level — i.e. no telemetry leaves the process.
  *
  * STRATEGY. We can't run tcpdump (sudo, unavailable in the sandbox), so this is
  * PROCESS-LEVEL egress verification: a CommonJS preload

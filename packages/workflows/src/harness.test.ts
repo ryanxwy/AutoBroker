@@ -1,23 +1,24 @@
 /**
- * In-stack tests — harness.generate (the M0 critical path).
+ * In-stack tests — harness.generate (the critical path).
  *
  * These drive the REAL Mastra Agent → REAL #1244 output Processor → REAL ledger
  * writer chain against a DETERMINISTIC fake LanguageModel (from @autobroker/model
  * testSupport) and an ISOLATED tmp DB. No live network. The whole
  * agent→processor→tripwire→ledger path is genuinely exercised — that is the
- * in-stack evidence M0 needs (the #1244 fail-closed boundary must be proven on
+ * in-stack evidence we need (the #1244 fail-closed boundary must be proven on
  * the real stack, not a hand-rolled fake of it).
  *
- * Coverage (AI_ORCH §3.3 control-flow stages + M0 exit criteria):
+ * Coverage:
  *   - clean path: a well-formed emit_result tool call → Zod-validated object,
  *     priced via the real PRICING table, ONE ledger row, fail_reason null;
- *   - in-stack #1244 (M0 exit "模拟 #1244 → typed abort"): a prose/tool-blob dump
+ *   - in-stack #1244 (a simulated malformed tool call → typed abort): a
+ *     prose/tool-blob dump
  *     → no HITL: typed MalformedToolCallAbort + ledger fail_reason
  *     'malformed_tool_call'; HITL: HarnessSuspend + ledger row;
  *   - Zod authority: a tool call with schema-violating args → ZodError + ledger
  *     fail_reason 'zod_validation' (model output is advisory, Zod is the law);
  *   - NULL-not-$0: usage undefined → costUsd null + pricingSource 'unavailable';
- *   - output_object lane (M4): a useCase routing to a supportsOutputObjectWithTools
+ *   - output_object lane: a useCase routing to a supportsOutputObjectWithTools
  *     provider drives the NATIVE structured-output path → Zod-validated object,
  *     priced, ONE ledger row; the #1244 processor (expectsToolCall:false) stays
  *     harmless on the clean `stop` finish; Zod authority still rejects drift.
@@ -249,7 +250,7 @@ describe("harness.generate — NULL-not-$0", () => {
   });
 });
 
-describe("harness.generate — native output_object lane (M4 cross-provider)", () => {
+describe("harness.generate — native output_object lane (cross-provider)", () => {
   // The `cross_provider_smoke` useCase routes to anthropic.chat
   // (supportsOutputObjectWithTools:true), so harness.generate takes the NATIVE
   // structured-output path: Mastra drives `structuredOutput:{schema}`, the fake

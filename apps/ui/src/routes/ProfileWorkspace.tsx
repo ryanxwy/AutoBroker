@@ -1,10 +1,10 @@
 /**
- * ProfileWorkspace — the /profiles/:id route (FRONTEND_LAYOUT §2 扩展点 + R6). The
+ * ProfileWorkspace — the /profiles/:id route (an extension-point route). The
  * dealer workspace itself is a later slice (skeleton only here), but the AUTO-LOAD
  * logic is REAL: it fetches the profile by id and reuses SnapshotCard to render
  * it. A "pin auto-load" note states that opening a profile route auto-pins it to
  * the active rail session (the binding itself lands with the pin lifecycle slice;
- * R6 asks for the note + the real load, not the full workspace).
+ * this slice ships the note + the real load, not the full workspace).
  */
 
 import type { ApiClient } from "../api/client.js";

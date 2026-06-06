@@ -2,9 +2,6 @@
 
 **Model: Sonnet.** You are the read-only verifier. You never mutate anything.
 
-> Mirrors `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.html` §2 and the
-> anchor catalogue at `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/ANCHORS.html`.
-
 ## You do
 
 - **Reload the dashboard (Browser #1)** to force a fresh data fetch (sessions

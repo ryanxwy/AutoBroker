@@ -8,12 +8,12 @@
  * provider-published price table here and turn (promptTokens, completionTokens)
  * into a USD figure at ledger-write time.
  *
- * NULL-not-$0 (HARNESS_FRAMEWORK §"成本/时间度量"; harness.ts HarnessGenerateResult):
+ * NULL-not-$0 (cost-metering rule; see harness.ts HarnessGenerateResult):
  * if the provider gives no usage tokens, or the model id is not in this table,
  * cost is `null` with pricingSource "unavailable" — we NEVER silently bill $0,
  * because $0 reads as "free" in the ledger and hides a missing-usage bug.
  *
- * SNAPSHOT-IN-THE-LEDGER (HARNESS_FRAMEWORK): the ledger row stores the computed
+ * SNAPSHOT-IN-THE-LEDGER: the ledger row stores the computed
  * `cost_usd` and the `pricing_source` label (e.g. "deepseek-2026-06") at the time
  * the run happened. Re-pricing later (DeepSeek adjusts a rate) means bumping this
  * table + the PRICING_SOURCE label — it does NOT rewrite historical rows, whose
@@ -32,7 +32,7 @@
  *
  * NOTE: the "deepseek-" prefix is the original (DeepSeek-first) snapshot name; it
  * is the TABLE-VERSION label, not a provider filter — the 2026-06 snapshot now
- * also carries the official Anthropic + OpenAI rows below (added for M4
+ * also carries the official Anthropic + OpenAI rows below (added for the
  * cross-provider smoke, fetched 2026-06-05). It is kept verbatim because the
  * ledger snapshot semantics key off this exact string across the harness +
  * test_run_records; a rename is a deliberate table-version bump, not done here.
@@ -48,21 +48,21 @@ export const PRICING_SOURCE = "deepseek-2026-06" as const;
  *   deepseek-v4-flash: cache-hit input $0.0028 / cache-miss input $0.14 / output $0.28 per 1M
  *   deepseek-v4-pro:   cache-hit input $0.003625 / cache-miss input $0.435 / output $0.87 per 1M
  *
- * CACHE-MISS IS THE M0 INPUT RATE (conservative, documented — NOT silent):
- * the AI SDK usage object does not split the prompt into cache-hit vs cache-miss
- * token counts at M0, so `computeCostUsd` prices ALL prompt tokens at the
+ * CACHE-MISS IS THE INPUT RATE TODAY (conservative, documented — NOT silent):
+ * the AI SDK usage object does not currently split the prompt into cache-hit vs
+ * cache-miss token counts, so `computeCostUsd` prices ALL prompt tokens at the
  * cache-MISS rate. That is a deliberate OVERESTIMATE (cache-hit is ~50x cheaper
  * on flash). When/if the SDK surfaces a cache-hit token count, switch to
  * `cacheHitInputUsdPerMTok` for that slice. We keep the cache-hit rate in the
  * table now so that later switch is a code edit here, not a price re-discovery.
  */
 export interface ModelRate {
-  /** USD per 1M cache-MISS prompt tokens (the conservative M0 input rate). */
+  /** USD per 1M cache-MISS prompt tokens (the conservative input rate). */
   inputUsdPerMTok: number;
   /** USD per 1M completion/output tokens. */
   outputUsdPerMTok: number;
   /** USD per 1M cache-HIT prompt tokens, when the provider lists the split.
-   *  Recorded for the future cache-aware path; UNUSED by computeCostUsd at M0. */
+   *  Recorded for the future cache-aware path; UNUSED by computeCostUsd today. */
   cacheHitInputUsdPerMTok: number;
 }
 
@@ -138,7 +138,7 @@ const TOKENS_PER_MTOK = 1_000_000;
  * #3932 — the SDK reports tokens, not prices). A null here is an honest "we
  * could not price this run", which the ledger renders distinctly from $0.
  *
- * Prompt tokens are priced at the cache-MISS rate at M0 (conservative; see the
+ * Prompt tokens are priced at the cache-MISS rate (conservative; see the
  * PRICING comment). Completion tokens at the output rate.
  */
 export function computeCostUsd(

@@ -2,8 +2,8 @@
  * #1244 fail-closed detector as a Mastra OUTPUT PROCESSOR (Layer 3 adapter).
  *
  * The pure detection logic lives in @autobroker/model (detectMalformedToolCall
- * over a ToolTurnView) — this file is ONLY the Mastra-shaped shell mandated by
- * PHASE_0_foundation spike 3 / ARCH_GATE_STACK §5: run on `processOutputStep`
+ * over a ToolTurnView) — this file is ONLY the Mastra-shaped shell: run on
+ * `processOutputStep`
  * (i.e. BEFORE tool execution), and on any signal fail CLOSED via the
  * processor `abort()` (TripWire) — NEVER regex a function name out of content
  * and execute it, and NEVER route through the AI SDK's

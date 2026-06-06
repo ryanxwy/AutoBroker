@@ -8,7 +8,7 @@
  * residue; the 2026-06-04 pre-impl ruling makes it an in-process fetch client).
  *
  * API CHOICE — Google Geocoding API (web service), NOT Places Text Search (New):
- *   - The contract is free-text "城市/邮编/地址" -> {lat,lng,formattedAddress,
+ *   - The contract is free-text "city / postal code / address" -> {lat,lng,formattedAddress,
  *     postalCode?} with an AMBIGUOUS multi-candidate case. Geocoding is the
  *     canonical free-text-address -> coordinates API: it returns a `results[]`
  *     array and "may return several results when address queries are ambiguous"
@@ -22,13 +22,14 @@
  *     address resolution.
  *   - Docs: https://developers.google.com/maps/documentation/geocoding/requests-geocoding
  *
- * 裁定⑨ (2026-06-04) FAILURE POSTURE — geocode failure is NOT a pass:
+ * COORDINATE-RESOLUTION INVARIANT — geocode failure is NOT a pass:
  *   resolveLocation returns a TYPED three-way taxonomy and NEVER a silent null.
  *   no_result / network_exhausted / api_error are all explicit failures the
  *   workflow layer surfaces (suspend -> re-prompt the form). Coordinates MUST be
- *   resolved before persist; this client never invents or NULLs coordinates.
+ *   resolved before persist; geocode failure suspends, never silently passes.
+ *   This client never invents or NULLs coordinates.
  *
- * RETRY POLICY (D-B7, 裁定⑨): only TRANSIENT errors (network throw / HTTP 5xx /
+ * RETRY POLICY: only TRANSIENT errors (network throw / HTTP 5xx /
  * HTTP 429 / Google transient status UNKNOWN_ERROR | OVER_QUERY_LIMIT) get a
  * bounded retry with backoff. Each retry appends a trace-span record carried on
  * the result. Non-transient errors (4xx auth/quota deny, ZERO_RESULTS, malformed
@@ -46,7 +47,7 @@ export interface GeoLocation {
   readonly postalCode?: string;
 }
 
-/** One trace-span entry recorded per retry attempt (D-B7: retries are voiced). */
+/** One trace-span entry recorded per retry attempt (every retry is voiced). */
 export interface GoplacesTraceSpan {
   /** 1-based attempt index that FAILED transiently and triggered this span. */
   readonly attempt: number;
@@ -56,7 +57,7 @@ export interface GoplacesTraceSpan {
   readonly atMs: number;
 }
 
-/** Why a resolveLocation call failed (裁定⑨ — never a silent null). */
+/** Why a resolveLocation call failed (never a silent null). */
 export type GoplacesFailureReason =
   /** Google returned ZERO_RESULTS — the query matched nothing. */
   | "no_result"
@@ -66,7 +67,7 @@ export type GoplacesFailureReason =
   | "api_error";
 
 /**
- * The three-way result taxonomy (裁定⑨). Every branch carries the trace spans
+ * The three-way result taxonomy. Every branch carries the trace spans
  * accumulated from any transient retries so the workflow layer can voice them.
  */
 export type GoplacesResult =
@@ -94,10 +95,10 @@ export interface GoplacesOptions {
 }
 
 /**
- * Max candidates surfaced on ambiguity. The LLD §8.5 specifies the multi-match
- * ambiguous signal but does NOT pin an explicit N or a re-ranking rule (recorded
- * in api_findings) — we cap at 5 and PRESERVE Google's own relevance order
- * (results[0] is the geocoder's best guess), which is the documented ranking.
+ * Max candidates surfaced on ambiguity (the multi-match cap — see
+ * resolveLocation below). With no pinned N or re-ranking rule, we cap at 5 and
+ * PRESERVE Google's own relevance order (results[0] is the geocoder's best
+ * guess), which is the documented ranking.
  */
 export const MAX_AMBIGUOUS_CANDIDATES = 5;
 
@@ -231,7 +232,7 @@ async function geocodeOnce(query: string, apiKey: string, fetchImpl: FetchLike):
 }
 
 /**
- * Resolve a free-text location into coordinates with the 裁定⑨ taxonomy.
+ * Resolve a free-text location into coordinates with the three-way taxonomy.
  *
  *   single usable result  -> { kind: "resolved", location }
  *   2+ usable results      -> { kind: "ambiguous", candidates }  (suspend ask-pick)
@@ -268,7 +269,7 @@ export async function resolveLocation(query: string, opts: GoplacesOptions = {})
       }
       if (e instanceof TransientGeocodeError) {
         lastTransientDetail = e.message;
-        // Record the failed attempt as a trace span (D-B7: every retry is voiced).
+        // Record the failed attempt as a trace span (every retry is voiced).
         traceSpans.push({ attempt, error: e.message, atMs: Date.now() });
         if (attempt <= maxRetries) {
           await delay(baseDelayMs * 2 ** (attempt - 1));

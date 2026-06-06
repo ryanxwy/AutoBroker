@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * SchemaForm.test — the schema-driven intake form (FRONTEND_LAYOUT §5). Covers:
+ * SchemaForm.test — the schema-driven intake form. Covers:
  *   - all 18 META fields render, with the 6 required marks + two sections.
  *   - the draft autosave (PII-stripped) + restore on remount + resume banner.
  *   - a mid-form "refresh" restores non-PII values and shows a PII-cleared hint.

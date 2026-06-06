@@ -1,6 +1,6 @@
 /**
- * In-process integration tests — the M1 backend vertical (BACKEND_SERVICES M1
- * swimlane "headless intake GREEN"). Drives the REAL Fastify app via inject():
+ * In-process integration tests — the backend vertical ("headless intake GREEN").
+ * Drives the REAL Fastify app via inject():
  * REAL routes → REAL intake run service → REAL flat Mastra workflow → REAL
  * suspend/resume → REAL persist (tools profileService + openDb) against an
  * ISOLATED tmp autobroker.db (committed migration applied). The harness.generate
@@ -9,10 +9,10 @@
  * + audit row, the three-phase form-decision claim, SSE pubsub) is genuinely
  * exercised.
  *
- * Covers the M1 EXIT criteria + the SSE/claim invariants (task BUILD §5):
- *   (a) EXIT 1: start(slash, no trim) → awaiting_user@collect → submit → done →
+ * Covers the headless-intake exit criteria + the SSE/claim invariants:
+ *   (a) start(slash, no trim) → awaiting_user@collect → submit → done →
  *       exactly 1 search_profiles row + 1 audit row; GET /api/profiles/:id back.
- *   (b) EXIT 3: start → collect → decline → declined → ZERO rows.
+ *   (b) start → collect → decline → declined → ZERO rows.
  *   (c) ambiguous: stub ambiguous → awaiting_user@resolveLocation → pick(1) →
  *       done; coords match the picked candidate.
  *   (d) double form-decision on the same suspend → idempotent 200 replay (no
@@ -218,10 +218,10 @@ async function startSlashToCollect(s: BuiltServer): Promise<{ runId: string; dec
 }
 
 // ---------------------------------------------------------------------------
-// (a) M1 EXIT 1 — start → submit → done → exactly 1 profile + 1 audit
+// (a) start → submit → done → exactly 1 profile + 1 audit
 // ---------------------------------------------------------------------------
 
-describe("M1 EXIT 1 — headless intake GREEN", () => {
+describe("headless intake GREEN", () => {
   it("slash start → awaiting_user@collect → submit → done → 1 profile + 1 audit; GET /profiles/:id", async () => {
     const s = await buildWith({
       harnessGenerate: harnessStub(),
@@ -261,10 +261,10 @@ describe("M1 EXIT 1 — headless intake GREEN", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (b) M1 EXIT 3 — decline → declined → ZERO rows
+// (b) decline → declined → ZERO rows
 // ---------------------------------------------------------------------------
 
-describe("M1 EXIT 3 — decline at collect", () => {
+describe("decline at collect", () => {
   it("start → collect → decline → declined → ZERO profile + audit rows", async () => {
     const s = await buildWith({
       harnessGenerate: harnessStub(),
@@ -424,7 +424,7 @@ describe("form-decision idempotency (three-phase claim)", () => {
 // (e) SSE replay — subscribe AFTER completion → full ordered backlog
 // ---------------------------------------------------------------------------
 
-describe("SSE replay-on-subscribe (§4.3)", () => {
+describe("SSE replay-on-subscribe", () => {
   it("subscribe after done → init(driver_kind) … text … done; single terminal", async () => {
     const s = await buildWith({
       harnessGenerate: harnessStub(),

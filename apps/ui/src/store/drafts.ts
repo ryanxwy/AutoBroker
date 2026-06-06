@@ -1,16 +1,16 @@
 /**
- * drafts — the intake form-draft store (FRONTEND_LAYOUT §5.6). A thin localStorage
+ * drafts — the intake form-draft store. A thin localStorage
  * wrapper keyed by the STABLE server runId (NOT the per-fetch clientId — the
  * clientId re-mints on every transcript fetch, the runId survives a refresh, so a
- * mid-form reload recovers the draft; followups §6b / legacy
- * ChatRail.intake.test.tsx:215-243). Three load-bearing disciplines:
+ * mid-form reload recovers the draft). Three load-bearing disciplines:
  *
  *   1. 24h TTL — a draft older than DRAFT_TTL_MS is treated as absent (and
  *      proactively cleared on read).
  *   2. PII + raw-text STRIP before persist — INTAKE_PII_FIELDS (follow_up_email /
  *      follow_up_phone / trade_in_description) and any freeform raw text NEVER
- *      enter the persisted snapshot (CLAUDE.md §9; FRONTEND §5.6). On restore the
- *      stripped fields come back EMPTY — the UI shows them cleared with a hint.
+ *      enter the persisted snapshot (see the PII/privacy rules in CLAUDE.md). On
+ *      restore the stripped fields come back EMPTY — the UI shows them cleared
+ *      with a hint.
  *   3. budget_max (INTERNAL_ONLY) is collected and MAY persist locally (it is a
  *      buyer-context value, not PII) but never reaches a dealer surface — that is
  *      enforced at the render layer, not here.
@@ -22,7 +22,7 @@
 
 import { INTAKE_FIELD_META, type IntakeFieldName } from "@autobroker/core";
 
-/** 24h time-to-live for a persisted draft (FRONTEND §5.6). */
+/** 24h time-to-live for a persisted draft. */
 export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** The localStorage namespace for drafts (one key per runId). */

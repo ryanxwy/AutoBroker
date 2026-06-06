@@ -1,6 +1,6 @@
 /**
- * core↔db row adapter for search_profiles — the camelCase SearchProfile (core,
- * BACKEND_SERVICES §10.2) ↔ snake_case search_profiles row (db schema.ts:45).
+ * core↔db row adapter for search_profiles — the camelCase SearchProfile (core)
+ * ↔ snake_case search_profiles row (db schema.ts:45).
  *
  * WHY HERE, NOT IN core: core cannot import @autobroker/db (five-layer wall —
  * dependency-cruiser `core-imports-nothing-internal`). The row shape is a db

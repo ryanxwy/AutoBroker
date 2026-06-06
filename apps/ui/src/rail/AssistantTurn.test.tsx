@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
- * AssistantTurn.test — the gate-before-prose structural invariant (FRONTEND_LAYOUT
- * §4.1 / §8). Even when a `text` frame arrived BEFORE the `awaiting_user` frame in
+ * AssistantTurn.test — the gate-before-prose structural invariant.
+ * Even when a `text` frame arrived BEFORE the `awaiting_user` frame in
  * the stream, the gate zone must render structurally ABOVE the text zone — the
  * zones are fixed JSX positions, never sorted by timestamp. Also: the gate hosts
  * the IntakeForm (data_collection) and a decline dispatches action 'decline'.

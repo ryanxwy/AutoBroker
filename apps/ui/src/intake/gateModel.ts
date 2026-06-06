@@ -1,20 +1,23 @@
 /**
  * gateModel — classify an awaiting_user suspend payload (spec_inline) into the
- * typed gate variant the UI renders (FRONTEND_LAYOUT §8.2). intake has ONE form
+ * typed gate variant the UI renders. intake has ONE form
  * suspend (data_collection) plus three SEMANTIC suspends, all on the same SSE
  * awaiting_user channel, discriminated by `spec_inline.kind`
  * (searchProfileIntake.ts suspend payloads):
  *
- *   - data_collection   → the IntakeForm (§5). {kind, form_kind, spec_hint,
+ *   - data_collection   → the IntakeForm. {kind, form_kind, spec_hint,
  *                         seed_fields} — seed_fields prefill the form.
  *   - force_override    → trim invalid but user insists. {kind, question, trim,
  *                         reason}. resume {action:'force_override',reason} |
  *                         {action:'revise',trim} | {action:'retry_step'} |
  *                         {action:'decline'}.
- *   - ambiguous_location→ multi-candidate ask-pick OR (裁定⑨) geocode FAILURE.
+ *   - ambiguous_location→ multi-candidate ask-pick OR geocode FAILURE
+ *                         (coordinate-resolution invariant: coordinates must be
+ *                         resolved before persist; geocode failure suspends,
+ *                         never silently passes).
  *                         {kind, candidates:[{index,label}], failure_reason,
  *                         stored_candidates, effective_query}. When `candidates`
- *                         is empty AND `failure_reason` is set → the 裁定⑨
+ *                         is empty AND `failure_reason` is set → the location
  *                         re-fill branch (location flagged + reason + retry).
  *                         resume {action:'pick',picked_index} |
  *                         {action:'retry',retry_query} | {action:'decline'}.
@@ -38,8 +41,9 @@ export type GateModel =
       candidates: LocationCandidate[];
       effectiveQuery: string | null;
     }
-  // 裁定⑨: geocode parse/no-result/retry-exhausted → re-fill the form, location
-  // field flagged, failure reason shown, user retries (resume retry_query).
+  // location-failure branch (coordinate-resolution invariant): geocode
+  // parse/no-result/retry-exhausted → re-fill the form, location field flagged,
+  // failure reason shown, user retries (resume retry_query).
   | { kind: "location_failure"; failureReason: string; effectiveQuery: string | null }
   | { kind: "malformed_tool_call"; signals: string[] }
   | { kind: "unknown"; raw: Record<string, unknown> | null };
@@ -48,7 +52,7 @@ function str(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
-/** Classify a spec_inline payload into a typed gate model (§8.2). */
+/** Classify a spec_inline payload into a typed gate model. */
 export function classifyGate(specInline: Record<string, unknown> | null): GateModel {
   if (specInline === null) return { kind: "unknown", raw: null };
   const kind = specInline["kind"];
@@ -84,7 +88,7 @@ export function classifyGate(specInline: Record<string, unknown> | null): GateMo
       : [];
     const failureReason = str(specInline["failure_reason"]);
     const effectiveQuery = str(specInline["effective_query"]);
-    // 裁定⑨ split: no candidates + a failure reason → the re-fill branch.
+    // location-failure split: no candidates + a failure reason → the re-fill branch.
     if (candidates.length === 0 && failureReason !== null) {
       return { kind: "location_failure", failureReason, effectiveQuery };
     }

@@ -2,7 +2,7 @@
  * goplaces unit tests — offline with an injected fetch stub, plus one
  * live-gated probe (AUTOBROKER_SPIKE_LIVE=1) against the real Geocoding API.
  *
- * Covers the 裁定⑨ three-way taxonomy and the D-B7 retry/trace-span contract:
+ * Covers the three-way taxonomy and the retry/trace-span contract:
  *   - resolved (single match)
  *   - ambiguous (2+ matches, capped + order preserved)
  *   - failed: no_result (ZERO_RESULTS)

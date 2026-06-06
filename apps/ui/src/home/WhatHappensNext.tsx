@@ -1,5 +1,5 @@
 /**
- * WhatHappensNext — three heuristic cards (FRONTEND_LAYOUT §6). Computed from the
+ * WhatHappensNext — three heuristic cards. Computed from the
  * active snapshot's dealer_count / thread_count / best_otd (best quote / pipeline
  * state / next likely action). Consumes the dealer-SAFE ProfileSnapshot — no
  * budget. When there is no profile it nudges toward intake.

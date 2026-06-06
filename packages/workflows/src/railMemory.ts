@@ -1,9 +1,8 @@
 /**
- * railMemory — the chat-rail Mastra Memory thread store (M2; BACKEND_SERVICES §3.1
- * + §6 "sessions = Mastra Memory threads", AI_ORCHESTRATION §8/§9 + D-AI-6).
+ * railMemory — the chat-rail Mastra Memory thread store.
  *
- * A dashboard chat-rail session IS a Mastra Memory thread (BACKEND_SERVICES §6,
- * 2026-06-03 ruling: 1 rail = 1 Memory thread = 1 search profile). The pinned
+ * A dashboard chat-rail session IS a Mastra Memory thread (1 rail = 1 Memory
+ * thread = 1 search profile). The pinned
  * profile lives in thread metadata (`pinnedProfileId`) — NOT in the product
  * `sessions` table (that table is parity-frozen in schema; the new product never
  * writes it). This module owns the ONLY construction of `@mastra/memory` Memory
@@ -11,25 +10,25 @@
  * facade (RailSessionStore) without ever importing `@mastra/*` (the dependency
  * wall: Mastra is invisible outside `@autobroker/workflows`).
  *
- * SAME mastra.db (D1 dual-DB): the Memory store points at `<dataDir>/mastra.db`
+ * SAME mastra.db (dual-DB rule): the Memory store points at `<dataDir>/mastra.db`
  * — the SAME @mastra/libsql file the Mastra workflow instance uses (createMastra
  * Instance) — never the product autobroker.db. Threads + working memory persist
  * beside the workflow snapshots; both are framework runtime state, not product
  * schema. resolveDataDir() (the single tilde-expansion owner, in tools) keeps
  * this from drifting from where mastra.db lives.
  *
- * OM (observational memory) — RAIL-ONLY, model EXPLICIT (USER DIRECTIVE
- * 2026-06-05, HARD REQUIREMENT): wherever Memory/observationalMemory is
+ * OM (observational memory) — RAIL-ONLY, model EXPLICIT (HARD REQUIREMENT):
+ * wherever Memory/observationalMemory is
  * configured, the OM model MUST be set explicitly to the DeepSeek model via
  * resolveModel from @autobroker/model — NEVER the @mastra/memory default. The
  * library default model is google/gemini-2.5-flash, which would SILENTLY call
  * Gemini (a different provider, off-policy spend, and an undisclosed egress).
- * We pin it to the deepseek.chat tier (deepseek-v4-flash — the rail chat model
- * per AI_ORCHESTRATION §8.1, where OM runs ON only on the chat-rail thread).
+ * We pin it to the deepseek.chat tier (deepseek-v4-flash — the rail chat model;
+ * OM runs ON only on the chat-rail thread).
  * OM is NEVER enabled inside a skill workflow run (mastra#14598 residue, load-
- * bearing constraint, AI_ORCHESTRATION §8.1) — this Memory is the chat rail's,
- * not the intake workflow's. For M2 scope OM is CONFIGURED but NOT exercised
- * against a live LLM (no live calls this run; live OM was spike-4-proven).
+ * bearing constraint) — this Memory is the chat rail's,
+ * not the intake workflow's. OM is CONFIGURED but NOT exercised
+ * against a live LLM here (no live calls this run; live OM was proven separately).
  *
  * Dependency wall: imports @mastra/* (legal only here) + @autobroker/model
  * (resolveModel — the LanguageModel type flows in by inference, no `ai` import)
@@ -59,14 +58,14 @@ type RailObservationalMemoryModel = Extract<
  *  resourceId scopes a session to this user; listThreads filters on it. */
 export const RAIL_RESOURCE_ID = "local-user" as const;
 
-/** The thread-metadata key carrying the pinned search profile (BACKEND_SERVICES
- *  §6.1: legacy `sessions.pinned_profile_id` → thread metadata `pinnedProfileId`). */
+/** The thread-metadata key carrying the pinned search profile (legacy
+ *  `sessions.pinned_profile_id` → thread metadata `pinnedProfileId`). */
 export const PIN_METADATA_KEY = "pinnedProfileId" as const;
 
 /**
  * A product-shaped session, projected from a Mastra Memory thread. The route
- * layer maps this to the snake_case SessionResponse wire shape (BACKEND_SERVICES
- * §6.2); this facade stays product-neutral (camelCase, no wire concern) so the
+ * layer maps this to the snake_case SessionResponse wire shape; this facade
+ * stays product-neutral (camelCase, no wire concern) so the
  * app never touches a Mastra StorageThreadType.
  */
 export interface RailSession {
@@ -83,8 +82,7 @@ export interface RailSession {
 }
 
 /** Read `pinnedProfileId` out of thread metadata, normalizing absent/empty to
- *  null. An empty string is a cleared pin (BACKEND_SERVICES §3.1 PATCH: pin ∈
- *  (null,"") → clear). */
+ *  null. An empty string is a cleared pin (PATCH: pin ∈ (null,"") → clear). */
 function pinFromMetadata(metadata: Record<string, unknown> | undefined): string | null {
   const raw = metadata?.[PIN_METADATA_KEY];
   if (typeof raw !== "string" || raw.length === 0) return null;
@@ -121,9 +119,9 @@ function projectThread(thread: ThreadLike): RailSession {
 
 /**
  * Construct the chat-rail Memory instance (the ONLY Memory construction in the
- * codebase). Storage = the SAME `<dataDir>/mastra.db` the workflow instance uses
- * (D1). OM is configured (rail-only) with its model PINNED EXPLICITLY to the
- * DeepSeek tier via resolveModel — see the USER DIRECTIVE in the header: never
+ * codebase). Storage = the SAME `<dataDir>/mastra.db` the workflow instance uses.
+ * OM is configured (rail-only) with its model PINNED EXPLICITLY to the
+ * DeepSeek tier via resolveModel — see the OM note in the header: never
  * the @mastra/memory default (google/gemini-2.5-flash) which would silently call
  * Gemini.
  */
@@ -143,7 +141,7 @@ export function createRailMemory(): Memory {
     storage,
     options: {
       // OM ON for the chat rail (rail-only; never a skill workflow run). The
-      // model is the LOAD-BEARING explicit set (USER DIRECTIVE 2026-06-05): pin
+      // model is the LOAD-BEARING explicit set: pin
       // to deepseek.chat (deepseek-v4-flash) so OM never silently routes to the
       // library-default Gemini. resolveModel returns the AI SDK LanguageModel;
       // the `as` is the SAME faithful cast harness.ts uses for `new Agent({
@@ -153,8 +151,8 @@ export function createRailMemory(): Memory {
       observationalMemory: {
         model: resolveModel("deepseek.chat") as unknown as RailObservationalMemoryModel,
       },
-      // No vector store installed → semantic recall stays OFF (AI_ORCHESTRATION
-      // §8.1: "semantic recall 也始终关 (无向量库)"). Leaving `vector` unset on
+      // No vector store installed → semantic recall stays OFF (always off, no
+      // vector store). Leaving `vector` unset on
       // the Memory ctor means RAG recall does not run.
     },
   });
@@ -167,9 +165,8 @@ export function createRailMemory(): Memory {
  * wall stays intact and the wire-case projection lives in the route layer.
  *
  * pin semantics live HERE in product terms: create/patch set or clear
- * `pinnedProfileId` in thread metadata (BACKEND_SERVICES §6.1); list-by-pin
- * filters on it (§3.1 / D-B5: 0/1/2+ counts come from this query, no count
- * endpoint).
+ * `pinnedProfileId` in thread metadata; list-by-pin
+ * filters on it (0/1/2+ counts come from this query, no count endpoint).
  */
 export class RailSessionStore {
   constructor(private readonly memory: Memory) {}
@@ -177,7 +174,7 @@ export class RailSessionStore {
   /**
    * Create a new session (Mastra thread) for the single local user. `pinned
    * ProfileId` (when given) lands in thread metadata; null/absent → unpinned.
-   * Intake forks an unpinned session (D-AI-6) by passing pinnedProfileId: null.
+   * Intake forks an unpinned session by passing pinnedProfileId: null.
    */
   async createSession(args: {
     title?: string | null;
@@ -232,7 +229,7 @@ export class RailSessionStore {
    * read back as null. We pass ONLY the changed keys (the merge keeps the rest);
    * title must always be passed (updateThread replaces it), so we read-modify it.
    *
-   * PIN null-vs-omitted (BACKEND_SERVICES §3.1, the load-bearing PATCH
+   * PIN null-vs-omitted (the load-bearing PATCH
    * semantic): the CALLER distinguishes "field omitted" (leave the pin as-is)
    * from "field present and null/empty" (clear the pin) — an omitted field never
    * silently clears, a present null/"" clears.

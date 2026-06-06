@@ -1,6 +1,6 @@
 /**
- * statusProjection unit tests — all 10 Mastra statuses → the 7 product statuses
- * (BACKEND_SERVICES §5/§6). Pure; no Mastra, no I/O.
+ * statusProjection unit tests — all 10 Mastra statuses → the 7 product statuses.
+ * Pure; no Mastra, no I/O.
  */
 
 import { describe, expect, it } from "vitest";
@@ -30,7 +30,7 @@ describe("projectStatus — all 10 Mastra statuses", () => {
   });
 });
 
-describe("projectStatus — declined hint fork (§5 app metadata)", () => {
+describe("projectStatus — declined hint fork (app metadata)", () => {
   it("success + declined hint → declined (workflow outcome was declined)", () => {
     expect(projectStatus("success", { declined: true })).toBe("declined");
   });

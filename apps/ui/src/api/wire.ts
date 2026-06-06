@@ -1,5 +1,5 @@
 /**
- * wire — Zod schemas + types that MIRROR the M1 server envelope EXACTLY. Every
+ * wire — Zod schemas + types that MIRROR the server envelope EXACTLY. Every
  * schema here is a client-side restatement of a shape the server emits; each is
  * annotated with the authoritative server file:line so the two stay in lockstep.
  * The client never invents a field the server does not send.
@@ -81,7 +81,7 @@ export function isTerminalKind(k: string): k is TerminalEventKind {
 //   { ts: <ISO-8601 UTC>, kind: <EVENT_KIND>, payload: {...} }
 // NOTE: the wire carries NO `seq`/`id` field (no Last-Event-ID) — replay is by
 // full-snapshot re-send (runPubSub.ts:33-35). Dedupe is therefore by content,
-// not by sequence number (recorded in api_findings).
+// not by sequence number.
 // ---------------------------------------------------------------------------
 
 export const SseEventSchema = z.object({
@@ -116,8 +116,8 @@ export type SkillRunSummary = z.infer<typeof SkillRunSummarySchema>;
 
 // ---------------------------------------------------------------------------
 // IntakeScopeNotice — the non-skippable system notice carried on the start ack
-// when intake was forked from a PINNED session (裁定⑧). MIRRORS the server type
-// sessions.ts:69-77 (IntakeScopeNotice) verbatim: kind discriminant +
+// when intake was forked from a PINNED session (intake-from-pinned fork rule).
+// MIRRORS the server type sessions.ts (IntakeScopeNotice) verbatim: kind discriminant +
 // source/forked ids + the three fixed points. The UI renders it as the forked
 // session's FIRST part under [data-intake-scope-notice]; null when the source
 // was unpinned/absent (nothing to confuse).
@@ -134,9 +134,9 @@ export type IntakeScopeNotice = z.infer<typeof IntakeScopeNoticeSchema>;
 // ---------------------------------------------------------------------------
 // Start ack — POST /api/skill-runs (201). routes.ts:204-208 returns
 //   { run_id, session_id: string|null, scope_notice: IntakeScopeNotice|null }.
-// (The B1 scaffold modelled only `run_id`; the server already emits session_id +
-// scope_notice — this closes the recorded latent gap so the rail can render the
-// fork's first system notice, recorded in api_findings.)
+// (An earlier scaffold modelled only `run_id`; the server already emits
+// session_id + scope_notice — this closes the latent gap so the rail can render
+// the fork's first system notice.)
 // ---------------------------------------------------------------------------
 
 export const StartAckSchema = z.object({
@@ -183,7 +183,7 @@ export type FormDecisionAck = z.infer<typeof FormDecisionAckSchema>;
 // ---------------------------------------------------------------------------
 // Profiles — GET /api/profiles (list) / GET /api/profiles/:id (one).
 // routes.ts:262-275: snake_case rows straight off the DB columns
-// (SearchProfileView, §3.3). The exact column set is the DB schema's, not a
+// (SearchProfileView). The exact column set is the DB schema's, not a
 // fixed contract here — keep rows as open records (passthrough) so a schema
 // add does not break decode; the UI reads named columns it knows.
 // ---------------------------------------------------------------------------

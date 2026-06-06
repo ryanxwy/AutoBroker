@@ -2,20 +2,18 @@
  * harness/export_daily.ts — STUB.
  *
  * Exports the `test_run_records` rows for a given day to a STABLE JSON file,
- * consumed by the plan repo's `tools/new-day.sh` to fill the daily HTML report's
- * "今日 harness 信号" (today's harness signals) section.
+ * consumed by an external daily-report generator that reads
+ * harness/exports/<date>.json to fill its "today's harness signals" section.
  *
- * PROVENANCE (ab_design.json codeRepoStructure "harness/" + dailyTracking;
- *   DECISIONS.html cost ledger). The sync is one-directional: this code repo emits
- *   the JSON; the plan repo reads it. The plan repo never writes back here.
+ * The sync is one-directional: this repo emits the JSON; the external reporting
+ * tool reads it and never writes back here.
  *
  * Usage (intended):
  *   tsx harness/export_daily.ts 2026-06-02 [--out <path>]
  *
- * Output path + key contract (LOCKED to the plan repo's new-day.sh parser —
- * default out is harness/exports/<date>.json, the first path new-day.sh
- * probes, and the run keys are snake_case exactly as it reads them; keep keys
- * additive):
+ * Output path + key contract (LOCKED to the external reporting tool's parser —
+ * default out is harness/exports/<date>.json, the first path it probes, and the
+ * run keys are snake_case exactly as it reads them; keep keys additive):
  *   {
  *     "date": "2026-06-02",                  // YYYY-MM-DD, the run-window bucket
  *     "code_repo_head_sha": "<short-sha>",   // for the daily metadata block
@@ -40,13 +38,14 @@
  *     ]
  *   }
  *
- * The NULL-not-$0 rule (DECISIONS.html "成本/时间度量") is preserved end-to-end:
- * a run with missing usage exports `cost_usd: null` + `pricing_source:
+ * The NULL-not-$0 cost-metering rule is preserved end-to-end: when usage is
+ * missing the cost is null, never $0 — a run with missing usage exports
+ * `cost_usd: null` + `pricing_source:
  * "unavailable"` + a `fail_reason` flag — it is NEVER exported as 0.
  */
 
 // READ-ONLY DB channel: the harness reads test_run_records through dbReads (which
-// opens an @autobroker/db handle and runs SELECTs only — the wall-legal S3 path).
+// opens an @autobroker/db handle and runs SELECTs only — the wall-legal read path).
 // The harness NEVER writes the DB; the SUT's writeTestRunRecord owns every row.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -55,8 +54,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { openReadHandle, readLedgerRowsInWindow, type LedgerRow } from "./dbReads.js";
 
-/** Keys are snake_case ON PURPOSE — they are the wire format new-day.sh
- *  parses (r.get("model_alias"), r.get("cost_usd"), …). Do not camelCase. */
+/** Keys are snake_case ON PURPOSE — they are the wire format the external
+ *  reporting tool parses (r.get("model_alias"), r.get("cost_usd"), …). Do not camelCase. */
 export interface DailyHarnessExport {
   date: string; // YYYY-MM-DD
   code_repo_head_sha: string;
@@ -172,7 +171,7 @@ export function serializeExport(doc: DailyHarnessExport): string {
   return JSON.stringify(doc, null, 2) + "\n";
 }
 
-/** Default out path = harness/exports/<date>.json (the first path new-day.sh probes). */
+/** Default out path = harness/exports/<date>.json (the first path the reporting tool probes). */
 export function defaultOutPath(date: string): string {
   const here = dirname(fileURLToPath(import.meta.url));
   return join(here, "exports", `${date}.json`);

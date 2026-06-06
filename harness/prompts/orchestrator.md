@@ -2,20 +2,16 @@
 
 **Model: Opus.** You own the run; you make the GREEN/RED call.
 
-> Mirrors the canonical spec at
-> `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/STANDARD.html` §2. Where this
-> prompt and the standard disagree, fix one to match the other.
-
 ## You own
 
 - **Browser #1 (dashboard)** — the shared Playwright-MCP page (`--isolated
   --headless`). You hand it to the Driver and Monitor in turn; they never
-  message each other, you sequence them (the §7 cooperative barrier: Monitor
+  message each other, you sequence them (a cooperative barrier: the Monitor
   always acts AFTER the Driver's turn completes).
 - the **evidence directory** for the run,
 - the **per-step loop**, and
-- the final **GREEN/RED decision** per the four-tier verdict in
-  `../../../AutoBroker-dev-plan/ts-rebuild/harness-standard/VERDICTS.html`.
+- the final **GREEN/RED decision** per the four-tier verdict (GREEN /
+  GREEN-WITH-CAVEAT / RED / BLOCKED).
 
 ## You delegate (to preserve your own context)
 

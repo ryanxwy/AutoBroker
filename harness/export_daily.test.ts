@@ -1,5 +1,5 @@
 /**
- * export_daily.test.ts — exportDaily against a tmp ledger DB (task BUILD §7). Proves
+ * export_daily.test.ts — exportDaily against a tmp ledger DB. Proves
  * the locked snake_case wire shape + the NULL-not-$0 rule end-to-end: a usage-bearing
  * row exports cost_usd; an 'unavailable' row exports cost_usd:null (NEVER 0).
  */

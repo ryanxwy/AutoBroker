@@ -41,8 +41,8 @@ const deepseek = createDeepSeek();
 /**
  * Tier -> concrete model bindings per provider.
  *
- * DeepSeek ids are pinned per D3 (ARCH_PROVIDER_ROUTER, revised 2026-06-04):
- * the deepseek-chat/deepseek-reasoner aliases deprecate 2026-07-24. V4 thinking
+ * DeepSeek ids are pinned (revised 2026-06-04): the
+ * deepseek-chat/deepseek-reasoner aliases deprecate 2026-07-24. V4 thinking
  * is a REQUEST PARAMETER on a shared model id, not a separate "-thinking" model.
  * This registry binds model ids only; call sites set thinking per step:
  * chat/rail defaults to thinking ON + reasoning_effort:"high", while structured
@@ -51,8 +51,8 @@ const deepseek = createDeepSeek();
  *
  * Cross-provider aliases are intentionally present for the first-class lanes.
  * Their exact ids/capability rows were confirmed against the official Anthropic
- * + OpenAI model docs (fetched 2026-06-05) for the M4 cross-provider smoke
- * milestone; the live calls themselves still gate on an explicit go.
+ * + OpenAI model docs (fetched 2026-06-05) for the cross-provider smoke; the
+ * live calls themselves still gate on an explicit go.
  */
 export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, typeof SEPARATOR> =
   createProviderRegistry(
@@ -64,7 +64,7 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
         chat: deepseek("deepseek-v4-flash"),
         strong: deepseek("deepseek-v4-pro"), // thinking-off; evaluate per useCase
         // Same id as cheap/chat — thinking:enabled is a per-request parameter
-        // bound at call time by the reasoner-tier useCases (D3).
+        // bound at call time by the reasoner-tier useCases.
         reasoner: deepseek("deepseek-v4-flash"),
       },
       fallbackProvider: deepseek,

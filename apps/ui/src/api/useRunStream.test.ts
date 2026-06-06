@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
  * useRunStream.test — the single SSE hook against a MOCK EventSource (no network,
- * no server). Covers the load-bearing invariants from FRONTEND_LAYOUT §7/§9:
+ * no server). Covers the load-bearing invariants:
  *   - replay: the server re-sends the full backlog on subscribe → the hook
  *     accumulates the ordered events.
  *   - dedupe: a reconnect re-delivers already-seen frames (no seq on the wire) →

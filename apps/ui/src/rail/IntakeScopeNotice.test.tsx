@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
- * IntakeScopeNotice.test — the non-skippable system notice (FRONTEND_LAYOUT §10 /
- * 裁定⑧). Renders the three points under [data-intake-scope-notice] and has NO
+ * IntakeScopeNotice.test — the non-skippable system notice (intake-from-pinned
+ * fork rule). Renders the three points under [data-intake-scope-notice] and has NO
  * dismiss control (it cannot be skipped).
  */
 

@@ -1,9 +1,8 @@
 /**
- * launch — the intake launch orchestration (FRONTEND_LAYOUT §4.3 / §6.2). Four
+ * launch — the intake launch orchestration. Four
  * home/rail entries (Hero CTA, Searches "+ New search", Pipeline Ledger Run,
  * WelcomeWizard) all funnel through `launchIntake`, which forces a fresh unpinned
- * session (§10 — never inherit a stale pin) and POSTs the start. Two start
- * surfaces (§4.3 / BRIEF §1.2):
+ * session (never inherit a stale pin) and POSTs the start. Two start surfaces:
  *
  *   - slash  (`/search_profile_intake`) → input_mode 'slash', form direct (no
  *     prefill step).
@@ -21,7 +20,7 @@
 import { type ApiClient } from "./api/client.js";
 import { type StartAck } from "./api/wire.js";
 
-/** The two intake start surfaces (§4.3). */
+/** The two intake start surfaces. */
 export type LaunchMode =
   | { kind: "slash"; seedFields?: Record<string, unknown> | null }
   | { kind: "freeform"; freeformText: string };
@@ -34,7 +33,7 @@ export interface LaunchArgs {
 }
 
 /** Start an intake run. Always forks a fresh unpinned session when a source
- *  session is given (§10) so a stale pin never leaks into a new search. */
+ *  session is given so a stale pin never leaks into a new search. */
 export async function launchIntake(client: ApiClient, args: LaunchArgs): Promise<StartAck> {
   const base = {
     skill: "search_profile_intake" as const,

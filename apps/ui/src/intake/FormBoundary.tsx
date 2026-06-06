@@ -1,5 +1,5 @@
 /**
- * FormBoundary — the §5.9 graceful-degrade error boundary. If the SchemaForm
+ * FormBoundary — the graceful-degrade error boundary. If the SchemaForm
  * throws (a missing widget, a broken render), fall back to a plain-text dump of
  * the raw suspend spec (SchemaFormFallback) instead of a blank rail. Carries on
  * the legacy fallback discipline (SchemaForm.tsx:875-924).

@@ -4,8 +4,9 @@
  * DeepSeek (and V4-Pro) intermittently emit a tool call as PLAIN TEXT in the
  * content block instead of a structured tool_call. If the loop treats that as
  * "no tool call → final prose", an approval gate that was supposed to fire never
- * does — a W-A class silent degradation, and it happens on the 3 irreversible
- * mutation skills. (currentTruth §"#1244"; risks §2; safetyInvariants §2.)
+ * does — a silent degradation, and it happens on the 3 irreversible mutation
+ * skills. The trigger is mixing structured output with tools; pure tool loops
+ * are clean.
  *
  * Policy — ALWAYS FAIL-CLOSED:
  *   - finish_reason != "tool_calls"  → suspect
@@ -74,11 +75,11 @@ export interface ToolTurnView {
  * Heuristic: does `content` look like a tool call was dumped as text?
  *
  * Intentionally conservative + read-only — it ONLY decides "suspect: yes/no".
- * It NEVER parses out a name/args to run. (safetyInvariants §2.)
+ * It NEVER parses out a name/args to run.
  *
- * TODO: tune against real DeepSeek #1244 captures from the harness corpus; the
- * COMPANION cites ~11% on an uncontrolled baseline. Add JSON-with-"name"+
- * "arguments", XML-ish <invoke>/<tool_call>, and ```json fenced-blob shapes.
+ * TODO: tune against real DeepSeek #1244 captures from the harness corpus
+ * (~11% on an uncontrolled baseline). Add JSON-with-"name"+"arguments",
+ * XML-ish <invoke>/<tool_call>, and ```json fenced-blob shapes.
  */
 export function looksLikeToolShapedBlob(content: string): boolean {
   if (content.length === 0) return false;

@@ -1,9 +1,9 @@
 /**
- * useRunStream — THE single SSE consumer for a skill run (FRONTEND_LAYOUT §7,
- * §9). One EventSource per run, one reducer; it feeds the turn three-zone view
+ * useRunStream — THE single SSE consumer for a skill run.
+ * One EventSource per run, one reducer; it feeds the turn three-zone view
  * AND the approval/form parts. This hook EXISTS to kill the legacy dual-consumer
- * defect (an imperative streamer + a hook each opened their own EventSource,
- * §9 裁决). A module-level registry enforces "one live consumer per runId" and
+ * defect (an imperative streamer + a hook each opened their own EventSource).
+ * A module-level registry enforces "one live consumer per runId" and
  * warns LOUD if a second mount races the same run.
  *
  * Wire facts it mirrors (apps/server):
@@ -15,7 +15,7 @@
  *     (re)subscribe, then live frames (runPubSub.ts:33-35). There is NO seq/id
  *     field and NO Last-Event-ID — so a reconnect replays everything and we
  *     DEDUPE by content key `${ts}|${kind}|${JSON.stringify(payload)}`
- *     (§9.2 step 3; the lack of a seq field is recorded in api_findings).
+ *     (the wire has no seq field).
  *   - terminal: exactly one of done|error|aborted ends the stream
  *     (runPubSub.ts:72) → we close the EventSource and do NOT reconnect.
  *
@@ -36,7 +36,7 @@ import {
   type TerminalEventKind,
 } from "./wire.js";
 
-/** The hook's exposed state (task B1 surface + the §9.2 projection fields). */
+/** The hook's exposed state (the run-status projection fields). */
 export interface RunStreamState {
   /** The product-projected run status, derived from the frames seen so far.
    *  null until the first frame (the run is unknown to the stream yet). */
@@ -91,7 +91,7 @@ function initialState(): ReducerState {
   };
 }
 
-/** The content key for replay dedupe (§9.2 step 3). No seq on the wire. */
+/** The content key for replay dedupe. No seq on the wire. */
 function frameKey(ev: SseEvent): string {
   return `${ev.ts}|${ev.kind}|${JSON.stringify(ev.payload)}`;
 }
@@ -187,7 +187,7 @@ function reducer(state: ReducerState, action: Action): ReducerState {
   } else if (kind === "tool_call" || kind === "tool_result" || kind === "text") {
     // A new in-flight/text frame means we are no longer parked on the old form.
     // (We only clear on the NEXT non-suspend frame — keeps the form visible
-    // while the run is parked, matching §9.4 awaiting_approval rendering.)
+    // while the run is parked, matching awaiting_approval rendering.)
     currentSuspend = null;
   }
 
@@ -204,7 +204,7 @@ function reducer(state: ReducerState, action: Action): ReducerState {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level single-consumer registry (§7 / §9 裁决: one EventSource per run).
+// Module-level single-consumer registry (one EventSource per run).
 // A second mount for the SAME runId while one is live is the dual-consumer defect
 // this hook exists to prevent — we warn LOUD. The registry is keyed by runId and
 // counts active subscriptions; StrictMode's mount/unmount/mount is tolerated via

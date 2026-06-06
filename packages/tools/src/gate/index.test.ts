@@ -1,7 +1,7 @@
 /**
  * L1 unit tests — L2 in-process gate (THE load-bearing safety boundary).
  *
- * Freezes the fail-CLOSED contract (ARCH_GATE_STACK / safetyInvariants §2-3):
+ * Freezes the fail-CLOSED gate contract (see the safety invariants in CLAUDE.md):
  *   (a) malformed/absent structured request ⇒ throws, never parses prose;
  *   (b) the L1 env fuse throws BEFORE the approver is consulted;
  *   (c) an approver that errors or returns non-true ⇒ declined;

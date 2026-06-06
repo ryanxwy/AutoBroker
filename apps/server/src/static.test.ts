@@ -1,6 +1,6 @@
 /**
- * static serving tests — single-port prod serving of the dashboard SPA
- * (BACKEND_SERVICES §3 全局前置). Builds a TINY dist fixture in a tmp dir, points
+ * static serving tests — single-port prod serving of the dashboard SPA. Builds a
+ * TINY dist fixture in a tmp dir, points
  * AUTOBROKER_UI_DIST at it, and drives the REAL Fastify app via inject() to
  * assert:
  *   - index.html served at "/".
@@ -99,7 +99,7 @@ describe("single-port SPA serving (dist present)", () => {
     // after that are silently ignored, degrading API errors to Fastify's flat
     // default shape ({statusCode, code, error, message}) whenever a dist
     // existed — i.e. exactly the production shape. The fix registers the plugin
-    // LAST. This pins the §13.2 nested envelope WITH static serving active.
+    // LAST. This pins the nested error envelope WITH static serving active.
     server = await buildServer({ quiet: true });
     const r = await server.app.inject({ method: "GET", url: "/api/sessions/no-such-id" });
     expect(r.statusCode).toBe(404);

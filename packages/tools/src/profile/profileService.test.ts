@@ -1,12 +1,12 @@
 /**
- * L1 unit tests — tools-layer profileService + resolver + fakePhone + adapter
- * (BACKEND_SERVICES §8/§9, B2). Freezes the persist discipline:
+ * L1 unit tests — tools-layer profileService + resolver + fakePhone + adapter.
+ * Freezes the persist discipline:
  *   - create writes EXACTLY 1 search_profiles row + 1 audit_log row
  *     (action='search_profile_intake', payload = full input).
  *   - double-fire idempotent (same input → same id, no re-write).
  *   - ActiveSlotConflict on a second active row for the same (account, brand).
- *   - 裁定⑨ NULL-coordinate persist is rejected (typed CoordinatesNotResolvedError).
- *   - resolver 1/0/2+ branches incl. inferred_newest LOGGING (W-C invariant).
+ *   - NULL-coordinate persist is rejected (typed CoordinatesNotResolvedError).
+ *   - resolver 1/0/2+ branches incl. inferred_newest LOGGING (never silently pick).
  *   - fakePhone keeps the first 6, randomizes the last 4 (deterministic w/ rng).
  *   - assertNoBudget catches a budget figure in a draft string.
  *   - adapter round-trips all 33 columns.
@@ -53,7 +53,7 @@ const MIGRATION_SQL = join(here, "..", "..", "..", "db", "drizzle", "0000_milita
 let tmpDir: string;
 let db: Db;
 
-/** A coordinate set the upstream workflow would have resolved (裁定⑨). */
+/** A coordinate set the upstream workflow would have resolved. */
 const COORDS: ResolvedCoordinates = { latitude: 33.6695, longitude: -117.8231, resolvedAddress: "Irvine, CA 92614" };
 
 /** A complete, form-valid intake input. */
@@ -199,7 +199,7 @@ describe("create — exactly 1 row + 1 audit, persist discipline", () => {
     expect(countAudit("search_profile_intake")).toBe(1);
   });
 
-  it("裁定⑨: NULL coordinates are rejected with a typed error, zero write", () => {
+  it("NULL coordinates are rejected with a typed error, zero write", () => {
     expect(() =>
       // @ts-expect-error — deliberately passing null lat to exercise the last wall.
       create(db, baseInput(), { coordinates: { latitude: null, longitude: null } }),
@@ -228,7 +228,7 @@ describe("create — exactly 1 row + 1 audit, persist discipline", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("update — typo window + identity lock (§9.4)", () => {
+describe("update — typo window + identity lock", () => {
   it("allows an in-place identity edit while in the typo window (no lead yet)", () => {
     const { profile } = create(db, baseInput({ trim: "XLE" }), { coordinates: COORDS });
     const updated = update(db, { trim: "Limited" }, { profileId: profile.id });
@@ -261,7 +261,7 @@ describe("replace — atomic supersede→create→link→audit (FIX 1)", () => {
     expect(countProfiles()).toBe(1);
 
     // Force create() to throw INSIDE replace's transaction: NULL coords trip the
-    // 裁定⑨ last-wall guard after the old row was set 'superseded'.
+    // coordinate-resolution last-wall guard after the old row was set 'superseded'.
     expect(() =>
       replace(
         db,
@@ -296,12 +296,12 @@ describe("validate (LC-1, pure)", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("resolveActiveProfile — three branches (§9)", () => {
+describe("resolveActiveProfile — three branches", () => {
   it("0 active → kind:'none'", () => {
     expect(resolveActiveProfile(db).kind).toBe("none");
   });
 
-  it("1 active → kind:'inferred_newest' and LOGS (W-C never silently picks)", () => {
+  it("1 active → kind:'inferred_newest' and LOGS (never silently picks)", () => {
     create(db, baseInput(), { coordinates: COORDS });
     const trace = vi.fn();
     const result = resolveActiveProfile(db, {}, trace);
@@ -313,8 +313,8 @@ describe("resolveActiveProfile — three branches (§9)", () => {
   });
 
   it("2+ active → kind:'ambiguous' with candidates, newest (ROWID DESC) first", () => {
-    // Two active rows under NULL account (NULLs distinct in the partial index, so
-    // both stay active — see api_findings).
+    // Two active rows under NULL account (NULLs are distinct in the partial
+    // unique index, so both stay active — the NULL account_id index caveat).
     create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
     create(db, baseInput({ make: "Honda", model: "CR-V" }), { coordinates: COORDS });
     const result = resolveActiveProfile(db);
@@ -369,7 +369,7 @@ describe("fakePhone — keep first 6, randomize last 4", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("assertNoBudget — budget red-line (§8.4, CLAUDE.md §9)", () => {
+describe("assertNoBudget — budget red-line (see CLAUDE.md)", () => {
   it("throws BudgetLeakError when a draft frames a number as the budget cap", () => {
     expect(() =>
       assertNoBudget("Hi, my budget is around $35,000 out the door, can you do better?"),
@@ -432,7 +432,7 @@ describe("adapter — 33-column round-trip", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("parseLocation (§8.3)", () => {
+describe("parseLocation", () => {
   it("parses 'City, ST ZIP'", () => {
     expect(parseLocation("Irvine, CA 92614")).toEqual({
       city: "Irvine", state: "CA", postalCode: "92614", country: "US",

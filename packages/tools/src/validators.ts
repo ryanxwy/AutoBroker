@@ -32,9 +32,9 @@ export function postValidate(value: unknown): ValidationResult {
 
 /**
  * Thrown by assertNoBudget when a budget figure is found in dealer-facing text.
- * FAIL-LOUD (CLAUDE.md §9, BACKEND_SERVICES §8.4 budget red-line): budget_max is
- * internal-only and must NEVER reach a dealer; a leak is a hard error, not a
- * soft validation result. `matches` carries the offending substrings for audit.
+ * FAIL-LOUD (budget red-line, see CLAUDE.md): budget_max is internal-only and
+ * must NEVER reach a dealer; a leak is a hard error, not a soft validation
+ * result. `matches` carries the offending substrings for audit.
  */
 export class BudgetLeakError extends Error {
   readonly code = "budget_leak" as const;
@@ -94,8 +94,8 @@ const BUDGET_PHRASE_PATTERNS: readonly RegExp[] = [
 
 /**
  * Reject dealer-facing text that leaks budget. THROWS BudgetLeakError on any
- * match (fail-LOUD per §8.4) — the budget red-line is non-negotiable, so the
- * caller cannot ignore a soft `{ok:false}`. Returns a ValidationResult (ok:true)
+ * match (fail-LOUD) — the budget red-line is non-negotiable, so the caller
+ * cannot ignore a soft `{ok:false}`. Returns a ValidationResult (ok:true)
  * only when the text is clean, so it composes with the other validators.
  *
  * @param text the candidate dealer-facing string (email body, form comment, …).

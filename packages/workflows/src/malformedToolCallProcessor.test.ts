@@ -1,7 +1,7 @@
 /**
  * L1 unit tests — #1244 Mastra output-Processor shell (safety boundary).
  *
- * Freezes the spike-3 contract: detection runs on processOutputStep (before
+ * Freezes the output-processor contract: detection runs on processOutputStep (before
  * tool execution), any signal aborts CLOSED via the processor abort()
  * (TripWire), the abort NEVER asks for a retry (retry:true == auto-repair ==
  * forbidden), and the AI SDK finishReason spelling (`tool-calls`) is

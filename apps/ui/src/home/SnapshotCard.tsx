@@ -1,9 +1,10 @@
 /**
- * SnapshotCard — the active-search snapshot (FRONTEND_LAYOUT §6 Hero). Shows
+ * SnapshotCard — the active-search snapshot. Shows
  * Year/Make/Model/trim · location · Dealers/Threads/Best-OTD + a "View search
- * file" link. Reused on the profile route (§R6 SnapshotCard reuse). It consumes
- * the dealer-SAFE ProfileSnapshot — which has NO budget accessor — so budget can
- * never leak into this summary surface (FRONTEND §8.3 / CLAUDE.md §9).
+ * file" link. Also reused on the profile route. It consumes the dealer-SAFE
+ * ProfileSnapshot — which has NO budget accessor — so budget can never leak into
+ * this summary surface (budget red-line: budget_max is internal-only, never
+ * dealer-facing — see CLAUDE.md).
  */
 
 import { Link } from "../router.js";

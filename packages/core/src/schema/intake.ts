@@ -1,15 +1,11 @@
 /**
  * SearchProfileIntakeInputSchema (18 intake-form fields) + INTAKE_FIELD_META.
  *
- * The intake form contract (BACKEND_SERVICES §8.2 / §10.3, FRONTEND_LAYOUT §5).
- * This is the SINGLE SOURCE of the intake field set + UI metadata: per local
- * decision D-B9, the legacy codegen pipeline (intake.schema.json →
- * scripts/gen-intake-types.mjs → ui/src/data/intake.gen.ts + the `intake:check`
- * staleness CI gate) is RETIRED. In full-TS the Zod schema IS the source of
- * truth and `INTAKE_FIELD_META` is exported for UI to import directly — no
- * generation step. The old codegen pipeline is referenced only as a predecessor.
+ * This is the SINGLE SOURCE of the intake field set + UI metadata. The Zod
+ * schema IS the source of truth and `INTAKE_FIELD_META` is exported for UI to
+ * import directly — no codegen step.
  *
- * REQUIRED set (form contract, BACKEND §8.2): exactly
+ * REQUIRED set (form contract): exactly
  *   { make, model, year, location_query, follow_up_email, financing_preference }.
  * The UI forces the user to fill these 6; the service-persist parity-minimum
  * (year/make/model) is enforced separately in the tools layer — NOT here.
@@ -20,21 +16,22 @@
  * fields parse/report before the 12 nullable ones). The canonical UI RENDER
  * order = INTAKE_FIELD_META key order, the frozen 18-field order below.
  *
- * 18-field CANONICAL ORDER (frozen, FRONTEND §5.1 / followups.md:545 — the UI
- * renders in this order; INTAKE_FIELD_META keys are EXACTLY this): make, model,
- * trim, year, location_query, search_radius_miles, budget_max, follow_up_email,
+ * 18-field CANONICAL ORDER (frozen — the UI renders in this order;
+ * INTAKE_FIELD_META keys are EXACTLY this): make, model, trim, year,
+ * location_query, search_radius_miles, budget_max, follow_up_email,
  * follow_up_phone, phone_policy, preferred_exterior_colors_json,
  * preferred_interior_colors_json, acceptable_trims_json, feature_preferences_json,
  * financing_preference, trade_in_description, military_first_responder,
  * current_brand_owner.
  *
  * budget_max is COLLECTED (optional section) but sensitivity = 'internal_only':
- * it never enters dealer-facing output (CLAUDE.md §9, _redact_budget enforced in
- * code). The META marks it so derived redaction sets can key off it.
+ * it never enters dealer-facing output (budget red-line, _redact_budget enforced
+ * in code — see CLAUDE.md). The META marks it so derived redaction sets can key
+ * off it.
  *
  * Field names here are snake_case (form/wire names matching the DB columns); the
  * core↔db row adapter (camelCase SearchProfile ↔ snake_case row) lands in
- * packages/tools (B2). core cannot import db (five-layer wall).
+ * packages/tools. core cannot import db (five-layer wall).
  *
  * This file MUST NOT import any framework. Pure types + Zod only.
  */
@@ -53,9 +50,9 @@ export const SearchProfileIntakeInputSchema = z
     model: z.string().min(1),
     /** Required; year-segmented widget yields current-or-next model year. */
     year: z.number().int(),
-    /** Raw location text; workflow-layer resolveLocation geocodes it (裁定⑨:
-     *  on parse/no-result/retry-exhausted → suspend back to form, never persist
-     *  NULL coords). Required at the form. */
+    /** Raw location text; the workflow layer geocodes this before persist
+     *  (coordinate-resolution invariant: on parse/no-result/retry-exhausted →
+     *  suspend back to form, never persist NULL coords). Required at the form. */
     location_query: z.string().min(1),
     /** PII; reply-to address. Required at the form. */
     follow_up_email: z.string().min(1),
@@ -88,11 +85,11 @@ export type SearchProfileIntakeInput = z.infer<typeof SearchProfileIntakeInputSc
  *  INTAKE_FIELD_META key order, not this type's declaration order. */
 export type IntakeFieldName = keyof SearchProfileIntakeInput;
 
-/** Where a field renders: the FRONTEND §5.3 form sections. */
+/** Where a field renders: the two form sections. */
 export type IntakeSection = "Car & contact" | "Optional / Buyer context";
 
 /**
- * Field sensitivity (BACKEND §8.2 field-sensitivity column).
+ * Field sensitivity.
  *   - 'internal_only' → never leaves the app (budget_max).
  *   - 'pii'           → strip from drafts/localStorage before persist.
  *   - 'normal'        → freely usable.
@@ -112,15 +109,14 @@ const CAR_CONTACT: IntakeSection = "Car & contact";
 const BUYER_CONTEXT: IntakeSection = "Optional / Buyer context";
 
 /**
- * Per-field UI metadata, exported for DIRECT UI import (replaces the legacy
- * codegen — D-B9). Keys are EXACTLY the 18 field names in the frozen canonical
- * UI RENDER order (FRONTEND §5.1; NOT the schema's required-first declaration
- * order); a structural drift test asserts this against the ordered list.
- * `section` derives from FRONTEND §5.1 `group` ('core' → Car & contact required
- * section; 'buyer_reply' → Optional / Buyer context collapsed section).
+ * Per-field UI metadata, exported for DIRECT UI import. Keys are EXACTLY the 18
+ * field names in the frozen canonical UI RENDER order (NOT the schema's
+ * required-first declaration order); a structural drift test asserts this
+ * against the ordered list. `section` groups fields into the required Car &
+ * contact section and the collapsed Optional / Buyer context section.
  */
 export const INTAKE_FIELD_META = {
-  // --- "Car & contact" (required section, group "core") --------------------
+  // --- "Car & contact" (required section) ----------------------------------
   make: { label: "品牌", required: true, sensitivity: "normal", section: CAR_CONTACT },
   model: { label: "车型", required: true, sensitivity: "normal", section: CAR_CONTACT },
   trim: { label: "配置", required: false, sensitivity: "normal", section: CAR_CONTACT },
@@ -131,7 +127,7 @@ export const INTAKE_FIELD_META = {
   follow_up_email: { label: "回复邮箱", required: true, sensitivity: "pii", section: CAR_CONTACT },
   follow_up_phone: { label: "回复电话", required: false, sensitivity: "pii", section: CAR_CONTACT },
   phone_policy: { label: "电话策略", required: false, sensitivity: "normal", section: CAR_CONTACT },
-  // --- "Optional / Buyer context" (group "buyer_reply") --------------------
+  // --- "Optional / Buyer context" ------------------------------------------
   preferred_exterior_colors_json: { label: "偏好外观颜色", required: false, sensitivity: "normal", section: BUYER_CONTEXT },
   preferred_interior_colors_json: { label: "偏好内饰颜色", required: false, sensitivity: "normal", section: BUYER_CONTEXT },
   acceptable_trims_json: { label: "可接受配置", required: false, sensitivity: "normal", section: BUYER_CONTEXT },
