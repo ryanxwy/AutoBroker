@@ -150,6 +150,16 @@ export function createRailMemory(): Memory {
       // level across the two @ai-sdk/provider copies — a type-only mismatch).
       observationalMemory: {
         model: resolveModel("deepseek.chat") as unknown as RailObservationalMemoryModel,
+        observation: {
+          // Async background buffering at the library default interval (20% of
+          // messageTokens), stated explicitly so it is a choice, not an
+          // accident of defaults.
+          bufferTokens: 0.2,
+          // Cap the "Previous Observations" context fed to the Observer —
+          // tail-truncated to the most recent entries — so long chat sessions
+          // cannot grow the per-pass observer prompt without bound.
+          previousObserverTokens: 8_000,
+        },
       },
       // No vector store installed → semantic recall stays OFF (always off, no
       // vector store). Leaving `vector` unset on

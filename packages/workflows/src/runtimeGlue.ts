@@ -69,6 +69,9 @@ export interface ReattachableSuspendedRun {
 export interface StaleRunningRun {
   workflowId: string;
   runId: string;
+  /** Last storage activity in epoch ms, when the run row carries a usable
+   *  timestamp — the input to the caller's restart-vs-cancel age policy. */
+  updatedAtMs?: number;
 }
 
 /** A run in a transient in-flight status (waiting/pending/paused) that boot
@@ -141,6 +144,25 @@ export class DuplicateRunIdError extends Error {
 }
 
 /**
+ * Best-effort extraction of a run row's last-activity timestamp (epoch ms).
+ * Storage rows carry updatedAt/createdAt as Date, ISO string, or epoch number
+ * depending on the driver; anything unparseable yields undefined and the
+ * caller's age policy must treat the age as unknown.
+ */
+function runTimestampMs(run: unknown): number | undefined {
+  const r = run as { updatedAt?: unknown; createdAt?: unknown };
+  for (const raw of [r.updatedAt, r.createdAt]) {
+    if (raw instanceof Date) return raw.getTime();
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Date.parse(raw);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Pull the suspended step-id path out of a stored WorkflowState. 1.41 records
  * suspendedPaths as `{ [stepId]: number[] }` (the execution-path index, not a
  * step id). The step IDS are the keys — that is what an approval UI labels — so
@@ -194,7 +216,12 @@ export async function recoverOnBoot(
       // THIS process started is live work, not a stale orphan — never offer it
       // to restart/cancel.
       if (ownedRunIds.has(run.runId)) continue;
-      stale.push({ workflowId, runId: run.runId });
+      const updatedAtMs = runTimestampMs(run);
+      stale.push(
+        updatedAtMs === undefined
+          ? { workflowId, runId: run.runId }
+          : { workflowId, runId: run.runId, updatedAtMs },
+      );
     }
 
     // Transient in-flight statuses a kill can also leave behind (review
