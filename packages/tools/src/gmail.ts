@@ -15,7 +15,9 @@
  * INVARIANTS:
  *   - A real send is reachable ONLY through the L2 gate (`withGate`); this file
  *     never calls the live API outside an approved gate commit.
- *   - Budget is redacted from every outbound body (hard code rule, not prompt).
+ *   - Budget is redacted from every outbound body — the assertNoBudget throwing
+ *     wall is wired in buildRaw; the full legacy `_redact_budget` regex port
+ *     (substitution, not just detection) is TODO(phase-4).
  *   - email-pipeline tests run against a local fake-mailbox DB; real email is
  *     NEVER sent in tests.
  */
@@ -26,6 +28,7 @@ import {
   type Approver,
   type GateRequest,
 } from "./gate/index.js";
+import { assertNoBudget } from "./validators.js";
 
 /** Where a send actually goes. `fake` is the default for all non-production
  *  and all test paths; `real` requires both an approved gate verdict AND an
@@ -59,6 +62,9 @@ export interface SendResult {
  */
 export function buildRaw(email: OutboundEmail): string {
   const redactedBody = redactBudget(email.body);
+  // Throwing wall: a budget phrase in an outbound body aborts assembly here,
+  // before any raw message exists — guards fake AND real sends identically.
+  assertNoBudget(redactedBody);
   // TODO(phase-4): assemble real RFC-2822 headers + body, then base64url.
   const rfc2822 =
     `To: ${email.to}\r\n` +

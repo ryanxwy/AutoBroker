@@ -53,8 +53,11 @@ export function openDb(dbPath: string = resolveDbPath()) {
   // Mandated PRAGMAs.
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("busy_timeout = 5000"); // NOT 0 — legacy's value caused SQLITE_BUSY.
-  // TODO(phase-0): pragma("foreign_keys = ON") once FK actions are re-asserted
-  // in schema.ts (correction 3).
+  // Matches the legacy oracle, which enforces FKs on every connection. SQLite
+  // FK enforcement is write-time only: the cold-copied parity DB carries a few
+  // pre-existing orphan message_analysis rows (foreign_key_check, 2026-06-10)
+  // that stay inert until touched — new writes are checked from here on.
+  sqlite.pragma("foreign_keys = ON");
 
   return drizzle(sqlite, { schema });
 }
