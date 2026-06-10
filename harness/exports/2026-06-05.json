@@ -1,7 +1,67 @@
 {
   "date": "2026-06-05",
-  "code_repo_head_sha": "7aa8061",
+  "code_repo_head_sha": "1c7a7f1",
   "runs": [
+    {
+      "run_id": "3c7722b6-58e2-4025-bcfd-af835fd2fdd0",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007992600000000001,
+      "duration_ms": 9271,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "af832ab0-9574-4d52-b7f3-73301162e269",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007992600000000001,
+      "duration_ms": 8997,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "ec82e506-6c7e-4a3e-b1bf-4d715127225b",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009303000000000001,
+      "duration_ms": 7501,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "ec82e506-6c7e-4a3e-b1bf-4d715127225b",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007952,
+      "duration_ms": 8379,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
     {
       "run_id": "fac5c969-72ff-40ca-9230-bd740b14dcea",
       "skill": "search_profile_intake",
@@ -16,6 +76,93 @@
       "duration_ms": 7938,
       "pricing_source": "deepseek-2026-06",
       "fail_reason": null
+    },
+    {
+      "run_id": "m0-spike1-20260605",
+      "skill": "foundation_probe",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.cheap",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0005124,
+      "duration_ms": 7845,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "m0-spike1-20260605",
+      "skill": "foundation_probe",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.cheap",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0005124,
+      "duration_ms": 8460,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "m0-spike1-20260605",
+      "skill": "foundation_probe",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.cheap",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0005124,
+      "duration_ms": 7857,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    }
+  ],
+  "cases": [
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "run_id": "af832ab0-9574-4d52-b7f3-73301162e269",
+      "layer": "L2",
+      "verdict": "RED",
+      "status": "FAIL",
+      "run_dir": "2026-06-05T20-24-52-555Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "run_id": "3c7722b6-58e2-4025-bcfd-af835fd2fdd0",
+      "layer": "L2",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-05T20-25-54-601Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "run_id": "ec82e506-6c7e-4a3e-b1bf-4d715127225b",
+      "layer": "L2",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-05T20-26-24-077Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "run_id": "7447368f-97d2-4696-9d2b-a1784446839c",
+      "layer": "L2",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-05T20-26-43-416Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "run_id": "fac5c969-72ff-40ca-9230-bd740b14dcea",
+      "layer": "L2",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-05T20-26-46-532Z"
     }
   ]
 }

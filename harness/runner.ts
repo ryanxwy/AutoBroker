@@ -431,11 +431,34 @@ async function evaluateStep(args: {
     confidence,
   };
 
+  // The S2 re-pull IS a ui_check in the ratified self-contained L2 mode
+  // (STANDARD §5): the Monitor surface is the read API, refresh-confirmed.
+  // Recording it keeps ui_checks non-vacuous at live layers; dashboard-DOM
+  // checks via the five-role Monitor join at L3.
+  const uiChecks = [
+    profileId !== null
+      ? {
+          surface: `api:/api/profiles/${profileId}`,
+          selector: "profile-row",
+          expected: profileId,
+          observed: s2Text,
+          ok: s2Ok,
+        }
+      : {
+          surface: "api:/api/skill-runs/:id",
+          selector: "terminal-status",
+          expected: "terminal status readable on re-pull",
+          observed: s2Text,
+          ok: s1Ok,
+        },
+  ];
+
   return buildVerdict({
     cellId: cellIdFor(c, step),
     layer,
     runId,
     anchors,
+    uiChecks,
     crossCheck,
   });
 }
@@ -526,6 +549,7 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
       "verdict.json": verdict,
       "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, profileId },
       "run.json": { runId, terminalStatus: detail.terminalStatus, driverKind: detail.driverKind, events: detail.events.length },
+      "transcript.json": detail.events,
       "db-before.json": before,
       "db-after.json": after,
     });

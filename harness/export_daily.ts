@@ -1,14 +1,22 @@
 /**
- * harness/export_daily.ts — STUB.
+ * harness/export_daily.ts — the daily harness-signal export.
  *
- * Exports the `test_run_records` rows for a given day to a STABLE JSON file,
- * consumed by an external daily-report generator that reads
- * harness/exports/<date>.json to fill its "today's harness signals" section.
+ * Exports the day's `test_run_records` rows to a STABLE JSON file, consumed by
+ * an external daily-report generator that reads harness/exports/<date>.json to
+ * fill its "today's harness signals" section.
+ *
+ * Aggregation scope: live-harness runs each write to an ISOLATED per-run DB
+ * (~/.autobroker-ts/harness-runs/<date>T…/autobroker.db), so the export unions
+ * the default DB's window rows with every matching run dir's rows (read-only;
+ * each ledger row lives in exactly one DB). It ALSO folds each run dir's
+ * per-cell evidence verdict.json into an additive `cases` key — required
+ * because a declined live run fires no model call and leaves ZERO ledger rows;
+ * its outcome exists only as a case verdict.
  *
  * The sync is one-directional: this repo emits the JSON; the external reporting
  * tool reads it and never writes back here.
  *
- * Usage (intended):
+ * Usage:
  *   tsx harness/export_daily.ts 2026-06-02 [--out <path>]
  *
  * Output path + key contract (LOCKED to the external reporting tool's parser —
@@ -24,12 +32,12 @@
  *         "layer": "L2",                     // L1..L5
  *         "provider": "deepseek",            // deepseek (default) | anthropic | openai
  *         "model_alias": "deepseek-v4-flash",
- *         "anchors": {                       // 6+1; which were GREEN
- *           "run_status": true,
- *           "no_external_mutation": true,    // keystone
- *           "cost_and_time": true
- *           // ...
- *         },
+ *         "anchors": {                       // COARSE row-derivable signals ONLY:
+ *           "cost_and_time": true,           //   from the ledger row itself
+ *           "no_external_mutation": true     //   runtime-enforcement flag, NOT the
+ *         },                                 //   per-run verdict — authoritative
+ *                                            //   per-anchor booleans live in the
+ *                                            //   run's verdict.json (see "cases")
  *         "cost_usd": 0.0012,                // null when usage unavailable
  *         "duration_ms": 8421,
  *         "pricing_source": "deepseek-2026-06",  // 'unavailable' => cost_usd is null, NOT 0
@@ -48,11 +56,12 @@
 // opens an @autobroker/db handle and runs SELECTs only — the wall-legal read path).
 // The harness NEVER writes the DB; the SUT's writeTestRunRecord owns every row.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { openReadHandle, readLedgerRowsInWindow, type LedgerRow } from "./dbReads.js";
+import { openReadHandle, openReadHandleAt, readLedgerRowsInWindow, type LedgerRow } from "./dbReads.js";
 
 /** Keys are snake_case ON PURPOSE — they are the wire format the external
  *  reporting tool parses (r.get("model_alias"), r.get("cost_usd"), …). Do not camelCase. */
@@ -60,6 +69,19 @@ export interface DailyHarnessExport {
   date: string; // YYYY-MM-DD
   code_repo_head_sha: string;
   runs: DailyHarnessRun[];
+  /** Case-level verdicts folded from each run dir's per-cell verdict.json.
+   *  ADDITIVE key (the reporting tool reads `runs`; older exports lack this).
+   *  Needed because a declined run writes zero ledger rows. */
+  cases: DailyHarnessCase[];
+}
+
+export interface DailyHarnessCase {
+  cell_id: string;
+  run_id: string;
+  layer: string;
+  verdict: string; // GREEN | GREEN_WITH_WAIVER | RED | BLOCKER
+  status: string; // PASS | FAIL
+  run_dir: string; // the harness-runs/<ts> dir name the verdict came from
 }
 
 export interface DailyHarnessRun {
@@ -140,27 +162,91 @@ function toDailyRun(r: LedgerRow): DailyHarnessRun {
   };
 }
 
+/** The isolated per-run roots the live harness writes (runner.ts runRoot).
+ *  Exported as the default for exportDaily's runsRoot param; tests pass an
+ *  isolated dir so machine state never leaks into unit assertions. */
+export function defaultHarnessRunsRoot(): string {
+  return join(homedir(), ".autobroker-ts", "harness-runs");
+}
+
+/** The day's isolated run dirs (names start with `<date>T`). */
+function runDirsFor(date: string, runsRoot: string): string[] {
+  if (!existsSync(runsRoot)) return [];
+  return readdirSync(runsRoot)
+    .filter((d) => d.startsWith(`${date}T`))
+    .sort()
+    .map((d) => join(runsRoot, d));
+}
+
+/** Fold every evidence/<cell>/verdict.json under the day's run dirs into the
+ *  additive case list. A malformed/unreadable verdict file is skipped loudly. */
+function readCases(date: string, runsRoot: string): DailyHarnessCase[] {
+  const cases: DailyHarnessCase[] = [];
+  for (const runDir of runDirsFor(date, runsRoot)) {
+    const evidence = join(runDir, "evidence");
+    if (!existsSync(evidence)) continue;
+    for (const cell of readdirSync(evidence).sort()) {
+      const vPath = join(evidence, cell, "verdict.json");
+      if (!existsSync(vPath)) continue;
+      try {
+        const v = JSON.parse(readFileSync(vPath, "utf8")) as Record<string, unknown>;
+        cases.push({
+          cell_id: String(v["cell_id"] ?? cell),
+          run_id: String(v["run_id"] ?? ""),
+          layer: String(v["layer"] ?? ""),
+          verdict: String(v["verdict"] ?? ""),
+          status: String(v["status"] ?? ""),
+          run_dir: runDir.slice(runsRoot.length + 1),
+        });
+      } catch (err) {
+        console.warn(`export_daily: skipping unreadable verdict ${vPath}: ${String(err)}`);
+      }
+    }
+  }
+  return cases;
+}
+
 /**
  * Read every test_run_records row whose created_at falls on `date` and emit the
- * stable JSON shape above. READ-ONLY: opens an @autobroker/db read handle through
- * dbReads, runs a single windowed SELECT, never writes the DB.
+ * stable JSON shape above. READ-ONLY: opens @autobroker/db read handles through
+ * dbReads (the default DB + each isolated run dir's DB), runs windowed SELECTs,
+ * never writes any DB. Each ledger row lives in exactly one DB; the default-DB
+ * file is realpath-deduped against the run DBs in case AUTOBROKER_DB points at one.
  */
-export function exportDaily(date: string): DailyHarnessExport {
+export function exportDaily(date: string, runsRoot: string = defaultHarnessRunsRoot()): DailyHarnessExport {
   const { from, to } = windowFor(date);
-  const { db, close } = openReadHandle();
-  let rows: LedgerRow[];
+  const rows: LedgerRow[] = [];
+  const seenFiles = new Set<string>();
+
+  const def = openReadHandle();
   try {
-    rows = readLedgerRowsInWindow(db, from, to);
+    seenFiles.add(realpathSync((def.db.$client as { name: string }).name));
+    rows.push(...readLedgerRowsInWindow(def.db, from, to));
   } finally {
-    close();
+    def.close();
   }
-  // Stable order: created_at then run_id (the read is already ordered; re-sort for
-  // determinism across SQLite versions).
+
+  for (const runDir of runDirsFor(date, runsRoot)) {
+    const dbPath = join(runDir, "autobroker.db");
+    if (!existsSync(dbPath)) continue;
+    const real = realpathSync(dbPath);
+    if (seenFiles.has(real)) continue;
+    seenFiles.add(real);
+    const h = openReadHandleAt(dbPath);
+    try {
+      rows.push(...readLedgerRowsInWindow(h.db, from, to));
+    } finally {
+      h.close();
+    }
+  }
+
+  // Stable order: created_at then run_id (re-sort for determinism across DBs).
   rows.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0));
   return {
     date,
     code_repo_head_sha: codeRepoHeadSha(),
     runs: rows.map(toDailyRun),
+    cases: readCases(date, runsRoot),
   };
 }
 

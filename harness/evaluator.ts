@@ -435,7 +435,19 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
     verdict = "RED";
     defect = { kind: "cross_check", detail: "S1/S2/S3 contradiction (confidence=low)" };
   } else if (failedAnchors.length === 0 && failedUi.length === 0) {
-    verdict = "GREEN";
+    // Vacuous-confirmation guard: a live layer (L2+) with ZERO recorded
+    // ui_checks cannot be GREEN — the S1/S2 cross-check must be materialized
+    // as at least one ui_checks entry (self-contained L2 mode, STANDARD §5).
+    const liveLayer = /^L[2-5]$/.test(input.layer);
+    if (liveLayer && uiChecks.length === 0) {
+      verdict = "RED";
+      defect = {
+        kind: "ui_checks",
+        detail: "no ui_checks recorded at a live layer (vacuous-confirmation guard)",
+      };
+    } else {
+      verdict = "GREEN";
+    }
   } else {
     // Some anchor/ui failed. Eligible for waiver only if EVERY failed anchor is
     // waivable AND a waiver reason was supplied (a real-world unreachable bit).

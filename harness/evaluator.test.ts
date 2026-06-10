@@ -222,10 +222,23 @@ describe("four-tier verdict", () => {
   const failAnchor = (kind: string): AnchorResult => ({ kind, ok: false, expected: 1, observed: 0, detail: "fail" });
   const cc = { s1: "", s2: "", s3: "", confidence: "high" as const };
 
-  it("all anchors ok + high confidence → GREEN", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], crossCheck: cc });
+  const okUi = { surface: "api:/api/profiles/p1", selector: "profile-row", expected: "p1", observed: "present", ok: true };
+
+  it("all anchors ok + a passing ui_check + high confidence → GREEN", () => {
+    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], uiChecks: [okUi], crossCheck: cc });
     expect(v.verdict).toBe("GREEN");
     expect(v.status).toBe("PASS");
+  });
+
+  it("vacuous-confirmation guard: L2+ with ZERO ui_checks is RED, never GREEN", () => {
+    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], crossCheck: cc });
+    expect(v.verdict).toBe("RED");
+    expect(v.defect_flag?.kind).toBe("ui_checks");
+  });
+
+  it("vacuous-confirmation guard does not apply below L2 (L1 pure-fn layer)", () => {
+    const v = buildVerdict({ cellId: "c", layer: "L1", runId: "r", anchors: [okAnchor("run_status")], crossCheck: cc });
+    expect(v.verdict).toBe("GREEN");
   });
 
   it("keystone failure → BLOCKER (never RED)", () => {

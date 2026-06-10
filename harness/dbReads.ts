@@ -269,3 +269,10 @@ export function openReadHandle(): { db: Db; close: () => void } {
   const db = openDb();
   return { db, close: () => db.$client.close() };
 }
+
+/** Open a read handle at an EXPLICIT path (isolated per-run harness DBs). Same
+ *  one-DB-channel rule; the caller supplies the file instead of env resolution. */
+export function openReadHandleAt(dbPath: string): { db: Db; close: () => void } {
+  const db = openDb(dbPath);
+  return { db, close: () => db.$client.close() };
+}
