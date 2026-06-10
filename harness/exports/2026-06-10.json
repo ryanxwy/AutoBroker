@@ -1,0 +1,163 @@
+{
+  "date": "2026-06-10",
+  "code_repo_head_sha": "fdfdc26",
+  "runs": [
+    {
+      "run_id": "7ffcc567-99fa-4c45-bd4b-1b7523326410",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.000805,
+      "duration_ms": 11262,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "d65d9bce-a57e-4bd4-802d-83b15f641f08",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007966000000000001,
+      "duration_ms": 11848,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "e0f6aea2-bfc4-484f-ad79-267a86c5bc58",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009282000000000001,
+      "duration_ms": 10666,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "e0f6aea2-bfc4-484f-ad79-267a86c5bc58",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007070000000000001,
+      "duration_ms": 9644,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "fdf946e7-135d-46dd-bcf2-5bf2859b6b50",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007966000000000001,
+      "duration_ms": 10313,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    }
+  ],
+  "cases": [
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_slash",
+      "run_id": "fdf946e7-135d-46dd-bcf2-5bf2859b6b50",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-44-32-113Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_freeform",
+      "run_id": "e0f6aea2-bfc4-484f-ad79-267a86c5bc58",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-45-11-004Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_decline",
+      "run_id": "e2b6cc85-b96c-43c5-9213-cfbfa1956121",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-45-53-966Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "26fbecbd-b4ec-4c83-baa5-e92e5d9460e4",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-46-08-182Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "d65d9bce-a57e-4bd4-802d-83b15f641f08",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-46-08-182Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "192349ea-7894-4e47-968d-55401c47fc10",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-46-55-919Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "7ffcc567-99fa-4c45-bd4b-1b7523326410",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-46-55-919Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_decline",
+      "run_id": "82e2b06e-e297-41a3-8db0-a08fab84a221",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-10T18-53-30-117Z"
+    }
+  ]
+}
