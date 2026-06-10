@@ -64,6 +64,36 @@ export { classifyBlockSignature } from "./blockSignature.js";
 // US-dealer gate — hard filter lives in code, not in any prompt.
 export { isUsDealer, type IsUsDealerOptions } from "./geo.js";
 
+// dealer_geosearch deterministic core — viewport math + candidate filter
+// chain (pure), the Maps feed extractor (page-side) with its snapshot-fallback
+// decision, and the single dealers/profile_dealers write path (US gate inlined).
+export {
+  EARTH_RADIUS_MILES,
+  haversineMiles,
+  zoomForRadius,
+  buildMapsSearchUrl,
+  tileViewports,
+  dealerId,
+  dedupByPlaceId,
+  rejectNonCandidate,
+  annotateDistance,
+  rankByDistance,
+  type Viewport,
+  type CandidateFilterResult,
+  type RankedDealerCandidate,
+} from "./geosearch/pure.js";
+export {
+  mapsExtractor,
+  parseMapsHref,
+  parseRatingLabel,
+  isServiceCenterTypeLine,
+  needsFallback,
+  MAPS_EXTRACT_REQUIRED_FIELDS,
+  type MapsDomDocument,
+  type MapsDomElement,
+} from "./geosearch/mapsExtractor.js";
+export { upsertDealers, type UpsertDealersResult } from "./geosearch/upsertDealers.js";
+
 // Outbound-URL SSRF validator (9 ordered rules, fail-closed).
 export {
   validateSourceUrl,

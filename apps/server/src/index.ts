@@ -19,7 +19,7 @@ export { buildServer, type BuiltServer } from "./server.js";
 export { boot, type BootResult } from "./boot.js";
 export { RunPubSub, type SseEvent, type EventKind, EVENT_KINDS } from "./runPubSub.js";
 export { projectStatus, MASTRA_RUN_STATUSES, type MastraRunStatus } from "./statusProjection.js";
-export { IntakeRunService } from "./intakeRuns.js";
+export { SkillRunService, RUN_DESCRIPTORS, type RunDescriptor } from "./skillRuns.js";
 export {
   SessionService,
   toSessionResponse,

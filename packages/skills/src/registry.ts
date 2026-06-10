@@ -43,8 +43,11 @@ export interface SkillDef {
   outputs: string;
 }
 
-/** The intake skill id — the one implemented skill (skill #1, e2e-first). */
+/** The intake skill id (skill #1, e2e-first). */
 export const INTAKE_SKILL_ID = "search_profile_intake" as const;
+
+/** The dealer geosearch skill id (skill #2, first browser skill). */
+export const GEOSEARCH_SKILL_ID = "dealer_geosearch" as const;
 
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
@@ -100,15 +103,15 @@ export const SKILLS: readonly SkillDef[] = [
 
   // ---- Phase 2 · browser service + scans (browser read + local db.write) ----
   {
-    id: "dealer_geosearch",
+    id: GEOSEARCH_SKILL_ID,
     slash: "/dealer_geosearch",
     title: "Dealer geosearch",
     summary: "Find dealers near a profile's location via the browser service.",
     phase: 2,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["profile_id", "radius"],
+    status: "implemented",
+    workflowId: GEOSEARCH_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "dealers",
   },
   {

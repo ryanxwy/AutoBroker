@@ -15,6 +15,10 @@
 import type { Workflow } from "@mastra/core/workflows";
 
 import {
+  dealerGeosearchWorkflow,
+  DEALER_GEOSEARCH_WORKFLOW_ID,
+} from "./dealerGeosearch.js";
+import {
   searchProfileIntakeWorkflow,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
 } from "./searchProfileIntake.js";
@@ -22,6 +26,7 @@ import {
 /** All skill workflows, keyed by id, for createMastraInstance({ workflows }). */
 export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [SEARCH_PROFILE_INTAKE_WORKFLOW_ID]: searchProfileIntakeWorkflow as unknown as Workflow,
+  [DEALER_GEOSEARCH_WORKFLOW_ID]: dealerGeosearchWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

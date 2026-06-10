@@ -489,11 +489,13 @@ describe("SSE replay-on-subscribe", () => {
 // ---------------------------------------------------------------------------
 
 describe("read-only routes", () => {
-  it("GET /api/skills → the single registered skill manifest", async () => {
+  it("GET /api/skills → the implemented-skill manifest (intake first, geosearch second)", async () => {
     const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
     const r = await s.app.inject({ method: "GET", url: "/api/skills" });
     expect(r.statusCode).toBe(200);
-    expect(r.json<Array<{ name: string }>>()[0]!.name).toBe("search_profile_intake");
+    const names = r.json<Array<{ name: string }>>().map((m) => m.name);
+    expect(names[0]).toBe("search_profile_intake");
+    expect(names).toContain("dealer_geosearch");
   });
 
   it("GET /api/mode → {active_db, data_dir} pointed at the tmp data dir", async () => {
@@ -521,5 +523,16 @@ describe("read-only routes", () => {
     });
     expect(r.statusCode).toBe(400);
     expect(r.json<{ error: { code: string } }>().error.code).toBe("content_invalid");
+  });
+
+  it("POST start with an unknown skill → 400 unknown_skill envelope", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const r = await s.app.inject({
+      method: "POST",
+      url: "/api/skill-runs",
+      payload: { skill: "no_such_skill", input_mode: "slash" },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json<{ error: { code: string } }>().error.code).toBe("unknown_skill");
   });
 });

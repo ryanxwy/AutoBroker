@@ -38,6 +38,14 @@ export const USE_CASES = [
    * Prefill only seeds the form — it never persists.
    */
   "intake_freeform_prefill",
+  /**
+   * Geosearch snapshot-fallback parsing ONLY — the dealer_geosearch happy
+   * path is zero-LLM (the in-page evaluate extractor returns typed rows
+   * directly). This useCase fires only when extraction degrades to the
+   * rendered-text snapshot: a single emit_result tool carrying the flat
+   * 12-field DealerCandidate schema; never Output.object + tools on DeepSeek.
+   */
+  "geosearch_extract",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
   /**
@@ -67,6 +75,9 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // alias — no Output.object + tools mix.
   intake_trim_verify: "deepseek.chat",
   intake_freeform_prefill: "deepseek.chat",
+  // Snapshot-fallback parsing only; single emit_result tool; never
+  // Output.object + tools on DeepSeek (supportsOutputObjectWithTools false).
+  geosearch_extract: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
   // Routes to anthropic.chat (supportsOutputObjectWithTools:true) so the harness
   // takes the NATIVE output_object strategy. Swapping to "openai.chat" is a

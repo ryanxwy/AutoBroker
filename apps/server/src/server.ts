@@ -1,6 +1,6 @@
 /**
- * server — assemble the Fastify v5 app: boot recovery → pubsub + intake service →
- * routes → the unified error envelope + 404 handler. Exposes buildServer() for
+ * server — assemble the Fastify v5 app: boot recovery → pubsub + skill-run
+ * service → routes → the unified error envelope + 404 handler. Exposes buildServer() for
  * in-process tests (fastify.inject / listen on an ephemeral port) and the listen
  * entrypoint in index.ts.
  *
@@ -21,10 +21,16 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 
 import { boot, type BootResult } from "./boot.js";
+import { browserEmitterFor } from "./browserEvents.js";
 import { RunPubSub } from "./runPubSub.js";
-import { IntakeRunService } from "./intakeRuns.js";
+import { SkillRunService } from "./skillRuns.js";
 import { SessionService } from "./sessions.js";
-import { DuplicateRunIdError, RailSessionStore, createRailMemory } from "@autobroker/workflows";
+import {
+  DuplicateRunIdError,
+  RailSessionStore,
+  createRailMemory,
+  setGeosearchBrowserEmitterFactory,
+} from "@autobroker/workflows";
 import { registerRoutes, RouteError } from "./routes.js";
 import { resolveStaticServing, registerStaticPlugin, sendSpaFallback } from "./static.js";
 
@@ -32,7 +38,7 @@ import { resolveStaticServing, registerStaticPlugin, sendSpaFallback } from "./s
 export interface BuiltServer {
   app: FastifyInstance;
   pubsub: RunPubSub;
-  intake: IntakeRunService;
+  skillRuns: SkillRunService;
   sessions: SessionService;
   recovery: BootResult["recovery"];
 }
@@ -63,7 +69,14 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   const { mastra, recovery } = await boot({ quiet: opts.quiet ?? false });
 
   const pubsub = new RunPubSub();
-  const intake = new IntakeRunService(mastra, pubsub);
+  const skillRuns = new SkillRunService(mastra, pubsub);
+
+  // Browser-skill voiced trace: hand the workflows layer the per-run SSE
+  // adapter so a geosearch run's browser session streams browser.* frames onto
+  // its own channel. Set once per built server (last build wins — one server
+  // per process in the production topology; the adapter drops events for runs
+  // with no channel rather than throwing mid-navigation).
+  setGeosearchBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
 
   // sessions = Mastra Memory threads. The rail Memory is constructed in the
   // workflows layer (createRailMemory — the ONLY @mastra/memory construction; the
@@ -76,7 +89,7 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // rows is report+leave (boot logged them); only the cleanly suspended runs are
   // re-attached for resume.
   for (const run of recovery.suspended) {
-    await intake.reattach(run.runId);
+    await skillRuns.reattach(run.runId, run.workflowId);
   }
 
   const app = Fastify({
@@ -86,7 +99,7 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
     logger: false,
   });
 
-  registerRoutes(app, { intake, pubsub, sessions });
+  registerRoutes(app, { skillRuns, pubsub, sessions });
 
   // Single-port prod serving: resolve apps/ui/dist serving info NOW (sync, no
   // registration) so the notFoundHandler below can close over it. The plugin
@@ -149,5 +162,5 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // Register the static plugin LAST (boots the instance — see note above).
   if (serving !== null) await registerStaticPlugin(app, serving);
 
-  return { app, pubsub, intake, sessions, recovery };
+  return { app, pubsub, skillRuns, sessions, recovery };
 }

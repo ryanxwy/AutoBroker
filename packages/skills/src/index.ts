@@ -11,6 +11,7 @@ export {
   SKILLS,
   IMPLEMENTED_SKILLS,
   INTAKE_SKILL_ID,
+  GEOSEARCH_SKILL_ID,
   getSkill,
 } from "./registry.js";
 export type {

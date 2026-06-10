@@ -88,8 +88,8 @@ export interface SseEvent {
 }
 
 /** The DEFAULT driver_kind for the init frame (two-place lock-step). The REAL
- *  per-run value is injected by the caller (IntakeRunService derives it from
- *  policy() — the provider the skill's useCases actually route to), so a
+ *  per-run value is injected by the caller (the skill's RunDescriptor derives it
+ *  from policy() — the provider the skill's useCases actually route to), so a
  *  registry-string provider swap flips the wire label in lock-step with the
  *  harness runner's expectDriverKind. GOTCHA: this must stay a no-caller default
  *  only — relying on this frozen module-level constant per run silently pins every

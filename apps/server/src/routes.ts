@@ -5,9 +5,10 @@
  * shapes exact). The error envelope is centralized in the server's
  * setErrorHandler; handlers throw typed errors.
  *
- * Intake surface: start intake, status, SSE stream, form-decision (three-phase
+ * Skill-run surface: start a run (per-skill RunDescriptor registry — unknown
+ * skill → 400 unknown_skill), status, SSE stream, form-decision (three-phase
  * claim), profiles read, skills manifest, mode. The headless start uses POST
- * /api/skill-runs directly (rather than routing intake through the rail via POST
+ * /api/skill-runs directly (rather than routing through the rail via POST
  * /sessions/{id}/turns).
  *
  * Sessions surface (sessions-as-thread projection): sessions CRUD (POST/GET/
@@ -37,27 +38,24 @@ import { getDb, resolveDataDir, readProfileRow, listProfileRows, type Db } from 
 import { IMPLEMENTED_SKILLS } from "@autobroker/skills";
 
 import {
-  IntakeRunService,
+  SkillRunService,
   FormDecisionBodySchema,
   FormDecisionError,
   UnknownRunError,
-  INTAKE_SKILL,
-  type IntakeStartInput,
-} from "./intakeRuns.js";
+} from "./skillRuns.js";
 import type { RunPubSub } from "./runPubSub.js";
 import { DuplicateRunIdError } from "@autobroker/workflows";
 import type { SessionService, IntakeScopeNotice } from "./sessions.js";
 
-/** The headless start body. skill is fixed to the one registered skill.
+/** The headless start ENVELOPE: the skill id + the session linkage. The
+ *  per-skill input fields (e.g. intake's input_mode/freeform_text/seed_fields)
+ *  ride the same body and are validated by the skill's RunDescriptor.buildInput.
  *  An optional `session_id` links the run to a rail session (thread). When the
  *  run is started from a PINNED session, the caller passes the SOURCE session id
  *  as `from_session_id` so the route forks a fresh unpinned session and the run
  *  links to the FORK, not the source. */
 const StartBodySchema = z.object({
-  skill: z.literal(INTAKE_SKILL),
-  input_mode: z.enum(["slash", "freeform"]),
-  freeform_text: z.string().nullable().optional(),
-  seed_fields: z.record(z.string(), z.unknown()).nullable().optional(),
+  skill: z.string().min(1),
   /** Link the run directly to an existing session (run↔session association). */
   session_id: z.string().nullable().optional(),
   /** The session intake was TRIGGERED from (slash/freeform). When pinned, the
@@ -106,9 +104,17 @@ export class RouteError extends Error {
 
 /** Dependencies the route module needs (the server wires these). */
 export interface RouteDeps {
-  intake: IntakeRunService;
+  skillRuns: SkillRunService;
   pubsub: RunPubSub;
   sessions: SessionService;
+}
+
+/** Map a service-layer FormDecisionError onto the route error envelope. */
+function fromFormDecisionError(err: FormDecisionError): RouteError {
+  return new RouteError(err.code, err.status, err.message, {
+    ...(err.field !== undefined ? { field: err.field } : {}),
+    ...(err.extra !== undefined ? { extra: err.extra } : {}),
+  });
 }
 
 /** The skill manifest list — projected from the implemented registry entries.
@@ -152,16 +158,27 @@ function withDb<T>(fn: (db: Db) => T): T {
  * Register all routes on the Fastify instance under /api.
  */
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { intake, pubsub, sessions } = deps;
+  const { skillRuns, pubsub, sessions } = deps;
 
-  // ---- POST /api/skill-runs — start intake (headless or rail-linked) -------
+  // ---- POST /api/skill-runs — start a skill run (headless or rail-linked) ---
   app.post("/api/skill-runs", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = parseBody(StartBodySchema, req.body);
-    const input: IntakeStartInput = {
-      input_mode: body.input_mode,
-      freeform_text: body.freeform_text ?? null,
-      seed_fields: body.seed_fields ?? null,
-    };
+
+    // Per-skill registry lookup: an unknown skill id is a typed 400.
+    const descriptor = skillRuns.descriptorFor(body.skill);
+    if (descriptor === undefined) {
+      throw new RouteError("unknown_skill", 400, `unknown skill '${body.skill}'`);
+    }
+
+    // Validate + shape the per-skill input BEFORE the session fork below, so a
+    // bad body leaves no stray forked session behind.
+    let input: unknown;
+    try {
+      input = descriptor.buildInput(req.body as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof FormDecisionError) throw fromFormDecisionError(err);
+      throw err;
+    }
 
     // INTAKE FORK (intake-from-pinned fork rule): intake never inherits/sets a
     // pin. When the caller passes a `from_session_id` (the session intake was
@@ -178,7 +195,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
 
     try {
-      const { runId } = await intake.start({ input, sessionId });
+      const { runId } = await skillRuns.start({ skill: body.skill, input, sessionId });
       reply.code(201);
       // The IntakeScopeNotice rides the start response so the rail can render it
       // as the forked session's first system part (non-skippable). null when the
@@ -197,7 +214,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   // ---- GET /api/skill-runs/:id — status projection + pending suspend --------
   app.get("/api/skill-runs/:id", async (req: FastifyRequest, _reply: FastifyReply) => {
     const { id } = req.params as { id: string };
-    const summary = await intake.statusSummary(id);
+    const summary = await skillRuns.statusSummary(id);
     if (summary === null) {
       throw new RouteError("no_skill_run", 404, `no skill run ${id}`);
     }
@@ -272,7 +289,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       const { id } = req.params as { id: string };
       const body = parseBody(FormDecisionBodySchema, req.body);
       try {
-        const ack = await intake.formDecision(id, body);
+        const ack = await skillRuns.formDecision(id, body);
         reply.code(200);
         return ack;
       } catch (err) {
@@ -280,10 +297,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
           throw new RouteError("no_skill_run", 404, err.message);
         }
         if (err instanceof FormDecisionError) {
-          throw new RouteError(err.code, err.status, err.message, {
-            ...(err.field !== undefined ? { field: err.field } : {}),
-            ...(err.extra !== undefined ? { extra: err.extra } : {}),
-          });
+          throw fromFormDecisionError(err);
         }
         throw err;
       }

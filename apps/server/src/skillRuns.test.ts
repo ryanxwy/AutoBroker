@@ -1,7 +1,8 @@
 /**
- * intakeRuns unit tests — the three-phase idempotent form-decision claim state
- * machine, isolated from the real Mastra workflow + DB by a minimal fake Mastra
- * instance. The integration suite exercises the claim
+ * skillRuns unit tests — the per-skill descriptor registry plus the three-phase
+ * idempotent form-decision claim state machine (driven through the intake
+ * descriptor), isolated from the real Mastra workflow + DB by a minimal fake
+ * Mastra instance. The integration suite exercises the claim
  * through the REAL stack; these pin the claim-table transitions directly,
  * including the decision_in_flight race that an in-process inject cannot hit
  * synchronously.
@@ -15,7 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resetRuntimeGlueForTests } from "@autobroker/workflows";
 
-import { IntakeRunService, FormDecisionError } from "./intakeRuns.js";
+import { SkillRunService, FormDecisionError, RUN_DESCRIPTORS } from "./skillRuns.js";
 import { RunPubSub } from "./runPubSub.js";
 
 // startRunGuarded keeps a module-global ownership set; reset it between cases so
@@ -104,10 +105,11 @@ function validContent(): Record<string, unknown> {
 /** Build a service started to the collect suspend; returns {svc, runId, decisionId}. */
 async function startedToCollect(
   sequence: Array<Record<string, unknown>>,
-): Promise<{ svc: IntakeRunService; pubsub: RunPubSub; runId: string; decisionId: string }> {
+): Promise<{ svc: SkillRunService; pubsub: RunPubSub; runId: string; decisionId: string }> {
   const pubsub = new RunPubSub();
-  const svc = new IntakeRunService(fakeMastra(sequence), pubsub);
+  const svc = new SkillRunService(fakeMastra(sequence), pubsub);
   const { runId } = await svc.start({
+    skill: "search_profile_intake",
     input: { input_mode: "slash", freeform_text: null, seed_fields: null },
   });
   const pending = svc.pendingOf(runId);
@@ -174,8 +176,9 @@ describe("formDecision — in-flight + not-found + terminal guards", () => {
         getWorkflowRunById: async () => (started ? { status: "suspended" } : null),
       }),
     } as never;
-    const svc = new IntakeRunService(mastra, pubsub);
+    const svc = new SkillRunService(mastra, pubsub);
     const { runId } = await svc.start({
+      skill: "search_profile_intake",
       input: { input_mode: "slash", freeform_text: null, seed_fields: null },
     });
     const decisionId = svc.pendingOf(runId)!.decisionId;
@@ -228,6 +231,47 @@ describe("formDecision — in-flight + not-found + terminal guards", () => {
       decision: { action: "accept", content: validContent() },
     });
     expect(ok.action).toBe("accept");
+  });
+});
+
+describe("per-skill descriptor registry", () => {
+  it("lists the intake descriptor under its skill id", () => {
+    const d = RUN_DESCRIPTORS.find((x) => x.skillId === "search_profile_intake");
+    expect(d).toBeDefined();
+    expect(d!.workflowId).toBe("search_profile_intake");
+    expect(d!.resume).toBeDefined();
+  });
+
+  it("the dealer_geosearch descriptor is wired (input shaping, driver kind, summary, no resume)", () => {
+    const d = RUN_DESCRIPTORS.find((x) => x.skillId === "dealer_geosearch");
+    expect(d).toBeDefined();
+    expect(d!.workflowId).toBe("dealer_geosearch");
+    // No HITL suspend in the workflow → no resume member (a form-decision
+    // against a geosearch run 400s as unsupported_action in the service).
+    expect(d!.resume).toBeUndefined();
+    // driver_kind derives from policy('geosearch_extract') — deepseek default.
+    expect(d!.driverKind()).toBe("deepseek_apikey");
+    // The start-route envelope fields ride the same body — accepted + ignored.
+    expect(d!.buildInput({ skill: "dealer_geosearch", input_mode: "slash" })).toEqual({
+      search_profile_id: null,
+    });
+    expect(d!.buildInput({ search_profile_id: "abc123" })).toEqual({
+      search_profile_id: "abc123",
+    });
+    // A mistyped per-skill field is a typed 400 content_invalid.
+    expect(() => d!.buildInput({ search_profile_id: 42 })).toThrow(FormDecisionError);
+    // summaryText passes the workflow-templated summary through.
+    expect(d!.summaryText({ summary: "Registered 3 new dealer candidate(s)." })).toBe(
+      "Registered 3 new dealer candidate(s).",
+    );
+    expect(d!.summaryText(undefined)).toBe("Dealer geosearch complete.");
+  });
+
+  it("start for an unregistered skill rejects with UnknownSkillError", async () => {
+    const svc = new SkillRunService(fakeMastra([SUSPEND_COLLECT]), new RunPubSub());
+    await expect(svc.start({ skill: "no_such_skill", input: {} })).rejects.toThrow(
+      /unknown skill 'no_such_skill'/,
+    );
   });
 });
 

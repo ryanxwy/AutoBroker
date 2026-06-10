@@ -45,6 +45,9 @@ export {
 } from "./schema/auditFlag.js";
 export type { AuditFlag, AuditFlagCode, AuditSeverity } from "./schema/auditFlag.js";
 
+export { DealerCandidateSchema } from "./schema/dealerCandidate.js";
+export type { DealerCandidate } from "./schema/dealerCandidate.js";
+
 export {
   SearchProfileSchema,
   SearchProfileStatusSchema,

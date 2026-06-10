@@ -23,16 +23,15 @@
  * unpinned session (or first-launch) forks a fresh unpinned session with NO notice
  * (nothing to confuse).
  *
- * Dependency wall: app layer. Imports workflows (RailSessionStore + the intake
- * run service) — never @mastra, never the product DB.
+ * Dependency wall: app layer. Imports workflows (RailSessionStore) and skills
+ * (the intake skill id) — never @mastra, never the product DB.
  */
 
+import { INTAKE_SKILL_ID } from "@autobroker/skills";
 import {
   RailSessionStore,
   type RailSession,
 } from "@autobroker/workflows";
-
-import { INTAKE_SKILL } from "./intakeRuns.js";
 
 /** The snake_case SessionResponse wire shape. */
 export interface SessionResponse {
@@ -180,7 +179,7 @@ export class SessionService {
     // Always a FRESH unpinned session (pinnedProfileId: null) — intake creates a
     // new profile and must not inherit the old pin.
     const forked = await this.store.createSession({
-      title: `New ${INTAKE_SKILL}`,
+      title: `New ${INTAKE_SKILL_ID}`,
       pinnedProfileId: null,
     });
 

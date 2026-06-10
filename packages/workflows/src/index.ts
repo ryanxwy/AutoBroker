@@ -102,6 +102,26 @@ export {
   type TrimVerifyResult,
 } from "./intakeContracts.js";
 
+// The dealer_geosearch skill workflow (skill #2, first browser skill) — one
+// flat linear createWorkflow, 6 steps, zero suspends. Test-only deps seam +
+// the app-set per-run browser-emitter factory are exported alongside.
+export {
+  dealerGeosearchWorkflow,
+  DEALER_GEOSEARCH_WORKFLOW_ID,
+  setGeosearchBrowserEmitterFactory,
+  __setGeosearchDepsForTests,
+  __resetGeosearchDepsForTests,
+  DealerGeosearchStopError,
+  GeosearchAllViewportsFailedError,
+  GeosearchExtractSchema,
+  buildGeosearchExtractPrompt,
+  type GeosearchWorkflowDeps,
+  type GeosearchStopCode,
+  type GeosearchExtract,
+  type ViewportScanArgs,
+  type ViewportScanOutcome,
+} from "./dealerGeosearch.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {
