@@ -20,8 +20,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
-import type { IntakeScopeNotice, Mode, SkillManifest, SkillList } from "./api/wire.js";
-import { launchIntake, type LaunchMode } from "./launch.js";
+import type { IntakeScopeNotice, Mode, SkillManifest, SkillList, StartAck } from "./api/wire.js";
+import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
 import { ChatRail } from "./rail/ChatRail.js";
 import { Home } from "./routes/Home.js";
 import { NotFound } from "./routes/NotFound.js";
@@ -52,35 +52,50 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const knownSkills = skills.kind === "ok" ? skills.data.map((s) => s.name) : [INTAKE_SKILL];
 
   // ---- launch (the four intake entries + slash/freeform) -------------------
+  // Bind a StartAck to the rail: create the session (the fork's id when the
+  // server forked one), append the turns, and navigate to the run view.
+  const bindAck = (ack: StartAck, title: string, userText?: string): void => {
+    createSession(
+      ack.session_id !== null ? { sessionId: ack.session_id, title } : { title },
+    );
+    if (userText !== undefined) appendUserTurn(userText);
+    appendAssistantTurn(ack.run_id);
+    setScopeNotice(ack.scope_notice);
+    setActiveRunId(ack.run_id);
+    navigate(`/runs/${ack.run_id}`);
+  };
+
   const doLaunch = (mode: LaunchMode, userText?: string): void => {
     setLaunchError(null);
     // Always fork a fresh unpinned session from the current one.
     const fromSessionId = useChat.getState().activeSessionId;
     launchIntake(client, { mode, fromSessionId })
-      .then((ack) => {
-        // Create the rail session (the fork's id when the server forked one) and
-        // bind a fresh assistant turn to the run.
-        createSession(
-          ack.session_id !== null
-            ? { sessionId: ack.session_id, title: "New search" }
-            : { title: "New search" },
-        );
-        if (userText !== undefined) appendUserTurn(userText);
-        appendAssistantTurn(ack.run_id);
-        setScopeNotice(ack.scope_notice);
-        setActiveRunId(ack.run_id);
-        navigate(`/runs/${ack.run_id}`);
-      })
+      .then((ack) => bindAck(ack, "New search", userText))
       .catch((err: unknown) => {
         setLaunchError(err instanceof Error ? err.message : "Could not start intake.");
       });
   };
 
+  // Generic NON-intake start (slash mode, no fork — only intake forces the
+  // fresh-unpinned fork semantics). The server's RunDescriptor registry
+  // validates the skill; an unknown skill surfaces as a launch error.
+  const doLaunchSkill = (skill: string, userText?: string): void => {
+    setLaunchError(null);
+    launchSkill(client, { skill })
+      .then((ack) => bindAck(ack, `/${skill}`, userText))
+      .catch((err: unknown) => {
+        setLaunchError(err instanceof Error ? err.message : `Could not start ${skill}.`);
+      });
+  };
+
   const startIntakeFresh = (): void => doLaunch({ kind: "slash" });
-  // search_profile_intake is the only registered skill today, so every slash
-  // launch is a fresh intake (slash direct, no prefill). A later slice routes
-  // non-intake slashes to their own skills.
-  const onSlash = (skill: string): void => doLaunch({ kind: "slash" }, `/${skill}`);
+  // A ready slash for intake keeps the special launchIntake path (fresh-unpinned
+  // fork); a ready slash for ANY other skill starts THAT skill generically.
+  // Freeform stays intake-scoped (the ratified scope-notice behavior).
+  const onSlash = (skill: string): void => {
+    if (skill === INTAKE_SKILL) doLaunch({ kind: "slash" }, `/${skill}`);
+    else doLaunchSkill(skill, `/${skill}`);
+  };
   const onFreeform = (text: string): void => doLaunch({ kind: "freeform", freeformText: text }, text);
 
   // ---- refresh recovery: /runs/:id with no in-store turn -> re-bind ---------
@@ -142,7 +157,10 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               client={client}
               onStartIntake={startIntakeFresh}
               onRunSkill={(skill: SkillManifest) => {
+                // The manifest only lists implemented skills; intake keeps its
+                // special fork path, every other skill starts generically.
                 if (skill.name === INTAKE_SKILL) startIntakeFresh();
+                else doLaunchSkill(skill.name);
               }}
             />
           )}

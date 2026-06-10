@@ -32,6 +32,14 @@ export interface LaunchArgs {
   fromSessionId?: string | null;
 }
 
+/** Start a NON-intake skill run in slash mode (the generic skill-run start).
+ *  Same StartAck contract as intake, but no fork: only intake forces the
+ *  fresh-unpinned fork semantics, so no from_session_id is sent. The skill's
+ *  own RunDescriptor validates the body server-side (unknown skill → 400). */
+export async function launchSkill(client: ApiClient, args: { skill: string }): Promise<StartAck> {
+  return client.startRun({ skill: args.skill, input_mode: "slash" });
+}
+
 /** Start an intake run. Always forks a fresh unpinned session when a source
  *  session is given so a stale pin never leaks into a new search. */
 export async function launchIntake(client: ApiClient, args: LaunchArgs): Promise<StartAck> {

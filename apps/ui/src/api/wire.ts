@@ -147,11 +147,14 @@ export const StartAckSchema = z.object({
 export type StartAck = z.infer<typeof StartAckSchema>;
 
 /** The headless start body — routes.ts:55-65 (StartBodySchema). snake_case is
- *  intentional (it matches the workflow input verbatim). `from_session_id` forks
- *  a fresh unpinned session (and yields a scope_notice when the source was
+ *  intentional (it matches the workflow input verbatim). `skill` is any
+ *  registered RunDescriptor id (the server 400s unknown_skill otherwise); the
+ *  per-skill fields (input_mode/freeform_text/seed_fields are intake's) ride the
+ *  same body and are validated by the skill's buildInput. `from_session_id`
+ *  forks a fresh unpinned session (and yields a scope_notice when the source was
  *  pinned); `session_id` links to an already-unpinned rail without a fork. */
 export interface StartRunBody {
-  skill: "search_profile_intake";
+  skill: string;
   input_mode: "slash" | "freeform";
   freeform_text?: string | null;
   seed_fields?: Record<string, unknown> | null;
