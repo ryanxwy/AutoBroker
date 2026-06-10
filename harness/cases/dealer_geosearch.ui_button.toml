@@ -1,0 +1,116 @@
+# harness/cases/dealer_geosearch.ui_button.toml — the same dealer_geosearch
+# journey, but step 2 launches from the HOME LEDGER RUN BUTTON: after intake the
+# user returns to Home (browser Back) and clicks the real Run button on the
+# dealer_geosearch pipeline row (enabled once an active profile exists — the
+# pin-gate projection). This is the SECOND real user surface for starting a
+# skill. The chat-rail surfaces stay: slash is covered by ui_narrative;
+# FREEFORM routing to non-intake skills does not exist BY DESIGN (freeform is
+# intake-scoped — the ratified scope-notice behavior; there is no freeform
+# router), so this round is button-not-freeform.
+
+[meta]
+id = "dealer_geosearch_ui_button"
+archetype = "A"
+skills = ["search_profile_intake", "dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 25
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake (the journey root) --------------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — geosearch's input."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch from the Home Run button -----------------------
+
+[[steps]]
+id = "geosearch_button"
+skill = "dealer_geosearch"
+purpose = "Launch geosearch from the Home pipeline ledger's real Run button."
+gate_policy = "approve_safe"
+launch = "home_button"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

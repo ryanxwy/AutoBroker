@@ -4,6 +4,8 @@
  * row exports cost_usd; an 'unavailable' row exports cost_usd:null (NEVER 0).
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { exportDaily, serializeExport, type DailyHarnessExport } from "./export_daily.js";
@@ -74,6 +76,27 @@ describe("exportDaily", () => {
     const doc = exportDaily("2026-06-05", isolatedRunsRoot());
     expect(doc.runs).toEqual([]);
     expect(doc.date).toBe("2026-06-05");
+  });
+
+  it("folds case verdicts with the lane key, recovering 'api' when absent", () => {
+    // Two synthetic run dirs: a new ui-lane verdict and an old api-era one
+    // (no lane key) — the additive-field recovery rule.
+    const day = "2026-06-05";
+    const mk = (runDir: string, cell: string, verdict: Record<string, unknown>): void => {
+      const dir = `${isolatedRunsRoot()}/${runDir}/evidence/${cell}`;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/verdict.json`, JSON.stringify(verdict), "utf8");
+    };
+    mk(`${day}T01-00-00-000Z`, "live__a__ui", {
+      cell_id: "live/a", case_id: "case_ui", run_id: "r-ui", layer: "L2", lane: "ui", verdict: "GREEN", status: "PASS",
+    });
+    mk(`${day}T02-00-00-000Z`, "live__a__api", {
+      cell_id: "live/a", case_id: "case_api", run_id: "r-api", layer: "L2", verdict: "GREEN", status: "PASS",
+    });
+    const doc = exportDaily(day, isolatedRunsRoot());
+    const byCase = new Map(doc.cases.map((c) => [c.case_id, c]));
+    expect(byCase.get("case_ui")?.lane).toBe("ui");
+    expect(byCase.get("case_api")?.lane).toBe("api");
   });
 
   it("serializes deterministically with a trailing newline", () => {

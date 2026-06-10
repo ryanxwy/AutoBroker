@@ -47,6 +47,9 @@ const RawAnchorSchema = z.object({
   action: z.string().optional(),
   gate_before_prose: z.boolean().optional(),
   allow_fake_outbound: z.boolean().optional(),
+  /** cost_and_time only: the step's happy path is ZERO-LLM by design, so an
+   *  empty ledger is a valid recorded outcome (not RED). */
+  optional: z.boolean().optional(),
 });
 type RawAnchor = z.infer<typeof RawAnchorSchema>;
 
@@ -66,11 +69,16 @@ export type RawResume = z.infer<typeof RawResumeSchema>;
 /** The structural resume keys that are NOT part of the typed-resume content. */
 const RESUME_STRUCTURAL_KEYS = new Set(["on", "action", "content_from", "content"]);
 
+/** How the UI lane starts a step: chat-rail slash text, chat-rail freeform
+ *  prose, or the Home ledger Run button. Defaults from narrative.input_mode. */
+const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "home_button"]);
+
 const RawStepSchema = z.object({
   id: z.string(),
   skill: z.string(),
   purpose: z.string().optional(),
   gate_policy: z.enum(["approve_safe", "deny_all"]).optional(),
+  launch: LaunchSchema.optional(),
   input_inline: z.record(z.string(), z.unknown()).optional(),
   resume: z.array(RawResumeSchema).optional(),
   anchors: z.array(RawAnchorSchema),
@@ -87,6 +95,9 @@ const RawCaseSchema = z.object({
     session_origin: z.enum(["fresh_unpinned", "reuse_pinned"]),
     input_mode: InputModeSchema,
     provider: ProviderSchema,
+    /** Which user-action driver runs the case: "ui" = real dashboard DOM via
+     *  Playwright; "api" (default) = direct HTTP. The runner --lane overrides. */
+    lane: z.enum(["ui", "api"]).optional(),
     profile: z.record(z.string(), z.unknown()).optional(),
   }),
   steps: z.array(RawStepSchema).min(1),
@@ -103,11 +114,16 @@ export interface CaseResume {
   content: Record<string, unknown> | null;
 }
 
+/** The UI-lane launch surface for a step. */
+export type StepLaunch = "chat_slash" | "chat_freeform" | "home_button";
+
 export interface CaseStep {
   id: string;
   skill: string;
   purpose: string | null;
   gatePolicy: "approve_safe" | "deny_all";
+  /** UI-lane start surface (explicit, or derived from narrative.input_mode). */
+  launch: StepLaunch;
   inputInline: Record<string, unknown> | null;
   resume: CaseResume[];
   anchors: AnchorSpec[];
@@ -121,6 +137,8 @@ export interface Case {
   sessionOrigin: "fresh_unpinned" | "reuse_pinned";
   inputMode: "slash" | "freeform";
   provider: "deepseek" | "anthropic" | "openai";
+  /** The case-declared driver lane (runner --lane overrides; default "api"). */
+  lane: "ui" | "api";
   profile: Record<string, unknown> | null;
   steps: CaseStep[];
 }
@@ -176,7 +194,9 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
     case "no_external_mutation":
       return { kind: "no_external_mutation", ...(raw.allow_fake_outbound !== undefined ? { allowFakeOutbound: raw.allow_fake_outbound } : {}) };
     case "cost_and_time":
-      return { kind: "cost_and_time" };
+      // optional=true declares a step whose happy path is ZERO-LLM by design:
+      // an empty ledger then scores as the valid "no model call" outcome.
+      return { kind: "cost_and_time", ...(raw.optional !== undefined ? { optional: raw.optional } : {}) };
     case "malformed_tool_call": {
       const expect = raw.expect;
       if (expect !== "absent" && expect !== "fail_closed") {
@@ -221,6 +241,7 @@ export function toCase(raw: TomlTable): Case {
     skill: s.skill,
     purpose: s.purpose ?? null,
     gatePolicy: s.gate_policy ?? "approve_safe",
+    launch: s.launch ?? (parsed.narrative.input_mode === "freeform" ? "chat_freeform" : "chat_slash"),
     inputInline: s.input_inline ?? null,
     resume: (s.resume ?? []).map((r) => {
       const action = coerceAction(r.action);
@@ -249,6 +270,7 @@ export function toCase(raw: TomlTable): Case {
     sessionOrigin: parsed.narrative.session_origin,
     inputMode: parsed.narrative.input_mode,
     provider: parsed.narrative.provider,
+    lane: parsed.narrative.lane ?? "api",
     profile,
     steps,
   };

@@ -2,7 +2,7 @@
   "name": "@autobroker/harness",
   "version": "0.0.0",
   "private": true,
-  "description": "AutoBroker live-LLM harness — the runnable implementation of the harness-standard (runner CLI, case TOML, 6+1 anchor evaluator, verdict.json, Approver gate poller, isolation preflight, test_run_records daily export). Black-box-drives the SUT over HTTP/SSE; reads the product DB READ-ONLY through @autobroker/db (the only permitted S3 channel); NEVER writes the DB and NEVER calls a provider directly (the SUT owns every side effect). dependency-cruiser isolates this package from better-sqlite3/drizzle-orm/playwright/@ai-sdk — respect that wall.",
+  "description": "AutoBroker live-LLM harness — the runnable implementation of the harness-standard (runner CLI, case TOML, 6+1 anchor evaluator, verdict.json, Approver gate poller, isolation preflight, test_run_records daily export). Black-box-drives the SUT over HTTP/SSE (api lane) or through the REAL built dashboard DOM (ui lane — uiDriver.ts is the one sanctioned playwright import: the TEST browser, never the product's browser service); reads the product DB READ-ONLY through @autobroker/db (the only permitted S3 channel); NEVER writes the DB and NEVER calls a provider directly (the SUT owns every side effect). dependency-cruiser isolates the rest of this package from better-sqlite3/drizzle-orm/playwright/@ai-sdk — respect that wall.",
   "type": "module",
   "scripts": {
     "harness": "node --import tsx/esm ./runner.ts",
@@ -20,6 +20,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "playwright": "^1.60.0",
     "tsx": "^4.22.0",
     "typescript": "^5.6.0",
     "vitest": "^4.0.0"

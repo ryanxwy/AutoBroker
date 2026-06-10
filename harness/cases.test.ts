@@ -143,6 +143,51 @@ describe("case loader", () => {
     expect(mf).toMatchObject({ kind: "malformed_tool_call", expect: "fail_closed" });
   });
 
+  it("defaults lane to api and launch to the input_mode-derived surface", () => {
+    const c = loadCase(join(CASES, "search_profile_intake.slash.toml"));
+    expect(c.lane).toBe("api");
+    expect(c.steps[0]!.launch).toBe("chat_slash");
+    const f = loadCase(join(CASES, "search_profile_intake.freeform.toml"));
+    expect(f.steps[0]!.launch).toBe("chat_freeform");
+  });
+
+  it("loads the UI-lane intake cases (lane=ui; launch surfaces)", () => {
+    const s = loadCase(join(CASES, "search_profile_intake.ui_slash.toml"));
+    expect(s.lane).toBe("ui");
+    expect(s.steps[0]!.launch).toBe("chat_slash");
+    const f = loadCase(join(CASES, "search_profile_intake.ui_freeform.toml"));
+    expect(f.lane).toBe("ui");
+    expect(f.steps[0]!.launch).toBe("chat_freeform");
+    const d = loadCase(join(CASES, "search_profile_intake.ui_decline.toml"));
+    expect(d.lane).toBe("ui");
+    expect(d.steps[0]!.resume[0]!.action).toBe("decline");
+  });
+
+  it("loads the geosearch ui_narrative case (two steps; profile_dealers anchor; optional cost)", () => {
+    const c = loadCase(join(CASES, "dealer_geosearch.ui_narrative.toml"));
+    expect(c.lane).toBe("ui");
+    expect(c.steps).toHaveLength(2);
+    expect(c.steps[0]!.skill).toBe("search_profile_intake");
+    const geo = c.steps[1]!;
+    expect(geo.skill).toBe("dealer_geosearch");
+    expect(geo.launch).toBe("chat_slash");
+    expect(geo.resume).toHaveLength(0); // no-suspend skill — nothing to resume.
+    expect(geo.anchors.find((a) => a.kind === "browser_activity")).toBeDefined();
+    expect(geo.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
+      table: "profile_dealers",
+      scope: "profile",
+      deltaMin: 1,
+    });
+    expect(geo.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
+    expect(cellIdFor(c, geo)).toBe("live/dealer_geosearch/deepseek/A/slash");
+  });
+
+  it("loads the geosearch ui_button case (step 2 launches from the Home Run button)", () => {
+    const c = loadCase(join(CASES, "dealer_geosearch.ui_button.toml"));
+    expect(c.steps[1]!.launch).toBe("home_button");
+    expect(c.steps[1]!.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
+  });
+
   it("fails LOUD on an unknown anchor kind (a typo never silently skips a check)", () => {
     const src = `
       [meta]

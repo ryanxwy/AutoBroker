@@ -1,0 +1,43 @@
+# harness/cases/search_profile_intake.ui_decline.toml — the decline case
+# re-expressed UI-LANE: the user launches intake via the real chat rail, the
+# form renders, and the user clicks the REAL Cancel button → terminal
+# `declined`, ZERO writes. Same anchors as the API twin
+# (search_profile_intake.decline.toml) + the DOM ui_checks (form rendered,
+# gate-zone order, the "Cancelled — nothing was saved" terminal line).
+
+[meta]
+id = "search_profile_intake_ui_decline"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "intake_decline"
+skill = "search_profile_intake"
+purpose = "Decline at the real form's Cancel button — zero writes, declined terminal."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"

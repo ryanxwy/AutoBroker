@@ -88,8 +88,14 @@ module.exports = {
       name: "side-effect-clients-only-in-tools",
       severity: "error",
       comment:
-        "Playwright/Gmail clients are side-effect surfaces; only tools owns them.",
-      from: { path: "^(packages/(core|model|workflows|db|skills)|apps|harness)/" },
+        "Playwright/Gmail clients are side-effect surfaces; only tools owns them. " +
+        "One sanctioned exception: harness/uiDriver.ts launches the TEST browser " +
+        "for the UI lane (dashboard-DOM user-action driver) — test infrastructure " +
+        "like apps/ui/e2e, distinct from the product's browser service in tools.",
+      from: {
+        path: "^(packages/(core|model|workflows|db|skills)|apps|harness)/",
+        pathNot: "^harness/uiDriver\\.ts$",
+      },
       to: { path: "node_modules/(playwright|@googleapis|google-auth-library)/" },
     },
     // ---- core stays framework-free entirely --------------------------------

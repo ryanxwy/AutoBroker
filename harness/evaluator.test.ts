@@ -170,6 +170,18 @@ describe("cost_and_time anchor (ledger rows; NULL-not-$0)", () => {
     const r = evalAnchor({ kind: "cost_and_time" }, detailDone("p-1", "r-absent"), tmp.db, ctxFor("p-1"));
     expect(r.ok).toBe(false);
   });
+
+  it("optional=true: an empty ledger PASSES (zero-LLM happy path declared)", () => {
+    const r = evalAnchor({ kind: "cost_and_time", optional: true }, detailDone("p-1", "r-absent"), tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(true);
+    expect(r.observed).toBe(0);
+  });
+
+  it("optional=true still rejects a silent-$0 row when rows DO exist", () => {
+    insertLedgerRow(tmp.db, { runId: "r-zero", costUsd: 0, pricingSource: "unavailable" });
+    const r = evalAnchor({ kind: "cost_and_time", optional: true }, detailDone("p-1", "r-zero"), tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe("approval_gate anchor (gate-before-prose)", () => {
@@ -264,6 +276,54 @@ describe("four-tier verdict", () => {
     });
     expect(v.verdict).toBe("GREEN_WITH_WAIVER");
     expect(v.waived_anchor?.kind).toBe("browser_activity");
+  });
+
+  it("lane defaults to api and records ui when passed (additive field)", () => {
+    const def = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [okAnchor("run_status")], uiChecks: [okUi], crossCheck: cc });
+    expect(def.lane).toBe("api");
+    const ui = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", lane: "ui", runId: "r", anchors: [okAnchor("run_status")], uiChecks: [okUi], crossCheck: cc });
+    expect(ui.lane).toBe("ui");
+  });
+
+  it("a table_min_rows failure is waivable ONLY by an explicit table_min_rows waiver", () => {
+    // The targeted empty-real-world-result waiver (Maps yields zero candidates).
+    const explicit = buildVerdict({
+      cellId: "c",
+      caseId: "case",
+      layer: "L2",
+      runId: "r",
+      anchors: [okAnchor("run_status"), okAnchor("no_external_mutation"), failAnchor("table_min_rows")],
+      uiChecks: [okUi],
+      crossCheck: cc,
+      waiver: { kind: "table_min_rows", reason: "Maps yielded zero dealer candidates in radius" },
+    });
+    expect(explicit.verdict).toBe("GREEN_WITH_WAIVER");
+    // A generic waiver naming a DIFFERENT kind still cannot cover it.
+    const generic = buildVerdict({
+      cellId: "c",
+      caseId: "case",
+      layer: "L2",
+      runId: "r",
+      anchors: [failAnchor("table_min_rows")],
+      uiChecks: [okUi],
+      crossCheck: cc,
+      waiver: { kind: "browser_activity", reason: "unrelated" },
+    });
+    expect(generic.verdict).toBe("RED");
+  });
+
+  it("the keystone stays non-waivable even with an explicit waiver", () => {
+    const v = buildVerdict({
+      cellId: "c",
+      caseId: "case",
+      layer: "L2",
+      runId: "r",
+      anchors: [failAnchor("no_external_mutation")],
+      uiChecks: [okUi],
+      crossCheck: cc,
+      waiver: { kind: "no_external_mutation", reason: "never" },
+    });
+    expect(v.verdict).toBe("BLOCKER");
   });
 
   it("confidence=low (S1/S2/S3 contradiction) → RED even with anchors ok", () => {

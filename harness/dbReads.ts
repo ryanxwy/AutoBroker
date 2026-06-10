@@ -25,8 +25,10 @@
 
 import { openDb, type Db } from "@autobroker/db";
 
-/** The product tables the anchors snapshot/scan. */
-export const SNAPSHOT_TABLES = ["search_profiles", "audit_log", "lead_submissions"] as const;
+/** The product tables the anchors snapshot/scan. profile_dealers is the
+ *  dealer_geosearch write target (PK (search_profile_id, dealer_id) — the
+ *  search_profile_id column scopes it like the others). */
+export const SNAPSHOT_TABLES = ["search_profiles", "audit_log", "lead_submissions", "profile_dealers"] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
 /** Profile-scoped + global counts captured at step boundaries (before/after). */

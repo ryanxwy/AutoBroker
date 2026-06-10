@@ -25,12 +25,14 @@
  * the host's openDb resolves the isolated file and GET /api/mode reports it.
  *
  * Dependency wall: harness layer. Imports the harness modules + @autobroker/core
- * (driver-kind type) — NEVER better-sqlite3/drizzle/playwright/@ai-sdk. The DB
+ * (driver-kind type) — NEVER better-sqlite3/drizzle/@ai-sdk, and playwright ONLY
+ * through uiDriver.ts (the UI lane's TEST browser; the product browser stays in
+ * packages/tools). The DB
  * reads go through dbReads (the read-only @autobroker/db channel).
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -45,11 +47,13 @@ import {
   type AnchorResult,
   type CrossCheck,
   type EvalContext,
+  type UiCheck,
   type VerdictDoc,
 } from "./evaluator.js";
 import { snapshotCounts, openReadHandle, type TableCounts } from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
+import { UiDriver } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_HOST = join(HERE, "serverHost.ts");
@@ -66,6 +70,10 @@ export interface RunnerOpts {
   step: string | null;
   provider: "deepseek" | "anthropic" | "openai";
   inputMode: "slash" | "freeform" | null;
+  /** The user-action driver lane: "ui" drives the REAL dashboard DOM through
+   *  Playwright; "api" (default) drives the HTTP surface. null = take the
+   *  case's [narrative] lane (which itself defaults to "api"). */
+  lane: "ui" | "api" | null;
   apiBase: string | null;
   db: string;
   evidenceRoot: string;
@@ -107,6 +115,11 @@ function parseArgs(argv: string[]): RunnerOpts {
   const evidenceRoot = flags.get("evidence-root") ?? join(runRoot, "evidence");
   const provider = (flags.get("provider") ?? "deepseek") as RunnerOpts["provider"];
 
+  const lane = flags.get("lane") ?? null;
+  if (lane !== null && lane !== "ui" && lane !== "api") {
+    fail(`--lane must be "ui" or "api", got "${lane}"`);
+  }
+
   return {
     command,
     casePath: flags.get("case") ?? null,
@@ -114,6 +127,7 @@ function parseArgs(argv: string[]): RunnerOpts {
     step: flags.get("step") ?? null,
     provider,
     inputMode: (flags.get("input-mode") as RunnerOpts["inputMode"]) ?? null,
+    lane,
     apiBase: flags.get("api-base") ?? null,
     db: resolve(expandTilde(db)),
     evidenceRoot: resolve(expandTilde(evidenceRoot)),
@@ -384,6 +398,12 @@ async function evaluateStep(args: {
   after: TableCounts;
   profileId: string | null;
   layer: string;
+  /** The driver lane recorded on the verdict (default "api"). */
+  lane?: "ui" | "api";
+  /** Real DOM-derived ui_checks (UI lane) — recorded ALONGSIDE the S2 re-pull. */
+  domChecks?: UiCheck[];
+  /** A real-world unreachable-bit waiver (e.g. Maps yielded zero candidates). */
+  waiver?: { kind: string; reason: string } | null;
 }): Promise<VerdictDoc> {
   const { apiBase, c, step, runId, detail, before, after, profileId, layer } = args;
   const ctx: EvalContext = {
@@ -433,9 +453,11 @@ async function evaluateStep(args: {
 
   // The S2 re-pull IS a ui_check in the ratified self-contained L2 mode
   // (STANDARD §5): the Monitor surface is the read API, refresh-confirmed.
-  // Recording it keeps ui_checks non-vacuous at live layers; dashboard-DOM
-  // checks via the five-role Monitor join at L3.
+  // Recording it keeps ui_checks non-vacuous at live layers. On the UI lane the
+  // caller ALSO passes real dashboard-DOM checks (domChecks), which are
+  // prepended so the verdict carries both surfaces.
   const uiChecks = [
+    ...(args.domChecks ?? []),
     profileId !== null
       ? {
           surface: `api:/api/profiles/${profileId}`,
@@ -457,10 +479,12 @@ async function evaluateStep(args: {
     cellId: cellIdFor(c, step),
     caseId: c.id,
     layer,
+    lane: args.lane ?? "api",
     runId,
     anchors,
     uiChecks,
     crossCheck,
+    ...(args.waiver !== undefined && args.waiver !== null ? { waiver: args.waiver } : {}),
   });
 }
 
@@ -486,6 +510,13 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
   assertEnvEnvelope({ provider: opts.provider, db: opts.db });
 
   const c = loadCase(resolveCasePath(opts));
+
+  // Lane dispatch: --lane overrides the case's [narrative] lane (default api).
+  // The UI lane runs EVERY step of the case in one browser session (the
+  // non-tech-user journey); the API lane keeps its single-step contract.
+  const lane: "ui" | "api" = opts.lane ?? c.lane;
+  if (lane === "ui") return cmdUiCase(opts, c);
+
   const step = opts.step ? c.steps.find((s) => s.id === opts.step) ?? fail(`no step "${opts.step}" in case`) : c.steps[0]!;
   const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
 
@@ -558,6 +589,248 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     console.log(JSON.stringify({ harness: "intake", verdict: verdict.verdict, status: verdict.status, cell: verdict.cell_id, evidence: dir }));
     exitCode = verdict.verdict === "GREEN" || verdict.verdict === "GREEN_WITH_WAIVER" ? 0 : 1;
   } finally {
+    await host.stop();
+  }
+  return exitCode;
+}
+
+// ---------------------------------------------------------------------------
+// the UI lane — drive the REAL dashboard DOM (Playwright test browser)
+// ---------------------------------------------------------------------------
+
+const INTAKE_SKILL = "search_profile_intake";
+
+/** Newest mtime (ms) under a directory tree (UI dist staleness probe). */
+function newestMtimeUnder(dir: string): number {
+  let newest = 0;
+  if (!existsSync(dir)) return newest;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      newest = Math.max(newest, newestMtimeUnder(p));
+    } else {
+      newest = Math.max(newest, statSync(p).mtimeMs);
+    }
+  }
+  return newest;
+}
+
+/** The built SPA the server host auto-serves. Builds it when missing or stale
+ *  (any apps/ui source newer than dist/index.html). */
+function ensureUiDist(): void {
+  const repoRoot = join(HERE, "..");
+  const uiDir = join(repoRoot, "apps", "ui");
+  const indexPath = join(uiDir, "dist", "index.html");
+  const srcNewest = Math.max(
+    newestMtimeUnder(join(uiDir, "src")),
+    existsSync(join(uiDir, "index.html")) ? statSync(join(uiDir, "index.html")).mtimeMs : 0,
+  );
+  if (existsSync(indexPath) && statSync(indexPath).mtimeMs >= srcNewest) return;
+  console.error("[ui-lane] apps/ui/dist missing or stale — building…");
+  execFileSync("pnpm", ["--filter", "@autobroker/ui", "build"], { cwd: repoRoot, stdio: "inherit" });
+  if (!existsSync(indexPath)) fail("UI build produced no apps/ui/dist/index.html");
+}
+
+/** GET / must return the real app shell (the SPA root div), proving the server
+ *  host is serving the built dashboard the driver is about to click through. */
+async function assertAppShellServed(apiBase: string): Promise<void> {
+  const res = await fetch(`${apiBase}/`, { method: "GET" });
+  const body = res.ok ? await res.text() : "";
+  if (!res.ok || !body.includes('<div id="root">')) {
+    fail(`GET / did not return the app shell (HTTP ${res.status}) — is apps/ui/dist being served?`);
+  }
+}
+
+/** Drive one step's resume[] script as REAL DOM actions, capturing the
+ *  DOM-derived ui_checks at the right moments. maxMs bounds the suspend-surface
+ *  waits (a freeform launch runs the prefill LLM call BEFORE the form renders). */
+async function driveResumeScriptDom(driver: UiDriver, step: CaseStep, maxMs: number): Promise<void> {
+  for (const resume of step.resume) {
+    if (resume.on === "data_collection") {
+      await driver.waitForIntakeForm(maxMs);
+      await driver.checkFormRenderedBeforeProse();
+      await driver.checkGateBeforeProse();
+      // The freeform launch must show a SEEDED form (any prefilled field —
+      // values are LLM-nondeterministic) BEFORE the driver touches it.
+      if (step.launch === "chat_freeform") await driver.checkFormSeeded();
+      if (resume.action === "accept") {
+        await driver.fillRenderedForm(resume.content ?? {});
+        await driver.screenshot("form-filled");
+        await driver.clickSubmit();
+      } else {
+        await driver.clickDecline();
+      }
+    } else if (resume.on === "force_override") {
+      await driver.waitForForceOverrideGate(maxMs);
+      await driver.checkGateBeforeProse();
+      if (resume.action === "accept") {
+        const reason = String((resume.content ?? {})["reason"] ?? "confirmed by user");
+        await driver.clickForceOverrideConfirm(reason);
+      } else {
+        await driver.clickForceOverrideDecline();
+      }
+    } else {
+      // No DOM verb mapped for this suspend kind yet — fail LOUD rather than
+      // silently falling back to an API resume (the UI lane never POSTs).
+      throw new Error(`ui lane: no DOM action for suspend kind "${resume.on}"`);
+    }
+  }
+}
+
+/** The empty-result waiver signal: the geosearch confirm summary is a
+ *  deterministic zero-LLM template; "0 dealer(s) discovered" + browser activity
+ *  means Maps really yielded nothing in radius (nothing to upsert). */
+function geosearchEmptyResultWaiver(
+  summaryText: string,
+  detail: RunDetail,
+): { kind: string; reason: string } | null {
+  const m = /(\d+) dealer\(s\) discovered/.exec(summaryText);
+  if (m === null || Number(m[1]) !== 0) return null;
+  if (!detail.sawBrowserActivity) return null;
+  return {
+    kind: "table_min_rows",
+    reason:
+      "Maps yielded zero dealer candidates in radius (browser activity present; " +
+      "empty real-world result — nothing to write into profile_dealers)",
+  };
+}
+
+/**
+ * The UI-lane case runner: ONE server host + ONE driver browser session for the
+ * WHOLE case (the non-tech-user journey), every step started by a REAL user
+ * action (chat-rail slash/freeform text or the Home Run button — never POST
+ * /api/skill-runs) and resumed by REAL clicks. Per step it keeps the API lane's
+ * full evidence spine: snapshot-before → drive → SSE drain (read-only evidence)
+ * → snapshot-after → 6+1 anchors → S1/S2/S3 cross-check → verdict.json, with
+ * the verdict's ui_checks now carrying the real DOM checks too.
+ */
+async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
+  ensureUiDist();
+
+  // Pin the harness's own in-process DB reads to the throwaway --db (same
+  // rationale as the API lane, gate ①b).
+  process.env["AUTOBROKER_DB"] = opts.db;
+
+  const host = await startServerHost(opts);
+  let driver: UiDriver | null = null;
+  let exitCode = 0;
+  try {
+    // Gates ⑥ + ⑦ + the served-shell check, all BEFORE any scoring.
+    await assertServerActiveDbMatches({ provider: opts.provider, db: opts.db, apiBase: host.apiBase });
+    const expectDriverKind = PROVIDER_DRIVER_KIND[c.provider] ?? fail(`no driver_kind label for provider ${c.provider}`);
+    for (const step of c.steps) {
+      const anchorExpect = step.anchors.find((a) => a.kind === "driver_kind")?.expect;
+      if (anchorExpect !== undefined && anchorExpect !== expectDriverKind) {
+        fail(
+          `case anchor driver_kind expect="${anchorExpect}" disagrees with the provider-derived label "${expectDriverKind}" — fix the case TOML`,
+        );
+      }
+    }
+    await assertDriverKindLockStep(host.apiBase, expectDriverKind);
+    await assertAppShellServed(host.apiBase);
+
+    if (opts.dryRun) {
+      console.log(JSON.stringify({ harness: "dry-run", ok: true, lane: "ui", case: c.id, apiBase: host.apiBase }));
+      return 0;
+    }
+
+    driver = await UiDriver.launch({
+      baseUrl: host.apiBase,
+      screenshotDir: join(opts.evidenceRoot, "ui-shell"),
+    });
+
+    // The profile the journey creates (intake step) scopes every later step's
+    // before/after snapshots — carried across steps.
+    let carriedProfileId: string | null = null;
+    let prevRunId: string | null = null;
+    const results: Array<{ cell: string; verdict: string }> = [];
+
+    const stepMaxMs = opts.maxSeconds * 1000;
+    for (const step of c.steps) {
+      const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
+      const cellDir = cellIdFor(c, step).replace(/\//g, "__");
+      driver.beginStep(join(opts.evidenceRoot, cellDir, "screenshots"));
+
+      const before = snapshotCounts(carriedProfileId);
+      const beforeIds = await readProfileIds(host.apiBase);
+
+      // ---- start the run BY USER ACTION -----------------------------------
+      if (step.launch === "home_button") {
+        await driver.clickHomeRunSkill(step.skill);
+      } else if (step.launch === "chat_freeform") {
+        const prompt = step.inputInline?.["prompt"];
+        if (typeof prompt !== "string" || prompt.trim() === "") {
+          fail(`case step "${step.id}" launches chat_freeform but has no input_inline.prompt`);
+        }
+        await driver.typeInChatRail(prompt);
+      } else {
+        await driver.typeInChatRail(`/${step.skill}`);
+      }
+      // A freeform start runs the prefill LLM call BEFORE the ack/navigation,
+      // so the route wait gets the full step budget.
+      const runId = await driver.waitForRunRoute(prevRunId, stepMaxMs);
+      prevRunId = runId;
+      await driver.checkRunViewBound(runId);
+
+      // Background gate poller (standby parity with the API lane; read-only
+      // for these skills — no approval surface exists).
+      const poller = startPoller(host.apiBase, runId, gatePolicy, { maxMs: stepMaxMs });
+
+      // ---- drive the resume script as DOM actions, then await the terminal -
+      await driveResumeScriptDom(driver, step, stepMaxMs);
+      const uiTerminal = await driver.waitForTerminal(stepMaxMs);
+      await driver.checkTerminalSummaryVisible(uiTerminal);
+      poller.stop();
+
+      // ---- evidence spine (identical to the API lane) ----------------------
+      const detail = await buildRunDetail(host.apiBase, runId);
+      if (step.skill === INTAKE_SKILL) {
+        const created = await resolveNewProfileId(host.apiBase, beforeIds);
+        if (created !== null) carriedProfileId = created;
+      }
+      const profileId = step.skill === INTAKE_SKILL && uiTerminal !== "done" ? null : carriedProfileId;
+      const after = snapshotCounts(profileId);
+
+      let waiver: { kind: string; reason: string } | null = null;
+      if (step.skill === "dealer_geosearch" && uiTerminal === "done") {
+        waiver = geosearchEmptyResultWaiver(await driver.terminalSummaryText(), detail);
+      }
+
+      const verdict = await evaluateStep({
+        apiBase: host.apiBase,
+        c,
+        step,
+        runId,
+        detail,
+        before,
+        after,
+        profileId,
+        layer: opts.layer,
+        lane: "ui",
+        domChecks: [...driver.checks],
+        waiver,
+      });
+      const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, {
+        "verdict.json": verdict,
+        "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, lane: "ui", launch: step.launch, profileId },
+        "run.json": { runId, terminalStatus: detail.terminalStatus, driverKind: detail.driverKind, events: detail.events.length, uiTerminal },
+        "transcript.json": detail.events,
+        "db-before.json": before,
+        "db-after.json": after,
+      });
+      console.log(
+        JSON.stringify({ harness: "ui", step: step.id, verdict: verdict.verdict, status: verdict.status, cell: verdict.cell_id, evidence: dir }),
+      );
+      results.push({ cell: verdict.cell_id, verdict: verdict.verdict });
+      if (verdict.verdict !== "GREEN" && verdict.verdict !== "GREEN_WITH_WAIVER") {
+        exitCode = 1;
+        break; // a RED step ends the journey — later steps depend on it.
+      }
+    }
+
+    console.log(JSON.stringify({ harness: "ui-case", case: c.id, results, ok: exitCode === 0 }));
+  } finally {
+    if (driver !== null) await driver.close();
     await host.stop();
   }
   return exitCode;

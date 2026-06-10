@@ -65,7 +65,14 @@ export type AnchorSpec =
       action?: string;
     }
   | { kind: "no_external_mutation"; allowFakeOutbound?: boolean }
-  | { kind: "cost_and_time" }
+  | {
+      kind: "cost_and_time";
+      /** The step's happy path is ZERO-LLM by design (e.g. geosearch's
+       *  evaluate-extract path): an empty ledger is then the valid "no model
+       *  call happened" outcome, not RED. Rows that DO exist are still held to
+       *  NULL-not-$0. */
+      optional?: boolean;
+    }
   | { kind: "malformed_tool_call"; expect: "absent" | "fail_closed" };
 
 export interface AnchorResult {
@@ -149,7 +156,7 @@ export function evalAnchor(
     }
 
     case "cost_and_time": {
-      return evalCostAndTime(detail, db);
+      return evalCostAndTime(spec, detail, db);
     }
 
     case "malformed_tool_call": {
@@ -272,9 +279,24 @@ function evalNoExternalMutation(
 // cost_and_time — ledger rows for runId; NULL-not-$0 honored
 // ---------------------------------------------------------------------------
 
-function evalCostAndTime(detail: RunDetail, db: Db): AnchorResult {
+function evalCostAndTime(
+  spec: Extract<AnchorSpec, { kind: "cost_and_time" }>,
+  detail: RunDetail,
+  db: Db,
+): AnchorResult {
   const rows = readLedgerRowsForRun(db, detail.runId);
   if (rows.length === 0) {
+    // optional=true: the case declared a zero-LLM happy path — an empty ledger
+    // is the honest "no model call happened" record, not a missing-usage RED.
+    if (spec.optional === true) {
+      return {
+        kind: "cost_and_time",
+        ok: true,
+        expected: "ledger rows optional (zero-LLM happy path declared)",
+        observed: 0,
+        detail: "no model call happened (no ledger row; valid for this step)",
+      };
+    }
     return {
       kind: "cost_and_time",
       ok: false,
@@ -379,6 +401,10 @@ export interface VerdictDoc {
    *  (e.g. decline vs force_override both run skill/provider/B/slash). */
   case_id: string;
   layer: string;
+  /** The user-action driver lane: "ui" = real dashboard DOM via Playwright;
+   *  "api" = direct HTTP (the default — older verdicts without the key are
+   *  api-lane). Additive field. */
+  lane: "ui" | "api";
   run_id: string;
   verdict: Verdict;
   status: "PASS" | "FAIL";
@@ -394,6 +420,8 @@ export interface BuildVerdictInput {
   /** The case TOML [meta].id (see VerdictDoc.case_id). */
   caseId: string;
   layer: string;
+  /** The driver lane (see VerdictDoc.lane). Omitted = "api". */
+  lane?: "ui" | "api";
   runId: string;
   anchors: AnchorResult[];
   uiChecks?: UiCheck[];
@@ -456,7 +484,16 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
   } else {
     // Some anchor/ui failed. Eligible for waiver only if EVERY failed anchor is
     // waivable AND a waiver reason was supplied (a real-world unreachable bit).
-    const allWaivable = failedAnchors.every((a) => !NON_WAIVABLE.has(a.kind));
+    // ONE targeted exception: a table_min_rows failure may be waived when the
+    // waiver EXPLICITLY names kind "table_min_rows" (the empty-real-world-result
+    // case, e.g. Maps yields zero dealers in radius — browser activity proven,
+    // nothing to write). A generic waiver still cannot cover it, and the
+    // keystone/run_status/malformed anchors stay absolutely non-waivable.
+    const allWaivable = failedAnchors.every(
+      (a) =>
+        !NON_WAIVABLE.has(a.kind) ||
+        (a.kind === "table_min_rows" && input.waiver?.kind === "table_min_rows"),
+    );
     if (input.waiver != null && allWaivable && failedUi.length === 0) {
       verdict = "GREEN_WITH_WAIVER";
       waived = input.waiver;
@@ -478,6 +515,7 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
     cell_id: input.cellId,
     case_id: input.caseId,
     layer: input.layer,
+    lane: input.lane ?? "api",
     run_id: input.runId,
     verdict,
     status,
@@ -499,7 +537,7 @@ export function computeConfidence(signals: { s1Ok: boolean; s2Ok: boolean; s3Ok:
   }
   const all = [signals.s1Ok, signals.s2Ok, signals.s3Ok];
   if (all.every((x) => x)) return "high";
-  if (all.every((x) => !x)) return "low"; // all-fail is a coherent RED, not a contradiction-low… but treat unanimous-fail as low (RED) too.
+  if (all.every((x) => !x)) return "low"; // unanimous fail → low (a coherent RED).
   // Mixed = contradiction.
   return "low";
 }

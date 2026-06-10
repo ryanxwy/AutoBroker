@@ -144,6 +144,9 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
     devDependencies:
+      playwright:
+        specifier: ^1.60.0
+        version: 1.60.0
       tsx:
         specifier: ^4.22.0
         version: 4.22.4

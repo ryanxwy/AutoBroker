@@ -83,6 +83,8 @@ export interface DailyHarnessCase {
   case_id: string;
   run_id: string;
   layer: string;
+  /** The driver lane ("ui" | "api"). Older verdicts lack the key → "api". */
+  lane: string;
   verdict: string; // GREEN | GREEN_WITH_WAIVER | RED | BLOCKER
   status: string; // PASS | FAIL
   run_dir: string; // the harness-runs/<ts> dir name the verdict came from
@@ -212,6 +214,7 @@ function readCases(date: string, runsRoot: string): DailyHarnessCase[] {
           case_id: String(v["case_id"] ?? narrativeCaseId(join(evidence, cell))),
           run_id: String(v["run_id"] ?? ""),
           layer: String(v["layer"] ?? ""),
+          lane: String(v["lane"] ?? "api"),
           verdict: String(v["verdict"] ?? ""),
           status: String(v["status"] ?? ""),
           run_dir: runDir.slice(runsRoot.length + 1),
