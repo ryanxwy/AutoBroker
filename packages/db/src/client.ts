@@ -1,5 +1,5 @@
 /**
- * AutoBroker SQLite connection — STUB.
+ * AutoBroker SQLite connection.
  *
  * Two stacks must never share one SQLite file: the legacy machine runs
  *   `busy_timeout = 0`, so a second writer fails immediately with SQLITE_BUSY
@@ -16,7 +16,7 @@
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema.js";
@@ -64,6 +64,44 @@ export function openDb(dbPath: string = resolveDbPath()) {
 
 export type Db = ReturnType<typeof openDb>;
 
-// TODO(phase-0): a single shared singleton accessor for the app/server process,
-// and a per-test isolated-DB factory (throwaway file under the sandbox data dir)
-// for the harness — NEVER the production ~/.autobroker/autobroker.db.
+/** Shared-connection cache, keyed by the RESOLVED absolute DB file path so an
+ *  AUTOBROKER_DATA_DIR / AUTOBROKER_DB override (tests point each case at its
+ *  own tmp dir) maps to its own entry — two data dirs never share a handle. */
+const sharedDbs = new Map<string, Db>();
+
+/**
+ * Shared lazy connection — ONE cached handle per resolved DB path, created on
+ * first use. Long-lived processes (server, workflows, the ledger writer) use
+ * this instead of openDb-per-call: a fresh never-closed connection per call
+ * leaks file handles, and every lingering WAL reader pins the -wal file so it
+ * cannot be truncated back into the main DB.
+ *
+ * Lifetime: held until closeDb() or process exit. No exit hook is needed —
+ * better-sqlite3 handles left open at exit are safe to abandon, and SQLite's
+ * WAL crash recovery replays a leftover -wal file on the next open, so
+ * committed writes never depend on an explicit close.
+ *
+ * Callers that genuinely need a PRIVATE handle (isolated per-test files with
+ * an explicit open-use-close scope) keep using openDb().
+ */
+export function getDb(dbPath: string = resolveDbPath()): Db {
+  const key = resolve(dbPath);
+  let db = sharedDbs.get(key);
+  if (db === undefined) {
+    db = openDb(key);
+    sharedDbs.set(key, db);
+  }
+  return db;
+}
+
+/**
+ * Close every cached shared connection and clear the cache. Test teardown
+ * hook: releases the file handles so a tmp data dir can be removed cleanly and
+ * the next getDb() reopens fresh. Production never needs to call this (see
+ * getDb's lifetime note). Handles obtained from openDb() are caller-owned and
+ * unaffected.
+ */
+export function closeDb(): void {
+  for (const db of sharedDbs.values()) db.$client.close();
+  sharedDbs.clear();
+}

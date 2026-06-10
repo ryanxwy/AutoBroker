@@ -66,7 +66,7 @@
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core (types),
  * @autobroker/model (HarnessSuspend type), @autobroker/tools (goplaces +
- * profileService + writeAuditLog + openDb — the ONLY DB path), and this layer's
+ * profileService + writeAuditLog + getDb — the ONLY DB path), and this layer's
  * harness facade + intake contracts. NEVER opens the product DB directly: the
  * tools closures (create / resolveLocation / writeAuditLog) own every side effect.
  */
@@ -84,7 +84,7 @@ import {
   create as createProfileImpl,
   resolveLocation as resolveLocationImpl,
   writeAuditLog,
-  openDb,
+  getDb,
   type CreateResult,
   type ResolvedCoordinates,
 } from "@autobroker/tools";
@@ -124,15 +124,15 @@ export interface IntakeWorkflowDeps {
   harnessGenerate: typeof harness.generate;
   resolveLocation: typeof resolveLocationImpl;
   createProfile: typeof createProfileImpl;
-  /** The DB handle the persist/audit steps write through (tools layer). */
-  openDb: typeof openDb;
+  /** The DB accessor the persist/audit steps write through (tools layer). */
+  getDb: typeof getDb;
 }
 
 const realDeps: IntakeWorkflowDeps = {
   harnessGenerate: harness.generate,
   resolveLocation: resolveLocationImpl,
   createProfile: createProfileImpl,
-  openDb,
+  getDb,
 };
 
 let injectedDeps: IntakeWorkflowDeps | undefined;
@@ -167,14 +167,14 @@ export function __resetIntakeDepsForTests(): void {
 // ---------------------------------------------------------------------------
 
 /** Build the per-call ledger context from the step's runId (live-probed: a step
- *  reads its own runId off ExecuteFunctionParams.runId in 1.41). */
+ *  reads its own runId off ExecuteFunctionParams.runId in 1.41). The row's
+ *  provider/model_alias are derived from policy(useCase) inside harness.generate,
+ *  not supplied here. */
 function intakeLedger(runId: string): HarnessLedgerContext {
   return {
     runId,
     skill: "search_profile_intake",
     layer: "L2",
-    provider: "deepseek",
-    modelAlias: "deepseek.chat",
     promptVersion: "m1-v1",
     schemaVersion: "m1-v1",
   };
@@ -267,17 +267,12 @@ function isHarnessSuspend(r: unknown): r is HarnessSuspend {
 }
 
 /**
- * Open a tools-layer DB handle, run `fn`, and ALWAYS close it (no per-step
- * leak). A short-lived per-call handle, not a connection singleton — the shared
- * accessor is a separate M-item (packages/db client.ts TODO).
+ * Run `fn` against the SHARED tools-layer DB connection (getDb — one cached
+ * handle per resolved data dir, created on first use). No per-step open/close:
+ * the shared handle stays open for the process; tests release it via closeDb().
  */
-function withDb<T>(fn: (db: ReturnType<typeof openDb>) => T): T {
-  const db = deps().openDb();
-  try {
-    return fn(db);
-  } finally {
-    db.$client.close();
-  }
+function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
+  return fn(deps().getDb());
 }
 
 // ---------------------------------------------------------------------------

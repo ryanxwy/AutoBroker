@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { openDb, type Db, type GoplacesResult } from "@autobroker/tools";
+import { closeDb, openDb, type Db, type GoplacesResult } from "@autobroker/tools";
 
 import { createMastraInstance } from "./mastra.js";
 import {
@@ -76,6 +76,7 @@ beforeEach(() => {
 afterEach(() => {
   __resetIntakeDepsForTests();
   db.$client.close();
+  closeDb(); // release the shared getDb() handle the persist/audit steps cached.
   rmSync(tmpDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env[DATA_DIR];
   else process.env[DATA_DIR] = originalDataDir;

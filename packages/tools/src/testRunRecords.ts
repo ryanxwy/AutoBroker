@@ -22,11 +22,11 @@
  *       cost_usd = 0 AND pricing_source = 'unavailable' (a concrete $0 with the
  *       very flag that means "we had no usage" — the silent-$0 bug incarnate).
  *
- * Dependency wall: imports @autobroker/db (openDb + the hand-authored
+ * Dependency wall: imports @autobroker/db (getDb + the hand-authored
  * testRunRecords table) only. core/model/workflows never reach this layer.
  */
 
-import { openDb, testRunRecords, type Db } from "@autobroker/db";
+import { getDb, testRunRecords, type Db } from "@autobroker/db";
 
 /**
  * Insert shape for one ledger row: the table's drizzle `$inferInsert` minus the
@@ -56,15 +56,17 @@ export class SilentZeroCostError extends Error {
  * "no usage" rows must pass costUsd: null (which round-trips as SQL NULL).
  *
  * @param record   the 16 caller-owned columns (id is DB-assigned).
- * @param db       optional pre-opened connection (the app singleton / a test's
- *                 isolated DB); defaults to opening the resolved product DB.
- *                 Callers MUST NOT open their own connection — pass one obtained
- *                 from this layer's openDb, or let the default resolve it.
+ * @param db       optional pre-opened connection (a test's isolated DB);
+ *                 defaults to the SHARED getDb() connection for the resolved
+ *                 product DB path — never a fresh per-call openDb(), which
+ *                 would leak one connection per LLM call. Callers MUST NOT
+ *                 open their own connection — pass one obtained from this
+ *                 layer, or let the default resolve it.
  * @returns the autoincrement `id` of the inserted row.
  */
 export function writeTestRunRecord(
   record: TestRunRecordInsert,
-  db: Db = openDb(),
+  db: Db = getDb(),
 ): number {
   // Fail-CLOSED on the silent-$0 combination. A NULL cost is the only honest
   // way to record "usage unavailable"; a concrete 0.0 here is the banned bug.

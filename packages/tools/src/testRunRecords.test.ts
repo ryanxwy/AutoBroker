@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { openDb, type Db } from "@autobroker/db";
+import { closeDb, openDb, type Db } from "@autobroker/db";
 import {
   SilentZeroCostError,
   writeTestRunRecord,
@@ -63,6 +63,7 @@ beforeAll(() => {
 
 afterAll(() => {
   db.$client.close();
+  closeDb(); // release the shared handle the default-db test cached for tmpDir.
   rmSync(tmpDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env[DATA_DIR];
   else process.env[DATA_DIR] = originalDataDir;
@@ -137,6 +138,15 @@ describe("writeTestRunRecord — NULL-not-$0 round-trip", () => {
     const second = writeTestRunRecord(baseRow(), db);
     expect(typeof first).toBe("number");
     expect(second).toBe(first + 1);
+  });
+
+  it("default db param writes through the SHARED getDb() connection (same file)", () => {
+    // No db argument: the writer falls back to getDb(), which resolves the
+    // same AUTOBROKER_DATA_DIR file this suite opened — the row must be
+    // visible through the suite's own handle (one shared connection per
+    // resolved path, not a fresh leaked connection per call).
+    const id = writeTestRunRecord(baseRow({ costUsd: 0.5, pricingSource: "table_v1" }));
+    expect(rawCostUsd(id)).toBe(0.5);
   });
 });
 

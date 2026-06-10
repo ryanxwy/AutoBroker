@@ -99,14 +99,14 @@ const ledger: HarnessLedgerContext = {
   runId: "run-harness-1",
   skill: "foundation_probe",
   layer: "L2",
-  provider: "deepseek",
-  modelAlias: "deepseek-v4-flash",
   promptVersion: null,
   schemaVersion: null,
 };
 
 /** Read every ledger row (newest first not needed — one row per call). */
 function ledgerRows(): Array<{
+  provider: string;
+  model_alias: string;
   cost_usd: unknown;
   input_tokens: unknown;
   output_tokens: unknown;
@@ -117,7 +117,7 @@ function ledgerRows(): Array<{
 }> {
   return db.$client
     .prepare(
-      "SELECT cost_usd, input_tokens, output_tokens, pricing_source, price_input_per_mtok, fail_reason, latency_ms FROM test_run_records",
+      "SELECT provider, model_alias, cost_usd, input_tokens, output_tokens, pricing_source, price_input_per_mtok, fail_reason, latency_ms FROM test_run_records",
     )
     .all() as ReturnType<typeof ledgerRows>;
 }
@@ -147,6 +147,10 @@ describe("harness.generate — clean emit_result path", () => {
     expect(rows[0]?.pricing_source).toBe("deepseek-2026-06");
     expect(rows[0]?.cost_usd).not.toBeNull();
     expect(rows[0]?.price_input_per_mtok).toBe(0.14); // flash cache-miss input rate.
+    // provider/model_alias are derived from policy(useCase) at the generate
+    // seam (foundation_probe routes to deepseek.cheap) — not caller strings.
+    expect(rows[0]?.provider).toBe("deepseek");
+    expect(rows[0]?.model_alias).toBe("deepseek.cheap");
   });
 });
 
@@ -262,9 +266,6 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
     runId: "run-output-object-1",
     skill: "cross_provider_smoke",
     layer: "L2",
-    provider: "anthropic",
-    // a priced anthropic id so cost is computed (claude-sonnet-4-6 is in PRICING).
-    modelAlias: "claude-sonnet-4-6",
     promptVersion: null,
     schemaVersion: null,
   };
@@ -301,6 +302,10 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
     expect(rows[0]?.fail_reason).toBeNull();
     expect(rows[0]?.pricing_source).toBe("deepseek-2026-06");
     expect(rows[0]?.price_input_per_mtok).toBe(3.0); // sonnet-4-6 base input rate.
+    // provider/model_alias derived from policy(cross_provider_smoke) →
+    // anthropic.chat (the routed alias, not the concrete model id).
+    expect(rows[0]?.provider).toBe("anthropic");
+    expect(rows[0]?.model_alias).toBe("anthropic.chat");
   });
 
   it("Zod authority: a native object that violates the contract → ZodError + ledger 'zod_validation'", async () => {

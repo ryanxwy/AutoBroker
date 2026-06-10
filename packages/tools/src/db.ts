@@ -15,7 +15,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export { openDb, type Db } from "@autobroker/db";
+export { openDb, getDb, closeDb, type Db } from "@autobroker/db";
 
 /** Resolve the active data directory, honoring the isolation env. Used for
  *  non-DB artifacts (fake-mailbox files, logs, exports) that live beside the

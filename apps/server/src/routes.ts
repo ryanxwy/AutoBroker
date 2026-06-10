@@ -23,16 +23,16 @@
  * matching the workflow input — kept verbatim. Response profile views are
  * snake_case (SearchProfileView mirrors the DB column case).
  *
- * Dependency wall: app layer. Imports core (schemas), tools (DB reads via openDb +
+ * Dependency wall: app layer. Imports core (schemas), tools (DB reads via getDb +
  * resolveDataDir + the resolver) — NEVER @mastra, NEVER drizzle/better-sqlite3
- * directly (openDb is the tools closure). Profile READS go through the tools
- * resolver/openDb; the only WRITE path stays inside the workflow's persist step.
+ * directly (getDb is the tools closure). Profile READS go through the tools
+ * resolver/getDb; the only WRITE path stays inside the workflow's persist step.
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-import { openDb, resolveDataDir, readProfileRow, listProfileRows, type Db } from "@autobroker/tools";
+import { getDb, resolveDataDir, readProfileRow, listProfileRows, type Db } from "@autobroker/tools";
 
 import { IMPLEMENTED_SKILLS } from "@autobroker/skills";
 
@@ -141,15 +141,11 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   return parsed.data;
 }
 
-/** Open a tools DB handle, run fn, always close. Profile READS only (the only
- *  write path is the workflow persist step). */
+/** Run fn against the SHARED tools DB connection (getDb — one cached handle
+ *  per resolved data dir, not a fresh connection per request). Profile READS
+ *  only (the only write path is the workflow persist step). */
 function withDb<T>(fn: (db: Db) => T): T {
-  const db = openDb();
-  try {
-    return fn(db);
-  } finally {
-    db.$client.close();
-  }
+  return fn(getDb());
 }
 
 /**

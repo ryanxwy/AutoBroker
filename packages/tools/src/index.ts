@@ -79,8 +79,9 @@ export {
   type ScoutOptions,
 } from "./inventoryScout.js";
 
-// DB (single connection factory, re-exported from @autobroker/db).
-export { openDb, resolveDataDir, type Db } from "./db.js";
+// DB (single connection factory + shared-connection accessor, re-exported
+// from @autobroker/db).
+export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
 
 // test_run_records ledger writer — the ONE write path (NULL-not-$0 enforced).
 export {

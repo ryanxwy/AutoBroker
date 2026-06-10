@@ -84,6 +84,7 @@ import {
   type HarnessGenerateInput,
   type HarnessGenerateResult,
   type HarnessSuspend,
+  type PolicyResolution,
 } from "@autobroker/model";
 import { writeTestRunRecord, type Db } from "@autobroker/tools";
 
@@ -103,6 +104,11 @@ type AgentModelConfig = ConstructorParameters<typeof Agent>[0]["model"];
  * writes. REQUIRED (no invented defaults — fail-loud beats a silent placeholder
  * that fakes provenance): each skill passes its own. Members
  * mirror the table's caller-owned columns (packages/db testRunRecords).
+ *
+ * provider / model_alias are NOT members: the ledger derives them from
+ * policy(input.useCase) at the generate seam itself, so the recorded route is
+ * always the route that actually served the call — a caller-supplied string
+ * would silently go stale the moment the policy mapping changes.
  */
 export interface HarnessLedgerContext {
   /** Run window id (test_run_records.run_id). */
@@ -111,11 +117,6 @@ export interface HarnessLedgerContext {
   skill: string;
   /** Test layer label, 'L1'..'L5' (test_run_records.layer). */
   layer: string;
-  /** Provider name (test_run_records.provider). Caller-asserted; the policy
-   *  resolution provider is recorded but the ledger label is the caller's. */
-  provider: string;
-  /** Model alias (test_run_records.model_alias). */
-  modelAlias: string;
   /** Prompt hash / version, or null (test_run_records.prompt_version). */
   promptVersion: string | null;
   /** Zod contract version, or null (test_run_records.schema_version). */
@@ -206,7 +207,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // pure selector owns the #1244 decision; this branch only dispatches.
   const strategy = chooseStructuredOutputStrategy(route.capabilities);
   if (strategy === "output_object") {
-    return generateOutputObject(input, ledger, model, modelId, startedAt, _testOverrides);
+    return generateOutputObject(input, ledger, route, model, modelId, startedAt, _testOverrides);
   }
 
   // Stage 3 — the single emit_result tool. Its execute closure captures the
@@ -271,8 +272,9 @@ async function generate<TSchema extends z.ZodTypeAny>(
           skill: ledger.skill,
           createdAt: createdAtBucket(),
           layer: ledger.layer,
-          provider: ledger.provider,
-          modelAlias: ledger.modelAlias,
+          // Route identity comes from policy(useCase), never a caller string.
+          provider: route.provider,
+          modelAlias: route.alias,
           costUsd: null,
           latencyMs: Date.now() - startedAt,
           inputTokens: null,
@@ -298,7 +300,9 @@ async function generate<TSchema extends z.ZodTypeAny>(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  /** Write the one ledger row for this run with the given verdict. */
+  /** Write the one ledger row for this run with the given verdict. The route
+   *  identity (provider + alias) is the policy() resolution, never a caller
+   *  string. */
   const writeLedger = (failReason: string | null): void => {
     writeTestRunRecord(
       {
@@ -306,8 +310,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
         skill: ledger.skill,
         createdAt: createdAtBucket(),
         layer: ledger.layer,
-        provider: ledger.provider,
-        modelAlias: ledger.modelAlias,
+        provider: route.provider,
+        modelAlias: route.alias,
         costUsd,
         latencyMs: durationMs,
         inputTokens: promptTokens,
@@ -439,6 +443,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
 async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   input: HarnessGenerateInput<TSchema>,
   ledger: HarnessLedgerContext,
+  route: PolicyResolution,
   model: unknown,
   modelId: string,
   startedAt: number,
@@ -491,8 +496,9 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
           skill: ledger.skill,
           createdAt: createdAtBucket(),
           layer: ledger.layer,
-          provider: ledger.provider,
-          modelAlias: ledger.modelAlias,
+          // Route identity comes from policy(useCase), never a caller string.
+          provider: route.provider,
+          modelAlias: route.alias,
           costUsd: null,
           latencyMs: Date.now() - startedAt,
           inputTokens: null,
@@ -524,8 +530,8 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
         skill: ledger.skill,
         createdAt: createdAtBucket(),
         layer: ledger.layer,
-        provider: ledger.provider,
-        modelAlias: ledger.modelAlias,
+        provider: route.provider,
+        modelAlias: route.alias,
         costUsd,
         latencyMs: durationMs,
         inputTokens: promptTokens,
@@ -702,7 +708,7 @@ function pricingColumns(
 }
 
 /** Forward an injected test DB to writeTestRunRecord's optional `db` arg, or
- *  nothing (production uses writeTestRunRecord's default openDb()). */
+ *  nothing (production uses writeTestRunRecord's default getDb()). */
 function _dbArg(overrides: HarnessTestOverrides | undefined): [Db] | [] {
   return overrides?.db ? [overrides.db] : [];
 }
