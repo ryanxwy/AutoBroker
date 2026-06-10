@@ -195,10 +195,10 @@ describe.skipIf(!LIVE)("spike1 PROBE A — foundation_probe → ledger row in th
       runId,
       skill: "foundation_probe",
       // L2 = a single skill driven live through harness.generate; L1 is the
-      // zero-LLM floor (does not apply to a live LLM call).
+      // zero-LLM floor (does not apply to a live LLM call). The row's
+      // provider/model_alias come from policy("foundation_probe") inside
+      // harness.generate (deepseek / deepseek.cheap — asserted below).
       layer: "L2",
-      provider: "deepseek",
-      modelAlias: "deepseek.cheap",
       promptVersion: null,
       schemaVersion: null,
     };
