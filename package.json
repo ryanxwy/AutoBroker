@@ -7,7 +7,7 @@
   "//ai": "Pinned to ^6 deliberately. Do NOT take v7: its LanguageModelV4 spec breaks V3-spec community providers (ts-migration 2026-05-29 D5/D9). CI must ignore the ai major-bump.",
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "pnpm -r run build",
