@@ -56,12 +56,16 @@ let db: Db;
 /** A coordinate set the upstream workflow would have resolved. */
 const COORDS: ResolvedCoordinates = { latitude: 33.6695, longitude: -117.8231, resolvedAddress: "Irvine, CA 92614" };
 
+/** Current model year — the intake schema's new-cars-only gate accepts only
+ *  the current or next model year, so fixtures compute it dynamically. */
+const THIS_YEAR = new Date().getFullYear();
+
 /** A complete, form-valid intake input. */
 function baseInput(overrides: Partial<SearchProfileIntakeInput> = {}): SearchProfileIntakeInput {
   return {
     make: "Toyota",
     model: "RAV4",
-    year: 2025,
+    year: THIS_YEAR,
     location_query: "Irvine, CA 92614",
     follow_up_email: "buyer@example.com",
     financing_preference: "finance",
@@ -169,7 +173,7 @@ describe("create — exactly 1 row + 1 audit, persist discipline", () => {
   it("synth id = SHA-256 first-16-hex of make|model|trim|year|postal_code", () => {
     const { profile } = create(db, baseInput(), { coordinates: COORDS });
     expect(profile.id).toBe(
-      synthProfileId({ make: "Toyota", model: "RAV4", trim: "XLE", year: 2025, postalCode: "92614" }),
+      synthProfileId({ make: "Toyota", model: "RAV4", trim: "XLE", year: THIS_YEAR, postalCode: "92614" }),
     );
     expect(profile.id).toHaveLength(16);
   });
@@ -186,7 +190,7 @@ describe("create — exactly 1 row + 1 audit, persist discipline", () => {
     expect(withGeo.profile.id).not.toBe(withoutGeo.profile.id);
     // The geocoded id matches a synth over the geocoded postal.
     expect(withGeo.profile.id).toBe(
-      synthProfileId({ make: "Toyota", model: "RAV4", trim: "XLE", year: 2025, postalCode: "92614" }),
+      synthProfileId({ make: "Toyota", model: "RAV4", trim: "XLE", year: THIS_YEAR, postalCode: "92614" }),
     );
   });
 

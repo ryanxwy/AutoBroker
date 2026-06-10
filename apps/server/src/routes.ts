@@ -112,16 +112,18 @@ export interface RouteDeps {
 }
 
 /** The skill manifest list — projected from the implemented registry entries.
- *  name/summary/inputs/outputs come from @autobroker/skills; sensitive derives
- *  from the registry riskClass (read_only → not sensitive); version/retries are
- *  this API's manifest metadata. The wire shape is unchanged. */
+ *  name/summary/inputs/outputs come from @autobroker/skills; sensitive means
+ *  external/destructive mutation (irreversible | destructive) — local product-row
+ *  writes behind their own confirmation (intake, the scan skills) are NOT
+ *  sensitive; version/retries are this API's manifest metadata. The wire shape
+ *  is unchanged. */
 const SKILL_MANIFEST = IMPLEMENTED_SKILLS.map((s) => ({
   name: s.id,
   version: "m1-v1",
   summary: s.summary,
   inputs: s.inputs,
   outputs: s.outputs,
-  sensitive: s.riskClass !== "read_only",
+  sensitive: s.riskClass === "irreversible" || s.riskClass === "destructive",
   retries: 0,
 }));
 

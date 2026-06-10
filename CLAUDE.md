@@ -141,8 +141,12 @@ layer touches SQLite or external I/O" while carving out Mastra's runtime store.
 9. **Communication never includes budget** (`_redact_budget`, enforced in code).
    **Fake phone by default** unless the user explicitly opts in. Hard
    constraints live in code, not in prompt text or sampling temperature.
-10. **Destructive skills** (`pipeline_reset`, `dealer_hygiene`) force a typed-YES
-    second-confirm suspend; no confirmation → zero destruction.
+10. **Destructive skills**: `pipeline_reset` forces a typed-YES second-confirm
+    suspend; `dealer_hygiene`'s second confirm is three strictly-ordered
+    per-item batch-review suspends (5a/5b/5c, the parity-oracle shape —
+    decline/cancel at any stage = zero writes; batch default action is explicit
+    selection, never approve-all). Either way: no confirmation → zero
+    destruction.
 11. **Never touch a production DB.** Use an isolated throwaway DB
     (`AUTOBROKER_DATA_DIR`). **Never** set `AUTOBROKER_TEST_AUTO_APPROVE` — keep
     the approval gate live to exercise the decline path.

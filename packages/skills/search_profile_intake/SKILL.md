@@ -1,9 +1,10 @@
 # search_profile_intake
 
 Create a new-car search profile from a slash form or freeform prose. Skill #1
-(e2e-first), phase 1, risk class `read_only` (the only writes are local product
-rows, gated behind explicit user confirmation). One flat linear Mastra workflow,
-8 named steps, no nested workflow.
+(e2e-first), phase 1, risk class `local_write` (writes are local product rows
+only — `search_profiles` + `audit_log` — gated behind explicit user
+confirmation; no external mutation). One flat linear Mastra workflow, 8 named
+steps, no nested workflow.
 
 ## Phases
 
@@ -30,9 +31,10 @@ The runtime flow, grounded in the 8-step workflow
    the user picks a candidate, retries with a new query, or declines. The shown
    candidate list and effective query ride the suspend payload so a `pick`
    indexes the exact list shown.
-7. **Confirm gate → persist** — `profileService.create` is the only DB write;
-   it returns `{ profileId, auditId }`. A confirmed force-override has already
-   written its `intake_verification_forced` audit row at step 5.
+7. **Persist** — `profileService.create` is the only DB write (the user
+   confirmation gate is the form submit at phase 3, suspend ①); it returns
+   `{ profileId, auditId }`. A confirmed force-override has already written its
+   `intake_verification_forced` audit row at step 5.
 8. **Handoff** — emit the structured created summary plus redactions; the run
    ends and the profile is available to downstream skills.
 
@@ -49,6 +51,10 @@ The runtime flow, grounded in the 8-step workflow
 - **ActiveSlotConflict** — at most one active profile per `(account, brand)`. A
   second active row for the same pair is rejected as a typed `ActiveSlotConflict`
   surfaced by the tools layer; the workflow propagates it without retry.
+- **New cars only / year gate** — the model year must be the current or next
+  model year; enforced server-side in `SearchProfileIntakeInputSchema`
+  (`packages/core/src/schema/intake.ts`), mirrored by the form's year-segmented
+  widget.
 - **Fake-phone default** — the dealer-facing phone is fake unless the user
   explicitly opts in. The default is enforced in the tools layer, not in prompt
   text.

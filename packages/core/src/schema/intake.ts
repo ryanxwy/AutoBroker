@@ -48,8 +48,19 @@ export const SearchProfileIntakeInputSchema = z
     // --- required (form contract: 6 fields) ----------------------------------
     make: z.string().min(1),
     model: z.string().min(1),
-    /** Required; year-segmented widget yields current-or-next model year. */
-    year: z.number().int(),
+    /** Required. New-cars-only year gate (canon guardrail): current or next
+     *  model year, enforced server-side here — the form's year-segmented widget
+     *  mirrors it client-side. */
+    year: z
+      .number()
+      .int()
+      .refine(
+        (y) => {
+          const current = new Date().getFullYear();
+          return y === current || y === current + 1;
+        },
+        { message: "year must be the current or next model year (new cars only)" },
+      ),
     /** Raw location text; the workflow layer geocodes this before persist
      *  (coordinate-resolution invariant: on parse/no-result/retry-exhausted →
      *  suspend back to form, never persist NULL coords). Required at the form. */

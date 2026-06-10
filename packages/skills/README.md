@@ -22,7 +22,7 @@ Derived from `src/registry.ts` (build order, phase 1 → 5):
 
 | Phase | Skill | Risk | Status |
 |---|---|---|---|
-| 1 | `search_profile_intake` | read_only | implemented |
+| 1 | `search_profile_intake` | local_write | implemented |
 | 1 | `quote_audit` | read_only | planned |
 | 1 | `quote_compare` | read_only | planned |
 | 1 | `inventory_compare` | read_only | planned |
