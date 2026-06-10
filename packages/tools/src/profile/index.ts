@@ -19,6 +19,8 @@ export {
   restore,
   parseLocation,
   synthProfileId,
+  readProfileRow,
+  listProfileRows,
   type ValidateResult,
   type ParsedLocation,
   type ResolvedCoordinates,

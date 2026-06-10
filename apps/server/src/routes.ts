@@ -32,7 +32,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-import { openDb, resolveDataDir, type Db } from "@autobroker/tools";
+import { openDb, resolveDataDir, readProfileRow, listProfileRows, type Db } from "@autobroker/tools";
 
 import { IMPLEMENTED_SKILLS } from "@autobroker/skills";
 
@@ -148,31 +148,6 @@ function withDb<T>(fn: (db: Db) => T): T {
   } finally {
     db.$client.close();
   }
-}
-
-/** Read one profile row by id as the snake_case SearchProfileView. Returns null
- *  when absent. Goes through openDb (tools); raw better-sqlite3 select. */
-function readProfileRow(db: Db, id: string): Record<string, unknown> | null {
-  const row = db.$client
-    .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
-    .get(id) as Record<string, unknown> | undefined;
-  return row ?? null;
-}
-
-/** List profile rows (snake_case views), newest-first by ROWID (matching the
- *  resolver's ROWID DESC ordering). status filter: active|deleted|all (default
- *  excludes none — there is no soft-delete column yet; we return all and let the
- *  UI count). */
-function listProfileRows(db: Db, status: string | undefined): Record<string, unknown>[] {
-  // There is no `deleted` lifecycle column yet; the status query param is accepted
-  // for forward-compat but only 'active' meaningfully filters (status='active' OR
-  // NULL = implicit-active, matching the resolver). Default = all rows.
-  let sql = "SELECT * FROM search_profiles";
-  if (status === "active") {
-    sql += " WHERE status = 'active' OR status IS NULL";
-  }
-  sql += " ORDER BY rowid DESC";
-  return db.$client.prepare(sql).all() as Record<string, unknown>[];
 }
 
 /**

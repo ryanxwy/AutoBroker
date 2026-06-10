@@ -370,6 +370,34 @@ export function resolveActive(db: Db, args: { threadPin?: string } = {}): Resolv
 }
 
 // ---------------------------------------------------------------------------
+// read views — snake_case row reads for the HTTP profile views. The SQL lives
+// here so the app layer never composes SQL itself.
+// ---------------------------------------------------------------------------
+
+/** Read one profile row by id as the raw snake_case view. Returns null when absent. */
+export function readProfileRow(db: Db, id: string): Record<string, unknown> | null {
+  const row = db.$client
+    .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+  return row ?? null;
+}
+
+/**
+ * List profile rows (snake_case views), newest-first by ROWID (matching the
+ * resolver's ROWID DESC ordering). Only status === 'active' meaningfully
+ * filters (status='active' OR NULL = implicit-active, matching the resolver);
+ * any other value returns all rows.
+ */
+export function listProfileRows(db: Db, status: string | undefined): Record<string, unknown>[] {
+  let sql = "SELECT * FROM search_profiles";
+  if (status === "active") {
+    sql += " WHERE status = 'active' OR status IS NULL";
+  }
+  sql += " ORDER BY rowid DESC";
+  return db.$client.prepare(sql).all() as Record<string, unknown>[];
+}
+
+// ---------------------------------------------------------------------------
 // lifecycle — minimal-but-real. intake needs the typo-window update +
 // identity-lock error surface; replace/close/restore signatures are fixed now.
 // ---------------------------------------------------------------------------

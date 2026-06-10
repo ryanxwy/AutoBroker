@@ -92,6 +92,8 @@ export {
   restore,
   parseLocation,
   synthProfileId,
+  readProfileRow,
+  listProfileRows,
   resolveActiveProfile,
   requireActiveProfile,
   makeFakePhone,
