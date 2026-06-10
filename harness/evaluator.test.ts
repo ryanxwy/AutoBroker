@@ -225,36 +225,37 @@ describe("four-tier verdict", () => {
   const okUi = { surface: "api:/api/profiles/p1", selector: "profile-row", expected: "p1", observed: "present", ok: true };
 
   it("all anchors ok + a passing ui_check + high confidence → GREEN", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], uiChecks: [okUi], crossCheck: cc });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], uiChecks: [okUi], crossCheck: cc });
     expect(v.verdict).toBe("GREEN");
     expect(v.status).toBe("PASS");
   });
 
   it("vacuous-confirmation guard: L2+ with ZERO ui_checks is RED, never GREEN", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], crossCheck: cc });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), okAnchor("no_external_mutation")], crossCheck: cc });
     expect(v.verdict).toBe("RED");
     expect(v.defect_flag?.kind).toBe("ui_checks");
   });
 
   it("vacuous-confirmation guard does not apply below L2 (L1 pure-fn layer)", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L1", runId: "r", anchors: [okAnchor("run_status")], crossCheck: cc });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L1", runId: "r", anchors: [okAnchor("run_status")], crossCheck: cc });
     expect(v.verdict).toBe("GREEN");
   });
 
   it("keystone failure → BLOCKER (never RED)", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), failAnchor("no_external_mutation")], crossCheck: cc });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [okAnchor("run_status"), failAnchor("no_external_mutation")], crossCheck: cc });
     expect(v.verdict).toBe("BLOCKER");
     expect(v.defect_flag?.kind).toBe("no_external_mutation");
   });
 
   it("a non-keystone functional anchor failure → RED", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [failAnchor("table_min_rows")], crossCheck: cc });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [failAnchor("table_min_rows")], crossCheck: cc });
     expect(v.verdict).toBe("RED");
   });
 
   it("a waivable anchor failure with a recorded reason → GREEN_WITH_WAIVER", () => {
     const v = buildVerdict({
       cellId: "c",
+      caseId: "case",
       layer: "L2",
       runId: "r",
       anchors: [okAnchor("run_status"), failAnchor("browser_activity")],
@@ -266,12 +267,12 @@ describe("four-tier verdict", () => {
   });
 
   it("confidence=low (S1/S2/S3 contradiction) → RED even with anchors ok", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status")], crossCheck: { ...cc, confidence: "low" } });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [okAnchor("run_status")], crossCheck: { ...cc, confidence: "low" } });
     expect(v.verdict).toBe("RED");
   });
 
   it("an explicit regression → BLOCKER", () => {
-    const v = buildVerdict({ cellId: "c", layer: "L2", runId: "r", anchors: [okAnchor("run_status")], crossCheck: cc, regression: { kind: "frozen_invariant", detail: "schema drift" } });
+    const v = buildVerdict({ cellId: "c", caseId: "case", layer: "L2", runId: "r", anchors: [okAnchor("run_status")], crossCheck: cc, regression: { kind: "frozen_invariant", detail: "schema drift" } });
     expect(v.verdict).toBe("BLOCKER");
   });
 });

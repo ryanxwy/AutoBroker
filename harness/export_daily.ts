@@ -77,6 +77,10 @@ export interface DailyHarnessExport {
 
 export interface DailyHarnessCase {
   cell_id: string;
+  /** The case TOML [meta].id. Newer verdicts carry it inline; for older ones
+   *  it is recovered from the sibling narrative.json ("" if neither has it).
+   *  Distinguishes cases sharing one cell_id (decline vs force_override). */
+  case_id: string;
   run_id: string;
   layer: string;
   verdict: string; // GREEN | GREEN_WITH_WAIVER | RED | BLOCKER
@@ -178,6 +182,19 @@ function runDirsFor(date: string, runsRoot: string): string[] {
     .map((d) => join(runsRoot, d));
 }
 
+/** Recover the case id for an old verdict (written before verdict.json carried
+ *  case_id) from the sibling narrative.json's "case" field; "" if absent. */
+function narrativeCaseId(cellDir: string): string {
+  const nPath = join(cellDir, "narrative.json");
+  if (!existsSync(nPath)) return "";
+  try {
+    const n = JSON.parse(readFileSync(nPath, "utf8")) as Record<string, unknown>;
+    return typeof n["case"] === "string" ? n["case"] : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Fold every evidence/<cell>/verdict.json under the day's run dirs into the
  *  additive case list. A malformed/unreadable verdict file is skipped loudly. */
 function readCases(date: string, runsRoot: string): DailyHarnessCase[] {
@@ -192,6 +209,7 @@ function readCases(date: string, runsRoot: string): DailyHarnessCase[] {
         const v = JSON.parse(readFileSync(vPath, "utf8")) as Record<string, unknown>;
         cases.push({
           cell_id: String(v["cell_id"] ?? cell),
+          case_id: String(v["case_id"] ?? narrativeCaseId(join(evidence, cell))),
           run_id: String(v["run_id"] ?? ""),
           layer: String(v["layer"] ?? ""),
           verdict: String(v["verdict"] ?? ""),

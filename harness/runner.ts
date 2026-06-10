@@ -455,6 +455,7 @@ async function evaluateStep(args: {
 
   return buildVerdict({
     cellId: cellIdFor(c, step),
+    caseId: c.id,
     layer,
     runId,
     anchors,

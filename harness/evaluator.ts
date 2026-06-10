@@ -375,6 +375,9 @@ export interface UiCheck {
 export interface VerdictDoc {
   schema_version: 1;
   cell_id: string;
+  /** The case TOML [meta].id — distinguishes cases that share one cell_id
+   *  (e.g. decline vs force_override both run skill/provider/B/slash). */
+  case_id: string;
   layer: string;
   run_id: string;
   verdict: Verdict;
@@ -388,6 +391,8 @@ export interface VerdictDoc {
 
 export interface BuildVerdictInput {
   cellId: string;
+  /** The case TOML [meta].id (see VerdictDoc.case_id). */
+  caseId: string;
   layer: string;
   runId: string;
   anchors: AnchorResult[];
@@ -471,6 +476,7 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
   return {
     schema_version: 1,
     cell_id: input.cellId,
+    case_id: input.caseId,
     layer: input.layer,
     run_id: input.runId,
     verdict,
