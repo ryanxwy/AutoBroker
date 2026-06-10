@@ -232,7 +232,12 @@ export const accounts = sqliteTable("accounts", {
 	email: text().notNull(),
 	oauthRef: text("oauth_ref"),
 	createdAt: numeric("created_at").default(sql`(CURRENT_TIMESTAMP)`),
-});
+},
+(table) => [
+	// Restored manually: drizzle-kit pull drops table-level UNIQUE constraints
+	// (they materialize as implicit sqlite_autoindex_* rows whose sql is NULL).
+	uniqueIndex("uq_accounts_email").on(table.email),
+]);
 
 export const threadRouting = sqliteTable("thread_routing", {
 	threadId: text("thread_id").primaryKey().notNull(),
@@ -455,6 +460,10 @@ export const dealerInventorySources = sqliteTable("dealer_inventory_sources", {
 	errorJson: text("error_json"),
 },
 (table) => [
+	// Restored manually (introspection drops table-level UNIQUE): the source
+	// idempotency key — scan upserts and the site_scan↔link_scan reconciliation
+	// both key on (profile, dealer, normalized_url).
+	uniqueIndex("uq_dis_profile_dealer_url").on(table.searchProfileId, table.dealerId, table.normalizedUrl),
 	index("idx_dis_status").on(table.lastStatus),
 	index("idx_dis_profile_dealer").on(table.searchProfileId, table.dealerId),
 ]);
@@ -492,6 +501,12 @@ export const inventoryListings = sqliteTable("inventory_listings", {
 	supersededReason: text("superseded_reason"),
 },
 (table) => [
+	// Restored manually (introspection drops table-level UNIQUE). Non-partial on
+	// nullable vin — SQLite NULLs are distinct, so this key dedupes VIN-bearing
+	// rows ONLY; NULL-VIN dedupe is delegated entirely to the partial
+	// idx_il_url_fallback below. Upserts must branch their ON CONFLICT target on
+	// VIN presence.
+	uniqueIndex("uq_il_profile_dealer_vin").on(table.searchProfileId, table.dealerId, table.vin),
 	uniqueIndex("idx_il_url_fallback").on(table.searchProfileId, table.dealerId, table.normalizedListingUrl).where(sql`vin IS NULL`),
 	index("idx_il_freshness").on(table.lastSeenAt),
 	index("idx_il_dealer").on(table.dealerId),

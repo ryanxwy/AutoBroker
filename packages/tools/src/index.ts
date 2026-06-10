@@ -30,12 +30,54 @@ export {
   type SendResult,
 } from "./gmail.js";
 
-// Browser (Playwright-native; mutating submit wrapped by the gate).
+// Browser service (Playwright-native, ephemeral context per run; the ONE
+// mutating face routes through the gate, read faces are ungated).
 export {
+  withBrowserContext,
+  assertIsolated,
+  computeBackoffMs,
+  politenessDelayMs,
+  parseRobotsDisallow,
+  capSnapshot,
+  rowsComplete,
+  openedOnce,
+  NULL_EMITTER,
+  SNAPSHOT_CAP_CHARS,
+  POLITENESS_JITTER_MS,
+  BrowserIsolationError,
   BrowserTool,
+  gatedSubmitForm,
+  type FormPage,
+  type BrowserEmitter,
+  type BrowserContextOptions,
+  type BrowserSession,
+  type ExtractFallbackResult,
+  type ResponseMatch,
   type PageLike,
   type DealerLeadForm,
 } from "./browser.js";
+
+// Anti-bot block-page signature classifier (first 8 KB scan; blocked captures
+// are discarded and surfaced, never escalated).
+export { classifyBlockSignature } from "./blockSignature.js";
+
+// US-dealer gate — hard filter lives in code, not in any prompt.
+export { isUsDealer, type IsUsDealerOptions } from "./geo.js";
+
+// Outbound-URL SSRF validator (9 ordered rules, fail-closed).
+export {
+  validateSourceUrl,
+  isPrivateIp,
+  SourceUrlValidationError,
+  type ValidateSourceUrlOptions,
+} from "./ssrf.js";
+
+// Dealer-platform inventory scout (fingerprint table + fresh-200 SRP probe).
+export {
+  likelySrpPath,
+  resolveSrp,
+  type ScoutOptions,
+} from "./inventoryScout.js";
 
 // DB (single connection factory, re-exported from @autobroker/db).
 export { openDb, resolveDataDir, type Db } from "./db.js";
