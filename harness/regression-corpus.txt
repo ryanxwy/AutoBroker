@@ -1,0 +1,18 @@
+# Accepted L2 regression corpus — re-run via scripts/regression.sh.
+# One case file per line (lane comes from the case's own [narrative] lane).
+# Append this list at each skill's step-7 acceptance; *.deferred.toml and the
+# cross-provider smoke cases (anthropic/openai, deferred in dev period) stay out.
+# DeepSeek-only, read-only / approve_safe skills only.
+
+# search_profile_intake — accepted 2026-06-05 (api) + UI-lane revalidation 2026-06-10
+search_profile_intake.slash.toml
+search_profile_intake.freeform.toml
+search_profile_intake.decline.toml
+search_profile_intake.force_override.toml
+search_profile_intake.ui_slash.toml
+search_profile_intake.ui_freeform.toml
+search_profile_intake.ui_decline.toml
+
+# dealer_geosearch — accepted 2026-06-10 (UI-lane two rounds)
+dealer_geosearch.ui_narrative.toml
+dealer_geosearch.ui_button.toml
