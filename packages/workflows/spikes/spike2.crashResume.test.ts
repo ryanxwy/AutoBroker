@@ -108,7 +108,9 @@ afterAll(() => {
 });
 
 describe("spike-2/7: crash-and-resume across a real process boundary", () => {
-  it("(a) crash-while-SUSPENDED → fresh recoverOnBoot + resume{approve:true} → success + side effect fired", () => {
+  // Explicit timeouts: every case spawns 1-2 children with a 30s budget each;
+  // the 5s vitest default flakes under parallel suite load.
+  it("(a) crash-while-SUSPENDED → fresh recoverOnBoot + resume{approve:true} → success + side effect fired", { timeout: 120_000 }, () => {
     const dir = freshDataDir("a");
     try {
       // Process A: start to suspension, then exit.
@@ -138,7 +140,7 @@ describe("spike-2/7: crash-and-resume across a real process boundary", () => {
     }
   });
 
-  it("(b) deny path → resume{approve:false} → ZERO side effects; terminal status reported", () => {
+  it("(b) deny path → resume{approve:false} → ZERO side effects; terminal status reported", { timeout: 120_000 }, () => {
     const dir = freshDataDir("b");
     try {
       const a = runChild("start-suspend", dir, "run-b");
@@ -164,7 +166,7 @@ describe("spike-2/7: crash-and-resume across a real process boundary", () => {
     }
   });
 
-  it("(c) killed mid-RUNNING (SIGKILL) → fresh recoverOnBoot sees the stale 'running' row → restartStaleRun resumes from snapshot (stepA NOT re-run)", async () => {
+  it("(c) killed mid-RUNNING (SIGKILL) → fresh recoverOnBoot sees the stale 'running' row → restartStaleRun resumes from snapshot (stepA NOT re-run)", { timeout: 120_000 }, async () => {
     const dir = freshDataDir("c");
     try {
       const status = await runSlowThenKill(dir, "run-c");
@@ -191,7 +193,7 @@ describe("spike-2/7: crash-and-resume across a real process boundary", () => {
     }
   });
 
-  it("(c') killed mid-RUNNING → cancelStaleRun flips an un-restartable stale run to 'canceled'", async () => {
+  it("(c') killed mid-RUNNING → cancelStaleRun flips an un-restartable stale run to 'canceled'", { timeout: 120_000 }, async () => {
     const dir = freshDataDir("cprime");
     try {
       const status = await runSlowThenKill(dir, "run-cp");
@@ -208,7 +210,7 @@ describe("spike-2/7: crash-and-resume across a real process boundary", () => {
     }
   });
 
-  it("(d) dup-runId → startRunGuarded twice → second throws DuplicateRunIdError; ONE run; first state intact", () => {
+  it("(d) dup-runId → startRunGuarded twice → second throws DuplicateRunIdError; ONE run; first state intact", { timeout: 120_000 }, () => {
     const dir = freshDataDir("d");
     try {
       const r = runChild("dup-guard", dir, "run-d");

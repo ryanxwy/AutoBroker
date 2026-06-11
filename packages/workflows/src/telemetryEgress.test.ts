@@ -133,7 +133,10 @@ function externalHosts(events: EgressEvent[]): string[] {
 }
 
 describe("spike-6: telemetry zero-egress (process-level)", () => {
-  it("records ZERO external egress with MASTRA_TELEMETRY_DISABLED=1", () => {
+  // Explicit timeouts: each case spawns a child with its own 120s budget; the
+  // 5s vitest default flakes under parallel suite load (child startup alone
+  // can exceed it when workers saturate the machine).
+  it("records ZERO external egress with MASTRA_TELEMETRY_DISABLED=1", { timeout: 120_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "ab-spike6-disabled-"));
     const egressLog = join(dir, "egress.jsonl");
     try {
@@ -193,7 +196,7 @@ describe("spike-6: telemetry zero-egress (process-level)", () => {
   // Negative control: run WITHOUT MASTRA_TELEMETRY_DISABLED. Either outcome is
   // acceptable (core 1.41 in library mode may never phone home); we only record
   // the observation — this case does NOT gate the verdict.
-  it("negative control: observe egress with telemetry NOT disabled", () => {
+  it("negative control: observe egress with telemetry NOT disabled", { timeout: 120_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "ab-spike6-control-"));
     const egressLog = join(dir, "egress.jsonl");
     try {
