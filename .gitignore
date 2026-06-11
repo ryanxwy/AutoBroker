@@ -31,6 +31,10 @@ temp/
 .agents/
 AGENTS.md
 
+# skill-loop session marker (created by /skill-loop, removed at acceptance;
+# the optional Stop-hook gate keys its full-green scope off this file)
+.claude/.skill-loop-active
+
 # OS
 .DS_Store
 
