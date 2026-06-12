@@ -679,7 +679,10 @@ async function driveResumeScriptDom(driver: UiDriver, step: CaseStep, maxMs: num
 
 /** The empty-result waiver signal: the geosearch confirm summary is a
  *  deterministic zero-LLM template; "0 dealer(s) discovered" + browser activity
- *  means Maps really yielded nothing in radius (nothing to upsert). */
+ *  + ZERO failed/blocked viewports means Maps really yielded nothing in radius
+ *  (nothing to upsert). A zero WITH failed viewports is not a clean empty
+ *  result — rate-limiting / blocked viewports must surface as RED, never hide
+ *  behind the waiver. */
 function geosearchEmptyResultWaiver(
   summaryText: string,
   detail: RunDetail,
@@ -687,6 +690,9 @@ function geosearchEmptyResultWaiver(
   const m = /(\d+) dealer\(s\) discovered/.exec(summaryText);
   if (m === null || Number(m[1]) !== 0) return null;
   if (!detail.sawBrowserActivity) return null;
+  // The confirm summary appends ", N viewport(s) failed" exactly when
+  // blocked+errored > 0 — that zero is suspect, not waivable.
+  if (summaryText.includes("viewport(s) failed")) return null;
   return {
     kind: "table_min_rows",
     reason:

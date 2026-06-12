@@ -28,7 +28,7 @@ location_query = "Irvine, CA 92614"
 follow_up_email = "livetest@example.com"
 financing_preference = "finance"
 trim = "Limited"
-search_radius_miles = 25
+search_radius_miles = 120
 budget_max = 0
 follow_up_phone = "949-555-0100"
 phone_policy = "fake"
@@ -47,7 +47,7 @@ purpose = "Freeform prefill then human-confirm the Tucson profile."
 gate_policy = "approve_safe"
 
 [steps.input_inline]
-prompt = "I want to buy a 2026 Hyundai Tucson Hybrid Limited in Irvine, CA within 25 miles, use a fake phone number for now."
+prompt = "I want to buy a 2026 Hyundai Tucson Hybrid Limited in Irvine, CA within 120 miles, use a fake phone number for now."
 
 [[steps.resume]]
 on = "data_collection"

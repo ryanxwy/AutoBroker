@@ -72,7 +72,11 @@ export const SearchProfileIntakeInputSchema = z
 
     // --- optional / buyer context (12 fields, nullable) ----------------------
     trim: z.string().nullable(),
-    search_radius_miles: z.number().int().nullable(),
+    /** Bounded HERE only (form lane; the partial patch schema inherits it).
+     *  The LLM prefill emit schema stays unbounded on purpose: an out-of-range
+     *  spoken radius must stay a recoverable prefill, never a thrown
+     *  zod_validation failure. */
+    search_radius_miles: z.number().int().min(1).max(500).nullable(),
     /** INTERNAL-ONLY: collected, never dealer-facing (_redact_budget). */
     budget_max: z.number().nullable(),
     /** PII. */

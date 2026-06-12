@@ -12,8 +12,14 @@
 # (page.evaluate extraction; the single LLM call exists only on the
 # snapshot-fallback branch), so an empty ledger is the valid recorded outcome.
 # EMPTY-RESULT WAIVER: if Maps really yields zero candidates in radius, the
-# runner records a table_min_rows waiver (browser activity must be present) —
+# runner records a table_min_rows waiver (browser activity must be present AND
+# zero failed/blocked viewports — a zero with failures is a RED, not a waiver) —
 # see geosearchEmptyResultWaiver in runner.ts.
+#
+# RADIUS 120: live profiles carry a 120-mile search radius. Any radius >50mi
+# yields exactly 5 viewports (center/N/S/E/W at zoom 10), so this case
+# exercises the full 5-viewport scan shape; expect a few dozen SoCal rooftops
+# rather than the single-digit count a 25-mile radius returned.
 
 [meta]
 id = "dealer_geosearch_ui_narrative"
@@ -35,7 +41,7 @@ location_query = "Irvine, CA 92614"
 follow_up_email = "livetest@example.com"
 financing_preference = "finance"
 trim = "Limited"
-search_radius_miles = 25
+search_radius_miles = 120
 budget_max = 0
 follow_up_phone = "949-555-0100"
 phone_policy = "fake"
