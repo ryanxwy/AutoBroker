@@ -260,6 +260,11 @@ export interface BrowserSession {
     url: string,
   ): Promise<{ robotsDisallowed: boolean; blocked: string | null }>;
   lazyScroll(page: Page): Promise<void>;
+  /** Filter face (read-side inventory refinement; allowlisted + fenced,
+   *  ungated by design — see the filter-face section below). */
+  setFilterSelect(page: Page, selector: string, option: string): Promise<void>;
+  tickFilterCheckbox(page: Page, selector: string): Promise<void>;
+  clickFilterApply(page: Page, selector: string): Promise<void>;
   readJson(
     page: Page,
     opts: { match: ResponseMatch; trigger: () => Promise<unknown> },
@@ -628,6 +633,25 @@ function makeSession(deps: SessionDeps): BrowserSession {
     }
   }
 
+  // Filter face — the rung-ii inventory refinement verbs. Page-scoped,
+  // fenced (denylist → lead-form structure → positive allowlist) and voiced;
+  // ungated BY DESIGN: filtering is not a mutation, and these verbs hold no
+  // Approver so the submitForm/withGate funnel is unreachable from here.
+  async function setFilterSelect(page: Page, selector: string, option: string): Promise<void> {
+    assertNotBreached();
+    await runFilterVerb({ page, emitter, verb: "select", selector, option });
+  }
+
+  async function tickFilterCheckbox(page: Page, selector: string): Promise<void> {
+    assertNotBreached();
+    await runFilterVerb({ page, emitter, verb: "tick", selector });
+  }
+
+  async function clickFilterApply(page: Page, selector: string): Promise<void> {
+    assertNotBreached();
+    await runFilterVerb({ page, emitter, verb: "apply", selector });
+  }
+
   /** Promise-before-action, enforced structurally: the response waiter is
    *  ARMED before `trigger` runs. Subscribing after the click loses the race
    *  whenever the XHR returns fast — the #1 flake source — so the helper makes
@@ -766,6 +790,9 @@ function makeSession(deps: SessionDeps): BrowserSession {
     newPage,
     navigate,
     lazyScroll,
+    setFilterSelect,
+    tickFilterCheckbox,
+    clickFilterApply,
     readJson,
     extract,
     snapshot,
@@ -774,6 +801,245 @@ function makeSession(deps: SessionDeps): BrowserSession {
     withTraceChunk,
     submitForm,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Filter interaction face — read-side inventory refinement (modeled on the
+// rejectCookieBanner idiom: page-scoped, allowlisted, voiced on the emitter).
+// These verbs hold NO Approver and never touch withGate/submitForm — filter
+// refinement is not a mutation, so the capture path stays structurally unable
+// to reach the one mutating funnel. Three code-level fences, in precedence
+// order:
+//   (a) hard text+selector DENYLIST, checked FIRST — anything worded like a
+//       lead-capture control refuses loudly;
+//   (b) structural assertion — the target must NOT sit inside a <form>
+//       subtree that collects email/phone (a lead-capture form);
+//   (c) positive allowlist — only <select> option setting, checkbox/radio
+//       ticking, and clicking an apply/update-results/search-inventory
+//       button are expressible at all.
+// ---------------------------------------------------------------------------
+
+/** Lead-capture wording observed across the major dealer platforms ("Check
+ *  Availability", "Get Pre-approved Now", "Value Your Trade", "Get Quote",
+ *  "Test Drive", …). A target whose accessible text OR selector matches is
+ *  refused outright. */
+export const FILTER_DENYLIST_RE =
+  /e-?price|check availability|value( your)? trade|pre-?approv|test drive|contact|quote|chat|offer|financ|reserve/i;
+
+/** The only button wording the apply verb may click. */
+export const FILTER_APPLY_TEXT_RE = /apply|update results|search inventory/i;
+
+export type FilterVerb = "select" | "tick" | "apply";
+
+/** Structural DOM slices for the in-page probe (this package compiles without
+ *  the DOM lib; real elements satisfy these, tests stub them). */
+export interface FilterDomElement {
+  tagName: string;
+  textContent: string | null;
+  parentElement: FilterDomElement | null;
+  getAttribute(name: string): string | null;
+  closest(selector: string): FilterDomElement | null;
+  querySelector(selector: string): FilterDomElement | null;
+}
+export interface FilterDomDocument {
+  querySelector(selector: string): FilterDomElement | null;
+}
+
+/** What the in-page probe reports about a proposed filter target. */
+export interface FilterTargetProbe {
+  tag: string;
+  inputType: string | null;
+  role: string | null;
+  accessibleText: string;
+  inPiiForm: boolean;
+}
+
+export class FilterInteractionRefusedError extends Error {
+  constructor(verb: FilterVerb, selector: string, why: string) {
+    super(
+      `REFUSED filter ${verb} on "${selector}": ${why}. Filter verbs only ` +
+        "refine read-side inventory results; anything shaped like a " +
+        "lead-capture control is out of bounds.",
+    );
+    this.name = "FilterInteractionRefusedError";
+  }
+}
+
+/**
+ * In-page probe: describe the FIRST element matching `selector` for the
+ * fences (null = no match / no document). Executes inside the page via
+ * page.evaluate, so it is fully self-contained — it must not reference
+ * anything from module scope.
+ */
+export function probeFilterTarget(selector: string): FilterTargetProbe | null {
+  const doc = (globalThis as { document?: FilterDomDocument }).document;
+  if (doc === undefined) return null;
+  const el = doc.querySelector(selector);
+  if (el === null) return null;
+
+  const tag = el.tagName.toLowerCase();
+  const typeAttr = el.getAttribute("type");
+
+  // A control's lead-capture wording usually lives on its label rather than
+  // the control itself — fold wrapping and for-linked labels into the text.
+  let labelText = "";
+  const wrapping = el.closest("label");
+  if (wrapping !== null) labelText += ` ${wrapping.textContent ?? ""}`;
+  const id = el.getAttribute("id");
+  if (id !== null && id !== "") {
+    const forLabel = doc.querySelector(`label[for="${id.replace(/"/g, '\\"')}"]`);
+    if (forLabel !== null) labelText += ` ${forLabel.textContent ?? ""}`;
+  }
+
+  let inPiiForm = false;
+  for (let node = el.parentElement; node !== null; node = node.parentElement) {
+    if (
+      node.tagName.toLowerCase() === "form" &&
+      node.querySelector('input[type="email"], input[type="tel"]') !== null
+    ) {
+      inPiiForm = true;
+      break;
+    }
+  }
+
+  return {
+    tag,
+    inputType: typeAttr === null ? null : typeAttr.toLowerCase(),
+    role: el.getAttribute("role"),
+    accessibleText: [
+      el.textContent ?? "",
+      el.getAttribute("aria-label") ?? "",
+      el.getAttribute("value") ?? "",
+      el.getAttribute("title") ?? "",
+      labelText,
+    ].join(" "),
+    inPiiForm,
+  };
+}
+
+/**
+ * The three fences, in precedence order — denylist FIRST, then the lead-form
+ * structure check, then the per-verb positive allowlist. Pure; throws
+ * `FilterInteractionRefusedError` (refuse loudly, never skip silently).
+ */
+export function assertFilterTargetAllowed(
+  verb: FilterVerb,
+  selector: string,
+  probe: FilterTargetProbe,
+): void {
+  if (FILTER_DENYLIST_RE.test(probe.accessibleText) || FILTER_DENYLIST_RE.test(selector)) {
+    throw new FilterInteractionRefusedError(
+      verb,
+      selector,
+      "target matches the lead-capture denylist",
+    );
+  }
+  if (probe.inPiiForm) {
+    throw new FilterInteractionRefusedError(
+      verb,
+      selector,
+      "target sits inside a <form> that collects email/phone (a lead-capture form)",
+    );
+  }
+  switch (verb) {
+    case "select":
+      if (probe.tag !== "select") {
+        throw new FilterInteractionRefusedError(
+          verb,
+          selector,
+          `only <select> widgets are settable (got <${probe.tag}>)`,
+        );
+      }
+      return;
+    case "tick":
+      if (
+        probe.tag !== "input" ||
+        (probe.inputType !== "checkbox" && probe.inputType !== "radio")
+      ) {
+        throw new FilterInteractionRefusedError(
+          verb,
+          selector,
+          `only checkbox/radio inputs are tickable (got <${probe.tag} type=${probe.inputType ?? "?"}>)`,
+        );
+      }
+      return;
+    case "apply": {
+      const buttonish =
+        probe.tag === "button" ||
+        probe.role === "button" ||
+        (probe.tag === "input" &&
+          (probe.inputType === "button" || probe.inputType === "submit"));
+      if (!buttonish) {
+        throw new FilterInteractionRefusedError(
+          verb,
+          selector,
+          `apply target must be a button (got <${probe.tag}>)`,
+        );
+      }
+      if (!FILTER_APPLY_TEXT_RE.test(probe.accessibleText)) {
+        throw new FilterInteractionRefusedError(
+          verb,
+          selector,
+          "apply button text must read apply / update results / search inventory",
+        );
+      }
+      return;
+    }
+  }
+}
+
+/** The minimal slice of Page the filter verbs need (real Pages satisfy it). */
+export interface FilterControlPage {
+  evaluate(
+    fn: (selector: string) => FilterTargetProbe | null,
+    selector: string,
+  ): Promise<FilterTargetProbe | null>;
+  selectOption(
+    selector: string,
+    values: ReadonlyArray<{ value?: string; label?: string }>,
+  ): Promise<unknown>;
+  check(selector: string): Promise<void>;
+  click(selector: string): Promise<void>;
+}
+
+/**
+ * The filter-verb core — exported so the fences and the no-action-on-refusal
+ * guarantee are pinned by unit tests with a fake page. Probe → fences → act →
+ * voice; a refusal throws BEFORE any page action.
+ */
+export async function runFilterVerb(deps: {
+  page: FilterControlPage;
+  emitter: BrowserEmitter;
+  verb: FilterVerb;
+  selector: string;
+  /** Option for the select verb — matched by option value OR visible label. */
+  option?: string;
+}): Promise<void> {
+  const { page, emitter, verb, selector } = deps;
+  const probe = await page.evaluate(probeFilterTarget, selector);
+  if (probe === null) {
+    throw new FilterInteractionRefusedError(verb, selector, "no element matches the selector");
+  }
+  assertFilterTargetAllowed(verb, selector, probe);
+  switch (verb) {
+    case "select": {
+      const option = deps.option;
+      if (option === undefined || option === "") {
+        throw new FilterInteractionRefusedError(verb, selector, "select verb needs an option");
+      }
+      await page.selectOption(selector, [{ value: option }, { label: option }]);
+      emitter.action("filter_select", `${selector} = ${option}`);
+      return;
+    }
+    case "tick":
+      await page.check(selector);
+      emitter.action("filter_tick", selector);
+      return;
+    case "apply":
+      await page.click(selector);
+      emitter.action("filter_apply", selector);
+      return;
+  }
 }
 
 // ---------------------------------------------------------------------------

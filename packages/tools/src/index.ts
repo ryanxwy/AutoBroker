@@ -47,6 +47,19 @@ export {
   BrowserIsolationError,
   BrowserTool,
   gatedSubmitForm,
+  // Filter face (read-side refinement verbs + their fences; never gated,
+  // never holds an Approver).
+  FILTER_DENYLIST_RE,
+  FILTER_APPLY_TEXT_RE,
+  FilterInteractionRefusedError,
+  probeFilterTarget,
+  assertFilterTargetAllowed,
+  runFilterVerb,
+  type FilterVerb,
+  type FilterDomElement,
+  type FilterDomDocument,
+  type FilterTargetProbe,
+  type FilterControlPage,
   type FormPage,
   type BrowserEmitter,
   type BrowserContextOptions,
@@ -104,10 +117,45 @@ export {
 
 // Dealer-platform inventory scout (fingerprint table + fresh-200 SRP probe).
 export {
+  fingerprintPlatform,
   likelySrpPath,
   resolveSrp,
+  type DealerPlatform,
   type ScoutOptions,
 } from "./inventoryScout.js";
+
+// inventory_site_scan deterministic core — pure helpers (byte-identical id
+// hashes + normalizers, match classifier, VIN provenance guard, batched US
+// gate), the filter pre-screen data (rung-i URL templates + rung-ii selector
+// map), and the capture-then-serial persist writer.
+export {
+  urlNormalize,
+  normalizeListingUrl,
+  computeSourceId,
+  computeListingId,
+  classifyMatchStatus,
+  validateVinProvenance,
+  isUsDealerBatch,
+  truncateRawJson,
+  MATCH_STATUSES,
+  RAW_LISTING_JSON_CAP_BYTES,
+  type MatchStatus,
+} from "./inventory/pure.js";
+export {
+  buildFilteredSrpUrl,
+  FILTER_SELECTOR_MAP,
+  type FilterProfileSlice,
+  type PlatformFilterSelectors,
+} from "./inventory/filter.js";
+export {
+  persistScanResults,
+  supersedeStale,
+  type ClassifiedListingRow,
+  type DealerScanOutcome,
+  type PersistRunResult,
+  type ScanStatus,
+  type SupersedeReason,
+} from "./inventory/persist.js";
 
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).

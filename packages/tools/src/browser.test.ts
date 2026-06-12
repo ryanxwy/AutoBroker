@@ -10,18 +10,26 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertFilterTargetAllowed,
   assertIsolated,
   BrowserIsolationError,
   capSnapshot,
   computeBackoffMs,
+  FilterInteractionRefusedError,
   gatedSubmitForm,
   NULL_EMITTER,
   openedOnce,
   parseRobotsDisallow,
   politenessDelayMs,
+  probeFilterTarget,
   rowsComplete,
+  runFilterVerb,
   SNAPSHOT_CAP_CHARS,
   type BrowserEmitter,
+  type FilterControlPage,
+  type FilterDomDocument,
+  type FilterDomElement,
+  type FilterTargetProbe,
   type FormPage,
 } from "./browser.js";
 import { ExternalMutationsBlockedError, type Approver } from "./gate/index.js";
@@ -323,5 +331,258 @@ describe("gatedSubmitForm — the gate/decline/fuse safety branches", () => {
       "click:button[type=submit]",
     ]);
     expect(actions).toEqual([`submit:${FORM.url}`]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Filter interaction face — the fences and the no-action-on-refusal contract.
+// ---------------------------------------------------------------------------
+
+/** Minimal structural fake element (the probe walks exactly these members). */
+function makeEl(opts: {
+  tag: string;
+  attrs?: Record<string, string>;
+  text?: string;
+  closest?: Record<string, FilterDomElement | null>;
+  query?: Record<string, FilterDomElement | null>;
+  parent?: FilterDomElement | null;
+}): FilterDomElement {
+  return {
+    tagName: opts.tag.toUpperCase(),
+    textContent: opts.text ?? "",
+    parentElement: opts.parent ?? null,
+    getAttribute: (name) => opts.attrs?.[name] ?? null,
+    closest: (sel) => opts.closest?.[sel] ?? null,
+    querySelector: (sel) => opts.query?.[sel] ?? null,
+  };
+}
+
+const PII_FORM_SELECTOR = 'input[type="email"], input[type="tel"]';
+
+function withDocument<T>(doc: FilterDomDocument, fn: () => T): T {
+  const g = globalThis as { document?: FilterDomDocument };
+  g.document = doc;
+  try {
+    return fn();
+  } finally {
+    delete g.document;
+  }
+}
+
+describe("probeFilterTarget — the in-page target descriptor", () => {
+  it("returns null without a document, and null when nothing matches", () => {
+    expect(probeFilterTarget("select")).toBeNull(); // no document in node
+    expect(withDocument({ querySelector: () => null }, () => probeFilterTarget("select"))).toBeNull();
+  });
+
+  it("describes a free-standing select (no PII form, option text folded in)", () => {
+    const select = makeEl({ tag: "select", attrs: { name: "make" }, text: "Hyundai Kia Genesis" });
+    const probe = withDocument(
+      { querySelector: (sel) => (sel === "select[name='make']" ? select : null) },
+      () => probeFilterTarget("select[name='make']"),
+    );
+    expect(probe).toEqual({
+      tag: "select",
+      inputType: null,
+      role: null,
+      accessibleText: expect.stringContaining("Hyundai Kia Genesis") as string,
+      inPiiForm: false,
+    });
+  });
+
+  it("flags a target inside a <form> that collects email/phone", () => {
+    const piiForm = makeEl({
+      tag: "form",
+      query: { [PII_FORM_SELECTOR]: makeEl({ tag: "input", attrs: { type: "email" } }) },
+    });
+    const wrapper = makeEl({ tag: "div", parent: piiForm });
+    const input = makeEl({ tag: "input", attrs: { type: "checkbox" }, parent: wrapper });
+    const probe = withDocument({ querySelector: () => input }, () => probeFilterTarget("input"));
+    expect(probe?.inPiiForm).toBe(true);
+  });
+
+  it("folds wrapping-label and for-linked-label text into the accessible text", () => {
+    const wrappingLabel = makeEl({ tag: "label", text: "New (24)" });
+    const box = makeEl({
+      tag: "input",
+      attrs: { type: "checkbox", id: "cond-new" },
+      closest: { label: wrappingLabel },
+    });
+    const forLabel = makeEl({ tag: "label", text: "Condition" });
+    const probe = withDocument(
+      {
+        querySelector: (sel) => (sel === 'label[for="cond-new"]' ? forLabel : box),
+      },
+      () => probeFilterTarget("#cond-new"),
+    );
+    expect(probe?.accessibleText).toContain("New (24)");
+    expect(probe?.accessibleText).toContain("Condition");
+  });
+});
+
+describe("assertFilterTargetAllowed — three fences, denylist first", () => {
+  function probe(overrides: Partial<FilterTargetProbe> = {}): FilterTargetProbe {
+    return {
+      tag: "select",
+      inputType: null,
+      role: null,
+      accessibleText: "Make Model Year",
+      inPiiForm: false,
+      ...overrides,
+    };
+  }
+
+  it("(a) denylist on the accessible text refuses loudly", () => {
+    for (const text of [
+      "Check Availability",
+      "Get ePrice",
+      "Get E-Price",
+      "Value Your Trade",
+      "Get Pre-Approved Now",
+      "Schedule Test Drive",
+      "Contact Us",
+      "Get Quote",
+      "Chat with us",
+      "Special Offers",
+      "Apply for Financing",
+      "Reserve Now",
+    ]) {
+      expect(() => assertFilterTargetAllowed("apply", "button.x", probe({ tag: "button", accessibleText: text }))).toThrow(
+        FilterInteractionRefusedError,
+      );
+      expect(() => assertFilterTargetAllowed("apply", "button.x", probe({ tag: "button", accessibleText: text }))).toThrow(
+        /denylist/,
+      );
+    }
+  });
+
+  it("(a) denylist on the SELECTOR refuses even when the text is clean", () => {
+    expect(() => assertFilterTargetAllowed("apply", ".eprice-bar button", probe({ tag: "button", accessibleText: "Apply" }))).toThrow(/denylist/);
+  });
+
+  it("(a) denylist outranks the allowlist — a deny-worded <select> still refuses", () => {
+    expect(() => assertFilterTargetAllowed("select", "select", probe({ accessibleText: "Finance options" }))).toThrow(/denylist/);
+  });
+
+  it("(b) the lead-form structure fence refuses a clean-worded target", () => {
+    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "checkbox", inPiiForm: true }))).toThrow(
+      /lead-capture form/,
+    );
+  });
+
+  it("(c) allowlist passes: select on <select>, tick on checkbox/radio, apply on apply-worded buttons", () => {
+    expect(() => assertFilterTargetAllowed("select", "select[name='make']", probe())).not.toThrow();
+    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "checkbox", accessibleText: "New" }))).not.toThrow();
+    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "radio", accessibleText: "New" }))).not.toThrow();
+    for (const text of ["Apply Filters", "Update Results", "Search Inventory"]) {
+      expect(() => assertFilterTargetAllowed("apply", "button.go", probe({ tag: "button", accessibleText: text }))).not.toThrow();
+    }
+    // role=button counts as button-ish.
+    expect(() => assertFilterTargetAllowed("apply", "div.go", probe({ tag: "div", role: "button", accessibleText: "Update Results" }))).not.toThrow();
+  });
+
+  it("(c) allowlist rejections: wrong widget kinds and non-apply button text", () => {
+    expect(() => assertFilterTargetAllowed("select", "input", probe({ tag: "input", inputType: "text" }))).toThrow(/only <select>/);
+    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "text" }))).toThrow(/checkbox\/radio/);
+    expect(() => assertFilterTargetAllowed("tick", "a", probe({ tag: "a" }))).toThrow(/checkbox\/radio/);
+    expect(() => assertFilterTargetAllowed("apply", "a.go", probe({ tag: "a", accessibleText: "Update Results" }))).toThrow(/must be a button/);
+    expect(() => assertFilterTargetAllowed("apply", "button.go", probe({ tag: "button", accessibleText: "Go" }))).toThrow(
+      /apply \/ update results \/ search inventory/,
+    );
+  });
+});
+
+describe("runFilterVerb — probe, fence, act; a refusal never touches the page", () => {
+  function fakeFilterPage(probeResult: FilterTargetProbe | null): {
+    page: FilterControlPage;
+    ops: string[];
+  } {
+    const ops: string[] = [];
+    return {
+      ops,
+      page: {
+        evaluate: async () => probeResult,
+        selectOption: async (selector, values) => {
+          ops.push(`selectOption:${selector}:${JSON.stringify(values)}`);
+          return [];
+        },
+        check: async (selector) => {
+          ops.push(`check:${selector}`);
+        },
+        click: async (selector) => {
+          ops.push(`click:${selector}`);
+        },
+      },
+    };
+  }
+
+  function cleanProbe(overrides: Partial<FilterTargetProbe> = {}): FilterTargetProbe {
+    return {
+      tag: "select",
+      inputType: null,
+      role: null,
+      accessibleText: "Make",
+      inPiiForm: false,
+      ...overrides,
+    };
+  }
+
+  it("denylist refusal happens BEFORE any page action", async () => {
+    const { page, ops } = fakeFilterPage(cleanProbe({ accessibleText: "Check Availability" }));
+    await expect(
+      runFilterVerb({ page, emitter: NULL_EMITTER, verb: "select", selector: "select", option: "Hyundai" }),
+    ).rejects.toThrow(FilterInteractionRefusedError);
+    expect(ops).toEqual([]);
+  });
+
+  it("a selector matching nothing refuses (loudly, zero actions)", async () => {
+    const { page, ops } = fakeFilterPage(null);
+    await expect(
+      runFilterVerb({ page, emitter: NULL_EMITTER, verb: "apply", selector: "button.go" }),
+    ).rejects.toThrow(/no element matches/);
+    expect(ops).toEqual([]);
+  });
+
+  it("select verb without an option refuses before acting", async () => {
+    const { page, ops } = fakeFilterPage(cleanProbe());
+    await expect(
+      runFilterVerb({ page, emitter: NULL_EMITTER, verb: "select", selector: "select" }),
+    ).rejects.toThrow(/needs an option/);
+    expect(ops).toEqual([]);
+  });
+
+  it("approved select sets the option by value-or-label and voices the action", async () => {
+    const { page, ops } = fakeFilterPage(cleanProbe());
+    const actions: string[] = [];
+    const emitter: BrowserEmitter = {
+      ...NULL_EMITTER,
+      action: (type, target) => {
+        actions.push(`${type}:${target}`);
+      },
+    };
+    await runFilterVerb({ page, emitter, verb: "select", selector: "select[name='make']", option: "Hyundai" });
+    expect(ops).toEqual([
+      `selectOption:select[name='make']:${JSON.stringify([{ value: "Hyundai" }, { label: "Hyundai" }])}`,
+    ]);
+    expect(actions).toEqual(["filter_select:select[name='make'] = Hyundai"]);
+  });
+
+  it("approved tick checks the box; approved apply clicks the button — both voiced", async () => {
+    const tick = fakeFilterPage(cleanProbe({ tag: "input", inputType: "checkbox", accessibleText: "New" }));
+    const actions: string[] = [];
+    const emitter: BrowserEmitter = {
+      ...NULL_EMITTER,
+      action: (type, target) => {
+        actions.push(`${type}:${target}`);
+      },
+    };
+    await runFilterVerb({ page: tick.page, emitter, verb: "tick", selector: "#cond-new" });
+    expect(tick.ops).toEqual(["check:#cond-new"]);
+
+    const apply = fakeFilterPage(cleanProbe({ tag: "button", accessibleText: "Update Results" }));
+    await runFilterVerb({ page: apply.page, emitter, verb: "apply", selector: "button.go" });
+    expect(apply.ops).toEqual(["click:button.go"]);
+
+    expect(actions).toEqual(["filter_tick:#cond-new", "filter_apply:button.go"]);
   });
 });
