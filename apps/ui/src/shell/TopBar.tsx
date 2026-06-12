@@ -146,7 +146,7 @@ export function TopBar({
                       style={{ border: "none", background: "none", textAlign: "left", padding: 0 }}
                     >
                       {s.title ?? s.id}
-                      {s.pinned_profile_id !== null ? " 📌" : ""}
+                      {s.pinned_profile_id !== null ? " (pinned)" : ""}
                     </button>
                   </div>
                 ))}

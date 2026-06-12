@@ -315,6 +315,11 @@ export function toCase(raw: TomlTable): Case {
         `step "${step.id}" profile_scope_from="${step.profileScopeFrom}" does not name an earlier step`,
       );
     }
+    if (seen.has(step.id)) {
+      // Evidence dirs are keyed <cell_id>__<stepId>; a duplicate id would
+      // silently overwrite the earlier step's evidence.
+      throw new Error(`duplicate step id "${step.id}" in case (evidence dirs would collide)`);
+    }
     seen.add(step.id);
   }
 
