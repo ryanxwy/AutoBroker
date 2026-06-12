@@ -237,7 +237,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // launch error.
   const doLaunchSkill = (skill: string, extra?: Record<string, unknown>, userText?: string): void => {
     setLaunchError(null);
-    launchSkill(client, { skill, ...(extra !== undefined ? { args: extra } : {}) })
+    // The run links to the rail's CURRENT session (the durable bound turn the
+    // Searches popover pill reads); a session-less rail starts headless.
+    launchSkill(client, {
+      skill,
+      ...(extra !== undefined ? { args: extra } : {}),
+      sessionId: sessionIdRef.current,
+    })
       .then((ack) => bindAck(ack, `/${skill}`, userText))
       .catch((err: unknown) => {
         setLaunchError(err instanceof Error ? err.message : `Could not start ${skill}.`);

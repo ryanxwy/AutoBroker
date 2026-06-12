@@ -28,31 +28,40 @@ export type LaunchMode =
 export interface LaunchArgs {
   mode: LaunchMode;
   /** The session intake was triggered from (its pin, if any, drives the fork +
-   *  scope notice). Omitted for a true headless / first-launch start. */
+   *  scope notice). null/omitted = first launch — the fork still happens (a
+   *  fresh unpinned session with no notice), so every rail intake run has a
+   *  session home the popover can re-enter later. */
   fromSessionId?: string | null;
 }
 
 /** Start a NON-intake skill run in slash mode (the generic skill-run start).
  *  Same StartAck contract as intake, but no fork: only intake forces the
- *  fresh-unpinned fork semantics, so no from_session_id is sent. `args`
- *  (slash key=value pairs / the STOP-picker's search_profile_id) spread into
- *  the POST body — the skill's own RunDescriptor validates its slice
- *  server-side (unknown skill → 400, bad field → 400 content_invalid). */
+ *  fresh-unpinned fork semantics. When the rail is on a session, `sessionId`
+ *  links the run to it (the durable bound-turn the popover pill reads); a
+ *  session-less rail starts headless. `args` (slash key=value pairs / the
+ *  STOP-picker's search_profile_id) spread into the POST body — the skill's
+ *  own RunDescriptor validates its slice server-side (unknown skill → 400,
+ *  bad field → 400 content_invalid). */
 export async function launchSkill(
   client: ApiClient,
-  args: { skill: string; args?: Record<string, unknown> },
+  args: { skill: string; args?: Record<string, unknown>; sessionId?: string | null },
 ): Promise<StartAck> {
-  return client.startRun({ ...(args.args ?? {}), skill: args.skill, input_mode: "slash" });
+  return client.startRun({
+    ...(args.args ?? {}),
+    skill: args.skill,
+    input_mode: "slash",
+    ...(args.sessionId != null ? { session_id: args.sessionId } : {}),
+  });
 }
 
-/** Start an intake run. Always forks a fresh unpinned session when a source
- *  session is given so a stale pin never leaks into a new search. */
+/** Start an intake run. ALWAYS forks a fresh unpinned session from the current
+ *  one (a stale pin never leaks into a new search; a first launch forks from
+ *  nothing) — from_session_id is sent even when null so the server-side fork
+ *  rule fires and the run lands in a durable session. */
 export async function launchIntake(client: ApiClient, args: LaunchArgs): Promise<StartAck> {
   const base = {
     skill: "search_profile_intake" as const,
-    ...(args.fromSessionId !== undefined && args.fromSessionId !== null
-      ? { from_session_id: args.fromSessionId }
-      : {}),
+    from_session_id: args.fromSessionId ?? null,
   };
   if (args.mode.kind === "freeform") {
     return client.startRun({

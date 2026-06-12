@@ -255,6 +255,10 @@ describe("App — non-intake slash starts THAT skill", () => {
 
     expect(posted).toHaveLength(1);
     expect(posted[0]!["skill"]).toBe("search_profile_intake");
+    // The fork rule fires on EVERY intake — a first launch forks from nothing
+    // (from_session_id present-null), so the run always has a session home.
+    expect("from_session_id" in posted[0]!).toBe(true);
+    expect(posted[0]!["from_session_id"]).toBeNull();
     expect(window.location.pathname).toBe("/runs/run-xyz");
     r.unmount();
   });
