@@ -1,12 +1,13 @@
 # harness/cases/dealer_geosearch.ui_button.toml — the same dealer_geosearch
-# journey, but step 2 launches from the HOME LEDGER RUN BUTTON: after intake the
-# user returns to Home (browser Back) and clicks the real Run button on the
-# dealer_geosearch pipeline row (enabled once an active profile exists — the
-# pin-gate projection). This is the SECOND real user surface for starting a
-# skill. The chat-rail surfaces stay: slash is covered by ui_narrative;
-# FREEFORM routing to non-intake skills does not exist BY DESIGN (freeform is
-# intake-scoped — the ratified scope-notice behavior; there is no freeform
-# router), so this round is button-not-freeform.
+# journey, but step 2 launches from the SKILLS POPOVER RUN BUTTON: after intake
+# the user opens the TopBar Skills popover and clicks the real Run button on
+# the dealer_geosearch row (enabled once an active profile exists — the
+# readiness-grouping projection; the popover refetches on every open). This is
+# the SECOND real user surface for starting a skill. The chat-rail surfaces
+# stay: slash is covered by ui_narrative; FREEFORM routing to non-intake skills
+# does not exist BY DESIGN (freeform is intake-scoped — the ratified
+# scope-notice behavior; there is no freeform router), so this round is
+# button-not-freeform.
 
 [meta]
 id = "dealer_geosearch_ui_button"
@@ -78,12 +79,12 @@ kind = "cost_and_time"
 kind = "malformed_tool_call"
 expect = "absent"
 
-# ---- step 2: dealer_geosearch from the Home Run button -----------------------
+# ---- step 2: dealer_geosearch from the Skills popover Run button -------------
 
 [[steps]]
 id = "geosearch_button"
 skill = "dealer_geosearch"
-purpose = "Launch geosearch from the Home pipeline ledger's real Run button."
+purpose = "Launch geosearch from the Skills popover's real Run button."
 gate_policy = "approve_safe"
 launch = "skills_popover"
 
