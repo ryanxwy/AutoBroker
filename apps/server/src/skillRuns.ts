@@ -59,7 +59,7 @@ import {
 import { policy } from "@autobroker/model";
 import { GEOSEARCH_SKILL_ID, INTAKE_SKILL_ID } from "@autobroker/skills";
 import {
-  startRunGuarded,
+  beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
@@ -491,9 +491,16 @@ export class SkillRunService {
    * Start a skill run. The input is the descriptor-built workflow inputData
    * (the route runs buildInput BEFORE any session fork so a bad body leaves no
    * side effects). Generates a uuid runId when absent. Opens the pubsub channel
-   * (init frame, driver_kind injected), then drives the first start() and
-   * translates the result. Returns the runId. A DuplicateRunIdError from
-   * startRunGuarded propagates (the route maps it to 409).
+   * (init frame, driver_kind injected), then begins the run: the GUARD half is
+   * awaited (DuplicateRunIdError propagates so the route can 409; ownership +
+   * Mastra run creation are durable before the ack), the DRIVE half is NOT —
+   * the start returns while the workflow runs, so the rail subscribes the SSE
+   * stream DURING the run (a no-suspend browser skill streams its activity to
+   * a connected client instead of blocking the POST for its whole wall-clock).
+   * The first WorkflowResult is translated when the drive settles (at the
+   * first suspend, or at the terminal); a drive REJECTION (Mastra resolves
+   * failed-status results — a rejection is plumbing-level) lands as an error
+   * frame so the stream always terminates.
    */
   async start(args: {
     skill: string;
@@ -507,9 +514,16 @@ export class SkillRunService {
     }
     const runId = args.runId ?? randomUUID();
 
+    // The dup-id guard + run creation come FIRST: a 409 must leave no channel
+    // or run state behind for the already-existing run id.
+    const workflow = this.mastra.getWorkflow(descriptor.workflowId);
+    const { started } = await beginRunGuarded(workflow, {
+      runId,
+      inputData: args.input,
+    });
+
     // First frame: init {run_id, skill, driver_kind} (the pubsub injects
-    // driver_kind). attachInit is idempotent; a re-used runId without a prior run
-    // would already have a channel — but startRunGuarded below rejects a dup id.
+    // driver_kind).
     this.pubsub.attachInit(runId, descriptor.skillId, descriptor.driverKind());
 
     this.runs.set(runId, {
@@ -520,15 +534,18 @@ export class SkillRunService {
       claims: new Map(),
     });
 
-    const workflow = this.mastra.getWorkflow(descriptor.workflowId);
-    // startRunGuarded is the dup-runId gate (DuplicateRunIdError → 409) AND the
-    // ownership registration recoverOnBoot reads. It awaits the first start().
-    const { result } = await startRunGuarded(workflow, {
-      runId,
-      inputData: args.input,
-    });
+    void started
+      .then((result) => {
+        this.translate(runId, result);
+      })
+      .catch((err: unknown) => {
+        const run = this.runs.get(runId);
+        if (run !== undefined && !run.terminal) {
+          run.terminal = true;
+          this.pubsub.append(runId, { kind: "error", payload: this.errorFramePayload(err) });
+        }
+      });
 
-    this.translate(runId, result);
     return { runId };
   }
 

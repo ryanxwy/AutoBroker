@@ -309,15 +309,42 @@ export async function startRunGuarded<TInput = unknown>(
   workflow: Workflow,
   args: StartRunGuardedArgs<TInput>,
 ): Promise<{ runId: string; result: unknown }> {
+  const begun = await beginRunGuarded(workflow, args);
+  const result = await begun.started;
+  return { runId: begun.runId, result };
+}
+
+/** What {@link beginRunGuarded} returns: the run exists (guard passed, ownership
+ *  registered, Mastra run created) and `started` settles when the FIRST drive
+ *  segment does — at the first suspend, or at the terminal for a no-suspend
+ *  workflow. */
+export interface BegunRun {
+  runId: string;
+  /** The in-flight start() — resolves with the first WorkflowResult. */
+  started: Promise<unknown>;
+}
+
+/**
+ * The split form of {@link startRunGuarded}: AWAIT the guard half (dup-id check
+ * → typed DuplicateRunIdError, ownership registration, run creation), get back
+ * the UNAWAITED drive half. The app's start route uses this so the HTTP ack
+ * returns while the workflow RUNS — a no-suspend browser skill streams its
+ * progress to an already-connected client instead of blocking the start for
+ * its whole wall-clock. Same guard semantics and the same TOCTOU limit as
+ * startRunGuarded (which is now a thin await over this).
+ */
+export async function beginRunGuarded<TInput = unknown>(
+  workflow: Workflow,
+  args: StartRunGuardedArgs<TInput>,
+): Promise<BegunRun> {
   const existing = await workflow.getWorkflowRunById(args.runId);
   if (existing !== null) {
     throw new DuplicateRunIdError(workflow.id, args.runId, existing.status);
   }
 
   // Register ownership BEFORE start: the run is live in-process for the whole
-  // awaited window, and recoverOnBoot must never classify it as stale.
+  // drive window, and recoverOnBoot must never classify it as stale.
   ownedRunIds.add(args.runId);
   const run = await workflow.createRun({ runId: args.runId });
-  const result = await run.start({ inputData: args.inputData });
-  return { runId: args.runId, result };
+  return { runId: args.runId, started: run.start({ inputData: args.inputData }) };
 }

@@ -391,3 +391,79 @@ describe("formDecision — decline terminal projection", () => {
     expect(summary?.status).toBe("declined");
   });
 });
+
+describe("start — non-blocking drive (the ack returns while the run is in flight)", () => {
+  /** A fake whose start() hangs on a controllable promise — the no-suspend
+   *  browser-skill shape (the whole workflow is one long drive segment). */
+  function hangingMastra(): { mastra: never; finish: (result: Record<string, unknown>) => void } {
+    let started = false;
+    let last: Record<string, unknown> | null = null;
+    let release: (r: Record<string, unknown>) => void = () => undefined;
+    const gate = new Promise<Record<string, unknown>>((resolve) => {
+      release = resolve;
+    });
+    const handle = {
+      start: async () => {
+        started = true;
+        last = await gate;
+        return last;
+      },
+      resume: async () => {
+        throw new Error("no resume in this scenario");
+      },
+    };
+    const workflow = {
+      createRun: async () => handle,
+      getWorkflowRunById: async () =>
+        started ? { status: (last ?? { status: "running" })["status"] ?? "running" } : null,
+    };
+    return {
+      mastra: { getWorkflow: () => workflow } as never,
+      finish: (result) => release(result),
+    };
+  }
+
+  it("start() acks immediately; the terminal frame lands when the drive settles", async () => {
+    const pubsub = new RunPubSub();
+    const { mastra, finish } = hangingMastra();
+    const svc = new SkillRunService(mastra, pubsub);
+
+    // The ack returns while the workflow is STILL RUNNING (the drive half is
+    // not awaited) — a subscriber attached now sees the run live.
+    const { runId } = await svc.start({
+      skill: "search_profile_intake",
+      input: { input_mode: "slash", freeform_text: null, seed_fields: null },
+    });
+    expect(pubsub.isTerminal(runId)).toBe(false);
+    expect((await svc.statusSummary(runId))?.status).toBe("running");
+
+    // The drive settles → the text+done frames land on the open channel.
+    finish({ status: "success", result: { outcome: "created", vehicle: "x", location: "y" } });
+    await new Promise((r) => setTimeout(r, 0));
+    const kinds = pubsub.snapshot(runId).map((e) => e.kind);
+    expect(kinds[kinds.length - 1]).toBe("done");
+  });
+
+  it("a drive REJECTION lands as an error frame (the stream always terminates)", async () => {
+    const pubsub = new RunPubSub();
+    let started = false;
+    const workflow = {
+      createRun: async () => ({
+        start: async () => {
+          started = true;
+          throw new Error("storage exploded mid-drive");
+        },
+      }),
+      getWorkflowRunById: async () => (started ? { status: "failed" } : null),
+    };
+    const svc = new SkillRunService({ getWorkflow: () => workflow } as never, pubsub);
+    const { runId } = await svc.start({
+      skill: "search_profile_intake",
+      input: { input_mode: "slash", freeform_text: null, seed_fields: null },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const last = pubsub.snapshot(runId).at(-1)!;
+    expect(last.kind).toBe("error");
+    expect(last.payload["reason"]).toBe("storage exploded mid-drive");
+  });
+});
