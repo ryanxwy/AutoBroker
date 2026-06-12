@@ -60,7 +60,15 @@ export type AnchorSpec =
       kind: "browser_activity";
       expect?: "present" | "absent";
     }
-  | { kind: "approval_gate"; gateBeforeProse?: boolean }
+  | {
+      /** Default ("present"): an approval/HITL gate must have rendered.
+       *  "absent" asserts ZERO gate frames — the behavioral no-re-ask proof
+       *  (e.g. a registry-remembered source must not re-fire the
+       *  first-encounter approval on a second run). */
+      kind: "approval_gate";
+      expect?: "present" | "absent";
+      gateBeforeProse?: boolean;
+    }
   | {
       kind: "table_min_rows";
       table: string;
@@ -158,9 +166,21 @@ export function evalAnchor(
     }
 
     case "approval_gate": {
-      // Default: a gate rendered at all. When gateBeforeProse is requested, also
-      // require the gate frame to PRECEDE the first prose text frame.
+      // Default: a gate rendered at all. "absent" asserts the inverse (the
+      // behavioral no-re-ask proof — mirrors browser_activity's absent arm).
+      // When gateBeforeProse is requested, also require the gate frame to
+      // PRECEDE the first prose text frame.
       const gateRendered = detail.sawApprovalGate === true;
+      if (spec.expect === "absent") {
+        const ok = !gateRendered;
+        return {
+          kind: "approval_gate",
+          ok,
+          expected: "absent (zero gate frames)",
+          observed: gateRendered,
+          ...(ok ? {} : { detail: "an approval gate rendered on a step that must never ask" }),
+        };
+      }
       if (spec.gateBeforeProse === true) {
         const ok = gateRendered && detail.gateBeforeProse;
         return {

@@ -329,8 +329,19 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
       }
       return { kind: "browser_activity", expect };
     }
-    case "approval_gate":
-      return { kind: "approval_gate", ...(raw.gate_before_prose !== undefined ? { gateBeforeProse: raw.gate_before_prose } : {}) };
+    case "approval_gate": {
+      // Default: a gate must have rendered. expect="absent" asserts the
+      // inverse (the behavioral no-re-ask proof — mirrors browser_activity).
+      const expect = raw.expect;
+      if (expect !== undefined && expect !== "present" && expect !== "absent") {
+        throw new Error('approval_gate anchor: expect must be "present" | "absent" when given');
+      }
+      return {
+        kind: "approval_gate",
+        ...(expect !== undefined ? { expect } : {}),
+        ...(raw.gate_before_prose !== undefined ? { gateBeforeProse: raw.gate_before_prose } : {}),
+      };
+    }
     case "table_min_rows": {
       if (raw.table === undefined) throw new Error("table_min_rows anchor requires table");
       const scope = raw.scope ?? "profile";

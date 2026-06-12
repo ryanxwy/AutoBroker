@@ -56,6 +56,9 @@ export const INVENTORY_SITE_SCAN_SKILL_ID = "inventory_site_scan" as const;
  *  pending dealer_inventory_sources links). */
 export const INVENTORY_LINK_SCAN_SKILL_ID = "inventory_link_scan" as const;
 
+/** The incentive scrape skill id (skill #5, OEM first-encounter approval). */
+export const INCENTIVE_SCRAPE_SKILL_ID = "incentive_scrape" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -146,15 +149,16 @@ export const SKILLS: readonly SkillDef[] = [
     outputs: "listings",
   },
   {
-    id: "incentive_scrape",
+    id: INCENTIVE_SCRAPE_SKILL_ID,
     slash: "/incentive_scrape",
     title: "Incentive scrape",
-    summary: "Scrape current manufacturer/dealer incentives for a vehicle.",
+    summary:
+      "Scrape current manufacturer incentives for each active profile's vehicle (first-encounter source approval).",
     phase: 2,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["make", "model", "region"],
+    status: "implemented",
+    workflowId: INCENTIVE_SCRAPE_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "incentives",
   },
 

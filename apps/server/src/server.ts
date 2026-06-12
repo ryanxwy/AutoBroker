@@ -30,6 +30,7 @@ import {
   RailSessionStore,
   createRailMemory,
   setGeosearchBrowserEmitterFactory,
+  setIncentiveScrapeBrowserEmitterFactory,
   setInventoryScanBrowserEmitterFactory,
   setLinkScanBrowserEmitterFactory,
 } from "@autobroker/workflows";
@@ -81,6 +82,7 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   setGeosearchBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
   setInventoryScanBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
   setLinkScanBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
+  setIncentiveScrapeBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
 
   // sessions = Mastra Memory threads. The rail Memory is constructed in the
   // workflows layer (createRailMemory — the ONLY @mastra/memory construction; the

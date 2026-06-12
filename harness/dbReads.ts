@@ -29,7 +29,10 @@ import { openDb, type Db } from "@autobroker/db";
  *  dealer_geosearch write target (PK (search_profile_id, dealer_id) — the
  *  search_profile_id column scopes it like the others);
  *  dealer_inventory_sources + inventory_listings are the inventory_site_scan
- *  write targets (both carry a NOT NULL search_profile_id). */
+ *  write targets (both carry a NOT NULL search_profile_id);
+ *  manufacturer_incentives is the incentive_scrape write target — it carries
+ *  NO search_profile_id (keyed (make, model, zip)), so its "profile scope" is
+ *  the join through the profile's own make/model/postal_code slice. */
 export const SNAPSHOT_TABLES = [
   "search_profiles",
   "audit_log",
@@ -37,6 +40,7 @@ export const SNAPSHOT_TABLES = [
   "profile_dealers",
   "dealer_inventory_sources",
   "inventory_listings",
+  "manufacturer_incentives",
 ] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
@@ -90,9 +94,23 @@ function readOne<T = Record<string, unknown>>(db: Db, sql: string, params: unkno
 
 /** Count rows in a table whose search_profile_id matches (profile scope). For
  *  search_profiles the "profile-scoped" count is the existence of the row whose
- *  PK = profileId (0 or 1). null profileId → 0 (nothing scoped yet). */
+ *  PK = profileId (0 or 1). manufacturer_incentives has NO profile column —
+ *  its scope is the profile's OWN (make, model, postal_code) slice, joined
+ *  through search_profiles. null profileId → 0 (nothing scoped yet). */
 function profileScopedCount(db: Db, table: SnapshotTable, profileId: string | null): number {
   if (profileId === null) return 0;
+  if (table === "manufacturer_incentives") {
+    const row = readOne<{ n: number }>(
+      db,
+      `SELECT COUNT(*) AS n FROM manufacturer_incentives mi
+        JOIN search_profiles sp ON sp.search_profile_id = ?
+       WHERE LOWER(mi.make) = LOWER(sp.make)
+         AND LOWER(mi.model) = LOWER(sp.model)
+         AND mi.zip = sp.postal_code`,
+      [profileId],
+    );
+    return row?.n ?? 0;
+  }
   const sql =
     table === "search_profiles"
       ? `SELECT COUNT(*) AS n FROM search_profiles WHERE search_profile_id = ?`

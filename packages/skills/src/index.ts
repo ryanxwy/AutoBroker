@@ -14,6 +14,7 @@ export {
   GEOSEARCH_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
   INVENTORY_LINK_SCAN_SKILL_ID,
+  INCENTIVE_SCRAPE_SKILL_ID,
   getSkill,
 } from "./registry.js";
 export type {

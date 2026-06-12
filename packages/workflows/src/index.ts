@@ -238,6 +238,29 @@ export {
   type IncentiveExtract,
 } from "./incentiveScrapeContracts.js";
 
+// The incentive_scrape skill workflow (skill #5 — 7 flat steps, ONE
+// first-encounter approval suspend before any navigation). Test-only deps
+// seam + the app-set per-run browser-emitter factory are exported alongside
+// the capture/collector helpers the offline tests pin.
+export {
+  incentiveScrapeWorkflow,
+  INCENTIVE_SCRAPE_WORKFLOW_ID,
+  setIncentiveScrapeBrowserEmitterFactory,
+  __setIncentiveScrapeDepsForTests,
+  __resetIncentiveScrapeDepsForTests,
+  collectOfferCards,
+  weaveOfferCards,
+  rooftopSpecialsUrls,
+  captureOffersImpl,
+  OFFER_COLLECT_MAX,
+  OFFER_RENDER_MIN_CHARS,
+  ROOFTOP_SPECIALS_PATHS,
+  type IncentiveScrapeWorkflowDeps,
+  type CollectedOfferCard,
+  type OfferCaptureArgs,
+  type OfferCaptureOutcome,
+} from "./incentiveScrape.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

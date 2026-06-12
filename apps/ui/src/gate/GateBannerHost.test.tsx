@@ -2,11 +2,14 @@
 /**
  * GateBannerHost.test — the banner-track routing + the never-hidden safety
  * floor. batch_review renders its REAL decision surface (BatchReviewCard) and
- * wires submit/decline onto the decide() controller; the other banner-tracked
- * kinds (approval / typed_yes) still surface the pending placeholder with zero
- * decision controls; a rail-tracked kind leaves the banner host empty; a
- * MALFORMED batch_review payload falls back to the placeholder (a pending gate
- * is never silently hidden, never mis-rendered).
+ * wires submit/decline onto the decide() controller; an approval suspend
+ * carrying a `summary` renders the REAL ApprovalPrompt (Approve → accept,
+ * Deny → decline, Cancel run → cancel; sensitive hides batch approval); the
+ * remaining banner-tracked kinds (typed_yes, a summary-less approval) still
+ * surface the pending placeholder with zero decision controls; a rail-tracked
+ * kind leaves the banner host empty; a MALFORMED batch_review payload falls
+ * back to the placeholder (a pending gate is never silently hidden, never
+ * mis-rendered).
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -42,7 +45,7 @@ const BATCH_SPEC = {
 };
 
 describe("GateBannerHost — never-hidden pending card", () => {
-  it("a banner-tracked 'approval' suspend renders the visible pending card with no decision controls", () => {
+  it("a SUMMARY-LESS 'approval' suspend renders the visible pending card with no decision controls", () => {
     const r = render(<GateBannerHost awaiting={awaiting("approval")} decision={controller()} />);
     const card = r.get("gate-banner-pending");
     expect(card.textContent).toContain("approval");
@@ -100,6 +103,56 @@ describe("GateBannerHost — the batch_review decision surface", () => {
       <GateBannerHost awaiting={awaiting("batch_review", BATCH_SPEC)} decision={decision} />,
     );
     expect(r.get("batch-decision-error").textContent).toContain("content_invalid");
+    r.unmount();
+  });
+});
+
+const APPROVAL_SPEC = {
+  summary: "First encounter with a new incentive source: scrape https://www.hyundaiusa.com/us/en/offers ?",
+  sensitive: true,
+  oemUrl: "https://www.hyundaiusa.com/us/en/offers",
+  normalizedUrl: "https://www.hyundaiusa.com/us/en/offers",
+  make: "Hyundai",
+  model: "Tucson Hybrid",
+  reason: "oem_first_encounter",
+};
+
+describe("GateBannerHost — the approval decision surface", () => {
+  it("a summary-carrying approval renders the REAL ApprovalPrompt (no placeholder); Approve posts accept", () => {
+    const decision = controller();
+    const r = render(
+      <GateBannerHost awaiting={awaiting("approval", APPROVAL_SPEC)} decision={decision} />,
+    );
+    expect(r.query("gate-banner-pending")).toBeNull();
+    const card = r.get("approval-prompt");
+    expect(card.textContent).toContain("hyundaiusa.com");
+    // sensitive: the danger frame is on and batch approval is HIDDEN.
+    expect(card.getAttribute("data-sensitive")).toBe("true");
+    expect(r.query("approval-approve-all")).toBeNull();
+
+    click(r.get("approval-approve"));
+    expect(decision.decide).toHaveBeenCalledWith("accept");
+    r.unmount();
+  });
+
+  it("Deny posts decline and Cancel run posts cancel", () => {
+    const decision = controller();
+    const r = render(
+      <GateBannerHost awaiting={awaiting("approval", APPROVAL_SPEC)} decision={decision} />,
+    );
+    click(r.get("approval-deny"));
+    expect(decision.decide).toHaveBeenCalledWith("decline");
+    click(r.get("approval-cancel"));
+    expect(decision.decide).toHaveBeenCalledWith("cancel");
+    r.unmount();
+  });
+
+  it("a decision error surfaces alongside the approval card", () => {
+    const decision = { submitting: false, decisionError: "run_terminal: gone", decide: vi.fn() };
+    const r = render(
+      <GateBannerHost awaiting={awaiting("approval", APPROVAL_SPEC)} decision={decision} />,
+    );
+    expect(r.get("approval-decision-error").textContent).toContain("run_terminal");
     r.unmount();
   });
 });

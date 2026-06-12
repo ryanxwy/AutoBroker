@@ -443,6 +443,8 @@ function pendingKind(step: string): string {
     case "batchReview":
     case "reviewGate": // inventory_link_scan's batch_review step
       return "batch_review";
+    case "resolveOemSource": // incentive_scrape's first-encounter approval
+      return "oem_first_encounter";
     default:
       return "data_collection";
   }
@@ -873,6 +875,19 @@ async function driveResumeScriptDom(
         await driver.clickForceOverrideConfirm(reason);
       } else {
         await driver.clickForceOverrideDecline();
+      }
+    } else if (resume.on === "oem_first_encounter") {
+      // The incentive first-encounter approval rides the banner-track
+      // ApprovalPrompt: Approve = accept (approve the shown candidate),
+      // Deny = decline (terminal, zero navigation, zero writes).
+      await driver.waitForApprovalPrompt(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      if (resume.action === "accept") {
+        await driver.screenshot("approval-approve");
+        await driver.clickApprovalApprove();
+      } else {
+        await driver.screenshot("approval-deny");
+        await driver.clickApprovalDeny();
       }
     } else {
       // No DOM verb mapped for this suspend kind yet — fail LOUD rather than

@@ -59,6 +59,7 @@ import {
 import { policy } from "@autobroker/model";
 import {
   GEOSEARCH_SKILL_ID,
+  INCENTIVE_SCRAPE_SKILL_ID,
   INTAKE_SKILL_ID,
   INVENTORY_LINK_SCAN_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
@@ -67,6 +68,7 @@ import {
   beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
+  INCENTIVE_SCRAPE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
@@ -75,6 +77,7 @@ import {
   AmbiguousLocationResumeSchema,
   MalformedRetryResumeSchema,
   BatchReviewResumeSchema,
+  OemFirstEncounterResumeSchema,
   type createMastraInstance,
 } from "@autobroker/workflows";
 import { z } from "zod";
@@ -578,6 +581,108 @@ export const inventoryLinkScanDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// incentive_scrape — the fifth registered descriptor (browser skill with ONE
+// first-encounter approval suspend BEFORE any navigation). The resume
+// vocabulary maps the generic form-decision verbs onto the workflow's typed
+// save | skip | decline: decline/cancel = the whole run declines (zero nav,
+// zero writes); accept defaults to save-the-shown-candidate, with an optional
+// content.url correction and an optional content.action="skip" (skip THIS
+// brand, run continues) for non-UI callers.
+// ===========================================================================
+
+/** The incentive-scrape start body fields. Only `search_profile_id` matters
+ *  to the workflow — targets derive from the active profiles; envelope fields
+ *  ride the same body and are ignored. */
+const IncentiveScrapeStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The incentive-scrape workflow inputData shape. */
+interface IncentiveScrapeStartInput {
+  search_profile_id: string | null;
+}
+
+/** The accept-content shape for the first-encounter approval form. Both keys
+ *  optional: a bare accept approves the SHOWN candidate (the approval card's
+ *  Approve button sends no content). */
+const OemFirstEncounterAcceptContentSchema = z
+  .object({
+    action: z.enum(["save", "skip"]).optional(),
+    url: z.string().nullable().optional(),
+  })
+  .strict();
+
+/** The incentive_scrape descriptor. */
+export const incentiveScrapeDescriptor: RunDescriptor = {
+  skillId: INCENTIVE_SCRAPE_SKILL_ID,
+  workflowId: INCENTIVE_SCRAPE_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's LLM useCase
+  // (incentive_extract, the offers-page extraction) to — flipping in
+  // lock-step with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("incentive_extract").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): IncentiveScrapeStartInput {
+    const parsed = IncentiveScrapeStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume(
+    step: string,
+    decision: FormDecisionBody["decision"],
+    _suspendPayload: Record<string, unknown>,
+  ): { resumeData: unknown; ackBody: Record<string, unknown> } {
+    if (step !== "resolveOemSource") {
+      throw new FormDecisionError(
+        "unsupported_action",
+        400,
+        `no resume schema for suspended step '${step}'`,
+      );
+    }
+    const { action, content } = decision;
+
+    if (action === "decline" || action === "cancel") {
+      return {
+        resumeData: OemFirstEncounterResumeSchema.parse({ action: "decline", url: null }),
+        ackBody: { action, content: null },
+      };
+    }
+
+    const parsed = OemFirstEncounterAcceptContentSchema.safeParse(content ?? {});
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "form content invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    const inner = parsed.data.action ?? "save";
+    const url = inner === "save" ? (parsed.data.url ?? null) : null;
+    const resume = OemFirstEncounterResumeSchema.parse({ action: inner, url });
+    return {
+      resumeData: resume,
+      ackBody: { action: "accept", content: { action: inner, url } },
+    };
+  },
+
+  // The workflow's confirm step templates the full deterministic summary —
+  // pass it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Incentive scrape complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -587,6 +692,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   dealerGeosearchDescriptor,
   inventorySiteScanDescriptor,
   inventoryLinkScanDescriptor,
+  incentiveScrapeDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));

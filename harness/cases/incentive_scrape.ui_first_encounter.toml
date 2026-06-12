@@ -1,0 +1,189 @@
+# harness/cases/incentive_scrape.ui_first_encounter.toml — the OEM
+# first-encounter approval + the behavioral no-re-ask proof, UI-LANE, ONE
+# browser session end-to-end on ONE isolated world:
+#
+#   step 1  intake via chat-rail SLASH (the corpus Tucson profile; the
+#           geocoded ZIP becomes the scrape key's zip — the intake location
+#           must resolve a postal code or the scrape target fails loud).
+#   step 2  "/incentive_scrape" via slash — FIRST run: the registry file is
+#           empty, the brand has an in-code seed candidate, so the
+#           first-encounter APPROVAL card renders on the gate-banner track
+#           BEFORE any navigation. The driver clicks the REAL Approve button
+#           → the registry entry is written → the OEM offers page renders in
+#           an isolated browser → offer cards extracted (LLM) → cash
+#           whitelist → DELETE-then-INSERT refresh of the profile's
+#           (make, model, zip) incentive slice.
+#   step 3  "/incentive_scrape" again, SAME world — SECOND run: the registry
+#           remembers the approval (approval_gate expect=absent is the
+#           behavioral no-re-ask proof) AND the 7-day cache gate skips the
+#           fresh same-URL slice with ZERO navigation (browser_activity
+#           absent, table delta 0 EXACT, zero LLM calls).
+#
+# No [[seed.*]] sections and no geosearch step: scrape targets derive from
+# the active profile itself, and with no bound dealers the rooftop secondary
+# source stays structurally inactive — the run's only site contact is ONE
+# OEM offers page on step 2.
+#
+# LIVE-OPERATOR NOTE: the step-2 table anchor (profile-scoped Δ>=1) requires
+# the live OEM page to show >=1 CASH incentive for the profile vehicle. A
+# real-world all-APR/zero-offer page is the documented empty-result world:
+# step 2 then needs a table_min_rows waiver, and step 3's cache gate has no
+# marker to skip on (it would re-navigate, failing browser_activity=absent)
+# — treat that as the waiver world, not a code bug.
+
+[meta]
+id = "incentive_scrape_ui_first_encounter"
+archetype = "A"
+skills = ["search_profile_intake", "incentive_scrape"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake (the journey root) --------------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — its make/model/zip is the scrape key."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: first run — the first-encounter approval fires, Approve --------
+
+[[steps]]
+id = "scrape_first"
+skill = "incentive_scrape"
+purpose = "First encounter: approval card fires BEFORE any navigation; Approve writes the registry; the OEM page is scraped."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+max_seconds = 1200          # PER-STEP budget: one OEM page render + extraction.
+
+[[steps.resume]]
+on = "oem_first_encounter"
+action = "accept"           # the REAL Approve button → approve the shown candidate.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "approval_gate"      # the first-encounter gate RENDERED on this run.
+
+[[steps.anchors]]
+kind = "browser_activity"   # the approved scrape really navigated.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # the profile's (make,model,zip) incentive slice
+table = "manufacturer_incentives"
+scope = "profile"           # gained rows this run (the join-scoped delta).
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: second run — registry remembers (no ask), cache skips (no nav) -
+
+[[steps]]
+id = "scrape_no_ask"
+skill = "incentive_scrape"
+purpose = "Second run, same brand: NO approval gate (registry hit) and NO navigation (7-day cache skip)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "approval_gate"      # the behavioral no-re-ask proof: the registry
+expect = "absent"           # entry from step 2 means NO gate fires here.
+
+[[steps.anchors]]
+kind = "browser_activity"   # the cache gate skips with ZERO navigation.
+expect = "absent"
+
+[[steps.anchors]]
+kind = "table_min_rows"     # brands_skipped: the slice is untouched (Δ=0 EXACT).
+table = "manufacturer_incentives"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"      # cache-skip path is ZERO-LLM by design: an empty
+optional = true             # ledger is the valid outcome, not a missing-usage RED.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

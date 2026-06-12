@@ -202,6 +202,24 @@ describe("approval_gate anchor (gate-before-prose)", () => {
     const r = evalAnchor({ kind: "approval_gate", gateBeforeProse: true }, detail, tmp.db, ctxFor("p-1"));
     expect(r.ok).toBe(false);
   });
+
+  it("expect='absent' PASSES when no gate frame ever flowed (the no-re-ask proof)", () => {
+    const frames = [
+      { ts: "2026-06-12T00:00:01.000Z", kind: "init", payload: { driver_kind: "deepseek_apikey" } },
+      { ts: "2026-06-12T00:00:02.000Z", kind: "text", payload: { text: "all fresh, skipped" } },
+      { ts: "2026-06-12T00:00:03.000Z", kind: "done", payload: {} },
+    ];
+    const detail = buildRunDetailFromEvents("r-noask", frames, "done");
+    const r = evalAnchor({ kind: "approval_gate", expect: "absent" }, detail, tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(true);
+  });
+
+  it("expect='absent' FAILS when a gate rendered (the run asked again)", () => {
+    const detail = buildRunDetailFromEvents("r-asked", forceOverrideRunFrames(), "done");
+    const r = evalAnchor({ kind: "approval_gate", expect: "absent" }, detail, tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain("must never ask");
+  });
 });
 
 describe("malformed_tool_call anchor (framework-new)", () => {

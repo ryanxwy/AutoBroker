@@ -601,3 +601,73 @@ describe("case skill ids ∈ registry", () => {
     });
   }
 });
+
+describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", () => {
+  it("loads the first-encounter case: approve step then the behavioral no-ask step", () => {
+    const c = loadCase(join(CASES, "incentive_scrape.ui_first_encounter.toml"));
+    expect(c.lane).toBe("ui");
+    expect(c.seed).toBeNull(); // targets derive from the profile — no seeds.
+
+    const first = c.steps[1]!;
+    expect(first.skill).toBe("incentive_scrape");
+    expect(first.maxSeconds).toBe(1200);
+    expect(first.resume[0]).toMatchObject({ on: "oem_first_encounter", action: "accept" });
+    expect(first.anchors.find((a) => a.kind === "approval_gate")).toEqual({ kind: "approval_gate" });
+    expect(first.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
+      table: "manufacturer_incentives",
+      scope: "profile",
+      deltaMin: 1,
+    });
+
+    const noAsk = c.steps[2]!;
+    expect(noAsk.resume).toHaveLength(0); // nothing suspends on the re-run.
+    expect(noAsk.anchors.find((a) => a.kind === "approval_gate")).toMatchObject({ expect: "absent" });
+    expect(noAsk.anchors.find((a) => a.kind === "browser_activity")).toMatchObject({ expect: "absent" });
+    expect(noAsk.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
+      table: "manufacturer_incentives",
+      deltaMin: 0,
+      exact: true,
+    });
+    expect(noAsk.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
+  });
+
+  it("loads the decline twin: declined terminal, zero nav, slice exact-0, asks AGAIN on the re-run", () => {
+    const c = loadCase(join(CASES, "incentive_scrape.ui_decline.toml"));
+    for (const stepIdx of [1, 2]) {
+      const step = c.steps[stepIdx]!;
+      expect(step.resume[0]).toMatchObject({ on: "oem_first_encounter", action: "decline", content: null });
+      expect(step.anchors.find((a) => a.kind === "run_status")).toMatchObject({ expect: ["declined"] });
+      // The gate RENDERED on every decline round (the re-run still asking is
+      // the behavioral proof no registry entry was written).
+      expect(step.anchors.find((a) => a.kind === "approval_gate")).toEqual({ kind: "approval_gate" });
+      expect(step.anchors.find((a) => a.kind === "browser_activity")).toMatchObject({ expect: "absent" });
+      expect(step.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
+        table: "manufacturer_incentives",
+        deltaMin: 0,
+        exact: true,
+      });
+      // The decline path is zero-LLM by construction — no cost anchor at all.
+      expect(step.anchors.find((a) => a.kind === "cost_and_time")).toBeUndefined();
+    }
+  });
+
+  it("fails LOUD on an approval_gate anchor with a bad expect", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["incentive_scrape"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "incentive_scrape"
+      [[steps.anchors]]
+      kind = "approval_gate"
+      expect = "never"
+    `;
+    expect(() => parseCase(src)).toThrow(/approval_gate anchor/);
+  });
+});

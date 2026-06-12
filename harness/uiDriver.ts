@@ -520,6 +520,29 @@ export class UiDriver {
     await this.page.click(tid("batch-decline"));
   }
 
+  // ---- approval verbs (the gate-banner track's ApprovalPrompt card) ---------
+
+  /** Wait for the approval card to render on the gate-banner track. */
+  async waitForApprovalPrompt(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("approval-prompt"), { timeout: timeoutMs });
+  }
+
+  /** Click the approval card's Approve (accept — approves the shown action). */
+  async clickApprovalApprove(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("approval-approve")}:not([disabled])`, {
+      timeout: timeoutMs,
+    });
+    await this.page.click(tid("approval-approve"));
+  }
+
+  /** Click the approval card's Deny (decline — terminal, zero writes). */
+  async clickApprovalDeny(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("approval-deny")}:not([disabled])`, {
+      timeout: timeoutMs,
+    });
+    await this.page.click(tid("approval-deny"));
+  }
+
   /** pinProfileInSearches: the EXPLICIT pin verb — open the Searches popover,
    *  find the profile row whose vehicle-label link text equals `label` (zero or
    *  ambiguous matches fail LOUD, never by index), click its Pin control, wait
