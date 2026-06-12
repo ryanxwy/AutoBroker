@@ -698,20 +698,21 @@ export interface CollectedCard {
  *  (the same fate the snapshot char cap already imposes). */
 export const CARD_COLLECT_MAX = 80;
 
-/** A "card" whose text exceeds this is a container-level match (results
- *  wrapper, page section), not a single vehicle card — skipped so its huge
- *  text block cannot smear one URL across many vehicles in the weave. */
-const CARD_TEXT_MAX_CHARS = 2_000;
-
 /**
  * In-page probe: collect {href, cardText} for every inventory result card on
  * the rendered SRP. Same-host anchor hrefs only; one entry per card element
  * (the FIRST qualifying anchor wins — vehicle cards lead with the title/image
  * VDP link, compare/CTA links come later); a card must show a model-year token
  * and non-trivial text (bare nav/footer links don't). Deterministic; executes
- * inside the page via page.evaluate, so it is fully self-contained.
+ * inside the page via page.evaluate, so it MUST be fully self-contained —
+ * every constant lives INSIDE the function body (a module-scope reference
+ * does not exist after serialization into the page).
  */
 export function collectInventoryCards(args: { max: number }): CollectedCard[] {
+  // A "card" whose text exceeds this is a container-level match (results
+  // wrapper, page section), not a single vehicle card — skipped so its huge
+  // text block cannot smear one URL across many vehicles in the weave.
+  const CARD_TEXT_MAX_CHARS = 2_000;
   interface ProbeEl {
     getAttribute(name: string): string | null;
     textContent: string | null;

@@ -63,6 +63,7 @@ import {
   browserWalkSrp,
   bucketTargetsByHost,
   captureOneDealer,
+  collectInventoryCards,
   computeScanTargets,
   FILTERED_RENDER_MIN_CHARS,
   harvestVinFromSnapshot,
@@ -1284,6 +1285,46 @@ describe("inventory_site_scan — flat shape (design convention)", () => {
     for (const id of stepIds) {
       const step = wf.steps[id] as { component?: string };
       expect(step.component).not.toBe("WORKFLOW");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// in-page function self-containment (the page.evaluate serialization boundary)
+// ---------------------------------------------------------------------------
+
+describe("collectInventoryCards survives page.evaluate serialization", () => {
+  it("rehydrated from source (no module scope), it still collects a card", () => {
+    // Playwright ships the function SOURCE to the browser — module-scope
+    // constants do not exist there. Rebuilding from toString() in an empty
+    // scope reproduces that boundary: any out-of-scope reference throws.
+    const rehydrated = new Function(
+      `return (${collectInventoryCards.toString()});`,
+    )() as typeof collectInventoryCards;
+
+    const anchor = {
+      getAttribute: (name: string) =>
+        name === "href" ? "/new/Hyundai/2026-Hyundai-Tucson-abc123.htm" : null,
+      textContent: "2026 Hyundai Tucson Hybrid Limited AWD $41,000 In Stock",
+      closest: () => null, // falls back to the anchor itself as the card
+    };
+    const fakeDoc = { querySelectorAll: () => [anchor] };
+    const g = globalThis as { document?: unknown; location?: unknown };
+    const prevDoc = g.document;
+    const prevLoc = g.location;
+    g.document = fakeDoc;
+    g.location = { origin: "https://www.tustinhyundai.com" };
+    try {
+      const cards = rehydrated({ max: 5 });
+      expect(cards).toHaveLength(1);
+      expect(cards[0]!.href).toBe(
+        "https://www.tustinhyundai.com/new/Hyundai/2026-Hyundai-Tucson-abc123.htm",
+      );
+    } finally {
+      if (prevDoc === undefined) delete g.document;
+      else g.document = prevDoc;
+      if (prevLoc === undefined) delete g.location;
+      else g.location = prevLoc;
     }
   });
 });
