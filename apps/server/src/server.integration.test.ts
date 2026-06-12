@@ -33,7 +33,14 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { closeDb, openDb, type Db, type GoplacesResult } from "@autobroker/tools";
+import {
+  closeDb,
+  create as createProfile,
+  openDb,
+  type Db,
+  type GoplacesResult,
+} from "@autobroker/tools";
+import type { SearchProfileIntakeInput } from "@autobroker/core";
 import {
   __resetIntakeDepsForTests,
   __setIntakeDepsForTests,
@@ -534,5 +541,119 @@ describe("read-only routes", () => {
     });
     expect(r.statusCode).toBe(400);
     expect(r.json<{ error: { code: string } }>().error.code).toBe("unknown_skill");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dealers projection + profile preference write-through
+// ---------------------------------------------------------------------------
+
+/** Create a profile directly through the tools service (the same write path the
+ *  workflow persist step delegates to) so the route tests don't re-run intake. */
+function seedProfileRow(): string {
+  const { profile } = createProfile(db, validFields() as unknown as SearchProfileIntakeInput, {
+    coordinates: { latitude: 33.6695, longitude: -117.7669 },
+  });
+  return profile.id;
+}
+
+function seedDealerForProfile(profileId: string, dealerId: string, distance: number | null): void {
+  db.$client
+    .prepare(
+      "INSERT INTO dealers (dealer_id, name, address, distance_miles) VALUES (?, ?, ?, ?)",
+    )
+    .run(dealerId, `Dealer ${dealerId}`, "1 Auto Center Dr", distance);
+  db.$client
+    .prepare(
+      "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'candidate')",
+    )
+    .run(profileId, dealerId);
+}
+
+describe("GET /api/profiles/:id/dealers", () => {
+  it("404 for a missing profile; [] for a profile with no dealers", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const missing = await s.app.inject({ method: "GET", url: "/api/profiles/nope/dealers" });
+    expect(missing.statusCode).toBe(404);
+
+    const id = seedProfileRow();
+    const empty = await s.app.inject({ method: "GET", url: `/api/profiles/${id}/dealers` });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json<unknown[]>()).toEqual([]);
+  });
+
+  it("returns the bound dealer rows nearest-first with candidate_status", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    seedDealerForProfile(id, "d-far", 22.7);
+    seedDealerForProfile(id, "d-near", 6.4);
+    seedDealerForProfile(id, "d-unknown", null);
+
+    const r = await s.app.inject({ method: "GET", url: `/api/profiles/${id}/dealers` });
+    expect(r.statusCode).toBe(200);
+    const rows = r.json<Array<Record<string, unknown>>>();
+    expect(rows.map((row) => row["dealer_id"])).toEqual(["d-near", "d-far", "d-unknown"]);
+    expect(rows[0]!["candidate_status"]).toBe("candidate");
+    expect(rows[0]!["name"]).toBe("Dealer d-near");
+  });
+});
+
+describe("PATCH /api/profiles/:id — preference write-through", () => {
+  it("writes a preference patch and returns the snake_case row view", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    const r = await s.app.inject({
+      method: "PATCH",
+      url: `/api/profiles/${id}`,
+      payload: { searchRadiusMiles: 120, preferredExteriorColorsJson: '["Amazon Gray"]' },
+    });
+    expect(r.statusCode).toBe(200);
+    const row = r.json<Record<string, unknown>>();
+    expect(row["search_radius_miles"]).toBe(120);
+    expect(row["preferred_exterior_colors_json"]).toBe('["Amazon Gray"]');
+  });
+
+  it("rejects an out-of-bound radius with 400 content_invalid (1–500 miles)", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    for (const bad of [0, 501]) {
+      const r = await s.app.inject({
+        method: "PATCH",
+        url: `/api/profiles/${id}`,
+        payload: { searchRadiusMiles: bad },
+      });
+      expect(r.statusCode).toBe(400);
+      expect(r.json<{ error: { code: string } }>().error.code).toBe("content_invalid");
+    }
+  });
+
+  it("rejects an identity field with 409 identity_locked (confirm freezes identity)", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    const r = await s.app.inject({
+      method: "PATCH",
+      url: `/api/profiles/${id}`,
+      payload: { make: "Honda" },
+    });
+    expect(r.statusCode).toBe(409);
+    expect(r.json<{ error: { code: string } }>().error.code).toBe("identity_locked");
+  });
+
+  it("404 for a missing profile; unknown body key → 400 content_invalid", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const missing = await s.app.inject({
+      method: "PATCH",
+      url: "/api/profiles/nope",
+      payload: { searchRadiusMiles: 50 },
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const id = seedProfileRow();
+    const bad = await s.app.inject({
+      method: "PATCH",
+      url: `/api/profiles/${id}`,
+      payload: { status: "closed" },
+    });
+    expect(bad.statusCode).toBe(400);
   });
 });

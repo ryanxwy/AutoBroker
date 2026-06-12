@@ -21,6 +21,7 @@ export {
   synthProfileId,
   readProfileRow,
   listProfileRows,
+  listProfileDealerRows,
   type ValidateResult,
   type ParsedLocation,
   type ResolvedCoordinates,

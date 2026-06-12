@@ -232,14 +232,16 @@ describe("create — exactly 1 row + 1 audit, persist discipline", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("update — typo window + identity lock", () => {
-  it("allows an in-place identity edit while in the typo window (no lead yet)", () => {
+describe("update — identity frozen at confirm; preferences write through", () => {
+  it("rejects an identity edit unconditionally (confirm freezes identity — no typo window)", () => {
     const { profile } = create(db, baseInput({ trim: "XLE" }), { coordinates: COORDS });
-    const updated = update(db, { trim: "Limited" }, { profileId: profile.id });
-    expect(updated.trim).toBe("Limited");
+    // No lead exists yet — identity is still frozen the moment create confirmed it.
+    expect(() => update(db, { trim: "Limited" }, { profileId: profile.id })).toThrow(
+      IdentityLockedError,
+    );
   });
 
-  it("throws IdentityLockedError once a lead_submissions row references the profile", () => {
+  it("throws IdentityLockedError with the touched fields named", () => {
     const { profile } = create(db, baseInput(), { coordinates: COORDS });
     seedLead("sub-1", "dealer-1", profile.id);
     expect(() => update(db, { make: "Honda" }, { profileId: profile.id })).toThrow(
@@ -247,11 +249,27 @@ describe("update — typo window + identity lock", () => {
     );
   });
 
-  it("a non-identity edit is allowed even after a lead (only identity locks)", () => {
+  it("a non-identity edit is allowed even after a lead (only identity freezes)", () => {
     const { profile } = create(db, baseInput(), { coordinates: COORDS });
     seedLead("sub-2", "dealer-1", profile.id);
     const updated = update(db, { followUpEmail: "new@example.com" }, { profileId: profile.id });
     expect(updated.followUpEmail).toBe("new@example.com");
+  });
+
+  it("the *_json preference fields write through", () => {
+    const { profile } = create(db, baseInput(), { coordinates: COORDS });
+    const updated = update(
+      db,
+      {
+        preferredExteriorColorsJson: '["Amazon Gray"]',
+        featurePreferencesJson: '["sunroof"]',
+        searchRadiusMiles: 120,
+      },
+      { profileId: profile.id },
+    );
+    expect(updated.preferredExteriorColorsJson).toBe('["Amazon Gray"]');
+    expect(updated.featurePreferencesJson).toBe('["sunroof"]');
+    expect(updated.searchRadiusMiles).toBe(120);
   });
 });
 

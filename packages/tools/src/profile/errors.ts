@@ -33,24 +33,25 @@ export class ActiveSlotConflict extends Error {
 }
 
 /**
- * An identity field (year, make, model, trim, location) was edited after the
- * first lead_submissions row referenced the profile — outside the typo window.
- * The user must Replace (supersede) or Cancel. (→ HTTP 409.)
+ * An identity field (year, make, model, trim, location) appeared in an update
+ * patch. Identity freezes the moment the profile is confirmed (created) —
+ * confirm freezes identity. The user must Replace (supersede) or Cancel.
+ * (→ HTTP 409.)
  */
 export class IdentityLockedError extends Error {
   readonly code = "identity_locked" as const;
   readonly lockedFields: readonly string[];
   constructor(lockedFields: readonly string[]) {
     super(
-      `identity_locked: identity fields [${lockedFields.join(", ")}] are locked ` +
-        `after the first lead submission; Replace or Cancel.`,
+      `identity_locked: identity fields [${lockedFields.join(", ")}] are frozen — ` +
+        `confirm freezes identity. Replace or Cancel.`,
     );
     this.name = "IdentityLockedError";
     this.lockedFields = lockedFields;
   }
 }
 
-/** Identity fields that lock after the first outbound lead. */
+/** Identity fields frozen at confirm (profile creation). */
 export const IDENTITY_FIELDS = ["year", "make", "model", "trim", "location"] as const;
 
 /**

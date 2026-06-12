@@ -26,14 +26,27 @@
  *
  * Dependency wall: app layer. Imports core (schemas), tools (DB reads via getDb +
  * resolveDataDir + the resolver) — NEVER @mastra, NEVER drizzle/better-sqlite3
- * directly (getDb is the tools closure). Profile READS go through the tools
- * resolver/getDb; the only WRITE path stays inside the workflow's persist step.
+ * directly (getDb is the tools closure). Profile reads go through the tools
+ * read views; profile CREATION stays inside the workflow's persist step, and the
+ * only route-level write is PATCH /api/profiles/:id, which delegates to the
+ * tools-layer preference update() (identity fields are rejected there — confirm
+ * freezes identity).
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-import { getDb, resolveDataDir, readProfileRow, listProfileRows, type Db } from "@autobroker/tools";
+import {
+  getDb,
+  resolveDataDir,
+  readProfileRow,
+  listProfileRows,
+  listProfileDealerRows,
+  update as updateProfile,
+  IdentityLockedError,
+  type Db,
+} from "@autobroker/tools";
+import type { SearchProfile } from "@autobroker/core";
 
 import { IMPLEMENTED_SKILLS } from "@autobroker/skills";
 
@@ -78,6 +91,33 @@ const PatchSessionBodySchema = z
   .object({
     title: z.string().nullable().optional(),
     pinnedProfileId: z.string().nullable().optional(),
+  })
+  .strict();
+
+/** PATCH /api/profiles/:id body (camelCase core field names, mirroring the
+ *  tools update() patch shape). Only the PREFERENCE fields are writable; the
+ *  radius carries its own 1–500 mile bound HERE because update() is a bare
+ *  column write with no schema of its own. The five identity fields are
+ *  accepted by the schema so they reach update(), which rejects them with the
+ *  typed identity_locked error (confirm freezes identity → 409, not 400). */
+const PatchProfileBodySchema = z
+  .object({
+    budgetMax: z.number().nullable().optional(),
+    searchRadiusMiles: z.number().int().min(1).max(500).nullable().optional(),
+    followUpEmail: z.string().nullable().optional(),
+    followUpPhone: z.string().nullable().optional(),
+    financingPreference: z.string().nullable().optional(),
+    tradeInDescription: z.string().nullable().optional(),
+    preferredExteriorColorsJson: z.string().nullable().optional(),
+    preferredInteriorColorsJson: z.string().nullable().optional(),
+    acceptableTrimsJson: z.string().nullable().optional(),
+    featurePreferencesJson: z.string().nullable().optional(),
+    // Identity fields — pass through so the service rejects them as 409.
+    year: z.unknown().optional(),
+    make: z.unknown().optional(),
+    model: z.unknown().optional(),
+    trim: z.unknown().optional(),
+    location: z.unknown().optional(),
   })
   .strict();
 
@@ -148,8 +188,9 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
 }
 
 /** Run fn against the SHARED tools DB connection (getDb — one cached handle
- *  per resolved data dir, not a fresh connection per request). Profile READS
- *  only (the only write path is the workflow persist step). */
+ *  per resolved data dir, not a fresh connection per request). Reads plus the
+ *  one delegated write (the tools-layer preference update) — profile CREATION
+ *  stays inside the workflow persist step. */
 function withDb<T>(fn: (db: Db) => T): T {
   return fn(getDb());
 }
@@ -318,6 +359,40 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }
     return row;
+  });
+
+  // ---- GET /api/profiles/:id/dealers — read-only dealer projection ---------
+  app.get("/api/profiles/:id/dealers", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const profile = withDb((db) => readProfileRow(db, id));
+    if (profile === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    return withDb((db) => listProfileDealerRows(db, id));
+  });
+
+  // ---- PATCH /api/profiles/:id — preference write-through ------------------
+  // Delegates to the tools-layer update(); identity fields are frozen at
+  // confirm, so an identity key in the patch maps to 409 identity_locked.
+  app.patch("/api/profiles/:id", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const body = parseBody(PatchProfileBodySchema, req.body);
+    const existing = withDb((db) => readProfileRow(db, id));
+    if (existing === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    try {
+      withDb((db) => updateProfile(db, body as Partial<SearchProfile>, { profileId: id }));
+    } catch (err) {
+      if (err instanceof IdentityLockedError) {
+        throw new RouteError(err.code, 409, err.message, {
+          extra: { locked_fields: err.lockedFields },
+        });
+      }
+      throw err;
+    }
+    // Respond with the snake_case row view, same shape as GET /api/profiles/:id.
+    return withDb((db) => readProfileRow(db, id));
   });
 
   // ---- GET /api/skills — manifest of implemented skills --------------------

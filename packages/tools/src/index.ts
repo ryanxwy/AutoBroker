@@ -167,6 +167,7 @@ export {
   synthProfileId,
   readProfileRow,
   listProfileRows,
+  listProfileDealerRows,
   resolveActiveProfile,
   requireActiveProfile,
   makeFakePhone,

@@ -397,13 +397,28 @@ export function listProfileRows(db: Db, status: string | undefined): Record<stri
   return db.$client.prepare(sql).all() as Record<string, unknown>[];
 }
 
+/**
+ * List the dealer rows bound to one profile (dealers joined through
+ * profile_dealers), nearest-first with unknown distances last. Read-only
+ * snake_case rows for the HTTP dealers view; `candidate_status`/`bound_at`
+ * carry the per-profile binding state alongside the dealer columns.
+ */
+export function listProfileDealerRows(db: Db, profileId: string): Record<string, unknown>[] {
+  return db.$client
+    .prepare(
+      "SELECT d.*, pd.status AS candidate_status, pd.bound_at " +
+        "FROM profile_dealers pd JOIN dealers d ON d.dealer_id = pd.dealer_id " +
+        "WHERE pd.search_profile_id = ? " +
+        "ORDER BY d.distance_miles IS NULL, d.distance_miles",
+    )
+    .all(profileId) as Record<string, unknown>[];
+}
+
 // ---------------------------------------------------------------------------
-// lifecycle — minimal-but-real. intake needs the typo-window update +
-// identity-lock error surface; replace/close/restore signatures are fixed now.
+// lifecycle — minimal-but-real. update() is the preference write-through
+// (identity is frozen at confirm); replace/close/restore signatures are fixed.
 // ---------------------------------------------------------------------------
 
-const SELECT_FIRST_LEAD =
-  "SELECT 1 FROM lead_submissions WHERE search_profile_id = ? LIMIT 1";
 const UPDATE_FIELD =
   "UPDATE search_profiles SET %COL% = ?, updated_at = CURRENT_TIMESTAMP " +
   "WHERE search_profile_id = ?";
@@ -411,24 +426,24 @@ const SET_STATUS =
   "UPDATE search_profiles SET status = ?, updated_at = CURRENT_TIMESTAMP " +
   "WHERE search_profile_id = ?";
 
-/** core field name → db column for the small set update() may touch. */
+/** core field name → db column for the PREFERENCE set update() may touch.
+ *  Identity fields (year/make/model/trim/location) are deliberately absent:
+ *  they freeze at confirm — an identity edit means replace(), never update(). */
 const FIELD_TO_COLUMN: Record<string, string> = {
-  year: "year", make: "make", model: "model", trim: "trim", location: "location",
   budgetMax: "budget_max", searchRadiusMiles: "search_radius_miles",
   followUpEmail: "follow_up_email", followUpPhone: "follow_up_phone",
   financingPreference: "financing_preference", tradeInDescription: "trade_in_description",
+  preferredExteriorColorsJson: "preferred_exterior_colors_json",
+  preferredInteriorColorsJson: "preferred_interior_colors_json",
+  acceptableTrimsJson: "acceptable_trims_json",
+  featurePreferencesJson: "feature_preferences_json",
 };
 
-/** Identity fields lock once the first lead references the profile. */
-function identityLocked(db: Db, profileId: string): boolean {
-  return db.$client.prepare(SELECT_FIRST_LEAD).get(profileId) !== undefined;
-}
-
 /**
- * In-place update within the typo window. Editing an identity field
- * (year/make/model/trim/location) AFTER the first lead_submissions row throws
- * IdentityLockedError — the user must replace() or cancel. Returns the updated
- * profile.
+ * In-place PREFERENCE update. Identity fields (year/make/model/trim/location)
+ * freeze the moment the profile is confirmed: any identity field in the patch
+ * throws IdentityLockedError unconditionally — confirm freezes identity; the
+ * user must replace() or cancel. Returns the updated profile.
  */
 export function update(
   db: Db,
@@ -438,7 +453,7 @@ export function update(
   const touchedIdentity = (IDENTITY_FIELDS as readonly string[]).filter(
     (f) => f in patch,
   );
-  if (touchedIdentity.length > 0 && identityLocked(db, opts.profileId)) {
+  if (touchedIdentity.length > 0) {
     throw new IdentityLockedError(touchedIdentity);
   }
   const txn = db.$client.transaction(() => {
