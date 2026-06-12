@@ -25,3 +25,7 @@ dealer_geosearch.stop_picker.toml
 # site-pass per guardian run is the politeness budget. Decline costs zero contact.
 inventory_site_scan.ui_decline.toml
 dealer_pipeline.ui_prefix.toml
+
+# inventory_link_scan — accepted 2026-06-12 (UI-lane two rounds + decline; seeds verified against the live Maps world)
+# ui_button stays accepted-but-rotated (2 rooftop contacts per run — politeness budget)
+inventory_link_scan.ui_decline.toml
