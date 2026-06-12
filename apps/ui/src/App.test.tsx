@@ -296,6 +296,111 @@ describe("App — Skills popover launches implemented non-intake skills", () => 
   });
 });
 
+describe("App — pin threading on launches", () => {
+  // A session with a TRUE pin (thread metadata). Entering it via the Searches
+  // popover hydrates App's pinnedProfileId; launches then carry the pin.
+  const PINNED_SESSION = {
+    id: "sess-pin",
+    title: "Tucson search",
+    created_at: "2026-06-12T00:00:00Z",
+    last_activity_at: "2026-06-12T00:01:00Z",
+    pinned_profile_id: "prof-9",
+    scope_notice: null,
+    last_run_id: null,
+    archived: false,
+  };
+
+  async function enterPinnedSession(r: ReturnType<typeof render>): Promise<void> {
+    click(r.get("topbar-searches"));
+    await flush();
+    click(r.get("searches-session-sess-pin"));
+    await flush(); // hydrate pin from GET /api/sessions/:id.
+  }
+
+  it("a pinned session's slash launch carries the pin as search_profile_id", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted, sessions: [PINNED_SESSION] }) });
+    const r = render(<App client={client} />);
+    await flush();
+    await enterPinnedSession(r);
+
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/dealer_geosearch");
+    click(r.get("chat-send"));
+    await flush();
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!["skill"]).toBe("dealer_geosearch");
+    expect(posted[0]!["search_profile_id"]).toBe("prof-9");
+    r.unmount();
+  });
+
+  it("an explicit slash search_profile_id WINS over the session pin", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted, sessions: [PINNED_SESSION] }) });
+    const r = render(<App client={client} />);
+    await flush();
+    await enterPinnedSession(r);
+
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/dealer_geosearch search_profile_id=prof-7");
+    click(r.get("chat-send"));
+    await flush();
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!["search_profile_id"]).toBe("prof-7");
+    r.unmount();
+  });
+
+  it("a pinned session's Skills-popover Run launch carries the pin too", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted, sessions: [PINNED_SESSION] }) });
+    const r = render(<App client={client} />);
+    await flush();
+    await enterPinnedSession(r);
+
+    click(r.get("topbar-skills"));
+    await flush();
+    click(r.get("ledger-run-dealer_geosearch"));
+    await flush();
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!["skill"]).toBe("dealer_geosearch");
+    expect(posted[0]!["search_profile_id"]).toBe("prof-9");
+    r.unmount();
+  });
+
+  it("an UNPINNED session's launches send NO search_profile_id (inferred_newest stays)", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted }) });
+    const r = render(<App client={client} />);
+    await flush();
+
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/dealer_geosearch");
+    click(r.get("chat-send"));
+    await flush();
+
+    expect(posted).toHaveLength(1);
+    expect("search_profile_id" in posted[0]!).toBe(false);
+    r.unmount();
+  });
+
+  it("intake launches are unaffected by the pin (the fork path carries no search_profile_id)", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted, sessions: [PINNED_SESSION] }) });
+    const r = render(<App client={client} />);
+    await flush();
+    await enterPinnedSession(r);
+
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/search_profile_intake");
+    click(r.get("chat-send"));
+    await flush();
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!["skill"]).toBe("search_profile_intake");
+    expect("search_profile_id" in posted[0]!).toBe(false);
+    r.unmount();
+  });
+});
+
 describe("App — refresh recovery", () => {
   it("mounting at /runs/:id with no in-chat message re-binds and re-subscribes", async () => {
     window.history.pushState({}, "", "/runs/run-recovered");

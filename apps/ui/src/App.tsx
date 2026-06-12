@@ -237,11 +237,20 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // launch error.
   const doLaunchSkill = (skill: string, extra?: Record<string, unknown>, userText?: string): void => {
     setLaunchError(null);
+    // PIN THREADING: a pinned session's launches carry the pin as
+    // search_profile_id — the resolver then takes the pinned branch instead of
+    // inferring newest-active. An EXPLICIT search_profile_id in the args wins
+    // (slash args / STOP-picker pick); unpinned sessions send nothing and keep
+    // the inferred_newest behavior. Intake never reaches here (fork path).
+    const args =
+      pinnedProfileId !== null && extra?.["search_profile_id"] === undefined
+        ? { ...(extra ?? {}), search_profile_id: pinnedProfileId }
+        : extra;
     // The run links to the rail's CURRENT session (the durable bound turn the
     // Searches popover pill reads); a session-less rail starts headless.
     launchSkill(client, {
       skill,
-      ...(extra !== undefined ? { args: extra } : {}),
+      ...(args !== undefined ? { args } : {}),
       sessionId: sessionIdRef.current,
     })
       .then((ack) => bindAck(ack, `/${skill}`, userText))
@@ -369,7 +378,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
 
       {/* System-layer gate surface — ABOVE the workbench/rail split, so a
           banner-tracked gate precedes app-main and all prose in document order. */}
-      <GateBannerHost awaiting={activeAwaiting} />
+      <GateBannerHost awaiting={activeAwaiting} decision={decision} />
 
       <div className="app-body" data-layout={layoutMode}>
         <main className="app-main" data-testid="app-main">
