@@ -49,6 +49,9 @@ export const INTAKE_SKILL_ID = "search_profile_intake" as const;
 /** The dealer geosearch skill id (skill #2, first browser skill). */
 export const GEOSEARCH_SKILL_ID = "dealer_geosearch" as const;
 
+/** The inventory site scan skill id (skill #3, batch_review suspend). */
+export const INVENTORY_SITE_SCAN_SKILL_ID = "inventory_site_scan" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -115,15 +118,15 @@ export const SKILLS: readonly SkillDef[] = [
     outputs: "dealers",
   },
   {
-    id: "inventory_site_scan",
+    id: INVENTORY_SITE_SCAN_SKILL_ID,
     slash: "/inventory_site_scan",
     title: "Inventory site scan",
-    summary: "Scan a dealer site's inventory pages for matching vehicles.",
+    summary: "Scan the profile's dealer sites for matching inventory (batch-reviewed).",
     phase: 2,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["dealer_id", "profile_id"],
+    status: "implemented",
+    workflowId: INVENTORY_SITE_SCAN_SKILL_ID,
+    inputs: ["search_profile_id", "dealer_ids", "approved_by", "max_targets"],
     outputs: "listings",
   },
   {

@@ -19,6 +19,10 @@ import {
   DEALER_GEOSEARCH_WORKFLOW_ID,
 } from "./dealerGeosearch.js";
 import {
+  inventorySiteScanWorkflow,
+  INVENTORY_SITE_SCAN_WORKFLOW_ID,
+} from "./inventorySiteScan.js";
+import {
   searchProfileIntakeWorkflow,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
 } from "./searchProfileIntake.js";
@@ -27,6 +31,7 @@ import {
 export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [SEARCH_PROFILE_INTAKE_WORKFLOW_ID]: searchProfileIntakeWorkflow as unknown as Workflow,
   [DEALER_GEOSEARCH_WORKFLOW_ID]: dealerGeosearchWorkflow as unknown as Workflow,
+  [INVENTORY_SITE_SCAN_WORKFLOW_ID]: inventorySiteScanWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

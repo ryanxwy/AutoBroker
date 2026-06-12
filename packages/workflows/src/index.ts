@@ -124,6 +124,53 @@ export {
   type ViewportScanOutcome,
 } from "./dealerGeosearch.js";
 
+// The inventory_site_scan skill workflow (skill #3, first browser skill with a
+// human suspend) — one flat linear createWorkflow, 6 steps, one batch_review
+// suspend. Test-only deps seam + the app-set per-run browser-emitter factory
+// are exported alongside, plus the batch_review suspend/resume contracts the
+// server descriptor and the UI build against.
+export {
+  inventorySiteScanWorkflow,
+  INVENTORY_SITE_SCAN_WORKFLOW_ID,
+  setInventoryScanBrowserEmitterFactory,
+  __setInventoryScanDepsForTests,
+  __resetInventoryScanDepsForTests,
+  InventorySiteScanStopError,
+  InventoryScanCaptureLostError,
+  BatchReviewSuspendSchema,
+  BatchReviewResumeSchema,
+  BATCH_REVIEW_QUESTION,
+  InventoryExtractSchema,
+  buildInventoryExtractPrompt,
+  computeScanTargets,
+  bucketTargetsByHost,
+  scanHostnameOf,
+  isDeniedScanHost,
+  walkFilterLadder,
+  collectVdpLinkCandidates,
+  harvestVinFromSnapshot,
+  scanDealersParallelImpl,
+  SCAN_CONCURRENCY,
+  SCAN_SKIP_REASONS,
+  FILTERED_RENDER_MIN_CHARS,
+  type InventoryScanWorkflowDeps,
+  type InventoryScanStopCode,
+  type InventoryExtract,
+  type BatchReviewSuspend,
+  type BatchReviewResume,
+  type ScanSkipReason,
+  type ProfileDealerRowSlice,
+  type ScanTargetRow,
+  type SkippedTargetRow,
+  type ScanBucket,
+  type ScanDealersArgs,
+  type DealerCaptureOutcome,
+  type BucketRunner,
+  type FilterLadderIo,
+  type FilterLadderOutcome,
+  type FilterRungExit,
+} from "./inventorySiteScan.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

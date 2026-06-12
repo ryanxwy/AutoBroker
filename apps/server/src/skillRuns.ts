@@ -57,16 +57,22 @@ import {
   type HarnessDriverKind,
 } from "@autobroker/core";
 import { policy } from "@autobroker/model";
-import { GEOSEARCH_SKILL_ID, INTAKE_SKILL_ID } from "@autobroker/skills";
+import {
+  GEOSEARCH_SKILL_ID,
+  INTAKE_SKILL_ID,
+  INVENTORY_SITE_SCAN_SKILL_ID,
+} from "@autobroker/skills";
 import {
   beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
+  INVENTORY_SITE_SCAN_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
   AmbiguousLocationResumeSchema,
   MalformedRetryResumeSchema,
+  BatchReviewResumeSchema,
   type createMastraInstance,
 } from "@autobroker/workflows";
 import { z } from "zod";
@@ -150,10 +156,16 @@ export interface RunDescriptor {
   /** Validate + shape a form-decision into the suspended step's typed
    *  resumeData plus the 200 ack body. Absent for skills with no HITL suspend
    *  (a form-decision then 400s as unsupported_action). Throws
-   *  FormDecisionError (content_invalid / unsupported_action). */
+   *  FormDecisionError (content_invalid / unsupported_action).
+   *  `suspendPayload` is the RETAINED payload of the suspend being answered
+   *  (the exact spec_inline the user saw) — a descriptor that must validate
+   *  the answer against what was shown (e.g. the batch_review approved-ids ⊆
+   *  shown-targets check) reads it; descriptors that don't need it simply
+   *  declare two parameters (wire-identical behavior). */
   resume?(
     step: string,
     decision: FormDecisionBody["decision"],
+    suspendPayload: Record<string, unknown>,
   ): { resumeData: unknown; ackBody: Record<string, unknown> };
   /** The plain-speak summary for the terminal `text` frame on success. */
   summaryText(result: unknown): string;
@@ -346,6 +358,159 @@ export const dealerGeosearchDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// inventory_site_scan — the third registered descriptor (browser skill with
+// ONE batch_review suspend). The resume validates the approved id list
+// against the RETAINED suspend payload: ids outside the reviewed targets are
+// a 400 content_invalid (claim rolls back, the suspend stays retryable).
+// ===========================================================================
+
+/** The inventory-scan start body fields. `dealer_ids` is a csv of dealer ids
+ *  (a hand-picked set that bypasses all truncation); `approved_by` is audit
+ *  metadata passthrough; `max_targets` is the optional truncation valve. */
+const InventoryScanStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  dealer_ids: z.string().nullable().optional(),
+  approved_by: z.string().nullable().optional(),
+  max_targets: z.number().int().positive().nullable().optional(),
+});
+
+/** The inventory-scan workflow inputData shape. */
+interface InventoryScanStartInput {
+  search_profile_id: string | null;
+  dealer_ids: string[] | null;
+  approved_by: string | null;
+  max_targets: number | null;
+}
+
+/** csv → trimmed non-empty id list, or null when nothing usable was supplied. */
+function parseDealerIdsCsv(csv: string | null | undefined): string[] | null {
+  if (csv === null || csv === undefined) return null;
+  const ids = csv
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+  return ids.length > 0 ? ids : null;
+}
+
+/** The accept-content shape for the batch_review form (the wire is ALWAYS an
+ *  explicit id list — there is no approve-all member). */
+const BatchReviewAcceptContentSchema = z.object({
+  approved_dealer_ids: z.array(z.string()).min(1),
+});
+
+/**
+ * The batch_review resume shaping. decline/cancel → the step's decline
+ * resumeData (cancel normalizes to decline — the step schema has no 'cancel'
+ * member); accept → validate {approved_dealer_ids} and require EVERY id to be
+ * one of the targets the suspend actually showed (read off the retained
+ * suspend payload) — anything else is 400 content_invalid and the suspend
+ * stays answerable.
+ */
+function inventoryScanResume(
+  step: string,
+  decision: FormDecisionBody["decision"],
+  suspendPayload: Record<string, unknown>,
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  if (step !== "batchReview") {
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  }
+  const { action, content } = decision;
+
+  if (action === "decline" || action === "cancel") {
+    return {
+      resumeData: BatchReviewResumeSchema.parse({ action: "decline" }),
+      ackBody: { action, content: null },
+    };
+  }
+
+  const parsed = BatchReviewAcceptContentSchema.safeParse(content ?? {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new FormDecisionError("content_invalid", 400, "form content invalid", {
+      ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+      extra: { issues: parsed.error.issues },
+    });
+  }
+
+  // ids ⊆ the targets the card actually showed (the retained suspend payload
+  // is the authority on what was reviewable).
+  const targetsRaw = suspendPayload["targets"];
+  const shownIds = new Set(
+    Array.isArray(targetsRaw)
+      ? targetsRaw
+          .map((t) => (t as { dealer_id?: unknown }).dealer_id)
+          .filter((id): id is string => typeof id === "string")
+      : [],
+  );
+  const unknown = parsed.data.approved_dealer_ids.filter((id) => !shownIds.has(id));
+  if (unknown.length > 0) {
+    throw new FormDecisionError(
+      "content_invalid",
+      400,
+      `approved_dealer_ids contains id(s) not in the reviewed targets: ${unknown.join(", ")}`,
+      { field: "/approved_dealer_ids" },
+    );
+  }
+
+  const resume = BatchReviewResumeSchema.parse({
+    action: "approve",
+    approved_dealer_ids: parsed.data.approved_dealer_ids,
+  });
+  return {
+    resumeData: resume,
+    ackBody: {
+      action: "accept",
+      content: { approved_dealer_ids: parsed.data.approved_dealer_ids },
+    },
+  };
+}
+
+/** The inventory_site_scan descriptor. */
+export const inventorySiteScanDescriptor: RunDescriptor = {
+  skillId: INVENTORY_SITE_SCAN_SKILL_ID,
+  workflowId: INVENTORY_SITE_SCAN_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's LLM useCase
+  // (inventory_extract, the per-dealer snapshot extraction) to — flipping in
+  // lock-step with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("inventory_extract").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): InventoryScanStartInput {
+    const parsed = InventoryScanStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      dealer_ids: parseDealerIdsCsv(parsed.data.dealer_ids),
+      // approved_by is AUDIT METADATA ONLY — it rides into the workflow state
+      // for the trail; nothing branches on it (here or in the workflow).
+      approved_by: parsed.data.approved_by ?? null,
+      max_targets: parsed.data.max_targets ?? null,
+    };
+  },
+
+  resume: inventoryScanResume,
+
+  // The workflow's confirm step templates the full deterministic summary —
+  // pass it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Inventory site scan complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -353,6 +518,7 @@ export const dealerGeosearchDescriptor: RunDescriptor = {
 export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   intakeRunDescriptor,
   dealerGeosearchDescriptor,
+  inventorySiteScanDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -387,9 +553,12 @@ interface RunState {
    *  status/turn rendering can find it; full turn-model rendering is the UI's read
    *  (skill_runs.session_id ↔ thread metadata). */
   sessionId: string | null;
-  /** The step id + decisionId of the CURRENTLY pending suspend, or null when the
-   *  run is running/terminal. The form-decision must reference this decisionId. */
-  pending: { step: string; decisionId: string } | null;
+  /** The step id + decisionId + RETAINED suspend payload of the CURRENTLY
+   *  pending suspend, or null when the run is running/terminal. The
+   *  form-decision must reference this decisionId; the payload is what the
+   *  descriptor's resume validates the answer against (the exact spec_inline
+   *  the user saw — e.g. the batch_review ids ⊆ targets check). */
+  pending: { step: string; decisionId: string; payload: Record<string, unknown> } | null;
   /** Whether a terminal frame has been emitted (the run is over). */
   terminal: boolean;
   claims: Map<string, Claim>;
@@ -477,7 +646,7 @@ export class SkillRunService {
     this.runs.set(runId, {
       skill: descriptor.skillId,
       sessionId: null,
-      pending: { step, decisionId },
+      pending: { step, decisionId, payload },
       terminal: false,
       claims: new Map(),
     });
@@ -623,7 +792,7 @@ export class SkillRunService {
           `skill '${run.skill}' accepts no form-decision`,
         );
       }
-      const dispatched = descriptor.resume(run.pending.step, body.decision);
+      const dispatched = descriptor.resume(run.pending.step, body.decision, run.pending.payload);
       resumeData = dispatched.resumeData;
       ackBody = dispatched.ackBody;
     } catch (err) {
@@ -686,7 +855,7 @@ export class SkillRunService {
       const step = entry?.[0] ?? "collect";
       const payload = entry?.[1]?.suspendPayload ?? {};
       const decisionId = randomUUID();
-      run.pending = { step, decisionId };
+      run.pending = { step, decisionId, payload };
       // awaiting_user{form_kind, spec_inline, decision_id, ...}.
       this.pubsub.append(runId, {
         kind: "awaiting_user",
@@ -778,9 +947,11 @@ export class SkillRunService {
     return { reason: "workflow_failed" };
   }
 
-  /** The current pending suspend (step + decisionId), for GET /skill-runs/:id. */
+  /** The current pending suspend (step + decisionId), for GET /skill-runs/:id.
+   *  Projected WITHOUT the retained payload — the wire shape is unchanged. */
   pendingOf(runId: string): { step: string; decisionId: string } | null {
-    return this.runs.get(runId)?.pending ?? null;
+    const pending = this.runs.get(runId)?.pending ?? null;
+    return pending === null ? null : { step: pending.step, decisionId: pending.decisionId };
   }
 
   /** The session (Mastra thread) this run is linked to, or null (run↔session

@@ -30,6 +30,7 @@ import {
   RailSessionStore,
   createRailMemory,
   setGeosearchBrowserEmitterFactory,
+  setInventoryScanBrowserEmitterFactory,
 } from "@autobroker/workflows";
 import { registerRoutes, RouteError } from "./routes.js";
 import { resolveStaticServing, registerStaticPlugin, sendSpaFallback } from "./static.js";
@@ -77,6 +78,7 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // per process in the production topology; the adapter drops events for runs
   // with no channel rather than throwing mid-navigation).
   setGeosearchBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
+  setInventoryScanBrowserEmitterFactory((runId) => browserEmitterFor(pubsub, runId));
 
   // sessions = Mastra Memory threads. The rail Memory is constructed in the
   // workflows layer (createRailMemory — the ONLY @mastra/memory construction; the
