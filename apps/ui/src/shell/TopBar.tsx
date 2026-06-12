@@ -105,10 +105,13 @@ export function TopBar({
 
   return (
     <header className="topbar">
-      <span className="wordmark">AutoBroker</span>
+      <span className="wordmark">
+        Auto<b>Broker</b>
+      </span>
       {activeRunId !== null && (
         <span className="running-pill" data-testid="running-pill">
-          ● run active
+          <span className="pulse" aria-hidden="true" />
+          run active
         </span>
       )}
       <span className="spacer" />
