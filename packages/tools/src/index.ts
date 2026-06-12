@@ -176,6 +176,43 @@ export {
   type SeedInventorySourceOptions,
 } from "./inventory/sources.js";
 
+// incentive_scrape deterministic core — the code-level host rejection table,
+// the 7-day cache gate, the cash whitelist, program-identity merge +
+// dual-source cross-verify, the {zip}/{model} template fill, the per-brand
+// seed candidates, the data-dir file registry (the cross-run first-encounter
+// approval memory), and the DELETE-then-INSERT slice writer.
+export {
+  classifyOemHost,
+  cacheGateDecision,
+  filterCashTypes,
+  mergeScrapeResults,
+  crossVerifyIncentives,
+  substituteOemUrlTemplate,
+  isLikelyUsZip,
+  normalizeIncentiveBrand,
+  CASH_INCENTIVE_TYPES,
+  INCENTIVE_CACHE_TTL_DAYS,
+  OEM_SEED_SOURCES,
+  type OemHostVerdict,
+  type OemHostRejectReason,
+  type IncentiveCacheState,
+  type ScrapedIncentiveRow,
+  type SourceDiscrepancy,
+  type CrossVerifyResult,
+} from "./incentives/pure.js";
+export {
+  incentiveRegistryPath,
+  readIncentiveRegistry,
+  writeIncentiveRegistryEntry,
+  parseIncentiveRegistry,
+  serializeIncentiveRegistry,
+} from "./incentives/registry.js";
+export {
+  persistIncentives,
+  readIncentiveCacheState,
+  type PersistIncentivesArgs,
+} from "./incentives/persist.js";
+
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
