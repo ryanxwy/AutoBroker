@@ -57,6 +57,13 @@ import {
   UnknownRunError,
 } from "./skillRuns.js";
 import type { RunPubSub } from "./runPubSub.js";
+import {
+  STREAM_V2_DONE,
+  STREAM_V2_HEADERS,
+  UiStreamTranslator,
+  chunkFrame,
+  streamV2Enabled,
+} from "./streamV2.js";
 import { DuplicateRunIdError } from "@autobroker/workflows";
 import type { SessionService, IntakeScopeNotice } from "./sessions.js";
 
@@ -322,6 +329,71 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       raw.end();
     }
   });
+
+  // ---- GET /api/skill-runs/:id/stream-v2 — AI SDK UI-message-stream --------
+  // Flag-parallel to the legacy /stream above (which stays the default): the
+  // SAME pubsub channel translated onto the UI-message-stream protocol
+  // (UiStreamTranslator owns the frame→chunk mapping). Registered only when
+  // AUTOBROKER_STREAM_V2=1.
+  if (streamV2Enabled()) {
+    app.get(
+      "/api/skill-runs/:id/stream-v2",
+      async (req: FastifyRequest, reply: FastifyReply) => {
+        const { id } = req.params as { id: string };
+        const sub = pubsub.subscribe(id);
+        if (sub === null) {
+          throw new RouteError("no_skill_run", 404, `no skill run ${id}`);
+        }
+
+        reply.hijack();
+        const raw = reply.raw;
+        raw.writeHead(200, STREAM_V2_HEADERS);
+
+        const translator = new UiStreamTranslator();
+        const writeChunks = (frames: ReturnType<UiStreamTranslator["translate"]>): void => {
+          for (const chunk of frames) raw.write(chunkFrame(chunk));
+        };
+
+        // start{messageId: runId} first, then the replayed backlog.
+        writeChunks(translator.start(id));
+        for (const ev of sub.snapshot) writeChunks(translator.translate(ev));
+
+        if (sub.isTerminal || sub.queue === null) {
+          raw.write(`data: ${STREAM_V2_DONE}\n\n`);
+          raw.end();
+          return;
+        }
+
+        // Heartbeat comment every ~15s (consumers ignore comment frames).
+        const heartbeat = setInterval(() => {
+          raw.write(": heartbeat\n\n");
+        }, 15000);
+        heartbeat.unref?.();
+
+        const queue = sub.queue;
+        let closed = false;
+        const cleanup = (): void => {
+          if (closed) return;
+          closed = true;
+          clearInterval(heartbeat);
+          pubsub.unsubscribe(id, queue);
+        };
+        raw.on("close", cleanup);
+
+        try {
+          for await (const ev of queue) {
+            writeChunks(translator.translate(ev));
+          }
+        } finally {
+          cleanup();
+          // The terminator is part of the protocol — only a TERMINAL close gets
+          // it (a client disconnect mid-run just drops the socket).
+          if (pubsub.isTerminal(id)) raw.write(`data: ${STREAM_V2_DONE}\n\n`);
+          raw.end();
+        }
+      },
+    );
+  }
 
   // ---- POST /api/skill-runs/:id/form-decision — three-phase claim ----------
   app.post(

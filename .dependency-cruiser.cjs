@@ -65,9 +65,27 @@ module.exports = {
     {
       name: "ai-sdk-only-in-model",
       severity: "error",
-      comment: "AI SDK is the model layer's framework; invisible elsewhere.",
-      from: { path: "^(packages/(core|workflows|tools|db|skills)|apps)/" },
+      comment:
+        "AI SDK core (providers/generate) is the model layer's framework; invisible " +
+        "in the packages. Sanctioned app-layer exceptions: apps/ui hosts the AI SDK " +
+        "UI chat rail (@ai-sdk/react + the ai UIMessage/transport types) and " +
+        "apps/server's /stream-v2 translator types its chunks against the ai " +
+        "UIMessageChunk contract — neither may touch providers (registry stays in model).",
+      from: {
+        path: "^(packages/(core|workflows|tools|db|skills)|apps)/",
+        pathNot: "^apps/(ui|server)/",
+      },
       to: { path: "node_modules/(ai|@ai-sdk)/" },
+    },
+    {
+      name: "app-ai-sdk-ui-binding-only",
+      severity: "error",
+      comment:
+        "The app-layer carve-out is the UI binding ONLY: apps/ui+server may import " +
+        "the ai package and @ai-sdk/react — never an @ai-sdk provider package " +
+        "(provider wiring lives in packages/model).",
+      from: { path: "^apps/(ui|server)/" },
+      to: { path: "node_modules/@ai-sdk/", pathNot: "node_modules/@ai-sdk/react/" },
     },
     {
       name: "mastra-only-in-workflows",

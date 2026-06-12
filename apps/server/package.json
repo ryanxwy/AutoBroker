@@ -2,7 +2,7 @@
   "name": "@autobroker/server",
   "version": "0.0.0",
   "private": true,
-  "description": "Layer 5 (app) \u2014 backend HTTP + SSE skill-run stream. Owns the embedded-host boot-recovery routine (telemetry kill -> deterministic tool re-registration -> suspended-run re-attach -> restart()/cancel() per age policy), the per-run SSE pubsub, the Mastra->product status projection, and the three-phase idempotent form-decision claim. Never imports @mastra directly (workflows-layer exports only); opens the product DB only via the tools openDb factory for read-only profile views — all SQL lives in tools.",
+  "description": "Layer 5 (app) — backend HTTP + SSE skill-run stream. Owns the embedded-host boot-recovery routine (telemetry kill -> deterministic tool re-registration -> suspended-run re-attach -> restart()/cancel() per age policy), the per-run SSE pubsub, the Mastra->product status projection, and the three-phase idempotent form-decision claim. Never imports @mastra directly (workflows-layer exports only); opens the product DB only via the tools openDb factory for read-only profile views — all SQL lives in tools.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,6 +19,7 @@
     "@autobroker/tools": "workspace:*",
     "@autobroker/workflows": "workspace:*",
     "@fastify/static": "^9",
+    "ai": "6",
     "fastify": "^5",
     "zod": "^4.0.0"
   },
