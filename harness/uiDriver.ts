@@ -21,7 +21,8 @@
  * intake-submit / intake-decline / gate-force-override-* / topbar-skills /
  * skills-popover / ledger-run-<skill> (the popover row's Run button) /
  * gate-banner / assistant-turn[data-status] / turn-zone-* / turn-declined /
- * turn-error).
+ * turn-error / stop-card[data-stop-code] / stop-intake-cta / stop-pick-option /
+ * turn-resolution[data-resolution]).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
  * imports `playwright` to drive the test browser (the dependency-cruiser rule
@@ -251,6 +252,101 @@ export class UiDriver {
     const sel = `${tid(`ledger-run-${skillId}`)}:not([disabled])`;
     await this.page.waitForSelector(sel, { timeout: timeoutMs });
     await this.page.click(sel);
+  }
+
+  /** checkStopCard: the typed profile-resolution STOP card rendered with the
+   *  expected stop code (data-stop-code). Records ok:false on a missing card
+   *  rather than throwing, so the verdict carries the evidence. */
+  async checkStopCard(kind: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    let code: string | null = null;
+    try {
+      await this.page.waitForSelector(tid("stop-card"), { timeout: timeoutMs });
+      code = await this.page.locator(tid("stop-card")).last().getAttribute("data-stop-code");
+    } catch {
+      code = null; // no card rendered — recorded below as a failed check.
+    }
+    this.record({
+      surface: "dom:chat-rail",
+      selector: tid("stop-card"),
+      expected: `STOP card with data-stop-code="${kind}"`,
+      observed: code === null ? "no stop card rendered" : `data-stop-code=${code}`,
+      ok: code === kind,
+    });
+    await this.screenshot(`stop-card-${kind}`);
+  }
+
+  /** clickStopIntakeCta: drive the 0-active/missing-fields STOP card's intake
+   *  CTA — a REAL intake run must start and render its form (zero-LLM until a
+   *  submit, so this stays free). */
+  async clickStopIntakeCta(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("stop-intake-cta"), { timeout: timeoutMs });
+    await this.page.click(tid("stop-intake-cta"));
+    let formVisible = true;
+    try {
+      await this.page.waitForSelector(tid("intake-form"), { timeout: timeoutMs });
+    } catch {
+      formVisible = false;
+    }
+    this.record({
+      surface: "dom:chat-rail",
+      selector: `${tid("stop-intake-cta")} → ${tid("intake-form")}`,
+      expected: "intake CTA click starts a real intake run (form renders)",
+      observed: formVisible ? "intake form rendered" : "no intake form after CTA click",
+      ok: formVisible,
+    });
+    await this.screenshot("stop-intake-cta");
+  }
+
+  /** pickProfileStopOption: click the 2+-profiles STOP picker option whose
+   *  VISIBLE text equals the vehicle label. Zero or ambiguous matches fail
+   *  LOUD (never pick by index). The click re-launches the skill as a NEW run. */
+  async pickProfileStopOption(label: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("stop-pick-option"), { timeout: timeoutMs });
+    const options = this.page.locator(tid("stop-pick-option"));
+    const texts = await options.allTextContents();
+    const want = label.trim();
+    const matches = texts
+      .map((t, i) => ({ text: t.trim(), i }))
+      .filter((x) => x.text === want);
+    if (matches.length === 0) {
+      throw new Error(
+        `uiDriver: no STOP picker option labeled "${want}" (options: ${texts.map((t) => t.trim()).join(" | ")})`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(`uiDriver: ambiguous STOP picker label "${want}" (${matches.length} matches)`);
+    }
+    this.record({
+      surface: "dom:chat-rail",
+      selector: tid("stop-pick-option"),
+      expected: `exactly one picker option labeled "${want}"`,
+      observed: `options: ${texts.map((t) => t.trim()).join(" | ")}`,
+      ok: true,
+    });
+    await this.screenshot("stop-pick");
+    await options.nth(matches[0]!.i).click();
+  }
+
+  /** checkMismatchBanner: the resolution-provenance meta tag on the rendered
+   *  turn matches the expected branch — `pinned` when an explicit pin was
+   *  honored, `inferred_newest` when the single-active inference ran. */
+  async checkMismatchBanner(pinned: boolean, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    const expected = pinned ? "pinned" : "inferred_newest";
+    let observed: string | null = null;
+    try {
+      await this.page.waitForSelector(tid("turn-resolution"), { timeout: timeoutMs });
+      observed = await this.page.locator(tid("turn-resolution")).last().getAttribute("data-resolution");
+    } catch {
+      observed = null;
+    }
+    this.record({
+      surface: "dom:chat-rail",
+      selector: tid("turn-resolution"),
+      expected: `resolution meta "${expected}"`,
+      observed: observed === null ? "no resolution meta rendered" : `data-resolution=${observed}`,
+      ok: observed === expected,
+    });
+    await this.screenshot(`resolution-${expected}`);
   }
 
   /** Wait until the active assistant turn reaches a terminal rendering

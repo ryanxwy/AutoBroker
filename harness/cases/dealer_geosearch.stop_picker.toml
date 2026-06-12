@@ -1,0 +1,225 @@
+# harness/cases/dealer_geosearch.stop_picker.toml — the 2-profile world STOP →
+# picker journey, UI-LANE, ONE browser session end-to-end. The "2+ ASK is
+# answerable through the UI" demonstration:
+#
+#   step 1  intake A (Tucson Hybrid)  — chat-rail slash, real form, real submit.
+#   step 2  intake B (Toyota RAV4 Hybrid) — same; a SECOND BRAND, because the
+#           product holds a one-active-profile-per-(account,brand) slot (a same-
+#           brand second intake STOPs on active_slot_conflict). TWO intake steps is
+#           exactly the evidence-collision + profile-scope shape the runner's
+#           step-id evidence suffix and {stepId → profileId} map exist for.
+#   step 3  "/dealer_geosearch" with NO pin and 2 active profiles → the typed
+#           multiple_active_profiles STOP (run_status=error) renders the STOP
+#           card with the live profile PICKER (candidates fetched from
+#           GET /api/profiles?status=active — they are never on the frame).
+#   step 4  launch="stop_picker": pick the Tucson BY VEHICLE LABEL through the
+#           REAL DOM. The click is a NEW run with search_profile_id (STOP is
+#           terminal — never a resume); the resolver takes the pinned branch,
+#           so the run completes with resolution=pinned (asserted via the
+#           resolution anchor AND the rendered provenance meta tag), and the
+#           dealer upsert scopes to profile A (profile_scope_from="intake_a").
+#
+# Cost: two intake trim-verify calls (~$0.003); the picked geosearch run's
+# happy path is zero-LLM (cost_and_time optional). RADIUS 120 (live default):
+# 5 viewports around Irvine — expect dozens of SoCal rooftops.
+
+[meta]
+id = "dealer_geosearch_stop_picker"
+archetype = "A"
+skills = ["search_profile_intake", "dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake A (the profile the picker will choose) -------------------
+
+[[steps]]
+id = "intake_a"
+skill = "search_profile_intake"
+purpose = "Create profile A (Tucson) — the vehicle the picker will choose."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: intake B (the second active profile → the 2+ world) -------------
+
+[[steps]]
+id = "intake_b"
+skill = "search_profile_intake"
+purpose = "Create profile B (RAV4, second brand) — two active profiles make resolution ambiguous."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+
+[steps.resume.content]
+make = "Toyota"
+model = "RAV4 Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: geosearch with 2 active profiles → typed STOP + picker ----------
+
+[[steps]]
+id = "geosearch_stop"
+skill = "dealer_geosearch"
+purpose = "2+ active, no pin: STOP asks by vehicle name — never a silent newest pick."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+expect_stop = "multiple_active_profiles"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["error"]          # STOP is terminal; error frames carry NO resolution.
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # the resolver throws before any LLM call.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 4: answer the ASK through the REAL picker → pinned run completes ---
+
+[[steps]]
+id = "geosearch_picked"
+skill = "dealer_geosearch"
+purpose = "Pick the Tucson by vehicle label; the NEW run resolves pinned and upserts dealers."
+gate_policy = "approve_safe"
+launch = "stop_picker"
+profile_scope_from = "intake_a"   # snapshots/anchors scope to profile A, not B.
+
+[steps.input_inline]
+pick_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"   # the product browser scans real Maps viewports.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path (evaluate-extract).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"           # explicit search_profile_id → the pinned branch.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

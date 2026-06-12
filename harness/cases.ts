@@ -70,8 +70,19 @@ export type RawResume = z.infer<typeof RawResumeSchema>;
 const RESUME_STRUCTURAL_KEYS = new Set(["on", "action", "content_from", "content"]);
 
 /** How the UI lane starts a step: chat-rail slash text, chat-rail freeform
- *  prose, or the Skills popover Run button. Defaults from narrative.input_mode. */
-const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "skills_popover"]);
+ *  prose, the Skills popover Run button, or a click on the PREVIOUS step's
+ *  STOP-card profile picker (stop_picker — a NEW run, never a resume; the
+ *  pick-by-vehicle-label key rides input_inline.pick_label). Defaults from
+ *  narrative.input_mode. */
+const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "skills_popover", "stop_picker"]);
+
+/** The typed profile-resolution STOP codes a step may expect (mirrors the
+ *  workflow's GeosearchStopCode wire values). */
+const ExpectStopSchema = z.enum([
+  "no_active_profile",
+  "multiple_active_profiles",
+  "profile_missing_fields",
+]);
 
 const RawStepSchema = z.object({
   id: z.string(),
@@ -79,6 +90,13 @@ const RawStepSchema = z.object({
   purpose: z.string().optional(),
   gate_policy: z.enum(["approve_safe", "deny_all"]).optional(),
   launch: LaunchSchema.optional(),
+  /** Scope this step's before/after DB snapshots to the profile CREATED BY the
+   *  named earlier step (multi-intake journeys; the single carried slot cannot
+   *  distinguish two intakes). */
+  profile_scope_from: z.string().optional(),
+  /** This step terminates in a typed STOP: the runner asserts the STOP card
+   *  (and, for the intake-pointing codes, drives the CTA) after terminal. */
+  expect_stop: ExpectStopSchema.optional(),
   input_inline: z.record(z.string(), z.unknown()).optional(),
   resume: z.array(RawResumeSchema).optional(),
   anchors: z.array(RawAnchorSchema),
@@ -115,7 +133,10 @@ export interface CaseResume {
 }
 
 /** The UI-lane launch surface for a step. */
-export type StepLaunch = "chat_slash" | "chat_freeform" | "skills_popover";
+export type StepLaunch = "chat_slash" | "chat_freeform" | "skills_popover" | "stop_picker";
+
+/** A typed profile-resolution STOP code (run terminates error + STOP card). */
+export type ExpectStop = z.infer<typeof ExpectStopSchema>;
 
 export interface CaseStep {
   id: string;
@@ -124,6 +145,11 @@ export interface CaseStep {
   gatePolicy: "approve_safe" | "deny_all";
   /** UI-lane start surface (explicit, or derived from narrative.input_mode). */
   launch: StepLaunch;
+  /** Snapshot scope = the profile created by THIS earlier step id, or null
+   *  (default: the most recently created profile, the single-journey shape). */
+  profileScopeFrom: string | null;
+  /** The typed STOP this step must terminate in, or null (normal terminal). */
+  expectStop: ExpectStop | null;
   inputInline: Record<string, unknown> | null;
   resume: CaseResume[];
   anchors: AnchorSpec[];
@@ -204,6 +230,13 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
       }
       return { kind: "malformed_tool_call", expect };
     }
+    case "resolution": {
+      const expect = raw.expect;
+      if (expect !== "pinned" && expect !== "inferred_newest") {
+        throw new Error('resolution anchor requires expect = "pinned" | "inferred_newest"');
+      }
+      return { kind: "resolution", expect };
+    }
     default:
       throw new Error(`unknown anchor kind "${raw.kind}" in case (typo? unsupported anchor?)`);
   }
@@ -242,6 +275,8 @@ export function toCase(raw: TomlTable): Case {
     purpose: s.purpose ?? null,
     gatePolicy: s.gate_policy ?? "approve_safe",
     launch: s.launch ?? (parsed.narrative.input_mode === "freeform" ? "chat_freeform" : "chat_slash"),
+    profileScopeFrom: s.profile_scope_from ?? null,
+    expectStop: s.expect_stop ?? null,
     inputInline: s.input_inline ?? null,
     resume: (s.resume ?? []).map((r) => {
       const action = coerceAction(r.action);
@@ -261,6 +296,27 @@ export function toCase(raw: TomlTable): Case {
     }),
     anchors: s.anchors.map((a) => toAnchorSpec(a, parsed.narrative.provider)),
   }));
+
+  // Cross-step validation (fail LOUD at parse, never silently mid-journey):
+  // a stop_picker launch needs its pick-by-vehicle-label key, and a
+  // profile_scope_from must name an EARLIER step in the same case.
+  const seen = new Set<string>();
+  for (const step of steps) {
+    if (step.launch === "stop_picker") {
+      const label = step.inputInline?.["pick_label"];
+      if (typeof label !== "string" || label.trim() === "") {
+        throw new Error(
+          `step "${step.id}" launches stop_picker but has no input_inline.pick_label (the pick-by-vehicle-label key)`,
+        );
+      }
+    }
+    if (step.profileScopeFrom !== null && !seen.has(step.profileScopeFrom)) {
+      throw new Error(
+        `step "${step.id}" profile_scope_from="${step.profileScopeFrom}" does not name an earlier step`,
+      );
+    }
+    seen.add(step.id);
+  }
 
   return {
     id: parsed.meta.id,

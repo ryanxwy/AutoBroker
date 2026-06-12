@@ -188,6 +188,101 @@ describe("case loader", () => {
     expect(c.steps[1]!.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
   });
 
+  it("loads the 0-profile STOP case (expect_stop; error terminal; optional cost)", () => {
+    const c = loadCase(join(CASES, "dealer_geosearch.stop_intake_cta.toml"));
+    expect(c.lane).toBe("ui");
+    expect(c.steps).toHaveLength(1);
+    const step = c.steps[0]!;
+    expect(step.expectStop).toBe("no_active_profile");
+    expect(step.anchors.find((a) => a.kind === "run_status")).toMatchObject({ expect: ["error"] });
+    expect(step.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
+  });
+
+  it("loads the 2-profile STOP→picker case (two intakes; stop_picker launch + scope-from + resolution)", () => {
+    const c = loadCase(join(CASES, "dealer_geosearch.stop_picker.toml"));
+    expect(c.steps.map((s) => s.id)).toEqual(["intake_a", "intake_b", "geosearch_stop", "geosearch_picked"]);
+    // intake_b's content is INLINE (a second vehicle — not narrative.profile).
+    const b = c.steps[1]!.resume[0]!;
+    expect(b.content).toMatchObject({ make: "Toyota", model: "RAV4 Hybrid" });
+    expect(b.content!["preferred_exterior_colors_json"]).toBeNull();
+    // the STOP step expects the typed 2+ code with an error terminal.
+    const stop = c.steps[2]!;
+    expect(stop.expectStop).toBe("multiple_active_profiles");
+    expect(stop.anchors.find((a) => a.kind === "run_status")).toMatchObject({ expect: ["error"] });
+    // the picked step: stop_picker launch + the pick-by-vehicle-label key +
+    // profile scoping pinned to intake_a + the resolution anchor.
+    const picked = c.steps[3]!;
+    expect(picked.launch).toBe("stop_picker");
+    expect(picked.inputInline?.["pick_label"]).toBe("2026 Hyundai Tucson Hybrid Limited");
+    expect(picked.profileScopeFrom).toBe("intake_a");
+    expect(picked.anchors.find((a) => a.kind === "resolution")).toMatchObject({
+      kind: "resolution",
+      expect: "pinned",
+    });
+  });
+
+  it("fails LOUD on a stop_picker step with no pick_label", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["dealer_geosearch"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "dealer_geosearch"
+      launch = "stop_picker"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow(/pick_label/);
+  });
+
+  it("fails LOUD on a profile_scope_from naming no earlier step", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["dealer_geosearch"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "dealer_geosearch"
+      profile_scope_from = "ghost_step"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow(/does not name an earlier step/);
+  });
+
+  it("fails LOUD on a resolution anchor with a bad expect", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["dealer_geosearch"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "dealer_geosearch"
+      [[steps.anchors]]
+      kind = "resolution"
+      expect = "newest"
+    `;
+    expect(() => parseCase(src)).toThrow(/resolution anchor requires/);
+  });
+
   it("fails LOUD on an unknown anchor kind (a typo never silently skips a check)", () => {
     const src = `
       [meta]

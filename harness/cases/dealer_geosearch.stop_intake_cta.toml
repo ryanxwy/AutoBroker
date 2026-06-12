@@ -1,0 +1,52 @@
+# harness/cases/dealer_geosearch.stop_intake_cta.toml — the 0-profile world
+# STOP, UI-LANE: "/dealer_geosearch" typed into the real chat rail against an
+# EMPTY database. The profile-ASK three-branch contract's 0-active branch must
+# surface as a TYPED terminal STOP (run_status=error, never a silent
+# newest-active pick and never a workflow_failed mush): the rail renders the
+# STOP card with data-stop-code="no_active_profile" plus an intake CTA, and
+# clicking the CTA starts a REAL intake run (its form renders).
+#
+# FREE by construction: the resolver throws before any viewport scan or LLM
+# call (cost_and_time is `optional` — an empty ledger is the honest record),
+# and the CTA-spawned intake run is zero-LLM until a submit that never comes.
+# STOP assertions ride run_status + the stop ui_checks — error frames carry NO
+# resolution (the STOP throws before provenance exists).
+
+[meta]
+id = "dealer_geosearch_stop_intake_cta"
+archetype = "A"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "geosearch_stop_zero"
+skill = "dealer_geosearch"
+purpose = "0-active world: geosearch STOPs with the typed no_active_profile card + intake CTA."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+expect_stop = "no_active_profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["error"]          # STOP is a TERMINAL state, not a suspend.
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # keystone, tolerance 0.
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # STOP throws pre-LLM: empty ledger is the honest record.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

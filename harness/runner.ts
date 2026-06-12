@@ -492,8 +492,21 @@ async function evaluateStep(args: {
 // evidence writing
 // ---------------------------------------------------------------------------
 
-function writeEvidence(evidenceRoot: string, cellId: string, files: Record<string, unknown>): string {
-  const dir = join(evidenceRoot, cellId.replace(/\//g, "__"));
+/** The per-step evidence dir name: cell_id + a step-id suffix. The suffix is
+ *  load-bearing for multi-step journeys where two steps share one cell_id
+ *  (e.g. two intake steps building the 2-profile world) — without it the later
+ *  step's evidence silently overwrites the earlier one's. */
+function evidenceDirName(cellId: string, stepId: string): string {
+  return `${cellId.replace(/\//g, "__")}__${stepId}`;
+}
+
+function writeEvidence(
+  evidenceRoot: string,
+  cellId: string,
+  stepId: string,
+  files: Record<string, unknown>,
+): string {
+  const dir = join(evidenceRoot, evidenceDirName(cellId, stepId));
   mkdirSync(dir, { recursive: true });
   for (const [name, content] of Object.entries(files)) {
     writeFileSync(join(dir, name), JSON.stringify(content, null, 2) + "\n", "utf8");
@@ -577,7 +590,7 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
 
     // (9) evaluate → verdict.json + evidence.
     const verdict = await evaluateStep({ apiBase: host.apiBase, c, step, runId, detail, before, after, profileId, layer: opts.layer });
-    const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, {
+    const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
       "verdict.json": verdict,
       "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, profileId },
       "run.json": { runId, terminalStatus: detail.terminalStatus, driverKind: detail.driverKind, events: detail.events.length },
@@ -745,19 +758,40 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       screenshotDir: join(opts.evidenceRoot, "ui-shell"),
     });
 
-    // The profile the journey creates (intake step) scopes every later step's
-    // before/after snapshots — carried across steps.
-    let carriedProfileId: string | null = null;
+    // The profiles the journey creates, keyed by the CREATING step's id —
+    // a multi-intake journey (e.g. the 2-profile STOP world) needs per-step
+    // scoping; `profile_scope_from = "<stepId>"` picks one explicitly. The
+    // latest-created pointer keeps the single-intake default behavior.
+    const profileByStep = new Map<string, string>();
+    let latestProfileId: string | null = null;
     let prevRunId: string | null = null;
-    const results: Array<{ cell: string; verdict: string }> = [];
+    const results: Array<{ cell: string; step: string; verdict: string }> = [];
 
     const stepMaxMs = opts.maxSeconds * 1000;
     for (const step of c.steps) {
       const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
-      const cellDir = cellIdFor(c, step).replace(/\//g, "__");
+      const cellDir = evidenceDirName(cellIdFor(c, step), step.id);
       driver.beginStep(join(opts.evidenceRoot, cellDir, "screenshots"));
 
-      const before = snapshotCounts(carriedProfileId);
+      // The profile scope this step's snapshots/anchors read against: an
+      // explicit profile_scope_from wins; an intake step scopes to NOTHING
+      // before the run (it creates its own profile); otherwise the latest.
+      let scopeProfileId: string | null;
+      if (step.profileScopeFrom !== null) {
+        const scoped = profileByStep.get(step.profileScopeFrom);
+        if (scoped === undefined) {
+          fail(
+            `step "${step.id}": profile_scope_from="${step.profileScopeFrom}" recorded no created profile`,
+          );
+        }
+        scopeProfileId = scoped;
+      } else if (step.skill === INTAKE_SKILL) {
+        scopeProfileId = null;
+      } else {
+        scopeProfileId = latestProfileId;
+      }
+
+      const before = snapshotCounts(scopeProfileId);
       const beforeIds = await readProfileIds(host.apiBase);
 
       // ---- start the run BY USER ACTION -----------------------------------
@@ -769,6 +803,15 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
           fail(`case step "${step.id}" launches chat_freeform but has no input_inline.prompt`);
         }
         await driver.typeInChatRail(prompt);
+      } else if (step.launch === "stop_picker") {
+        // The PREVIOUS step ended in a 2+-profiles STOP whose card is still
+        // rendered; pick by vehicle label — the click starts a NEW run with
+        // search_profile_id (STOP is terminal; this is never a resume).
+        const label = step.inputInline?.["pick_label"];
+        if (typeof label !== "string" || label.trim() === "") {
+          fail(`case step "${step.id}" launches stop_picker but has no input_inline.pick_label`);
+        }
+        await driver.pickProfileStopOption(label, stepMaxMs);
       } else {
         await driver.typeInChatRail(`/${step.skill}`);
       }
@@ -786,15 +829,41 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       await driveResumeScriptDom(driver, step, stepMaxMs);
       const uiTerminal = await driver.waitForTerminal(stepMaxMs);
       await driver.checkTerminalSummaryVisible(uiTerminal);
+
+      // ---- typed-STOP choreography (expect_stop steps) ---------------------
+      // The card must render with the expected stop code; the intake-pointing
+      // codes also drive the CTA (a real intake run starts and renders its
+      // form — zero-LLM, so still free). The 2+ code's picker is driven by the
+      // FOLLOWING step's launch="stop_picker".
+      if (step.expectStop !== null) {
+        await driver.checkStopCard(step.expectStop);
+        if (step.expectStop === "no_active_profile" || step.expectStop === "profile_missing_fields") {
+          await driver.clickStopIntakeCta(stepMaxMs);
+        }
+      }
+      // A resolution anchor doubles as the DOM provenance check: the rendered
+      // turn's meta tag must voice the same pinned/inferred_newest branch.
+      const resolutionAnchor = step.anchors.find(
+        (a): a is Extract<(typeof step.anchors)[number], { kind: "resolution" }> =>
+          a.kind === "resolution",
+      );
+      if (resolutionAnchor !== undefined && uiTerminal === "done") {
+        await driver.checkMismatchBanner(resolutionAnchor.expect === "pinned");
+      }
       poller.stop();
 
       // ---- evidence spine (identical to the API lane) ----------------------
       const detail = await buildRunDetail(host.apiBase, runId);
       if (step.skill === INTAKE_SKILL) {
         const created = await resolveNewProfileId(host.apiBase, beforeIds);
-        if (created !== null) carriedProfileId = created;
+        if (created !== null) {
+          profileByStep.set(step.id, created);
+          latestProfileId = created;
+          scopeProfileId = created;
+        }
       }
-      const profileId = step.skill === INTAKE_SKILL && uiTerminal !== "done" ? null : carriedProfileId;
+      const profileId =
+        step.skill === INTAKE_SKILL && uiTerminal !== "done" ? null : scopeProfileId;
       const after = snapshotCounts(profileId);
 
       let waiver: { kind: string; reason: string } | null = null;
@@ -816,7 +885,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         domChecks: [...driver.checks],
         waiver,
       });
-      const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, {
+      const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
         "verdict.json": verdict,
         "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, lane: "ui", launch: step.launch, profileId },
         "run.json": { runId, terminalStatus: detail.terminalStatus, driverKind: detail.driverKind, events: detail.events.length, uiTerminal },
@@ -827,7 +896,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       console.log(
         JSON.stringify({ harness: "ui", step: step.id, verdict: verdict.verdict, status: verdict.status, cell: verdict.cell_id, evidence: dir }),
       );
-      results.push({ cell: verdict.cell_id, verdict: verdict.verdict });
+      results.push({ cell: verdict.cell_id, step: step.id, verdict: verdict.verdict });
       if (verdict.verdict !== "GREEN" && verdict.verdict !== "GREEN_WITH_WAIVER") {
         exitCode = 1;
         break; // a RED step ends the journey — later steps depend on it.

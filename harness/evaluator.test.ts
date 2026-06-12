@@ -229,6 +229,42 @@ describe("malformed_tool_call anchor (framework-new)", () => {
   });
 });
 
+describe("resolution anchor (profile-resolution provenance)", () => {
+  function framesWithResolution(resolution: string | null) {
+    return [
+      { ts: "t0", kind: "init", payload: { run_id: "r1", skill: "dealer_geosearch", driver_kind: "deepseek_apikey" } },
+      {
+        ts: "t1",
+        kind: "text",
+        payload: { text: "Registered 3 new dealer candidate(s).", ...(resolution !== null ? { resolution } : {}) },
+      },
+      { ts: "t2", kind: "done", payload: {} },
+    ];
+  }
+
+  it("passes when the terminal text frame carries the expected provenance", () => {
+    const detail = buildRunDetailFromEvents("r1", framesWithResolution("pinned"), "done");
+    const r = evalAnchor({ kind: "resolution", expect: "pinned" }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(true);
+    expect(r.observed).toBe("pinned");
+  });
+
+  it("fails on a provenance mismatch (pinned expected, inferred_newest observed)", () => {
+    const detail = buildRunDetailFromEvents("r1", framesWithResolution("inferred_newest"), "done");
+    const r = evalAnchor({ kind: "resolution", expect: "pinned" }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.observed).toBe("inferred_newest");
+  });
+
+  it("fails LOUD-but-evidenced when no text frame carries resolution (not threaded)", () => {
+    const detail = buildRunDetailFromEvents("r1", framesWithResolution(null), "done");
+    const r = evalAnchor({ kind: "resolution", expect: "inferred_newest" }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.observed).toBeNull();
+    expect(r.detail).toMatch(/no text frame carried a resolution/);
+  });
+});
+
 describe("four-tier verdict", () => {
   const okAnchor = (kind: string): AnchorResult => ({ kind, ok: true, expected: 1, observed: 1 });
   const failAnchor = (kind: string): AnchorResult => ({ kind, ok: false, expected: 1, observed: 0, detail: "fail" });

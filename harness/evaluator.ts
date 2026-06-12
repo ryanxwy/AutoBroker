@@ -16,6 +16,8 @@
  *   no_external_mutation  KEYSTONE, tolerance 0: DB scan + SSE event scan
  *   cost_and_time         usage present → ledger rows exist; NULL-not-$0 honored
  *   malformed_tool_call   framework-new derived anchor: absent | fail_closed
+ *   resolution            profile-resolution provenance on the terminal text
+ *                         frame: pinned | inferred_newest (profile-scoped skills)
  *
  * N/A anchors: browser_activity + approval_gate are CASE-DECLARED for intake,
  * not in the default GREEN subset. A case that does not list them does not score
@@ -73,7 +75,16 @@ export type AnchorSpec =
        *  NULL-not-$0. */
       optional?: boolean;
     }
-  | { kind: "malformed_tool_call"; expect: "absent" | "fail_closed" };
+  | { kind: "malformed_tool_call"; expect: "absent" | "fail_closed" }
+  | {
+      /** Profile-resolution provenance: the run's terminal TEXT frame must
+       *  carry payload.resolution === expect (pinned = explicit pin honored;
+       *  inferred_newest = the logged single-active inference). Error-terminal
+       *  runs never carry resolution (the 0/2+ STOPs throw before it exists) —
+       *  STOP assertions use run_status + the stop ui_checks instead. */
+      kind: "resolution";
+      expect: "pinned" | "inferred_newest";
+    };
 
 export interface AnchorResult {
   kind: string;
@@ -161,6 +172,32 @@ export function evalAnchor(
 
     case "malformed_tool_call": {
       return evalMalformedToolCall(spec, detail);
+    }
+
+    case "resolution": {
+      // The provenance rides the terminal text frame's payload (the SUT copies
+      // the workflow output's resolution there); the LAST carrying frame wins.
+      let observed: string | null = null;
+      for (const ev of detail.events) {
+        if (ev.kind !== "text") continue;
+        const res = ev.payload["resolution"];
+        if (typeof res === "string") observed = res;
+      }
+      const ok = observed === spec.expect;
+      return {
+        kind: "resolution",
+        ok,
+        expected: spec.expect,
+        observed,
+        ...(ok
+          ? {}
+          : {
+              detail:
+                observed === null
+                  ? "no text frame carried a resolution payload (provenance not threaded?)"
+                  : "resolution provenance mismatch",
+            }),
+      };
     }
 
     default: {
