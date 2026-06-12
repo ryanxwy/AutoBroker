@@ -44,15 +44,25 @@ import { openDb, resolveDataDir } from "@autobroker/tools";
 import { resetMastraForTests, resetRuntimeGlueForTests } from "@autobroker/workflows";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// harness/ → repo-root packages/db/drizzle/<migration>.sql
-const MIGRATION_SQL = join(here, "..", "packages", "db", "drizzle", "0000_military_red_skull.sql");
+// harness/ → repo-root packages/db/drizzle/ (the committed migration set)
+const MIGRATIONS_DIR = join(here, "..", "packages", "db", "drizzle");
 
-/** Apply the committed migration + seed account to the isolated DB (idempotent-ish:
- *  a fresh tmp DB each run, so the migration always lands on an empty file). */
+/** Every committed migration file, in journal order. A fresh DB must receive
+ *  the WHOLE set, not just the 0000 baseline — a later migration can carry a
+ *  unique index that an ON CONFLICT upsert depends on. */
+function migrationFiles(): string[] {
+  const journal = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"),
+  ) as { entries: Array<{ tag: string }> };
+  return journal.entries.map((e) => join(MIGRATIONS_DIR, `${e.tag}.sql`));
+}
+
+/** Apply the committed migrations + seed account to the isolated DB (idempotent-ish:
+ *  a fresh tmp DB each run, so the migrations always land on an empty file). */
 function bootstrapDb(): void {
   const db = openDb(); // resolves <AUTOBROKER_DATA_DIR>/autobroker.db (the tools closure).
   try {
-    db.$client.exec(readFileSync(MIGRATION_SQL, "utf8"));
+    for (const file of migrationFiles()) db.$client.exec(readFileSync(file, "utf8"));
     // Seed the single account the active-slot uniqueness + intake persist need.
     db.$client.prepare("INSERT INTO accounts (account_id, email) VALUES (?, ?)").run("acct-harness-1", "harness@example.com");
   } finally {

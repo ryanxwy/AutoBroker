@@ -530,6 +530,11 @@ export class UiDriver {
     await this.page.waitForSelector(tid("topbar-searches"), { timeout: timeoutMs });
     await this.page.click(tid("topbar-searches"));
     await this.page.waitForSelector(tid("searches-popover"), { timeout: timeoutMs });
+    // The popover refetches on EVERY open and passes through a loading state —
+    // counting rows the instant the panel is visible reads an empty list, not
+    // the fetched one. Wait for the first row to materialize; a genuinely
+    // zero-profile world times out here with a clear message instead.
+    await this.page.waitForSelector('[data-testid^="searches-row-"]', { timeout: timeoutMs });
 
     const rows = this.page.locator('[data-testid^="searches-row-"]');
     const count = await rows.count();

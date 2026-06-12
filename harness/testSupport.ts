@@ -23,7 +23,16 @@ import { fileURLToPath } from "node:url";
 import { openDb, type Db } from "@autobroker/db";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQL = join(HERE, "..", "packages", "db", "drizzle", "0000_military_red_skull.sql");
+const MIGRATIONS_DIR = join(HERE, "..", "packages", "db", "drizzle");
+
+/** Every committed migration file in journal order — a fresh test DB gets the
+ *  whole set (a later migration can carry an index that upserts depend on). */
+function migrationFiles(): string[] {
+  const journal = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"),
+  ) as { entries: Array<{ tag: string }> };
+  return journal.entries.map((e) => join(MIGRATIONS_DIR, `${e.tag}.sql`));
+}
 
 export interface TmpDb {
   db: Db;
@@ -41,7 +50,7 @@ export function makeTmpDb(): TmpDb {
   delete process.env.AUTOBROKER_DB;
 
   const db = openDb();
-  db.$client.exec(readFileSync(MIGRATION_SQL, "utf8"));
+  for (const file of migrationFiles()) db.$client.exec(readFileSync(file, "utf8"));
   db.$client.prepare("INSERT INTO accounts (account_id, email) VALUES (?, ?)").run("acct-test-1", "t@e.com");
 
   return {
