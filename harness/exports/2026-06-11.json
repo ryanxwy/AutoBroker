@@ -1,0 +1,743 @@
+{
+  "date": "2026-06-11",
+  "code_repo_head_sha": "dcaea1d",
+  "runs": [
+    {
+      "run_id": "077bbb0b-5fb5-4acf-bcba-c66dfcfb2c9d",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009254000000000002,
+      "duration_ms": 9185,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "077bbb0b-5fb5-4acf-bcba-c66dfcfb2c9d",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0008442,
+      "duration_ms": 11389,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "097e1863-b0c6-4585-b4a4-f76d62f65ee9",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.000805,
+      "duration_ms": 11745,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "180dd3d7-60d9-4ce8-b788-793c75bb6ed1",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009254000000000002,
+      "duration_ms": 9198,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "180dd3d7-60d9-4ce8-b788-793c75bb6ed1",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 10460,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "31b8f0f0-6728-4a49-9fb1-800c0d8124b6",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009254000000000002,
+      "duration_ms": 10052,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "31b8f0f0-6728-4a49-9fb1-800c0d8124b6",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007714,
+      "duration_ms": 11004,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "34c55f3b-2b2e-42d0-88bd-5c2dbecbb02d",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 10138,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "361e6abc-3952-47c9-85ac-82514d045940",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.000763,
+      "duration_ms": 10121,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "45a33548-5c67-4a9a-87ec-00c77effe9a1",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009254000000000002,
+      "duration_ms": 8823,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "45a33548-5c67-4a9a-87ec-00c77effe9a1",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007154000000000002,
+      "duration_ms": 8790,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "600cd301-d99a-48ff-b371-5ae9525379ee",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007512400000000001,
+      "duration_ms": 10478,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "65c77d22-7bef-47dd-a5ad-a8134c55d55e",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0008581999999999999,
+      "duration_ms": 11284,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "6aa70ac5-e106-4fbe-8ff1-e8063be526c9",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 10081,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "6dd9d2e2-8642-43d5-9d17-0cad694de1f2",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 10150,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "813f2940-e797-4afe-b852-298d8be97b14",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0008022000000000001,
+      "duration_ms": 12059,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "912deb43-d7a7-431a-931a-94193dd35b78",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.00076496,
+      "duration_ms": 9398,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "9b2751af-2d7d-4661-9128-e70330511bb6",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 11194,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "a1a766ae-9388-4465-8f43-2444ec2b33c0",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.000693,
+      "duration_ms": 9221,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "acd51f83-3fa2-4eca-a3bc-0281d8fa172f",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009282000000000001,
+      "duration_ms": 9362,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "acd51f83-3fa2-4eca-a3bc-0281d8fa172f",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007042000000000001,
+      "duration_ms": 8687,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "b98dae88-5206-4bd0-80c8-b0ad4dee6676",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 10190,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "cd42b354-e282-462f-998a-afefdbbcbdde",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 9828,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "ce61bb44-2df5-4d4d-a0fb-1607978a2016",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009254000000000002,
+      "duration_ms": 8726,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "ce61bb44-2df5-4d4d-a0fb-1607978a2016",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 9829,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "d07ce12b-8698-4833-a28f-ff7f38dba1d4",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007602000000000002,
+      "duration_ms": 9700,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "d350b264-a2fe-43ac-b1b6-a1e9bb0a06cc",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0007938000000000001,
+      "duration_ms": 11804,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    }
+  ],
+  "cases": [
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_slash",
+      "run_id": "34c55f3b-2b2e-42d0-88bd-5c2dbecbb02d",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-01-30-712Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_freeform",
+      "run_id": "180dd3d7-60d9-4ce8-b788-793c75bb6ed1",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-01-44-593Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_decline",
+      "run_id": "8076a6bb-ddd8-4979-b6ee-aa50c3951882",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-02-07-724Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_force_override",
+      "run_id": "361e6abc-3952-47c9-85ac-82514d045940",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-02-11-034Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_slash",
+      "run_id": "a1a766ae-9388-4465-8f43-2444ec2b33c0",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-02-24-738Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_freeform",
+      "run_id": "45a33548-5c67-4a9a-87ec-00c77effe9a1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-02-38-773Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_decline",
+      "run_id": "8c594d05-0731-4e95-8d3e-0a5f358e1dca",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-03-00-799Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "c86251e8-8fdb-4662-b11c-abe0cdac2464",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-03-04-572Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "cd42b354-e282-462f-998a-afefdbbcbdde",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-03-04-572Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "748ac4da-d2bc-4712-9032-1407e46841b7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-03-27-575Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "d07ce12b-8698-4833-a28f-ff7f38dba1d4",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-03-27-575Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_slash",
+      "run_id": "b98dae88-5206-4bd0-80c8-b0ad4dee6676",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-24-23-053Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_freeform",
+      "run_id": "ce61bb44-2df5-4d4d-a0fb-1607978a2016",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-24-36-954Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_decline",
+      "run_id": "990ce19c-e230-496a-8908-80d26a4d501b",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-24-59-120Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_force_override",
+      "run_id": "912deb43-d7a7-431a-931a-94193dd35b78",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-25-02-612Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_slash",
+      "run_id": "65c77d22-7bef-47dd-a5ad-a8134c55d55e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-25-15-814Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_freeform",
+      "run_id": "acd51f83-3fa2-4eca-a3bc-0281d8fa172f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-25-31-803Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_decline",
+      "run_id": "7f33ac86-85e8-4ea8-b3e3-12ee88e907de",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-25-54-116Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "ea9a3082-1c7a-4336-8544-bf49879687fd",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-25-57-958Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "6dd9d2e2-8642-43d5-9d17-0cad694de1f2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-25-57-958Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "fc556d00-b554-4637-9717-efce3a9f22a2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-26-20-861Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "6aa70ac5-e106-4fbe-8ff1-e8063be526c9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T01-26-20-861Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_slash",
+      "run_id": "d350b264-a2fe-43ac-b1b6-a1e9bb0a06cc",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-33-41-239Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_freeform",
+      "run_id": "31b8f0f0-6728-4a49-9fb1-800c0d8124b6",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-33-59-404Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_decline",
+      "run_id": "d47e6b8d-16bc-4f43-accc-d4b9c8bacdd2",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-34-24-109Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_force_override",
+      "run_id": "600cd301-d99a-48ff-b371-5ae9525379ee",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-34-27-329Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_slash",
+      "run_id": "9b2751af-2d7d-4661-9128-e70330511bb6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-34-41-408Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_freeform",
+      "run_id": "077bbb0b-5fb5-4acf-bcba-c66dfcfb2c9d",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-34-56-881Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_ui_decline",
+      "run_id": "ecb02687-d78e-4cbd-80d5-f751d1da54f1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-35-21-790Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "d4f1f45d-a868-4e63-8e38-ee657422f42f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-35-25-386Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_narrative",
+      "run_id": "813f2940-e797-4afe-b852-298d8be97b14",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-35-25-386Z"
+    },
+    {
+      "cell_id": "live/dealer_geosearch/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "e9ca4473-0959-4cde-9d79-c71ca4326e64",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-35-50-793Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "dealer_geosearch_ui_button",
+      "run_id": "097e1863-b0c6-4585-b4a4-f76d62f65ee9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-06-11T05-35-50-793Z"
+    }
+  ]
+}
