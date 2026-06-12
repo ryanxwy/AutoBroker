@@ -24,7 +24,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, dialog, utilityProcess, type UtilityProcess } from "electron";
+import { app, BrowserWindow, dialog, nativeImage, utilityProcess, type UtilityProcess } from "electron";
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist
 const desktopDir = resolve(here, "..");
@@ -147,6 +147,13 @@ async function onServerExit(code: number): Promise<void> {
 }
 
 async function run(): Promise<void> {
+  // Optional runtime dock icon — `electron .` otherwise shows Electron's
+  // default. The artwork is a machine-local artifact (generated next to the
+  // dev launcher, never committed); silently skipped when absent.
+  if (process.platform === "darwin") {
+    const dockIcon = nativeImage.createFromPath(join(homedir(), ".autobroker-ts", "desktop-launcher", "icon.png"));
+    if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+  }
   const port = await startServer();
   mainWindow = new BrowserWindow({
     width: 1440,
