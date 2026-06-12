@@ -286,10 +286,17 @@ export function normalizeIncentiveBrand(make: string): string {
  * no_oem_source failure (this build runs web-search-free).
  */
 export const OEM_SEED_SOURCES: Readonly<Record<string, { urlTemplate: string }>> = {
-  // National brand current-offers page (verified live 2026-06-12: 200).
-  // Deliberately param-free: the SSRF validator's shell-metacharacter rule
-  // rejects "&" anywhere in a query, so a multi-param template can never
-  // validate — a template may carry AT MOST one ?key={placeholder} pair.
+  // National brand current-offers page (verified live 2026-06-12: 200). This
+  // bare path renders a model MSRP grid the cold isolated capture reads
+  // reliably. The brand's whitelist-class cash (e.g. Tucson Hybrid "featured
+  // cash") is NOT reachable from here by design of the source site: it is
+  // served only through a brand-AND-zip data feed (a two-parameter request the
+  // single-parameter SSRF rule rejects — "&" is a shell metacharacter) and a
+  // personalization-gated rendered module that a headless, cold, read-only
+  // browser never warms. A {zip}-localized URL was tried and rejected: it
+  // still does not surface that cash to the cold capture AND it destabilizes
+  // the render (intermittent capture timeout). So the param-free page is the
+  // stable, honest source — an all-MSRP page is a valid empty result.
   hyundai: {
     urlTemplate: "https://www.hyundaiusa.com/us/en/offers",
   },

@@ -63,6 +63,10 @@ const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0001_redundant_ozymandia
   (f) => join(here, "..", "..", "db", "drizzle", f),
 );
 
+// The brand seed is the param-free offers page; the registry remembers it
+// verbatim (no {zip} fill), and the suspend / capture / persist all use the
+// same URL.
+const SEED_TEMPLATE = "https://www.hyundaiusa.com/us/en/offers";
 const SEED_URL = "https://www.hyundaiusa.com/us/en/offers";
 
 let tmpDir: string;
@@ -268,10 +272,10 @@ describe("incentive_scrape first-encounter approve chain", () => {
     expect(output.incentivesWritten).toBe(1);
     expect(output.rowsDroppedNonCash).toBe(1);
 
-    // Registry memory: the brand entry holds the SEED template.
+    // Registry memory: the brand entry holds the SEED template verbatim.
     const registry = readIncentiveRegistry(registryPath());
     expect(registry["hyundai"]).toBeDefined();
-    expect(registry["hyundai"]!.url_template).toBe(SEED_URL);
+    expect(registry["hyundai"]!.url_template).toBe(SEED_TEMPLATE);
     expect(registry["hyundai"]!.added_for_profile).toBe("prof-1");
 
     // The capture walked exactly the approved URL.

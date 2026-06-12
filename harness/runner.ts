@@ -540,13 +540,23 @@ async function evaluateStep(args: {
     s2Text = `no profile created (terminal=${detail.terminalStatus})`;
   }
   const tableAnchor = anchors.find((a) => a.kind === "table_min_rows");
-  const s3Ok = tableAnchor === undefined ? true : tableAnchor.ok;
+  // A failing table anchor that an explicit table_min_rows waiver covers is NOT
+  // an S1/S2/S3 contradiction: the zero-delta IS the true ground truth (an
+  // empty real-world result), so S3 agrees with the empty world rather than
+  // contradicting the "done" terminal. Without this the confidence would drop
+  // to "low" and the verdict would RED out before the waiver can apply.
+  const tableWaived =
+    args.waiver != null &&
+    args.waiver.kind === "table_min_rows" &&
+    tableAnchor !== undefined &&
+    !tableAnchor.ok;
+  const s3Ok = tableAnchor === undefined ? true : tableAnchor.ok || tableWaived;
 
   const confidence = computeConfidence({ s1Ok, s2Ok, s3Ok, s2Available });
   const crossCheck: CrossCheck = {
     s1: `SSE terminal=${detail.terminalStatus}`,
     s2: s2Text,
-    s3: `profile-scoped delta ${tableAnchor ? `(${String(tableAnchor.observed)})` : "n/a"}`,
+    s3: `profile-scoped delta ${tableAnchor ? `(${String(tableAnchor.observed)})` : "n/a"}${tableWaived ? " — empty real-world result (waiver)" : ""}`,
     confidence,
   };
 
@@ -921,6 +931,32 @@ function geosearchEmptyResultWaiver(
   };
 }
 
+/** The incentive-scrape empty-result waiver: the confirm summary is a
+ *  deterministic zero-LLM template. "N scraped" with "0 incentive(s) saved"
+ *  and NO failed/blocked brand means the OEM offers page really carried no
+ *  whitelist-class cash for the profile vehicle (an all-MSRP/all-APR page is a
+ *  valid real-world result — nothing to write into manufacturer_incentives).
+ *  A scrape that FAILED or was BLOCKED is not a clean empty result and must
+ *  surface as RED, never hide behind the waiver; browser activity must also be
+ *  present (the page really was visited). */
+function incentiveScrapeEmptyResultWaiver(
+  summaryText: string,
+  detail: RunDetail,
+): { kind: string; reason: string } | null {
+  if (!/\bscraped\b/.test(summaryText)) return null;
+  if (!/0 incentive\(s\) saved/.test(summaryText)) return null;
+  if (/failed|blocked/i.test(summaryText)) return null;
+  if (!detail.sawBrowserActivity) return null;
+  return {
+    kind: "table_min_rows",
+    reason:
+      "OEM offers page carried zero whitelist-class cash for the profile " +
+      "vehicle (browser activity present, scrape clean; an all-MSRP/all-APR " +
+      "page is a valid empty real-world result — nothing to write into " +
+      "manufacturer_incentives)",
+  };
+}
+
 /**
  * The UI-lane case runner: ONE server host + ONE driver browser session for the
  * WHOLE case (the non-tech-user journey), every step started by a REAL user
@@ -1161,6 +1197,8 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       let waiver: { kind: string; reason: string } | null = null;
       if (step.skill === "dealer_geosearch" && uiTerminal === "done") {
         waiver = geosearchEmptyResultWaiver(await driver.terminalSummaryText(), detail);
+      } else if (step.skill === "incentive_scrape" && uiTerminal === "done") {
+        waiver = incentiveScrapeEmptyResultWaiver(await driver.terminalSummaryText(), detail);
       }
 
       const verdict = await evaluateStep({

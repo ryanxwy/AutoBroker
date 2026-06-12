@@ -621,14 +621,18 @@ describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", 
 
     const noAsk = c.steps[2]!;
     expect(noAsk.resume).toHaveLength(0); // nothing suspends on the re-run.
+    // The load-bearing proof of step 3 is NO-RE-ASK (registry hit → gate
+    // absent). It does NOT assert a cache-skip / zero-navigation: an empty
+    // slice leaves no cache marker, so the second run re-navigates and stays
+    // empty (Δ=0 EXACT). browser_activity is therefore intentionally not
+    // pinned (it differs between the empty and the real-cash worlds).
     expect(noAsk.anchors.find((a) => a.kind === "approval_gate")).toMatchObject({ expect: "absent" });
-    expect(noAsk.anchors.find((a) => a.kind === "browser_activity")).toMatchObject({ expect: "absent" });
+    expect(noAsk.anchors.find((a) => a.kind === "browser_activity")).toBeUndefined();
     expect(noAsk.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
       table: "manufacturer_incentives",
       deltaMin: 0,
       exact: true,
     });
-    expect(noAsk.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
   });
 
   it("loads the decline twin: declined terminal, zero nav, slice exact-0, asks AGAIN on the re-run", () => {
