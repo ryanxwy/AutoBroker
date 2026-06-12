@@ -1,0 +1,192 @@
+# harness/cases/dealer_pipeline.ui_prefix.toml — THE narrative-prefix journey:
+# intake → pin → dealer_geosearch → inventory_site_scan, UI-LANE, in ONE server
+# session + ONE browser session + ONE rail session (reuse_pinned):
+#
+#   step 1  intake via chat-rail SLASH (the corpus Tucson profile). AFTER the
+#           step's terminal + checks, the runner pins the just-created profile
+#           through the REAL Searches-popover Pin button (`pin_label` — the
+#           EXPLICIT pin verb; sessions are never auto-pinned at intake
+#           confirm). The pin ui_check lands on THIS step's verdict.
+#   step 2  "/dealer_geosearch" typed into the same rail. The pinned session
+#           threads its pin as search_profile_id on the launch, so the
+#           resolver takes the PINNED branch — asserted by the resolution
+#           anchor AND the rendered provenance meta tag.
+#   step 3  "/inventory_site_scan" typed into the same rail (same pin
+#           threading). The batch_review card renders on the gate-banner
+#           track; the driver clicks the explicit Select-all button, asserts
+#           the counter complete, submits — then the run scans the approved
+#           dealers' REAL sites (isolated parallel Browsers), extracts
+#           listings (the LLM phase — cost_and_time is REQUIRED, not
+#           optional), and persists both inventory tables profile-scoped.
+#
+# Cross-step ui_check (batch_rows_from): the batch card's target-row count must
+# equal step 2's profile-scoped profile_dealers delta — the discovery feeds the
+# batch one-for-one (full-radius default, no max_targets valve).
+# max_seconds = 1800 is PER-STEP (scan only): capture+extract @ concurrency 4
+# over a full-radius SoCal batch needs more than the 900s default; the CLI
+# --max-seconds flag still overrides. RADIUS 120 (live default, 5 viewports).
+
+[meta]
+id = "dealer_pipeline_ui_prefix"
+archetype = "A"            # browser archetype — Maps scan + dealer-site scan.
+skills = ["search_profile_intake", "dealer_geosearch", "inventory_site_scan"]
+risk_group = "E"           # read-only browsing + local writes; no mutation gate.
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake + the explicit Pin verb (the journey root) ---------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile, then PIN the rail session to it via the Searches popover."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch on the PINNED session ---------------------------
+
+[[steps]]
+id = "geosearch_run"
+skill = "dealer_geosearch"
+purpose = "Discover dealers; the pinned session threads search_profile_id → resolution=pinned."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"   # the product browser scans real Maps viewports.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path (evaluate-extract).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"           # the pin threading landed → the pinned branch.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: inventory_site_scan — batch select-all → submit ------------------
+
+[[steps]]
+id = "scan_run"
+skill = "inventory_site_scan"
+purpose = "Batch-review ALL discovered dealers (Select all), scan their real sites, persist listings."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+max_seconds = 1800          # PER-STEP budget: full-radius capture+extract @4.
+batch_rows_from = "geosearch_run"   # card rows == step 2's profile_dealers delta.
+
+[[steps.resume]]
+on = "batch_review"
+action = "accept"
+default_decision = "approve"   # no [[steps.resume.rows]] → the Select-all button.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"   # isolated parallel Browsers over real dealer sites.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_inventory_sources"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase (no optional key).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"           # same pinned session → same pinned branch.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

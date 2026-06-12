@@ -14,6 +14,10 @@
  *                       [--gate-policy approve_safe] [--max-seconds 900]
  *                       [--db <path>] [--dry-run]
  *
+ * STEP BUDGETS are PER-STEP: --max-seconds (when given) overrides everything;
+ * else a step's TOML `max_seconds`; else 900s. A long scan step can carry 1800
+ * in its case file without inflating its journey siblings or other corpus runs.
+ *
  * --dry-run: boot the server with the DI seam DISABLED but STOP before the
  * first live call — proving the wiring end-to-end minus spend. It runs preflight +
  * the driver_kind self-check + the /api/mode read, then exits 0 WITHOUT POSTing a
@@ -55,7 +59,7 @@ import {
 import { snapshotCounts, openReadHandle, type TableCounts } from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
-import { UiDriver } from "./uiDriver.js";
+import { planBatchRowDecisions, UiDriver } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_HOST = join(HERE, "serverHost.ts");
@@ -81,7 +85,9 @@ export interface RunnerOpts {
   evidenceRoot: string;
   gatePolicy: GatePolicy | null;
   layer: string;
-  maxSeconds: number;
+  /** The CLI --max-seconds, or null when the flag was absent (per-step budgets
+   *  then come from the case TOML's max_seconds, default 900). CLI overrides. */
+  maxSeconds: number | null;
   dryRun: boolean;
 }
 
@@ -135,9 +141,19 @@ function parseArgs(argv: string[]): RunnerOpts {
     evidenceRoot: resolve(expandTilde(evidenceRoot)),
     gatePolicy: (flags.get("gate-policy") as GatePolicy | undefined) ?? null,
     layer: flags.get("layer") ?? "L2",
-    maxSeconds: Number(flags.get("max-seconds") ?? 900),
+    maxSeconds: flags.has("max-seconds") ? Number(flags.get("max-seconds")) : null,
     dryRun: bools.has("dry-run"),
   };
+}
+
+/** The default per-step budget when neither the CLI nor the case sets one. */
+const DEFAULT_STEP_BUDGET_SECONDS = 900;
+
+/** Resolve one step's wall-clock budget (ms): CLI --max-seconds overrides;
+ *  else the step's TOML max_seconds; else the 900s default. PER-STEP — a long
+ *  scan step's 1800 never inflates its journey siblings. */
+function stepBudgetMs(opts: RunnerOpts, step: CaseStep): number {
+  return (opts.maxSeconds ?? step.maxSeconds ?? DEFAULT_STEP_BUDGET_SECONDS) * 1000;
 }
 
 function expandTilde(p: string): string {
@@ -288,6 +304,71 @@ function buildFormDecisionBody(resume: CaseResume, decisionId: string): Record<s
   return { decision_id: decisionId, decision };
 }
 
+/** The batch_review suspend payload size bound (bytes). The spec_inline must
+ *  stay renderable as a card — the workflow keeps it under 8KB at a 40-dealer
+ *  full-radius batch; the runner re-asserts it on every live sighting. */
+const BATCH_SUSPEND_MAX_BYTES = 8192;
+
+/** The suspend-payload targets the batch verbs resolve names/ids against. */
+interface BatchSuspendTarget {
+  dealer_id: string;
+  name: string;
+}
+
+/**
+ * Read the run's CURRENT batch_review suspend spec_inline off the status
+ * summary's event backlog (the LAST awaiting_user frame with form_kind
+ * batch_review — the same frames the SSE stream carries; the status route's
+ * `pending` projection stays payload-free so the approvals poller stays
+ * structurally blind). Fails LOUD when no such frame exists, and asserts the
+ * <8KB payload bound on every sighting.
+ */
+async function readBatchSuspendPayload(
+  apiBase: string,
+  runId: string,
+): Promise<{ spec: Record<string, unknown>; targets: BatchSuspendTarget[] }> {
+  const res = await fetch(`${apiBase}/api/skill-runs/${encodeURIComponent(runId)}`, { method: "GET" });
+  if (!res.ok) throw new Error(`readBatchSuspendPayload: GET /api/skill-runs/${runId} → HTTP ${res.status}`);
+  const body = (await res.json()) as {
+    events?: Array<{ kind?: string; payload?: Record<string, unknown> }>;
+  };
+  const events = body.events ?? [];
+  let spec: Record<string, unknown> | null = null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const ev = events[i]!;
+    if (ev.kind !== "awaiting_user") continue;
+    const payload = ev.payload ?? {};
+    if (payload["form_kind"] !== "batch_review") continue;
+    const inline = payload["spec_inline"];
+    if (inline !== null && typeof inline === "object") {
+      spec = inline as Record<string, unknown>;
+      break;
+    }
+  }
+  if (spec === null) {
+    throw new Error(`readBatchSuspendPayload: run ${runId} has no batch_review awaiting_user frame`);
+  }
+
+  const bytes = Buffer.byteLength(JSON.stringify(spec), "utf8");
+  if (bytes >= BATCH_SUSPEND_MAX_BYTES) {
+    throw new Error(
+      `batch_review spec_inline payload is ${bytes} bytes — breaches the <${BATCH_SUSPEND_MAX_BYTES} byte bound`,
+    );
+  }
+
+  const targetsRaw = spec["targets"];
+  const targets: BatchSuspendTarget[] = [];
+  if (Array.isArray(targetsRaw)) {
+    for (const t of targetsRaw) {
+      const row = t as { dealer_id?: unknown; name?: unknown };
+      if (typeof row.dealer_id === "string" && typeof row.name === "string") {
+        targets.push({ dealer_id: row.dealer_id, name: row.name });
+      }
+    }
+  }
+  return { spec, targets };
+}
+
 /** Drive the resume[] script: for each suspend the run reaches, find the matching
  *  resume entry (by `on` = suspend kind) and POST /form-decision. Polls pending
  *  status between resumes. Returns when the run reaches a terminal status. */
@@ -321,6 +402,16 @@ async function driveResumeScript(apiBase: string, runId: string, resumes: CaseRe
     cursor = Math.min(cursor + 1, resumes.length);
 
     usedDecisionIds.add(pending.decisionId);
+    // Drive-time content source: "suspend.targets" approves ALL dealer ids off
+    // the live suspend payload (the API-lane equivalent of the card's
+    // Select-all; the wire stays the explicit id list).
+    if (resume.action === "accept" && resume.contentFrom === "suspend.targets") {
+      const { targets } = await readBatchSuspendPayload(apiBase, runId);
+      if (targets.length === 0) {
+        throw new Error("resume content_from=suspend.targets but the suspend payload carries zero targets");
+      }
+      resume = { ...resume, content: { approved_dealer_ids: targets.map((t) => t.dealer_id) } };
+    }
     const body = buildFormDecisionBody(resume, pending.decisionId);
     const res = await fetch(`${apiBase}/api/skill-runs/${encodeURIComponent(runId)}/form-decision`, {
       method: "POST",
@@ -348,6 +439,8 @@ function pendingKind(step: string): string {
     case "trimVerify":
     case "prefill":
       return "malformed_tool_call";
+    case "batchReview":
+      return "batch_review";
     default:
       return "data_collection";
   }
@@ -538,7 +631,13 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     // they only exist on the UI lane; silently ignoring one would hollow the case.
     fail(`step "${step.id}" carries edge="${step.edge}" — edge cases run on the UI lane only (--lane ui)`);
   }
+  if (step.pinLabel !== null) {
+    // The pin verb is a Searches-popover DOM action — UI lane only; silently
+    // skipping it would hollow a reuse_pinned journey.
+    fail(`step "${step.id}" carries pin_label — the pin verb runs on the UI lane only (--lane ui)`);
+  }
   const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
+  const budgetMs = stepBudgetMs(opts, step);
 
   // (1b) Pin the harness's OWN in-process DB reads to the throwaway --db
   // (review HIGH, 2026-06-05): openDb() resolves via AUTOBROKER_DB first, so an
@@ -584,10 +683,10 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
 
     // (6) start the run + background gate poller (intake = approve_safe standby).
     const { runId } = await startRun(host.apiBase, c, step);
-    const poller = startPoller(host.apiBase, runId, gatePolicy, { maxMs: opts.maxSeconds * 1000 });
+    const poller = startPoller(host.apiBase, runId, gatePolicy, { maxMs: budgetMs });
 
     // (7) drive the resume[] script (collect submit / decline / force-override …).
-    await driveResumeScript(host.apiBase, runId, step.resume, opts.maxSeconds * 1000);
+    await driveResumeScript(host.apiBase, runId, step.resume, budgetMs);
     poller.stop();
 
     // (8) drain SSE → RunDetail; resolve the created profile id (for after scope).
@@ -670,14 +769,62 @@ const INTAKE_PII_FIELD_SET = new Set(
     .map(([name]) => name),
 );
 
+/** The batch_review drive context cmdUiCase builds per step: a live reader for
+ *  the suspend payload (name→dealer_id resolution + the <8KB bound) and the
+ *  cross-step row-count expectation (the geosearch step's profile_dealers
+ *  delta), when the case declares batch_rows_from. */
+interface BatchDriveContext {
+  readSuspend: () => Promise<{ spec: Record<string, unknown>; targets: BatchSuspendTarget[] }>;
+  expectRowCount: number | null;
+}
+
 /** Drive one step's resume[] script as REAL DOM actions, capturing the
  *  DOM-derived ui_checks at the right moments. maxMs bounds the suspend-surface
  *  waits (a freeform launch runs the prefill LLM call BEFORE the form renders).
  *  The step's `edge` (rotation-pool corner case) bends the drive: a mid-form
  *  reload + draft-restore leg, or a double-click on the submit. */
-async function driveResumeScriptDom(driver: UiDriver, step: CaseStep, maxMs: number): Promise<void> {
+async function driveResumeScriptDom(
+  driver: UiDriver,
+  step: CaseStep,
+  maxMs: number,
+  batch?: BatchDriveContext,
+): Promise<void> {
   for (const resume of step.resume) {
-    if (resume.on === "data_collection") {
+    if (resume.on === "batch_review") {
+      // The batch card renders on the gate-banner track — wait for the REAL
+      // card, hold the gate-before-prose invariant by mount position, and read
+      // the live suspend payload (the name→dealer_id authority + the <8KB
+      // bound asserted inside the reader).
+      if (batch === undefined) {
+        throw new Error("ui lane: batch_review resume reached with no batch drive context");
+      }
+      await driver.waitForBatchReviewCard(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      // EVERY batch_review sighting reads the live suspend payload — the
+      // reader asserts the <8KB spec_inline bound on both the accept and the
+      // decline path (failing the step loudly on a breach).
+      const { targets } = await batch.readSuspend();
+      if (resume.action !== "accept") {
+        // Decline twin: terminal, zero writes — no row decisions needed.
+        await driver.screenshot("batch-card-decline");
+        await driver.clickBatchDecline();
+        continue;
+      }
+      if (batch.expectRowCount !== null) {
+        await driver.checkBatchRowCount(batch.expectRowCount);
+      }
+      const plan = planBatchRowDecisions(resume.rows ?? [], resume.defaultDecision, targets);
+      if (plan.kind === "select_all") {
+        await driver.clickBatchSelectAll();
+      } else {
+        for (const d of plan.decisions) {
+          await driver.decideBatchRow(d.dealerId, d.decision);
+        }
+      }
+      // The counter must read complete (every row decided) before submit.
+      await driver.checkBatchCounter(targets.length, targets.length);
+      await driver.clickBatchSubmit(maxMs);
+    } else if (resume.on === "data_collection") {
       await driver.waitForIntakeForm(maxMs);
       await driver.checkFormRenderedBeforeProse();
       await driver.checkGateBeforeProse();
@@ -804,9 +951,14 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
     let latestProfileId: string | null = null;
     let prevRunId: string | null = null;
     const results: Array<{ cell: string; step: string; verdict: string }> = [];
+    // Per-step profile-scoped profile_dealers deltas (the discovery counts a
+    // later batch step's batch_rows_from cross-check reads).
+    const dealersDeltaByStep = new Map<string, number>();
 
-    const stepMaxMs = opts.maxSeconds * 1000;
     for (const step of c.steps) {
+      // PER-STEP budget: the CLI --max-seconds overrides; else the step's TOML
+      // max_seconds; else 900s — a 1800s scan step never inflates its siblings.
+      const stepMaxMs = stepBudgetMs(opts, step);
       const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
       const cellDir = evidenceDirName(cellIdFor(c, step), step.id);
       driver.beginStep(join(opts.evidenceRoot, cellDir, "screenshots"));
@@ -864,7 +1016,25 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       const poller = startPoller(host.apiBase, runId, gatePolicy, { maxMs: stepMaxMs });
 
       // ---- drive the resume script as DOM actions, then await the terminal -
-      await driveResumeScriptDom(driver, step, stepMaxMs);
+      // batch_review steps get the live suspend reader (name→dealer_id + the
+      // <8KB bound) and the cross-step row-count expectation when declared.
+      const hasBatchResume = step.resume.some((r) => r.on === "batch_review");
+      let batchCtx: BatchDriveContext | undefined;
+      if (hasBatchResume) {
+        let expectRowCount: number | null = null;
+        if (step.batchRowsFrom !== null) {
+          const delta = dealersDeltaByStep.get(step.batchRowsFrom);
+          if (delta === undefined) {
+            fail(`step "${step.id}": batch_rows_from="${step.batchRowsFrom}" recorded no profile_dealers delta`);
+          }
+          expectRowCount = delta;
+        }
+        batchCtx = {
+          readSuspend: () => readBatchSuspendPayload(host.apiBase, runId),
+          expectRowCount,
+        };
+      }
+      await driveResumeScriptDom(driver, step, stepMaxMs, batchCtx);
       if (step.edge === "sse_break") {
         // Break the live SSE mid-run: wait until the dashboard provably shows
         // the run in flight (the zone-4 browser trail), knock the TEST browser
@@ -908,6 +1078,17 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       if (resolutionAnchor !== undefined && uiTerminal === "done") {
         await driver.checkMismatchBanner(resolutionAnchor.expect === "pinned");
       }
+      // ---- the explicit Pin verb (pin_label — attached to this step's
+      // post-checks). Pins the rail session to the labeled profile through the
+      // REAL Searches-popover Pin button; later launches then thread the pin
+      // as search_profile_id. The ui_check it records lands on THIS step's
+      // verdict. Sessions are never auto-pinned — this is the only pin path.
+      if (step.pinLabel !== null) {
+        if (uiTerminal !== "done") {
+          fail(`step "${step.id}": pin_label set but the step terminated "${uiTerminal}" — nothing to pin`);
+        }
+        await driver.pinProfileInSearches(step.pinLabel, stepMaxMs);
+      }
       poller.stop();
 
       // ---- evidence spine (identical to the API lane) ----------------------
@@ -923,6 +1104,12 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       const profileId =
         step.skill === INTAKE_SKILL && uiTerminal !== "done" ? null : scopeProfileId;
       const after = snapshotCounts(profileId);
+      // Record this step's profile-scoped dealer-discovery delta (a later
+      // batch step's batch_rows_from cross-check reads it).
+      dealersDeltaByStep.set(
+        step.id,
+        (after.profile["profile_dealers"] ?? 0) - (before.profile["profile_dealers"] ?? 0),
+      );
 
       let waiver: { kind: string; reason: string } | null = null;
       if (step.skill === "dealer_geosearch" && uiTerminal === "done") {

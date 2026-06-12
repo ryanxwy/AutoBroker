@@ -343,6 +343,183 @@ describe("case loader", () => {
   });
 });
 
+describe("B2 batch grammar (max_seconds / pin_label / batch rows / suspend.targets)", () => {
+  it("loads the H3 narrative-prefix journey (pin verb + per-step budget + batch select-all + cross-check)", () => {
+    const c = loadCase(join(CASES, "dealer_pipeline.ui_prefix.toml"));
+    expect(c.sessionOrigin).toBe("reuse_pinned");
+    expect(c.steps.map((s) => s.id)).toEqual(["intake_create", "geosearch_run", "scan_run"]);
+    // The explicit Pin verb rides the INTAKE step's post-checks.
+    expect(c.steps[0]!.pinLabel).toBe("2026 Hyundai Tucson Hybrid Limited");
+    // Pinned provenance asserted on BOTH downstream steps.
+    expect(c.steps[1]!.anchors.find((a) => a.kind === "resolution")).toMatchObject({ expect: "pinned" });
+    const scan = c.steps[2]!;
+    expect(scan.anchors.find((a) => a.kind === "resolution")).toMatchObject({ expect: "pinned" });
+    // PER-STEP budget: only the scan step carries 1800.
+    expect(c.steps[0]!.maxSeconds).toBeNull();
+    expect(scan.maxSeconds).toBe(1800);
+    // The batch resume: select-all shape (no rows; default approve).
+    const batch = scan.resume.find((r) => r.on === "batch_review")!;
+    expect(batch.action).toBe("accept");
+    expect(batch.rows).toBeNull();
+    expect(batch.defaultDecision).toBe("approve");
+    // The cross-step row-count check names the geosearch step.
+    expect(scan.batchRowsFrom).toBe("geosearch_run");
+    // Both inventory tables anchored; cost_and_time REQUIRED (no optional key).
+    const tables = scan.anchors.filter((a) => a.kind === "table_min_rows").map((a) => (a as { table: string }).table);
+    expect(tables).toEqual(expect.arrayContaining(["inventory_listings", "dealer_inventory_sources"]));
+    expect(scan.anchors.find((a) => a.kind === "cost_and_time")).toEqual({ kind: "cost_and_time" });
+  });
+
+  it("loads the ui_button case (skills_popover launch; inferred_newest both ways)", () => {
+    const c = loadCase(join(CASES, "inventory_site_scan.ui_button.toml"));
+    expect(c.sessionOrigin).toBe("fresh_unpinned");
+    const scan = c.steps[2]!;
+    expect(scan.launch).toBe("skills_popover");
+    expect(scan.maxSeconds).toBe(1800);
+    expect(scan.anchors.find((a) => a.kind === "resolution")).toMatchObject({ expect: "inferred_newest" });
+  });
+
+  it("loads the decline twin (declined terminal; both tables exact-0; browser absent)", () => {
+    const c = loadCase(join(CASES, "inventory_site_scan.ui_decline.toml"));
+    const scan = c.steps[2]!;
+    expect(scan.resume[0]).toMatchObject({ on: "batch_review", action: "decline", content: null });
+    expect(scan.anchors.find((a) => a.kind === "run_status")).toMatchObject({ expect: ["declined"] });
+    const tables = scan.anchors.filter((a) => a.kind === "table_min_rows");
+    expect(tables).toHaveLength(2);
+    for (const t of tables) expect(t).toMatchObject({ deltaMin: 0, exact: true, scope: "profile" });
+    expect(scan.anchors.find((a) => a.kind === "browser_activity")).toMatchObject({ expect: "absent" });
+  });
+
+  it("parses [[steps.resume.rows]] entries + default_decision into the typed resume", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["inventory_site_scan"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.resume]]
+      on = "batch_review"
+      action = "accept"
+      default_decision = "skip"
+      [[steps.resume.rows]]
+      match = "Tustin Hyundai"
+      decision = "approve"
+      [[steps.resume.rows]]
+      match = "Anaheim Hyundai"
+      decision = "skip"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    const c = parseCase(src);
+    const r = c.steps[0]!.resume[0]!;
+    expect(r.rows).toEqual([
+      { match: "Tustin Hyundai", decision: "approve" },
+      { match: "Anaheim Hyundai", decision: "skip" },
+    ]);
+    expect(r.defaultDecision).toBe("skip");
+    // rows/default_decision are STRUCTURAL — never folded into content.
+    expect(r.content).toBeNull();
+  });
+
+  it("parses content_from=suspend.targets as a DRIVE-TIME source (content stays null)", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["inventory_site_scan"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.resume]]
+      on = "batch_review"
+      action = "accept"
+      content_from = "suspend.targets"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    const r = parseCase(src).steps[0]!.resume[0]!;
+    expect(r.contentFrom).toBe("suspend.targets");
+    expect(r.content).toBeNull();
+  });
+
+  it("fails LOUD on an unknown content_from source", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["inventory_site_scan"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.resume]]
+      on = "batch_review"
+      action = "accept"
+      content_from = "suspend.targtes"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow(/unknown content_from/);
+  });
+
+  it("fails LOUD on a batch_rows_from naming no earlier step", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["inventory_site_scan"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      batch_rows_from = "ghost_step"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow(/does not name an earlier step/);
+  });
+
+  it("fails LOUD on a browser_activity anchor with a bad expect", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["inventory_site_scan"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.anchors]]
+      kind = "browser_activity"
+      expect = "none"
+    `;
+    expect(() => parseCase(src)).toThrow(/browser_activity anchor/);
+  });
+});
+
 describe("case skill ids ∈ registry", () => {
   const REGISTRY_IDS = new Set(SKILLS.map((s) => s.id));
   const files = readdirSync(CASES).filter((f) => f.endsWith(".toml"));

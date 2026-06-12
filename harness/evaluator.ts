@@ -54,7 +54,12 @@ import {
 export type AnchorSpec =
   | { kind: "run_status"; expect: string[] }
   | { kind: "driver_kind"; expect: HarnessDriverKind }
-  | { kind: "browser_activity" }
+  | {
+      /** Default ("present"): browser.* frames must have flowed. "absent"
+       *  asserts ZERO browser activity (a batch decline must never navigate). */
+      kind: "browser_activity";
+      expect?: "present" | "absent";
+    }
   | { kind: "approval_gate"; gateBeforeProse?: boolean }
   | {
       kind: "table_min_rows";
@@ -138,6 +143,16 @@ export function evalAnchor(
     }
 
     case "browser_activity": {
+      if (spec.expect === "absent") {
+        const ok = detail.sawBrowserActivity === false;
+        return {
+          kind: "browser_activity",
+          ok,
+          expected: "absent (zero browser frames)",
+          observed: detail.sawBrowserActivity,
+          ...(ok ? {} : { detail: "browser activity flowed on a step that must never navigate" }),
+        };
+      }
       const ok = detail.sawBrowserActivity === true;
       return { kind: "browser_activity", ok, expected: true, observed: detail.sawBrowserActivity };
     }

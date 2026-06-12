@@ -9,11 +9,18 @@
  *   - [narrative.profile]  → the form content the collect-step resume submits.
  *   - [[steps.resume]]     → an ordered suspend-answer script. Each entry's `on`
  *     names the suspend kind (data_collection / force_override / ambiguous_location /
- *     malformed_tool_call); `action` is the form-decision action; `content_from`
- *     = "narrative.profile" pulls the form content from the profile table; an
- *     inline `content` table overrides.
+ *     malformed_tool_call / batch_review); `action` is the form-decision action;
+ *     `content_from` = "narrative.profile" pulls the form content from the
+ *     profile table ("suspend.targets" resolves at DRIVE time — approve all ids
+ *     off the live suspend payload); an inline `content` table overrides.
+ *     batch_review entries may carry [[steps.resume.rows]] (per-row decisions
+ *     matched by dealer NAME) + `default_decision` for unmatched rows.
  *   - [[steps.anchors]]    → the evaluator AnchorSpec list (snake_case keys mapped
  *     to the camelCase AnchorSpec fields).
+ *   - per-step `max_seconds` → the wall-clock budget when the CLI --max-seconds
+ *     is absent (CLI overrides); `pin_label` → the UI-lane explicit Pin verb
+ *     after the step; `batch_rows_from` → the cross-step batch-card row-count
+ *     check against an earlier step's profile_dealers delta.
  *
  * Dependency wall: harness layer. Imports zod + @autobroker/core (HarnessDriverKind
  * enum) — NEVER better-sqlite3/drizzle/playwright/@ai-sdk.
@@ -53,6 +60,15 @@ const RawAnchorSchema = z.object({
 });
 type RawAnchor = z.infer<typeof RawAnchorSchema>;
 
+/** A batch_review row decision script entry: `match` is the dealer NAME shown
+ *  on the suspend card (resolved to a dealer_id against the suspend payload's
+ *  targets at drive time — zero or ambiguous matches fail LOUD, never by
+ *  index); `decision` is the per-row verb the driver clicks. */
+const RawBatchRowSchema = z.object({
+  match: z.string().min(1),
+  decision: z.enum(["approve", "skip"]),
+});
+
 // .passthrough() keeps inline typed-resume keys authored as siblings of the resume
 // entry (e.g. reason for force_override, picked_index for pick, retry_query for
 // retry) so the loader can fold them into the form-decision content.
@@ -62,12 +78,30 @@ const RawResumeSchema = z
     action: z.string(),
     content_from: z.string().optional(),
     content: z.record(z.string(), z.unknown()).optional(),
+    /** batch_review only: the row-level decision script + the decision applied
+     *  to rows no script entry matched. rows=[] + default_decision="approve"
+     *  drives the card's explicit Select-all button (the user affordance). */
+    rows: z.array(RawBatchRowSchema).optional(),
+    default_decision: z.enum(["approve", "skip"]).optional(),
   })
   .passthrough();
 export type RawResume = z.infer<typeof RawResumeSchema>;
 
 /** The structural resume keys that are NOT part of the typed-resume content. */
-const RESUME_STRUCTURAL_KEYS = new Set(["on", "action", "content_from", "content"]);
+const RESUME_STRUCTURAL_KEYS = new Set([
+  "on",
+  "action",
+  "content_from",
+  "content",
+  "rows",
+  "default_decision",
+]);
+
+/** The content_from sources a resume entry may name. "narrative.profile"
+ *  resolves at PARSE time (the case's profile table); "suspend.targets"
+ *  resolves at DRIVE time — the runner approves ALL dealer ids off the live
+ *  suspend payload (the API-lane / scripted equivalent of Select-all). */
+const CONTENT_FROM_SOURCES = new Set(["narrative.profile", "suspend.targets"]);
 
 /** How the UI lane starts a step: chat-rail slash text, chat-rail freeform
  *  prose, the Skills popover Run button, or a click on the PREVIOUS step's
@@ -113,6 +147,19 @@ const RawStepSchema = z.object({
   /** UI-lane edge behavior the runner applies while driving this step
    *  (rotation-pool corner case; unknown values fail loud at parse). */
   edge: EdgeSchema.optional(),
+  /** PER-STEP wall-clock budget (seconds). Used when the CLI --max-seconds
+   *  flag is ABSENT; the CLI always overrides. Long browser+LLM steps
+   *  (inventory_site_scan) author 1800 here so a corpus run without flags
+   *  does not abort them at the 900s default. */
+  max_seconds: z.number().int().positive().optional(),
+  /** UI lane only: after this step's terminal + checks, pin the profile whose
+   *  vehicle label equals this string via the Searches popover's Pin verb (the
+   *  REAL DOM — the explicit pin action; sessions are never auto-pinned). */
+  pin_label: z.string().optional(),
+  /** Cross-step ui_check (batch_review steps): the rendered batch card's
+   *  target-row count must equal the named EARLIER step's profile-scoped
+   *  profile_dealers delta (the geosearch discovery feeding the batch). */
+  batch_rows_from: z.string().optional(),
   input_inline: z.record(z.string(), z.unknown()).optional(),
   resume: z.array(RawResumeSchema).optional(),
   anchors: z.array(RawAnchorSchema),
@@ -146,6 +193,13 @@ export interface CaseResume {
   action: "accept" | "decline" | "cancel";
   /** The form-decision content (resolved from content_from/profile or inline). */
   content: Record<string, unknown> | null;
+  /** A DRIVE-TIME content source ("suspend.targets" — approve all ids off the
+   *  live suspend payload), or null when content resolved at parse time. */
+  contentFrom: string | null;
+  /** batch_review row script (name-matched per-row decisions), or null. */
+  rows: Array<{ match: string; decision: "approve" | "skip" }> | null;
+  /** The decision applied to batch rows no script entry matched, or null. */
+  defaultDecision: "approve" | "skip" | null;
 }
 
 /** The UI-lane launch surface for a step. */
@@ -171,6 +225,15 @@ export interface CaseStep {
   expectStop: ExpectStop | null;
   /** The UI-lane edge behavior applied while driving this step, or null. */
   edge: StepEdge | null;
+  /** Per-step budget (seconds) when the CLI --max-seconds is absent, or null
+   *  (the runner's 900s default). CLI overrides. */
+  maxSeconds: number | null;
+  /** UI lane: pin this vehicle label via the Searches popover AFTER the step's
+   *  terminal + checks (the explicit Pin verb), or null. */
+  pinLabel: string | null;
+  /** Cross-step ui_check: batch card row count == this earlier step's
+   *  profile_dealers delta, or null (no cross-check). */
+  batchRowsFrom: string | null;
   inputInline: Record<string, unknown> | null;
   resume: CaseResume[];
   anchors: AnchorSpec[];
@@ -221,8 +284,16 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
       }
       return { kind: "driver_kind", expect };
     }
-    case "browser_activity":
-      return { kind: "browser_activity" };
+    case "browser_activity": {
+      // Default: browser frames must be PRESENT. expect="absent" asserts the
+      // inverse (e.g. a batch decline must trigger ZERO navigation).
+      const expect = raw.expect;
+      if (expect === undefined) return { kind: "browser_activity" };
+      if (expect !== "present" && expect !== "absent") {
+        throw new Error('browser_activity anchor: expect must be "present" | "absent" when given');
+      }
+      return { kind: "browser_activity", expect };
+    }
     case "approval_gate":
       return { kind: "approval_gate", ...(raw.gate_before_prose !== undefined ? { gateBeforeProse: raw.gate_before_prose } : {}) };
     case "table_min_rows": {
@@ -263,15 +334,23 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
   }
 }
 
-/** Resolve a resume entry's content from content_from / inline content. */
+/** Resolve a resume entry's content from content_from / inline content. The
+ *  "suspend.targets" source resolves at DRIVE time (runner), so the content
+ *  stays null here and the contentFrom marker rides the CaseResume. */
 function resolveResumeContent(raw: RawResume, profile: Record<string, unknown> | null): Record<string, unknown> | null {
   if (raw.action === "decline" || raw.action === "cancel") return null;
+  if (raw.content_from !== undefined && !CONTENT_FROM_SOURCES.has(raw.content_from)) {
+    throw new Error(
+      `unknown content_from "${raw.content_from}" (expected one of: ${[...CONTENT_FROM_SOURCES].join(", ")})`,
+    );
+  }
   if (raw.content !== undefined) return raw.content;
   if (raw.content_from === "narrative.profile") {
     if (profile === null) throw new Error(`resume content_from=narrative.profile but [narrative.profile] is missing`);
     return profile;
   }
-  // accept with no content (e.g. force_override carries content inline, location pick).
+  // accept with no content (e.g. force_override carries content inline, location
+  // pick, or a drive-time content_from source).
   return raw.content ?? null;
 }
 
@@ -299,6 +378,9 @@ export function toCase(raw: TomlTable): Case {
     profileScopeFrom: s.profile_scope_from ?? null,
     expectStop: s.expect_stop ?? null,
     edge: s.edge ?? null,
+    maxSeconds: s.max_seconds ?? null,
+    pinLabel: s.pin_label ?? null,
+    batchRowsFrom: s.batch_rows_from ?? null,
     inputInline: s.input_inline ?? null,
     resume: (s.resume ?? []).map((r) => {
       const action = coerceAction(r.action);
@@ -314,7 +396,14 @@ export function toCase(raw: TomlTable): Case {
         }
         content = { action: r.action, ...inlineKeys, ...(r.content ?? {}) };
       }
-      return { on: r.on, action, content };
+      return {
+        on: r.on,
+        action,
+        content,
+        contentFrom: r.content_from === "suspend.targets" ? r.content_from : null,
+        rows: r.rows ?? null,
+        defaultDecision: r.default_decision ?? null,
+      };
     }),
     anchors: s.anchors.map((a) => toAnchorSpec(a, parsed.narrative.provider)),
   }));
@@ -335,6 +424,11 @@ export function toCase(raw: TomlTable): Case {
     if (step.profileScopeFrom !== null && !seen.has(step.profileScopeFrom)) {
       throw new Error(
         `step "${step.id}" profile_scope_from="${step.profileScopeFrom}" does not name an earlier step`,
+      );
+    }
+    if (step.batchRowsFrom !== null && !seen.has(step.batchRowsFrom)) {
+      throw new Error(
+        `step "${step.id}" batch_rows_from="${step.batchRowsFrom}" does not name an earlier step`,
       );
     }
     if (seen.has(step.id)) {

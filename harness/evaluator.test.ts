@@ -265,6 +265,38 @@ describe("resolution anchor (profile-resolution provenance)", () => {
   });
 });
 
+describe("browser_activity anchor (present default; absent for the decline path)", () => {
+  function framesWithBrowser(withBrowser: boolean) {
+    return [
+      { ts: "t0", kind: "init", payload: { run_id: "r1", skill: "inventory_site_scan", driver_kind: "deepseek_apikey" } },
+      ...(withBrowser
+        ? [{ ts: "t1", kind: "browser.opened", payload: { url: "https://dealer.example/" } }]
+        : []),
+      { ts: "t2", kind: "aborted", payload: { reason: "user_declined" } },
+    ];
+  }
+
+  it("default (present): passes only when browser frames flowed", () => {
+    const withB = buildRunDetailFromEvents("r1", framesWithBrowser(true), "done");
+    expect(evalAnchor({ kind: "browser_activity" }, withB, tmp.db, ctxFor(null)).ok).toBe(true);
+    const withoutB = buildRunDetailFromEvents("r1", framesWithBrowser(false), "done");
+    expect(evalAnchor({ kind: "browser_activity" }, withoutB, tmp.db, ctxFor(null)).ok).toBe(false);
+  });
+
+  it("expect=absent: passes on ZERO browser frames (a batch decline never navigates)", () => {
+    const withoutB = buildRunDetailFromEvents("r1", framesWithBrowser(false), "declined");
+    const r = evalAnchor({ kind: "browser_activity", expect: "absent" }, withoutB, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(true);
+  });
+
+  it("expect=absent: FAILS when any browser frame flowed", () => {
+    const withB = buildRunDetailFromEvents("r1", framesWithBrowser(true), "declined");
+    const r = evalAnchor({ kind: "browser_activity", expect: "absent" }, withB, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/must never navigate/);
+  });
+});
+
 describe("four-tier verdict", () => {
   const okAnchor = (kind: string): AnchorResult => ({ kind, ok: true, expected: 1, observed: 1 });
   const failAnchor = (kind: string): AnchorResult => ({ kind, ok: false, expected: 1, observed: 0, detail: "fail" });

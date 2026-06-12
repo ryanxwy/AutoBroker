@@ -22,7 +22,11 @@
  * skills-popover / ledger-run-<skill> (the popover row's Run button) /
  * gate-banner / assistant-turn[data-status] / turn-zone-* / turn-declined /
  * turn-error / stop-card[data-stop-code] / stop-intake-cta / stop-pick-option /
- * turn-resolution[data-resolution]).
+ * turn-resolution[data-resolution] / batch-review-card / batch-row-<id> /
+ * batch-approve-<id> / batch-skip-<id> / batch-select-all / batch-counter /
+ * batch-submit / batch-decline / topbar-searches / searches-popover /
+ * searches-row-<profileId> / searches-pin-<profileId> /
+ * searches-unpin-<profileId>).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
  * imports `playwright` to drive the test browser (the dependency-cruiser rule
@@ -77,6 +81,77 @@ export function planFormActions(fields: Record<string, unknown>): FormAction[] {
 /** data-testid → CSS selector. */
 export function tid(id: string): string {
   return `[data-testid="${id}"]`;
+}
+
+// ---------------------------------------------------------------------------
+// the pure batch-review row plan (L1-testable, no browser)
+// ---------------------------------------------------------------------------
+
+/** One suspend-payload target the row plan resolves names against. */
+export interface BatchTarget {
+  dealer_id: string;
+  name: string;
+}
+
+/** The planned DOM drive for a batch_review accept: either the card's explicit
+ *  Select-all button (rows=[] + default approve — the user affordance), or an
+ *  ordered per-row decision list. */
+export type BatchRowPlan =
+  | { kind: "select_all" }
+  | { kind: "rows"; decisions: Array<{ dealerId: string; decision: "approve" | "skip" }> };
+
+/**
+ * Resolve a case's batch row script against the suspend payload's targets.
+ * Every `match` is a dealer NAME resolved to its dealer_id — zero or ambiguous
+ * matches fail LOUD (never by index); `defaultDecision` covers unmatched rows
+ * (its absence with unmatched rows also fails loud). An accept that resolves
+ * to ZERO approves is rejected here too: the resume schema requires min-1 ids,
+ * so an all-skip accept can never reach the wire — decline is the stop verb.
+ */
+export function planBatchRowDecisions(
+  rows: Array<{ match: string; decision: "approve" | "skip" }>,
+  defaultDecision: "approve" | "skip" | null,
+  targets: BatchTarget[],
+): BatchRowPlan {
+  if (targets.length === 0) {
+    throw new Error("batch plan: the suspend payload carries zero targets — nothing to review");
+  }
+  if (rows.length === 0 && defaultDecision === "approve") {
+    return { kind: "select_all" };
+  }
+  const byId = new Map<string, "approve" | "skip">();
+  for (const row of rows) {
+    const want = row.match.trim();
+    const matches = targets.filter((t) => t.name.trim() === want);
+    if (matches.length === 0) {
+      throw new Error(
+        `batch plan: row match "${want}" matched no suspend target (targets: ${targets.map((t) => t.name).join(" | ")})`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(`batch plan: row match "${want}" is ambiguous (${matches.length} targets share the name)`);
+    }
+    const id = matches[0]!.dealer_id;
+    if (byId.has(id)) {
+      throw new Error(`batch plan: target "${want}" decided twice by the row script`);
+    }
+    byId.set(id, row.decision);
+  }
+  const decisions = targets.map((t) => {
+    const decision = byId.get(t.dealer_id) ?? defaultDecision;
+    if (decision === null) {
+      throw new Error(
+        `batch plan: target "${t.name}" has no row entry and no default_decision — every row must be decided`,
+      );
+    }
+    return { dealerId: t.dealer_id, decision };
+  });
+  if (!decisions.some((d) => d.decision === "approve")) {
+    throw new Error(
+      "batch plan: an accept resolved to ZERO approved rows (min-1 ids on the wire) — author a decline instead",
+    );
+  }
+  return { kind: "rows", decisions };
 }
 
 /** Parse the run id off a /runs/:id pathname, or null. */
@@ -372,6 +447,128 @@ export class UiDriver {
     const sel = `${tid(`ledger-run-${skillId}`)}:not([disabled])`;
     await this.page.waitForSelector(sel, { timeout: timeoutMs });
     await this.page.click(sel);
+  }
+
+  // ---- batch_review verbs (the gate-banner track's decision card) -----------
+
+  /** Wait for the batch_review card to render on the gate-banner track. */
+  async waitForBatchReviewCard(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("batch-review-card"), { timeout: timeoutMs });
+  }
+
+  /** Click one batch row's Approve/Skip control and assert the row's decision
+   *  state flipped (data-decision on the row — the undecided default is gone). */
+  async decideBatchRow(dealerId: string, decision: "approve" | "skip"): Promise<void> {
+    await this.page.click(tid(`batch-${decision}-${dealerId}`));
+    const observed = await this.page
+      .locator(tid(`batch-row-${dealerId}`))
+      .getAttribute("data-decision");
+    if (observed !== decision) {
+      throw new Error(
+        `uiDriver: batch row ${dealerId} shows data-decision="${String(observed)}" after clicking ${decision}`,
+      );
+    }
+  }
+
+  /** Click the card's explicit Select-all button (the user affordance — the
+   *  wire still carries the full explicit id list, never an approve-all). */
+  async clickBatchSelectAll(): Promise<void> {
+    await this.page.click(tid("batch-select-all"));
+  }
+
+  /** checkBatchCounter: the live decided/total counter reads exactly
+   *  "<decided>/<total> decided". Records ok:false rather than throwing. */
+  async checkBatchCounter(decided: number, total: number): Promise<void> {
+    const text = (await this.page
+      .locator(tid("batch-counter"))
+      .textContent()
+      .catch(() => null)) ?? "";
+    const ok = text.includes(`${decided}/${total} decided`);
+    this.record({
+      surface: "dom:gate-banner",
+      selector: tid("batch-counter"),
+      expected: `counter "${decided}/${total} decided"`,
+      observed: `counter "${text.trim()}"`,
+      ok,
+    });
+    await this.screenshot("batch-counter");
+  }
+
+  /** checkBatchRowCount: the rendered target-row count equals `expected` (the
+   *  cross-step check against the geosearch step's profile_dealers delta). */
+  async checkBatchRowCount(expected: number): Promise<void> {
+    const observed = await this.page.locator('[data-testid^="batch-row-"]').count();
+    this.record({
+      surface: "dom:gate-banner",
+      selector: '[data-testid^="batch-row-"]',
+      expected: `${expected} batch target rows (== the discovery step's profile_dealers delta)`,
+      observed: `${observed} rows`,
+      ok: observed === expected,
+    });
+    await this.screenshot("batch-row-count");
+  }
+
+  /** Click the batch Submit (waits for the every-row-decided gate to enable it). */
+  async clickBatchSubmit(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("batch-submit")}:not([disabled])`, { timeout: timeoutMs });
+    await this.page.click(tid("batch-submit"));
+  }
+
+  /** Click the batch Decline (always enabled — terminal, zero writes). */
+  async clickBatchDecline(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("batch-decline"), { timeout: timeoutMs });
+    await this.page.click(tid("batch-decline"));
+  }
+
+  /** pinProfileInSearches: the EXPLICIT pin verb — open the Searches popover,
+   *  find the profile row whose vehicle-label link text equals `label` (zero or
+   *  ambiguous matches fail LOUD, never by index), click its Pin control, wait
+   *  for the row to flip to Unpin (the pin landed on the session), then close
+   *  the popover. Sessions are never auto-pinned; this is the user action that
+   *  pins one. */
+  async pinProfileInSearches(label: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("topbar-searches"), { timeout: timeoutMs });
+    await this.page.click(tid("topbar-searches"));
+    await this.page.waitForSelector(tid("searches-popover"), { timeout: timeoutMs });
+
+    const rows = this.page.locator('[data-testid^="searches-row-"]');
+    const count = await rows.count();
+    const want = label.trim();
+    const matches: number[] = [];
+    const seen: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const text = ((await rows.nth(i).locator("a").first().textContent()) ?? "").trim();
+      seen.push(text);
+      if (text === want) matches.push(i);
+    }
+    if (matches.length === 0) {
+      throw new Error(
+        `uiDriver: no Searches row labeled "${want}" (rows: ${seen.join(" | ") || "none"})`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(`uiDriver: ambiguous Searches row label "${want}" (${matches.length} matches)`);
+    }
+    const row = rows.nth(matches[0]!);
+    await row.locator('[data-testid^="searches-pin-"]').click();
+    // The pin landing re-renders the row with the Unpin verb — the DOM proof
+    // the session now carries the pin.
+    let pinned = true;
+    try {
+      await row.locator('[data-testid^="searches-unpin-"]').waitFor({ timeout: timeoutMs });
+    } catch {
+      pinned = false;
+    }
+    this.record({
+      surface: "dom:searches-popover",
+      selector: '[data-testid^="searches-pin-"]',
+      expected: `Pin verb on "${want}" lands (row flips to Unpin)`,
+      observed: pinned ? "row shows Unpin" : "row never flipped to Unpin",
+      ok: pinned,
+    });
+    await this.screenshot("session-pinned");
+    if (!pinned) throw new Error(`uiDriver: pinning "${want}" did not land (no Unpin verb appeared)`);
+    await this.page.keyboard.press("Escape"); // close the popover.
   }
 
   /** checkStopCard: the typed profile-resolution STOP card rendered with the

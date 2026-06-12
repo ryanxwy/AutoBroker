@@ -1,0 +1,181 @@
+# harness/cases/inventory_site_scan.ui_button.toml — the inventory scan
+# launched from the SKILLS POPOVER RUN BUTTON in a fresh UNPINNED world,
+# UI-LANE, ONE browser session end-to-end:
+#
+#   step 1  intake via chat-rail SLASH (the corpus Tucson profile).
+#   step 2  "/dealer_geosearch" via slash — single active profile, no pin →
+#           the resolver INFERS newest-active (resolution=inferred_newest).
+#   step 3  inventory_site_scan from the TopBar Skills popover's real Run
+#           button (the second user surface; the popover refetches on every
+#           open so the just-created profile enables the row). NO pin on the
+#           session → no search_profile_id on the start body → the scan's
+#           resolver also infers newest-active. The batch_review card renders
+#           on the gate-banner track; Select-all → submit → real-site scan →
+#           both inventory tables written profile-scoped.
+#
+# cost_and_time is REQUIRED on step 3 (extraction is an LLM phase — no
+# optional key). max_seconds = 1800 is PER-STEP (scan only); CLI overrides.
+# RADIUS 120 (live default, 5 viewports — expect dozens of SoCal rooftops).
+
+[meta]
+id = "inventory_site_scan_ui_button"
+archetype = "A"
+skills = ["search_profile_intake", "dealer_geosearch", "inventory_site_scan"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake (the journey root) --------------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — the scan's input."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch (slash, no pin — inferred_newest) ---------------
+
+[[steps]]
+id = "geosearch_run"
+skill = "dealer_geosearch"
+purpose = "Discover dealers near the just-created profile (single-active inference)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path (evaluate-extract).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # unpinned session + single active profile.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: inventory_site_scan from the Skills popover Run button -----------
+
+[[steps]]
+id = "scan_button"
+skill = "inventory_site_scan"
+purpose = "Launch the scan from the popover Run button; Select-all the batch; scan real sites."
+gate_policy = "approve_safe"
+launch = "skills_popover"
+max_seconds = 1800          # PER-STEP budget: full-radius capture+extract @4.
+
+[[steps.resume]]
+on = "batch_review"
+action = "accept"
+default_decision = "approve"   # no [[steps.resume.rows]] → the Select-all button.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_inventory_sources"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # still unpinned → the inferred branch, voiced.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
