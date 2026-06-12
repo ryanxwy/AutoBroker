@@ -18,3 +18,10 @@ dealer_geosearch.ui_narrative.toml
 dealer_geosearch.ui_button.toml
 dealer_geosearch.stop_intake_cta.toml
 dealer_geosearch.stop_picker.toml
+
+# inventory_site_scan — accepted 2026-06-12 (UI-lane two rounds + decline; full 7-step loop).
+# ui_button (the popover round) is accepted but ROTATED OUT of the always-on corpus:
+# it re-scans the same ~33 rooftops the journey case already covers — one full
+# site-pass per guardian run is the politeness budget. Decline costs zero contact.
+inventory_site_scan.ui_decline.toml
+dealer_pipeline.ui_prefix.toml
