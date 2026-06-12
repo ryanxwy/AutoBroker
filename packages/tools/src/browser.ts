@@ -580,7 +580,20 @@ function makeSession(deps: SessionDeps): BrowserSession {
       await rejectCookieBanner(page);
     }
 
-    emitter.action("navigate", url);
+    // Live-view screenshot at the navigate-settle moment — the one read-path
+    // capture point ("I can see what the browser sees"). Bounded by format:
+    // jpeg quality 50 at the default 1280×720 viewport (~12–24KB; Playwright
+    // supports only png|jpeg). Best-effort: a capture failure never fails the
+    // navigation. READ FACE ONLY — the mutating face (gatedSubmitForm) never
+    // captures: a filled lead form is user PII, and its durable evidence
+    // channel is the lead_submissions.screenshot_path FILE, never the wire.
+    let settleShotB64: string | undefined;
+    try {
+      settleShotB64 = (await page.screenshot({ type: "jpeg", quality: 50 })).toString("base64");
+    } catch {
+      settleShotB64 = undefined;
+    }
+    emitter.action("navigate", url, settleShotB64);
     if (robotsDisallowed) {
       // Recorded-only: the robots opinion rides the event stream for the audit
       // trail, but the user-directed fetch proceeded.

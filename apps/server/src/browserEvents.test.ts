@@ -56,23 +56,65 @@ describe("browserEvents — BrowserEmitter → browser.* SSE frames", () => {
     expect(live[3]!.payload).toEqual({});
   });
 
-  it("opened without a url and action/error with a screenshot shape their payloads", () => {
+  it("a screenshot frame reaches LIVE subscribers but NEVER the logged backlog", async () => {
     const ps = new RunPubSub();
     ps.attachInit("r2", "dealer_geosearch");
+    const sub = ps.subscribe("r2")!;
+    const livePromise = drain(sub.queue!);
     const emitter = browserEmitterFor(ps, "r2");
 
     emitter.opened();
     emitter.action("navigate", "https://x.example/", "QUJD");
     emitter.error("boom", "QUJD");
+    ps.append("r2", { kind: "done", payload: {} });
 
-    const [, opened, action, error] = ps.snapshot("r2"); // frame 0 is init
-    expect(opened!.payload).toEqual({});
-    expect(action!.payload).toEqual({
+    // The LOG (legacy /stream replay + /stream-v2 reconnect backlog + GET
+    // events snapshot all read it) carries only the PURE payload twins — zero
+    // base64 anywhere.
+    const logged = ps.snapshot("r2");
+    expect(logged.map((e) => e.kind)).toEqual([
+      "init",
+      "browser.opened",
+      "browser.action",
+      "browser.error",
+      "done",
+    ]);
+    for (const ev of logged) {
+      expect(JSON.stringify(ev)).not.toContain("screenshot_b64");
+    }
+    expect(logged[2]!.payload).toEqual({ type: "navigate", target: "https://x.example/" });
+    expect(logged[3]!.payload).toEqual({ message: "boom" });
+
+    // The LIVE queue saw the pure twin AND the screenshot-bearing transient.
+    const live = await livePromise;
+    expect(live.map((e) => e.kind)).toEqual([
+      "browser.opened",
+      "browser.action",
+      "browser.action",
+      "browser.error",
+      "browser.error",
+      "done",
+    ]);
+    expect(live[2]!.payload).toEqual({
       type: "navigate",
       target: "https://x.example/",
       screenshot_b64: "QUJD",
     });
-    expect(error!.payload).toEqual({ message: "boom", screenshot_b64: "QUJD" });
+    expect(live[4]!.payload).toEqual({ message: "boom", screenshot_b64: "QUJD" });
+  });
+
+  it("a screenshotless action stays a single logged frame (no transient twin)", async () => {
+    const ps = new RunPubSub();
+    ps.attachInit("r2b", "dealer_geosearch");
+    const sub = ps.subscribe("r2b")!;
+    const livePromise = drain(sub.queue!);
+    const emitter = browserEmitterFor(ps, "r2b");
+
+    emitter.action("robots_disallowed", "https://x.example/");
+    ps.append("r2b", { kind: "done", payload: {} });
+
+    expect((await livePromise).map((e) => e.kind)).toEqual(["browser.action", "done"]);
+    expect(ps.snapshot("r2b").map((e) => e.kind)).toEqual(["init", "browser.action", "done"]);
   });
 
   it("drops events for a run with no channel instead of throwing", () => {

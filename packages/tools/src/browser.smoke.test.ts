@@ -15,16 +15,23 @@ import { withBrowserContext, type BrowserEmitter } from "./browser.js";
 
 const SMOKE = process.env.AUTOBROKER_BROWSER_SMOKE === "1";
 
-function recordingEmitter(): { events: string[]; emitter: BrowserEmitter } {
+function recordingEmitter(): {
+  events: string[];
+  screenshots: { type: string; b64: string }[];
+  emitter: BrowserEmitter;
+} {
   const events: string[] = [];
+  const screenshots: { type: string; b64: string }[] = [];
   return {
     events,
+    screenshots,
     emitter: {
       opened: (url?: string) => {
         events.push(`opened:${url ?? ""}`);
       },
-      action: (type: string, target: string) => {
+      action: (type: string, target: string, screenshotB64?: string) => {
         events.push(`action:${type}:${target}`);
+        if (screenshotB64 !== undefined) screenshots.push({ type, b64: screenshotB64 });
       },
       error: (message: string) => {
         events.push(`error:${message}`);
@@ -52,7 +59,7 @@ describe.skipIf(!SMOKE)("browser smoke — real headless chromium", () => {
   it(
     "launches, navigates a data: page, snapshots/screenshots, emits opened→navigate→closed, closes cleanly",
     async () => {
-      const { events, emitter } = recordingEmitter();
+      const { events, screenshots, emitter } = recordingEmitter();
       tracesDir = mkdtempSync(join(tmpdir(), "autobroker-traces-"));
       const url = "data:text/html,<html><body><h1>hello dealer</h1></body></html>";
       const profileDirsBefore = tempProfileDirCount();
@@ -83,6 +90,13 @@ describe.skipIf(!SMOKE)("browser smoke — real headless chromium", () => {
       expect(events).toContain(`action:navigate:${url}`);
       expect(events[events.length - 1]).toBe("closed");
       expect(events.filter((e) => e.startsWith("opened:"))).toHaveLength(1);
+
+      // The navigate-settle live-view screenshot rode the navigate action:
+      // bounded jpeg (b64 of FFD8 magic starts "/9j/"), well under 100KB.
+      const navShot = screenshots.find((s) => s.type === "navigate");
+      expect(navShot).toBeDefined();
+      expect(navShot!.b64.startsWith("/9j/")).toBe(true);
+      expect(navShot!.b64.length).toBeLessThan(100_000);
 
       // Context/browser are closed after the callback returns.
       expect(pageRef).not.toBeNull();

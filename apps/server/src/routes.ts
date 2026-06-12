@@ -202,6 +202,29 @@ function withDb<T>(fn: (db: Db) => T): T {
 }
 
 /**
+ * Belt-and-suspenders for the legacy /stream writer: the legacy route never
+ * carries a screenshot. Screenshot frames are fan-out-only (never logged), but
+ * the live queue feeds this route too — FILTER the field rather than assume
+ * the upstream discipline holds. Pure + exported so the filter is pinned by a
+ * unit test.
+ */
+export function stripScreenshotField(ev: { ts: string; kind: string; payload: unknown }): {
+  ts: string;
+  kind: string;
+  payload: unknown;
+} {
+  if (
+    ev.payload !== null &&
+    typeof ev.payload === "object" &&
+    "screenshot_b64" in (ev.payload as Record<string, unknown>)
+  ) {
+    const { screenshot_b64: _omit, ...rest } = ev.payload as Record<string, unknown>;
+    return { ...ev, payload: rest };
+  }
+  return ev;
+}
+
+/**
  * Register all routes on the Fastify instance under /api.
  */
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -289,8 +312,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     });
 
     const writeFrame = (ev: { ts: string; kind: string; payload: unknown }): void => {
-      // SSE frame: data: <compact-json>\n\n — NO event: named line.
-      raw.write(`data: ${JSON.stringify(ev)}\n\n`);
+      // SSE frame: data: <compact-json>\n\n — NO event: named line. The
+      // screenshot filter keeps the legacy route base64-free (see
+      // stripScreenshotField).
+      raw.write(`data: ${JSON.stringify(stripScreenshotField(ev))}\n\n`);
     };
 
     // Replay the ordered backlog, then live frames from the queue.

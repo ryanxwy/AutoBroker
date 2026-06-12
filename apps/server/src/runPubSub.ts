@@ -238,6 +238,49 @@ export class RunPubSub {
     return true;
   }
 
+  /**
+   * Fan-out-only append: push a frame to the LIVE subscriber queues WITHOUT
+   * writing it into the channel log. Built for screenshot-bearing browser
+   * frames — the base64 payload reaches connected live readers exactly once and
+   * is NEVER replayable (no legacy /stream full replay, no /stream-v2 reconnect
+   * backlog, no GET /api/skill-runs/:id events snapshot — `snapshot()` and
+   * `subscribe().snapshot` read only the log). Same validation discipline as
+   * append(): unknown kind throws, post-terminal pushes are discarded with a
+   * warn. A TERMINAL kind is refused outright — an unlogged terminal would
+   * close live queues while the durable log still reads non-terminal.
+   * Returns true when the frame reached the live queues.
+   */
+  appendTransient(
+    runId: string,
+    ev: { kind: EventKind; payload?: Record<string, unknown> },
+  ): boolean {
+    const channel = this.channels.get(runId);
+    if (channel === undefined) {
+      throw new Error(`runPubSub.appendTransient: no channel for run '${runId}' (attachInit first)`);
+    }
+    if (!EVENT_KIND_SET.has(ev.kind)) {
+      throw new Error(`runPubSub.appendTransient: unknown event kind '${ev.kind}'`);
+    }
+    if (TERMINAL_SET.has(ev.kind)) {
+      throw new Error(
+        `runPubSub.appendTransient: terminal kind '${ev.kind}' must go through append() (log is the terminal truth)`,
+      );
+    }
+    if (channel.terminal) {
+      console.warn(
+        `runPubSub: discarding transient '${ev.kind}' after terminal frame for run '${runId}' (wire wins)`,
+      );
+      return false;
+    }
+    const frame: SseEvent = {
+      ts: new Date().toISOString(),
+      kind: ev.kind,
+      payload: ev.payload ?? {},
+    };
+    for (const q of channel.queues) q.push(frame);
+    return true;
+  }
+
   /** True once a terminal frame (done/error/aborted) has landed for the run. */
   isTerminal(runId: string): boolean {
     return this.channels.get(runId)?.terminal ?? false;

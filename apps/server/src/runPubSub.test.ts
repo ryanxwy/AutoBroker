@@ -117,6 +117,57 @@ describe("runPubSub — single-terminal-frame invariant (wire wins)", () => {
   });
 });
 
+describe("runPubSub — appendTransient (fan-out-only, never logged)", () => {
+  it("pushes to live queues but never enters the snapshot/backlog", async () => {
+    const ps = new RunPubSub();
+    ps.attachInit("r1", "dealer_geosearch");
+    const sub = ps.subscribe("r1")!;
+    const livePromise = drain(sub.queue!);
+
+    expect(
+      ps.appendTransient("r1", {
+        kind: "browser.action",
+        payload: { type: "navigate", target: "https://x.example/", screenshot_b64: "QUJD" },
+      }),
+    ).toBe(true);
+    ps.append("r1", { kind: "done", payload: {} });
+
+    // Live reader saw it; the log (every replay surface) never did.
+    const live = await livePromise;
+    expect(live.map((e) => e.kind)).toEqual(["browser.action", "done"]);
+    expect(live[0]!.payload["screenshot_b64"]).toBe("QUJD");
+    expect(ps.snapshot("r1").map((e) => e.kind)).toEqual(["init", "done"]);
+
+    // A NEW subscriber (reconnect) replays a backlog with zero base64.
+    const resub = ps.subscribe("r1")!;
+    for (const ev of resub.snapshot) {
+      expect(JSON.stringify(ev)).not.toContain("screenshot_b64");
+    }
+  });
+
+  it("is discarded post-terminal with a warn (wire wins)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ps = new RunPubSub();
+    ps.attachInit("r1", "dealer_geosearch");
+    ps.append("r1", { kind: "done", payload: {} });
+    expect(ps.appendTransient("r1", { kind: "browser.action", payload: {} })).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("refuses terminal kinds and unknown kinds, and throws with no channel", () => {
+    const ps = new RunPubSub();
+    ps.attachInit("r1", "dealer_geosearch");
+    expect(() => ps.appendTransient("r1", { kind: "done", payload: {} })).toThrow(/terminal kind/);
+    expect(() => ps.appendTransient("r1", { kind: "bogus" as never, payload: {} })).toThrow(
+      /unknown event kind/,
+    );
+    expect(() => ps.appendTransient("ghost", { kind: "browser.action", payload: {} })).toThrow(
+      /no channel/,
+    );
+  });
+});
+
 describe("runPubSub — unknown kind rejection (no drift)", () => {
   it("append with an unknown kind throws", () => {
     const ps = new RunPubSub();

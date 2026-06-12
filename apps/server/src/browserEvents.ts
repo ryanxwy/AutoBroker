@@ -9,6 +9,14 @@
  * so they must never throw back into it — events for a run with no channel yet
  * (attachInit not called) are dropped here, and post-terminal appends are
  * already discarded by the pubsub itself (wire wins).
+ *
+ * SCREENSHOTS NEVER ENTER THE LOG: a frame carrying a screenshot is published
+ * as TWO frames — the pure {type,target}/{message} twin goes through the normal
+ * logged append (the activity trail stays replayable), and the screenshot-
+ * bearing frame goes through the fan-out-only appendTransient (live readers
+ * only, never the backlog). That closes every replay surface for the base64
+ * payload at the source; the legacy /stream live writer additionally strips
+ * any screenshot field as a belt (routes.ts).
  */
 
 import type { BrowserEmitter } from "@autobroker/tools";
@@ -32,25 +40,34 @@ export function browserEmitterFor(pubsub: RunPubSub, runId: string): BrowserEmit
     pubsub.append(runId, { kind, payload });
   };
 
+  /** Publish a frame whose payload may carry a screenshot: the pure payload is
+   *  appended (logged + fanned out, replayable), and when a screenshot is
+   *  present its full payload ADDITIONALLY rides the fan-out-only path — live
+   *  subscribers see the screenshot once; no replay surface ever does. */
+  const appendWithScreenshot = (
+    kind: BrowserEventKind,
+    pure: Record<string, unknown>,
+    screenshotB64: string | undefined,
+  ): void => {
+    if (!pubsub.has(runId)) return;
+    pubsub.append(runId, { kind, payload: pure });
+    if (screenshotB64 !== undefined) {
+      pubsub.appendTransient(runId, {
+        kind,
+        payload: { ...pure, screenshot_b64: screenshotB64 },
+      });
+    }
+  };
+
   return {
     opened(url?: string): void {
       append("browser.opened", url === undefined ? {} : { url });
     },
     action(type: string, target: string, screenshotB64?: string): void {
-      append(
-        "browser.action",
-        screenshotB64 === undefined
-          ? { type, target }
-          : { type, target, screenshot_b64: screenshotB64 },
-      );
+      appendWithScreenshot("browser.action", { type, target }, screenshotB64);
     },
     error(message: string, screenshotB64?: string): void {
-      append(
-        "browser.error",
-        screenshotB64 === undefined
-          ? { message }
-          : { message, screenshot_b64: screenshotB64 },
-      );
+      appendWithScreenshot("browser.error", { message }, screenshotB64);
     },
     closed(): void {
       append("browser.closed", {});
