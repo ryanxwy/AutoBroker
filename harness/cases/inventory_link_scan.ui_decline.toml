@@ -57,13 +57,13 @@ current_brand_owner = 0
 # to hold — the live operator adjusts if the discovered world drifts.
 
 [[seed.dealer_inventory_sources]]
-dealer = "Tustin Hyundai"
-url = "https://www.tustinhyundai.com/new-inventory/index.htm?make=Hyundai&model=Tucson"
+dealer = "Anaheim Hyundai"
+url = "https://www.hyundaiofanaheim.com/new-inventory/index.htm?make=Hyundai&model=Tucson+Hybrid&year=2026"
 source_type = "manual"
 
 [[seed.dealer_inventory_sources]]
-dealer = "Hyundai of Anaheim"
-url = "https://www.hyundaianaheim.com/new-inventory/index.htm"
+dealer = "Temecula Hyundai"
+url = "https://www.temeculahyundai.com/new-inventory/index.htm?make=Hyundai&model=Tucson+Hybrid&year=2026"
 source_type = "manual"
 
 # ---- step 1: intake (the journey root) --------------------------------------

@@ -20,9 +20,12 @@
 #
 # LIVE-OPERATOR NOTE: the seed `dealer` fields resolve against the names
 # geosearch ACTUALLY discovers (exact, else unique substring), and the row
-# script's `match` must equal the discovered name EXACTLY. "Tustin Hyundai"
-# is the established high-confidence rooftop; if the other names/hosts drift
-# from the live Maps world, adjust the seed dealer/url pairs and the
+# script's `match` must equal the discovered name EXACTLY. The three rooftops
+# below were verified against the live Maps world on 2026-06-12: each was
+# discovered under exactly this name in two independent full-radius geosearch
+# passes, and the two APPROVED ones were previously site-scanned clean (not
+# blocked) — their URLs are the exact SRP links those scans walked. If the
+# Maps world drifts, adjust the seed dealer/url pairs and the
 # [[steps.resume.rows]] match string — the run fails LOUD on any mismatch.
 #
 # cost_and_time is REQUIRED on step 3 (extraction is an LLM phase). The
@@ -67,18 +70,18 @@ current_brand_owner = 0
 # discovered world (the live operator adjusts to the real radius if needed).
 
 [[seed.dealer_inventory_sources]]
-dealer = "Tustin Hyundai"
-url = "https://www.tustinhyundai.com/new-inventory/index.htm?make=Hyundai&model=Tucson"
+dealer = "Anaheim Hyundai"
+url = "https://www.hyundaiofanaheim.com/new-inventory/index.htm?make=Hyundai&model=Tucson+Hybrid&year=2026"
 source_type = "manual"
 
 [[seed.dealer_inventory_sources]]
-dealer = "Garden Grove Hyundai"
-url = "https://www.gardengrovehyundai.com/new-inventory/index.htm"
+dealer = "Temecula Hyundai"
+url = "https://www.temeculahyundai.com/new-inventory/index.htm?make=Hyundai&model=Tucson+Hybrid&year=2026"
 source_type = "manual"
 
 [[seed.dealer_inventory_sources]]
-dealer = "Hyundai of Anaheim"
-url = "https://www.hyundaianaheim.com/new-inventory/index.htm"
+dealer = "Hyundai Escondido"
+url = "https://www.hyundaiescondido.com/new-inventory/index.htm?make=Hyundai&model=Tucson+Hybrid&year=2026"
 source_type = "manual"
 
 # ---- step 1: intake (the journey root) --------------------------------------
@@ -176,7 +179,7 @@ action = "accept"
 default_decision = "approve"   # every unmatched row → explicit per-row Approve.
 
 [[steps.resume.rows]]
-match = "Garden Grove Hyundai" # one explicit per-row Skip — stays PENDING.
+match = "Hyundai Escondido"    # one explicit per-row Skip — stays PENDING.
 decision = "skip"
 
 [[steps.anchors]]
