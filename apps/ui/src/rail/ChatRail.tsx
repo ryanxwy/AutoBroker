@@ -14,6 +14,7 @@
 
 import type { ApiClient } from "../api/client.js";
 import type { IntakeScopeNotice } from "../api/wire.js";
+import type { BrowserView } from "../chat/browserView.js";
 import type { TurnView } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
 import { AssistantTurn } from "./AssistantTurn.js";
@@ -28,6 +29,9 @@ export interface ChatRailProps {
   turns: TurnView[];
   /** The run currently driving the rail (its assistant turn is the live one). */
   activeRunId: string | null;
+  /** The LIVE browser activity for the active run's turn (App gates it to
+   *  non-terminal — transient zone-4 trail + thumbnail), or null. */
+  browserView: BrowserView | null;
   /** The form-decision controller for the active run's pending gate. */
   decision: DecisionController;
   knownSkills: string[];
@@ -52,6 +56,7 @@ export function ChatRail({
   title,
   turns,
   activeRunId,
+  browserView,
   decision,
   knownSkills,
   client,
@@ -98,6 +103,7 @@ export function ChatRail({
               client={client}
               onStartIntake={onStartIntake}
               onPickStopProfile={(profileId) => onStopPick(turn.turn.skill, profileId)}
+              browser={turn.id === activeRunId ? browserView : null}
             />
           ),
         )}

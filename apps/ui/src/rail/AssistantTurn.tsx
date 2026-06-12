@@ -18,6 +18,7 @@
 import type { ApiClient } from "../api/client.js";
 import { gateTrack } from "../gate/gateTrack.js";
 import { IntakeForm, type DecisionAction } from "../intake/IntakeForm.js";
+import type { BrowserView } from "../chat/browserView.js";
 import { geosearchStopCode, type AssistantTurnView } from "../chat/messageModel.js";
 import { StopCard } from "./StopCard.js";
 
@@ -33,6 +34,9 @@ export interface AssistantTurnProps {
   onStartIntake: () => void;
   /** Re-launch this turn's skill pinned to the picked profile (a NEW run). */
   onPickStopProfile: (profileId: string) => void;
+  /** The LIVE browser activity view for the ACTIVE turn (transient — App
+   *  passes null for every other turn and after terminal; never from parts). */
+  browser?: BrowserView | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -52,6 +56,7 @@ export function AssistantTurn({
   client,
   onStartIntake,
   onPickStopProfile,
+  browser = null,
 }: AssistantTurnProps): JSX.Element {
   // The rail renders only rail-tracked gate kinds (gateTrack is the single
   // kind→track routing point; banner-tracked kinds render in GateBannerHost).
@@ -120,10 +125,41 @@ export function AssistantTurn({
         </details>
       )}
 
-      {/* ZONE 4 — CURRENT ACTIVITY (single in-flight line). */}
-      {turn.currentActivity !== null && (
+      {/* ZONE 4 — CURRENT ACTIVITY: the in-flight tool line plus, on the
+          active turn, the LIVE browser trail (transient — host + verb per
+          moment, error moments visibly distinct, a concurrent-open count for
+          the parallel-browser scans, and the latest live screenshot). */}
+      {(turn.currentActivity !== null || (browser !== null && browser.entries.length > 0)) && (
         <div className="zone-activity" data-testid="turn-zone-activity">
-          {turn.currentActivity}
+          {turn.currentActivity !== null && <div>{turn.currentActivity}</div>}
+          {browser !== null && browser.entries.length > 0 && (
+            <div className="browser-trail" data-testid="turn-browser-trail">
+              {browser.openCount > 0 && (
+                <div className="muted" data-testid="turn-browser-open-count">
+                  {browser.openCount} browser{browser.openCount === 1 ? "" : "s"} active
+                </div>
+              )}
+              <ul className="browser-trail-entries">
+                {browser.entries.map((entry, i) => (
+                  <li
+                    key={i}
+                    data-kind={entry.kind}
+                    className={entry.kind === "error" ? "danger-text" : undefined}
+                  >
+                    {entry.label}
+                  </li>
+                ))}
+              </ul>
+              {browser.screenshot !== null && (
+                <img
+                  data-testid="turn-browser-screenshot"
+                  alt="Live browser view"
+                  src={`data:image/jpeg;base64,${browser.screenshot}`}
+                  style={{ width: 220, borderRadius: 4, display: "block", marginTop: 4 }}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 

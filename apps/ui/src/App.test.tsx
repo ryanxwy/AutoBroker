@@ -293,6 +293,66 @@ describe("App — refresh recovery", () => {
   });
 });
 
+describe("App — zone-4 browser trail + live screenshot (transient)", () => {
+  it("transient data-browser parts render the trail/open-count/thumbnail on the active turn, all gone after terminal", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    click(r.get("canvas-start-search"));
+    await flush();
+    const stream = MockStream.instances[0]!;
+    stream.emit({ type: "start", messageId: "run-xyz" });
+    stream.emit({
+      type: "data-frame",
+      id: "frame-0",
+      data: { kind: "init", payload: { run_id: "run-xyz", driver_kind: "deepseek_apikey" } },
+    });
+    // Two isolated browsers open concurrently (the parallel-geosearch reality),
+    // one navigate carries the live screenshot twin, one viewport errors.
+    const t = (kind: string, payload: Record<string, unknown>): Record<string, unknown> => ({
+      type: "data-browser",
+      data: { kind, payload },
+      transient: true,
+    });
+    stream.emit(t("browser.opened", { url: "https://www.google.com/maps/a" }));
+    stream.emit(t("browser.opened", { url: "https://www.google.com/maps/b" }));
+    stream.emit(t("browser.action", { type: "navigate", target: "https://www.google.com/maps/a" }));
+    stream.emit(
+      t("browser.action", {
+        type: "navigate",
+        target: "https://www.google.com/maps/a",
+        screenshot_b64: "QUJD",
+      }),
+    );
+    stream.emit(t("browser.error", { message: "viewport N timed out" }));
+    await flush();
+
+    // The trail renders on the active turn: entries + 2-browsers-open count +
+    // the latest live thumbnail; the error entry is visibly distinct.
+    const trail = r.get("turn-browser-trail");
+    expect(trail.textContent).toContain("navigate www.google.com");
+    expect(r.get("turn-browser-open-count").textContent).toContain("2 browsers active");
+    const errorEntry = trail.querySelector('[data-kind="error"]');
+    expect(errorEntry).not.toBeNull();
+    expect(errorEntry!.className).toContain("danger-text");
+    const img = r.get("turn-browser-screenshot") as HTMLImageElement;
+    expect(img.src).toBe("data:image/jpeg;base64,QUJD");
+    // Transient: the parts never persisted into the assistant message.
+    expect(r.get("assistant-turn").getAttribute("data-status")).toBe("running");
+
+    // Terminal → trail and thumbnail are GONE (transient semantics).
+    stream.emit({ type: "data-frame", id: "frame-9", data: { kind: "done", payload: {} } });
+    stream.emit({ type: "finish" });
+    stream.end();
+    await flush();
+    expect(r.get("assistant-turn").getAttribute("data-status")).toBe("done");
+    expect(r.query("turn-browser-trail")).toBeNull();
+    expect(r.query("turn-browser-screenshot")).toBeNull();
+    r.unmount();
+  });
+});
+
 describe("App — declined terminal renders the cancelled line", () => {
   it("an aborted{user_declined} data-frame + abort chunk projects data-status declined", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });

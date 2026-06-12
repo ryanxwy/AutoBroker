@@ -10,7 +10,8 @@
  *     options.body.runId points the transport at the just-started run; the
  *     whole run (suspends included) streams into ONE assistant message whose
  *     id IS the server runId. Transient data-browser parts arrive via onData
- *     and merge into the active turn's activity line only — never history.
+ *     and fold into the active turn's zone-4 browser view (trail + open count
+ *     + live screenshot) only — never history, gone after terminal.
  *   - routing (the tiny hand-rolled router): '/' → Canvas (workbench),
  *     '/runs/:id' → Canvas bound to the run, '/profiles/:id' →
  *     ProfileWorkspace placeholder, '*' → NotFound.
@@ -38,6 +39,11 @@ import { useAsync } from "./api/useApi.js";
 import type { IntakeScopeNotice, Mode, SkillManifest, SkillList, StartAck } from "./api/wire.js";
 import { Canvas } from "./canvas/Canvas.js";
 import {
+  EMPTY_BROWSER_VIEW,
+  reduceBrowserView,
+  type BrowserView,
+} from "./chat/browserView.js";
+import {
   projectTurns,
   type RunUIMessage,
   type TurnView,
@@ -59,26 +65,6 @@ import { useLayout } from "./store/layout.js";
 // does not import @autobroker/skills (it would pull the manifest into the
 // browser bundle for no runtime gain — the server already serves it).
 const INTAKE_SKILL = "search_profile_intake";
-
-/** A short activity line for a transient data-browser part. */
-function browserActivityLabel(data: unknown): string | null {
-  if (data === null || typeof data !== "object") return null;
-  const kind = (data as { kind?: unknown }).kind;
-  const payload = (data as { payload?: unknown }).payload;
-  const p = payload !== null && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
-  switch (kind) {
-    case "browser.opened":
-      return typeof p["url"] === "string" ? `Browsing ${p["url"]}` : "Browser opened";
-    case "browser.action":
-      return typeof p["type"] === "string" ? `Browser: ${p["type"]}` : "Browser working…";
-    case "browser.error":
-      return typeof p["message"] === "string" ? `Browser issue: ${p["message"]}` : "Browser issue";
-    case "browser.closed":
-      return null; // activity over — clear the line.
-    default:
-      return null;
-  }
-}
 
 export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.Element {
   const route = useRoute();
@@ -113,10 +99,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const sessionIdRef = useRef<string | null>(null);
   // Runs already bound to the rail (fresh launches need no refresh recovery).
   const recoveredRef = useRef<string | null>(null);
-  // Transient browser activity (live-only; never persisted into the messages).
-  const [browserActivity, setBrowserActivity] = useState<string | null>(null);
+  // Transient browser activity view (live-only; never persisted into the
+  // messages — the zone-4 trail + open count + latest screenshot).
+  const [browserView, setBrowserView] = useState<BrowserView>(EMPTY_BROWSER_VIEW);
   onDataRef.current = (part): void => {
-    if (part.type === "data-browser") setBrowserActivity(browserActivityLabel(part.data));
+    if (part.type === "data-browser") setBrowserView((v) => reduceBrowserView(v, part.data));
   };
 
   const knownSkills = skills.kind === "ok" ? skills.data.map((s) => s.name) : [INTAKE_SKILL];
@@ -193,7 +180,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       /* no active stream */
     }
     chat.messages = [];
-    setBrowserActivity(null);
+    setBrowserView(EMPTY_BROWSER_VIEW);
     // The chat message is the stream CARRIER only: the run is already started.
     // A button launch has no prose — send a silent (part-less) user message.
     await chat.sendMessage(
@@ -294,7 +281,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           /* no active stream */
         }
         chat.messages = [];
-        setBrowserActivity(null);
+        setBrowserView(EMPTY_BROWSER_VIEW);
         await chat.resumeStream({ body: { runId } });
       })();
     }
@@ -306,23 +293,16 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     activeRunId !== null
       ? turns.find((t): t is TurnView & { kind: "assistant" } => t.kind === "assistant" && t.id === activeRunId)
       : undefined;
-  // Merge the transient browser activity into the ACTIVE turn's activity line
-  // (tool activity wins; terminal turns show none).
-  const renderedTurns: TurnView[] = turns.map((t) => {
-    if (
-      t.kind !== "assistant" ||
-      t.id !== activeRunId ||
-      browserActivity === null ||
-      t.turn.currentActivity !== null ||
-      t.turn.status === "done" ||
-      t.turn.status === "error" ||
-      t.turn.status === "declined" ||
-      t.turn.status === "aborted"
-    ) {
-      return t;
-    }
-    return { ...t, turn: { ...t.turn, currentActivity: browserActivity } };
-  });
+  // The transient browser view attaches to the ACTIVE turn only and is GONE
+  // after terminal (trail + thumbnail never persist into message parts).
+  const activeTurnTerminal =
+    activeTurn !== undefined &&
+    (activeTurn.turn.status === "done" ||
+      activeTurn.turn.status === "error" ||
+      activeTurn.turn.status === "declined" ||
+      activeTurn.turn.status === "aborted");
+  const activeBrowserView =
+    !activeTurnTerminal && browserView.entries.length > 0 ? browserView : null;
 
   const activeAwaiting =
     activeTurn !== undefined && activeTurn.turn.status === "awaiting_approval"
@@ -374,8 +354,9 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
 
         <ChatRail
           title={railTitle}
-          turns={renderedTurns}
+          turns={turns}
           activeRunId={activeRunId}
+          browserView={activeBrowserView}
           decision={decision}
           knownSkills={knownSkills}
           client={client}
