@@ -434,6 +434,10 @@ const GeosearchInputSchema = z.object({
 /** The workflow output — the confirm step's structured result. */
 const GeosearchOutputSchema = z.object({
   searchProfileId: z.string(),
+  /** Profile-resolution provenance (pinned vs inferred-newest), threaded from
+   *  the resolve step so the run's terminal frame can voice WHICH way the
+   *  profile was chosen. Every profile-scoped skill output carries this. */
+  resolution: z.enum(["pinned", "inferred_newest"]),
   /** Candidates surviving dedup + filters within the search radius. */
   dealersDiscovered: z.number().int(),
   /** dealers rows written (inserted + refreshed). */
@@ -780,6 +784,7 @@ const confirmStep = createStep({
 
     return {
       searchProfileId: state.searchProfileId,
+      resolution: state.resolution,
       dealersDiscovered,
       dealersUpserted,
       candidatesRegistered: upsert.candidatesRegistered,

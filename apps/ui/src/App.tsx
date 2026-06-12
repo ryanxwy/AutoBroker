@@ -45,6 +45,7 @@ import {
 import { RunChatTransport } from "./chat/transport.js";
 import { useDecision } from "./chat/useDecision.js";
 import { GateBannerHost } from "./gate/GateBannerHost.js";
+import { toSnapshot, vehicleLabel } from "./home/profileView.js";
 import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
 import { ChatRail } from "./rail/ChatRail.js";
 import { NotFound } from "./routes/NotFound.js";
@@ -103,6 +104,10 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const [scopeNotice, setScopeNotice] = useState<IntakeScopeNotice | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [railTitle, setRailTitle] = useState<string>("New search");
+  // The current session's TRUE pin (thread metadata) + its human label —
+  // hydrated from GET /api/sessions/:id together with the scope notice.
+  const [pinnedProfileId, setPinnedProfileId] = useState<string | null>(null);
+  const [pinLabel, setPinLabel] = useState<string | null>(null);
   // The server session (Mastra thread) the rail is currently on — intake forks
   // FROM it (the fork rule), so the last ack's session_id is remembered here.
   const sessionIdRef = useRef<string | null>(null);
@@ -115,6 +120,68 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   };
 
   const knownSkills = skills.kind === "ok" ? skills.data.map((s) => s.name) : [INTAKE_SKILL];
+
+  // ---- session hydration (pin + persisted scope notice, ONE fetch) ----------
+  // Applies a fetched session to the rail state; the pin chip label resolves
+  // from the pinned profile's vehicle fields (best-effort — the raw id shows
+  // until/unless the profile read lands).
+  const applySession = (s: {
+    id: string;
+    pinned_profile_id: string | null;
+    scope_notice: IntakeScopeNotice | null;
+  }): void => {
+    sessionIdRef.current = s.id;
+    setPinnedProfileId(s.pinned_profile_id);
+    setScopeNotice(s.scope_notice);
+    setPinLabel(null);
+    if (s.pinned_profile_id !== null) {
+      const pin = s.pinned_profile_id;
+      client
+        .getProfile(pin)
+        .then((row) => setPinLabel(vehicleLabel(toSnapshot(row)) || pin))
+        .catch(() => setPinLabel(pin)); // label only — the pin itself is set.
+    }
+  };
+
+  const hydrateSession = (sessionId: string): void => {
+    client
+      .getSession(sessionId)
+      .then(applySession)
+      .catch((err: unknown) => {
+        // Hydration is a read-back of state the server just acked; surface a
+        // failure rather than silently rendering a pin-less rail.
+        setLaunchError(err instanceof Error ? err.message : "Could not load the session.");
+      });
+  };
+
+  // ---- pin lifecycle (Searches popover verbs + the rail chip) ---------------
+  const onPin = (profileId: string): void => {
+    setLaunchError(null);
+    const sessionId = sessionIdRef.current;
+    const op =
+      sessionId !== null
+        ? client.patchSession(sessionId, { pinnedProfileId: profileId })
+        : client.createSession({ title: "Pinned search", pinnedProfileId: profileId });
+    op.then(applySession).catch((err: unknown) => {
+      setLaunchError(err instanceof Error ? err.message : "Could not pin the search.");
+    });
+  };
+
+  const onUnpin = (): void => {
+    const sessionId = sessionIdRef.current;
+    if (sessionId === null) return;
+    client
+      .patchSession(sessionId, { pinnedProfileId: null })
+      .then(applySession)
+      .catch((err: unknown) => {
+        setLaunchError(err instanceof Error ? err.message : "Could not unpin the search.");
+      });
+  };
+
+  const onSelectSession = (sessionId: string): void => {
+    setRailTitle("Session");
+    hydrateSession(sessionId);
+  };
 
   // ---- launch (intake entries + slash/freeform + Skills popover) ------------
   // Bind a StartAck to the rail: clear the chat (a launch starts a fresh
@@ -141,6 +208,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     setActiveRunId(ack.run_id);
     sessionIdRef.current = ack.session_id;
     recoveredRef.current = ack.run_id; // a fresh launch needs no recovery.
+    // Hydrate the linked session's pin + persisted notice (one fetch); a
+    // session-less headless start keeps the rail unpinned.
+    if (ack.session_id !== null) hydrateSession(ack.session_id);
+    else {
+      setPinnedProfileId(null);
+      setPinLabel(null);
+    }
     void streamRun(ack.run_id, userText);
     navigate(`/runs/${ack.run_id}`);
   };
@@ -156,11 +230,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   };
 
   // Generic NON-intake start (slash mode, no fork — only intake forces the
-  // fresh-unpinned fork semantics). The server's RunDescriptor registry
-  // validates the skill; an unknown skill surfaces as a launch error.
-  const doLaunchSkill = (skill: string, userText?: string): void => {
+  // fresh-unpinned fork semantics). `extra` carries the slash args / the
+  // STOP-picker's search_profile_id into the POST body. The server's
+  // RunDescriptor registry validates the skill; an unknown skill surfaces as a
+  // launch error.
+  const doLaunchSkill = (skill: string, extra?: Record<string, unknown>, userText?: string): void => {
     setLaunchError(null);
-    launchSkill(client, { skill })
+    launchSkill(client, { skill, ...(extra !== undefined ? { args: extra } : {}) })
       .then((ack) => bindAck(ack, `/${skill}`, userText))
       .catch((err: unknown) => {
         setLaunchError(err instanceof Error ? err.message : `Could not start ${skill}.`);
@@ -169,11 +245,26 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
 
   const startIntakeFresh = (): void => doLaunch({ kind: "slash" });
   // A ready slash for intake keeps the special launchIntake path (fresh-unpinned
-  // fork); a ready slash for ANY other skill starts THAT skill generically.
-  // Freeform stays intake-scoped (the ratified scope-notice behavior).
-  const onSlash = (skill: string): void => {
+  // fork); a ready slash for ANY other skill starts THAT skill generically with
+  // its parsed key=value args spread into the start body. Freeform stays
+  // intake-scoped (the ratified scope-notice behavior).
+  const onSlash = (skill: string, args: Record<string, string>): void => {
+    const argText = Object.entries(args)
+      .map(([k, v]) => ` ${k}=${v}`)
+      .join("");
     if (skill === INTAKE_SKILL) doLaunch({ kind: "slash" }, `/${skill}`);
-    else doLaunchSkill(skill, `/${skill}`);
+    else doLaunchSkill(skill, args, `/${skill}${argText}`);
+  };
+
+  // STOP-picker re-launch: a typed 2+-profiles STOP is TERMINAL — picking a
+  // vehicle starts a NEW run of the same skill pinned via search_profile_id
+  // (never a resume of the stopped run).
+  const onStopPick = (skill: string | null, profileId: string): void => {
+    if (skill === null) {
+      setLaunchError("Cannot re-launch: the stopped run carried no skill id.");
+      return;
+    }
+    doLaunchSkill(skill, { search_profile_id: profileId });
   };
   const onFreeform = (text: string): void => doLaunch({ kind: "freeform", freeformText: text }, text);
   // The Skills popover Run control — intake keeps its fork path, every other
@@ -248,8 +339,12 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         client={client}
         activeRunId={activeRunId}
         mode={mode}
+        pinnedProfileId={pinnedProfileId}
         onStartIntake={startIntakeFresh}
         onRunSkill={onRunSkill}
+        onPin={onPin}
+        onUnpin={onUnpin}
+        onSelectSession={onSelectSession}
       />
 
       {backendDown !== null && (
@@ -283,13 +378,15 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           activeRunId={activeRunId}
           decision={decision}
           knownSkills={knownSkills}
+          client={client}
           scopeNotice={scopeNotice}
-          pinnedProfileId={null}
+          pinnedProfileId={pinnedProfileId}
+          pinLabel={pinLabel}
           onSlash={onSlash}
           onFreeform={onFreeform}
-          onUnpin={() => {
-            /* pin lifecycle slice — placeholder */
-          }}
+          onUnpin={onUnpin}
+          onStartIntake={startIntakeFresh}
+          onStopPick={onStopPick}
         />
       </div>
     </div>

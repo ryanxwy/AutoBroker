@@ -275,6 +275,104 @@ describe("per-skill descriptor registry", () => {
   });
 });
 
+describe("error-path frame translation (Mastra flat step errors)", () => {
+  // The Mastra default engine delivers step errors as FLAT toJSON()'d objects
+  // {message, name, code} — NOT Error instances — identical live and after
+  // snapshot rehydration. These tests pin the wire translation of that shape
+  // and double as the tripwire for a future Mastra upgrade changing it.
+
+  /** Start a geosearch run against a scripted failed result; returns the
+   *  terminal error frame payload off the pubsub backlog. */
+  async function errorPayloadFor(error: unknown): Promise<Record<string, unknown>> {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(fakeMastra([{ status: "failed", error }]), pubsub);
+    const { runId } = await svc.start({
+      skill: "dealer_geosearch",
+      input: { search_profile_id: null },
+    });
+    expect(svc.isTerminal(runId)).toBe(true);
+    const log = pubsub.snapshot(runId);
+    const last = log[log.length - 1]!;
+    expect(last.kind).toBe("error");
+    return last.payload;
+  }
+
+  it("a flat {message, name, code} object → verbatim reason + name + code on the frame", async () => {
+    const payload = await errorPayloadFor({
+      message:
+        "No active search profile found — dealer_geosearch needs one to know what to search for.",
+      name: "DealerGeosearchStopError",
+      code: "no_active_profile",
+    });
+    expect(payload).toEqual({
+      reason:
+        "No active search profile found — dealer_geosearch needs one to know what to search for.",
+      name: "DealerGeosearchStopError",
+      code: "no_active_profile",
+    });
+  });
+
+  it("an Error instance → message as reason + name (no code unless string)", async () => {
+    const payload = await errorPayloadFor(new Error("boom"));
+    expect(payload).toEqual({ reason: "boom", name: "Error" });
+  });
+
+  it("a bare string → the reason verbatim", async () => {
+    const payload = await errorPayloadFor("scan exploded");
+    expect(payload).toEqual({ reason: "scan exploded" });
+  });
+
+  it("undefined / unshaped errors → the generic workflow_failed reason", async () => {
+    expect(await errorPayloadFor(undefined)).toEqual({ reason: "workflow_failed" });
+    expect(await errorPayloadFor(42)).toEqual({ reason: "workflow_failed" });
+  });
+
+  it("a non-string code (e.g. a numeric SqliteError-style code) is dropped, message kept", async () => {
+    const payload = await errorPayloadFor({ message: "db locked", name: "SqliteError", code: 5 });
+    expect(payload).toEqual({ reason: "db locked", name: "SqliteError" });
+  });
+});
+
+describe("terminal text frame — resolution provenance copy", () => {
+  it("a success result carrying resolution puts it on the text frame payload (done stays {})", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([
+        {
+          status: "success",
+          result: { summary: "Registered 3 new dealer candidate(s).", resolution: "pinned" },
+        },
+      ]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_geosearch",
+      input: { search_profile_id: "prof-1" },
+    });
+    const log = pubsub.snapshot(runId);
+    const text = log.find((e) => e.kind === "text")!;
+    expect(text.payload["resolution"]).toBe("pinned");
+    expect(text.payload["text"]).toBe("Registered 3 new dealer candidate(s).");
+    const done = log.find((e) => e.kind === "done")!;
+    expect(done.payload).toEqual({});
+  });
+
+  it("a result with no resolution leaves the text frame metadata-free (skill-agnostic)", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(fakeMastra([SUSPEND_COLLECT, SUCCESS_CREATED]), pubsub);
+    const { runId } = await svc.start({
+      skill: "search_profile_intake",
+      input: { input_mode: "slash", freeform_text: null, seed_fields: null },
+    });
+    await svc.formDecision(runId, {
+      decision_id: svc.pendingOf(runId)!.decisionId,
+      decision: { action: "accept", content: validContent() },
+    });
+    const text = pubsub.snapshot(runId).find((e) => e.kind === "text")!;
+    expect("resolution" in text.payload).toBe(false);
+  });
+});
+
 describe("formDecision — decline terminal projection", () => {
   it("decline → aborted wire frame + the run reads declined in status summary", async () => {
     const { svc, pubsub, runId, decisionId } = await startedToCollect([

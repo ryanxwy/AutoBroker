@@ -12,6 +12,7 @@
  * (slash/freeform → start → navigate) is the parent's (App).
  */
 
+import type { ApiClient } from "../api/client.js";
 import type { IntakeScopeNotice } from "../api/wire.js";
 import type { TurnView } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
@@ -30,13 +31,21 @@ export interface ChatRailProps {
   /** The form-decision controller for the active run's pending gate. */
   decision: DecisionController;
   knownSkills: string[];
+  /** The typed client (the STOP picker fetches active profiles live). */
+  client: ApiClient;
   /** The scope notice for a forked session (rendered as the first system part). */
   scopeNotice: IntakeScopeNotice | null;
-  /** The session's pinned profile, when pin hydration lands (null today). */
+  /** The session's TRUE pinned profile (hydrated from GET /api/sessions/:id). */
   pinnedProfileId: string | null;
+  /** Human label for the pin chip (vehicle name; falls back to the id). */
+  pinLabel: string | null;
   onSlash: (skill: string, args: Record<string, string>, note?: string) => void;
   onFreeform: (text: string) => void;
   onUnpin: () => void;
+  /** Start a fresh intake (the 0-active STOP card CTA). */
+  onStartIntake: () => void;
+  /** Re-launch a STOP-carded turn's skill pinned to the picked profile. */
+  onStopPick: (skill: string | null, profileId: string) => void;
 }
 
 export function ChatRail({
@@ -45,17 +54,23 @@ export function ChatRail({
   activeRunId,
   decision,
   knownSkills,
+  client,
   scopeNotice,
   pinnedProfileId,
+  pinLabel,
   onSlash,
   onFreeform,
   onUnpin,
+  onStartIntake,
+  onStopPick,
 }: ChatRailProps): JSX.Element {
   return (
     <aside className="chat-rail" data-testid="chat-rail" aria-label="Conversation">
       <div className="rail-header">
         <strong style={{ flex: 1 }}>{title}</strong>
-        {pinnedProfileId !== null && <PinChip label={pinnedProfileId} onUnpin={onUnpin} />}
+        {pinnedProfileId !== null && (
+          <PinChip label={pinLabel ?? pinnedProfileId} title={pinnedProfileId} onUnpin={onUnpin} />
+        )}
       </div>
 
       <div className="conversation" data-testid="conversation">
@@ -80,6 +95,9 @@ export function ChatRail({
               onDecision={(action, content) =>
                 turn.id === activeRunId ? decision.decide(action, content) : undefined
               }
+              client={client}
+              onStartIntake={onStartIntake}
+              onPickStopProfile={(profileId) => onStopPick(turn.turn.skill, profileId)}
             />
           ),
         )}

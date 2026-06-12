@@ -15,11 +15,10 @@
  *   GET  /api/profiles/:id                   getProfile
  *   GET  /api/skills                         listSkills
  *   GET  /api/mode                           getMode
- *
- * `/api/sessions` is in the design but the server exposes
- * NO sessions route yet (routes.ts has none) — a sessions client lands with the
- * chat-rail server slice. No stub call here: a
- * method that 404s would lie about the contract.
+ *   POST /api/sessions                       createSession
+ *   GET  /api/sessions[?pinned_profile_id]   listSessions
+ *   GET  /api/sessions/:id                   getSession (pin + scope_notice in ONE fetch)
+ *   PATCH /api/sessions/:id                  patchSession (pin null-vs-omitted)
  *
  * Dependency wall: app/ui layer. Imports the wire schemas + zod only.
  */
@@ -33,15 +32,21 @@ import {
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
+  SessionListSchema,
+  SessionResponseSchema,
   SkillListSchema,
   SkillRunSummarySchema,
   StartAckSchema,
+  type CreateSessionBody,
   type DealerList,
   type FormDecisionAck,
   type FormDecisionBody,
   type Mode,
+  type PatchSessionBody,
   type ProfileList,
   type ProfileRow,
+  type SessionList,
+  type SessionResponse,
   type SkillList,
   type SkillRunSummary,
   type StartAck,
@@ -218,6 +223,46 @@ export class ApiClient {
   async getMode(): Promise<Mode> {
     const res = await this.fetchImpl(this.url("/api/mode"));
     return decode(res, ModeSchema);
+  }
+
+  // ---- sessions (chat-rail = Mastra Memory threads) -------------------------
+
+  /** POST /api/sessions → 201 SessionResponse (camelCase req, snake_case resp). */
+  async createSession(body: CreateSessionBody): Promise<SessionResponse> {
+    const res = await this.fetchImpl(this.url("/api/sessions"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return decode(res, SessionResponseSchema);
+  }
+
+  /** GET /api/sessions/:id → SessionResponse. The ONE fetch the rail hydrates
+   *  BOTH the pin and the persisted scope notice from. */
+  async getSession(id: string): Promise<SessionResponse> {
+    const res = await this.fetchImpl(this.url(`/api/sessions/${encodeURIComponent(id)}`));
+    return decode(res, SessionResponseSchema);
+  }
+
+  /** GET /api/sessions[?pinned_profile_id=…] → newest-first list. */
+  async listSessions(pinnedProfileId?: string): Promise<SessionList> {
+    const q =
+      pinnedProfileId !== undefined
+        ? `?pinned_profile_id=${encodeURIComponent(pinnedProfileId)}`
+        : "";
+    const res = await this.fetchImpl(this.url(`/api/sessions${q}`));
+    return decode(res, SessionListSchema);
+  }
+
+  /** PATCH /api/sessions/:id → updated SessionResponse. null-vs-omitted is
+   *  load-bearing: an omitted pin leaves it as-is; a present null clears it. */
+  async patchSession(id: string, body: PatchSessionBody): Promise<SessionResponse> {
+    const res = await this.fetchImpl(this.url(`/api/sessions/${encodeURIComponent(id)}`), {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return decode(res, SessionResponseSchema);
   }
 }
 

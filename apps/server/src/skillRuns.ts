@@ -695,12 +695,18 @@ export class SkillRunService {
         });
         return;
       }
-      // Completed: the skill's plain-speak summary then done.
+      // Completed: the skill's plain-speak summary then done. When the
+      // workflow output carries a `resolution` provenance (pinned vs
+      // inferred_newest, the profile-resolution branch the run took), it rides
+      // the terminal TEXT frame payload — skill-agnostic copy, the done frame
+      // stays {}.
       run.terminal = true;
-      this.pubsub.append(runId, {
-        kind: "text",
-        payload: { text: this.descriptorOf(run).summaryText(r.result) },
-      });
+      const textPayload: Record<string, unknown> = {
+        text: this.descriptorOf(run).summaryText(r.result),
+      };
+      const resolution = (r.result as { resolution?: unknown } | undefined)?.resolution;
+      if (typeof resolution === "string") textPayload["resolution"] = resolution;
+      this.pubsub.append(runId, { kind: "text", payload: textPayload });
       this.pubsub.append(runId, { kind: "done", payload: {} });
       return;
     }
@@ -710,7 +716,7 @@ export class SkillRunService {
       run.terminal = true;
       this.pubsub.append(runId, {
         kind: "error",
-        payload: { reason: this.errorReason(r.error) },
+        payload: this.errorFramePayload(r.error),
       });
       return;
     }
@@ -725,12 +731,34 @@ export class SkillRunService {
     // (The drive loop is event-driven via form-decision; nothing to emit here.)
   }
 
-  /** Coerce a run error into a wire reason string. */
-  private errorReason(error: unknown): string {
-    if (error === undefined || error === null) return "workflow_failed";
-    if (error instanceof Error) return error.message;
-    if (typeof error === "string") return error;
-    return "workflow_failed";
+  /**
+   * Build the error frame payload from a run error. Accepted shapes, in
+   * priority order:
+   *   1. any object carrying a string `message` — the Mastra default engine
+   *      delivers step errors as FLAT toJSON()'d objects {message, name, code}
+   *      (NOT Error instances; identical live and after snapshot rehydration,
+   *      stack stripped). A live in-process Error instance matches the same
+   *      defensive reads (message/name/code).
+   *   2. a bare string → the reason verbatim.
+   *   3. anything else → the generic "workflow_failed".
+   * `message` goes on the wire as the user-facing reason (typed STOP wording
+   * stays verbatim); `name` + `code` ride alongside so the UI can dispatch a
+   * STOP card on name PLUS a code allowlist — code alone is NOT discriminating
+   * (native errors like SqliteError also carry a `code`).
+   */
+  private errorFramePayload(error: unknown): Record<string, unknown> {
+    if (error !== null && typeof error === "object") {
+      const e = error as { message?: unknown; name?: unknown; code?: unknown };
+      if (typeof e.message === "string") {
+        return {
+          reason: e.message,
+          ...(typeof e.name === "string" ? { name: e.name } : {}),
+          ...(typeof e.code === "string" ? { code: e.code } : {}),
+        };
+      }
+    }
+    if (typeof error === "string") return { reason: error };
+    return { reason: "workflow_failed" };
   }
 
   /** The current pending suspend (step + decisionId), for GET /skill-runs/:id. */

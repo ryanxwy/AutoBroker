@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  geosearchStopCode,
   projectAssistantTurn,
   projectTurns,
   type RunUIMessage,
@@ -98,6 +99,53 @@ describe("projectAssistantTurn — three-zone projection", () => {
     const turn = projectAssistantTurn(assistant([frame("error", { reason: "workflow_failed" })]));
     expect(turn.status).toBe("error");
     expect(turn.error).toBe("workflow_failed");
+    expect(turn.errorName).toBeNull();
+    expect(turn.errorCode).toBeNull();
+  });
+
+  it("a typed error frame carries name + code; the STOP classifier keys on BOTH", () => {
+    const turn = projectAssistantTurn(
+      assistant([
+        frame("init", { skill: "dealer_geosearch", driver_kind: "deepseek_apikey" }),
+        frame("error", {
+          reason: "Multiple active search profiles found (A | B).",
+          name: "DealerGeosearchStopError",
+          code: "multiple_active_profiles",
+        }),
+      ]),
+    );
+    expect(turn.skill).toBe("dealer_geosearch");
+    expect(turn.error).toBe("Multiple active search profiles found (A | B).");
+    expect(turn.errorName).toBe("DealerGeosearchStopError");
+    expect(turn.errorCode).toBe("multiple_active_profiles");
+    expect(geosearchStopCode(turn)).toBe("multiple_active_profiles");
+
+    // Code alone is NOT discriminating: a native error with a matching code
+    // must never dispatch a STOP card.
+    const sqlite = projectAssistantTurn(
+      assistant([frame("error", { reason: "db locked", name: "SqliteError", code: "no_active_profile" })]),
+    );
+    expect(geosearchStopCode(sqlite)).toBeNull();
+    // Name without an allowlisted code → null too.
+    const oddCode = projectAssistantTurn(
+      assistant([frame("error", { reason: "x", name: "DealerGeosearchStopError", code: "something_else" })]),
+    );
+    expect(geosearchStopCode(oddCode)).toBeNull();
+  });
+
+  it("a text data-frame's metadata sets the resolution provenance", () => {
+    const turn = projectAssistantTurn(
+      assistant([
+        frame("text", { resolution: "inferred_newest" }),
+        frame("done"),
+      ]),
+    );
+    expect(turn.resolution).toBe("inferred_newest");
+    expect(turn.status).toBe("done");
+
+    // Unknown values never leak into the provenance tag.
+    const odd = projectAssistantTurn(assistant([frame("text", { resolution: "bogus" })], "run-4"));
+    expect(odd.resolution).toBeNull();
   });
 
   it("a later text part clears a pending gate (the run moved past it)", () => {

@@ -62,6 +62,8 @@ export interface Milestone {
 /** The assistant turn view the rail renders (legacy three-zone shape). */
 export interface AssistantTurnView {
   runId: string | null;
+  /** The skill id off the init frame (the STOP-card picker re-launches it). */
+  skill: string | null;
   status: SkillRunStatus;
   text: string;
   milestones: Milestone[];
@@ -69,6 +71,13 @@ export interface AssistantTurnView {
   driverKind: string | null;
   awaitingUser: AwaitingUserPayload | null;
   error: string | null;
+  /** The error frame's typed identity (Mastra flat step error name/code) —
+   *  drives the STOP-card dispatch; null for untyped failures. */
+  errorName: string | null;
+  errorCode: string | null;
+  /** Profile-resolution provenance off the terminal text frame's metadata
+   *  (pinned | inferred_newest), or null when the skill carries none. */
+  resolution: string | null;
 }
 
 /** A rendered turn: a user message or a projected assistant run. */
@@ -109,6 +118,7 @@ function frameData(part: unknown): { kind: string; payload: Record<string, unkno
 
 /** Project one assistant message's parts onto the three-zone turn view. */
 export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
+  let skill: string | null = null;
   let status: SkillRunStatus = "running";
   let text = "";
   const milestones: Milestone[] = [];
@@ -116,6 +126,9 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
   let driverKind: string | null = null;
   let awaitingUser: AwaitingUserPayload | null = null;
   let error: string | null = null;
+  let errorName: string | null = null;
+  let errorCode: string | null = null;
+  let resolution: string | null = null;
 
   for (const part of message.parts) {
     if (part.type === "text") {
@@ -144,6 +157,16 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
       case "init": {
         const dk = payload["driver_kind"];
         if (typeof dk === "string") driverKind = dk;
+        const sk = payload["skill"];
+        if (typeof sk === "string") skill = sk;
+        break;
+      }
+      case "text": {
+        // The terminal text frame's METADATA rides a data-frame (the prose
+        // itself arrives as protocol text parts) — `resolution` is the
+        // profile-resolution provenance.
+        const res = payload["resolution"];
+        if (res === "pinned" || res === "inferred_newest") resolution = res;
         break;
       }
       case "tool_call": {
@@ -171,8 +194,12 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
       }
       case "error": {
         const reason = payload["reason"];
+        const name = payload["name"];
+        const code = payload["code"];
         status = "error";
         error = typeof reason === "string" ? reason : "workflow_failed";
+        errorName = typeof name === "string" ? name : null;
+        errorCode = typeof code === "string" ? code : null;
         currentActivity = null;
         awaitingUser = null;
         break;
@@ -190,7 +217,49 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
     }
   }
 
-  return { runId: message.id, status, text, milestones, currentActivity, driverKind, awaitingUser, error };
+  return {
+    runId: message.id,
+    skill,
+    status,
+    text,
+    milestones,
+    currentActivity,
+    driverKind,
+    awaitingUser,
+    error,
+    errorName,
+    errorCode,
+    resolution,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// typed STOP classification (the profile-guard error cards)
+// ---------------------------------------------------------------------------
+
+/** The geosearch profile-resolution STOP codes — a client-side restatement of
+ *  the workflow's GeosearchStopCode union (the wire owns it; UI never imports
+ *  the workflows package). */
+export const GEOSEARCH_STOP_CODES = [
+  "no_active_profile",
+  "multiple_active_profiles",
+  "profile_missing_fields",
+] as const;
+export type GeosearchStopCode = (typeof GEOSEARCH_STOP_CODES)[number];
+
+/**
+ * Classify a failed turn as a typed geosearch STOP. Dispatch keys on the error
+ * NAME plus the stop-code allowlist — the code alone is NOT discriminating
+ * (native errors like SqliteError also carry a `code`). Returns null for every
+ * non-STOP failure (the generic error line renders instead).
+ */
+export function geosearchStopCode(turn: AssistantTurnView): GeosearchStopCode | null {
+  if (turn.status !== "error") return null;
+  if (turn.errorName !== "DealerGeosearchStopError") return null;
+  const code = turn.errorCode;
+  return code !== null && (GEOSEARCH_STOP_CODES as readonly string[]).includes(code)
+    ? (code as GeosearchStopCode)
+    : null;
 }
 
 /** Concatenate a message's text parts (the user-turn rendering). */

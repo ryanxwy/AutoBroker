@@ -81,11 +81,20 @@ export class UiStreamTranslator {
     if (kind === "text") {
       const id = `text-${i}`;
       const text = typeof payload["text"] === "string" ? (payload["text"] as string) : "";
-      return [
+      const chunks: UIMessageChunk[] = [
         { type: "text-start", id },
         { type: "text-delta", id, delta: text },
         { type: "text-end", id },
       ];
+      // A text frame may carry metadata beside the prose (e.g. `resolution`,
+      // the profile-resolution provenance). Protocol text parts hold only the
+      // prose, so the metadata rides a persisted data-frame part the client
+      // projection reads (same id discipline — replay-stable).
+      const { text: _prose, ...meta } = payload;
+      if (Object.keys(meta).length > 0) {
+        chunks.push({ type: "data-frame", id: `frame-${i}`, data: { kind, payload: meta } });
+      }
+      return chunks;
     }
 
     if (kind === "awaiting_user") {

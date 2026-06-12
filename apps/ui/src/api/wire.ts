@@ -132,6 +132,40 @@ export const IntakeScopeNoticeSchema = z.object({
 export type IntakeScopeNotice = z.infer<typeof IntakeScopeNoticeSchema>;
 
 // ---------------------------------------------------------------------------
+// Sessions — /api/sessions CRUD (sessions.ts SessionResponse). snake_case
+// responses; request bodies camelCase (CreateSessionBody/PatchSessionBody in
+// routes.ts). scope_notice is the PERSISTED intake notice for a forked session
+// — the rail hydrates pin + notice from the SAME GET /api/sessions/:id fetch.
+// ---------------------------------------------------------------------------
+
+export const SessionResponseSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  created_at: z.string(),
+  last_activity_at: z.string(),
+  pinned_profile_id: z.string().nullable(),
+  scope_notice: IntakeScopeNoticeSchema.nullable(),
+  archived: z.boolean(),
+});
+export type SessionResponse = z.infer<typeof SessionResponseSchema>;
+
+export const SessionListSchema = z.array(SessionResponseSchema);
+export type SessionList = z.infer<typeof SessionListSchema>;
+
+/** PATCH /api/sessions/:id body (camelCase; null-vs-omitted is load-bearing —
+ *  an omitted pin leaves it as-is, a present null/"" clears it). */
+export interface PatchSessionBody {
+  title?: string | null;
+  pinnedProfileId?: string | null;
+}
+
+/** POST /api/sessions body (camelCase). */
+export interface CreateSessionBody {
+  title?: string | null;
+  pinnedProfileId?: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Start ack — POST /api/skill-runs (201). routes.ts:204-208 returns
 //   { run_id, session_id: string|null, scope_notice: IntakeScopeNotice|null }.
 // (An earlier scaffold modelled only `run_id`; the server already emits
@@ -160,6 +194,10 @@ export interface StartRunBody {
   seed_fields?: Record<string, unknown> | null;
   session_id?: string | null;
   from_session_id?: string | null;
+  /** Per-skill start fields ride the same body (the server's StartBodySchema is
+   *  non-strict; the skill's RunDescriptor.buildInput validates its own slice —
+   *  e.g. dealer_geosearch's `search_profile_id`, the slash-args carrier). */
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------

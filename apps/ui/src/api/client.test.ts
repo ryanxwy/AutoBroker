@@ -188,6 +188,51 @@ describe("ApiClient decode — captured wire fixtures", () => {
   });
 });
 
+describe("ApiClient — sessions (pin + scope_notice in one fetch)", () => {
+  /** GET /api/sessions/:id → SessionResponse (sessions.ts toSessionResponse),
+   *  the persisted-notice shape off the fork integration test. */
+  const SESSION_FIXTURE = {
+    id: "sess-fork-1",
+    title: "New search_profile_intake",
+    created_at: "2026-06-12T00:00:00.000Z",
+    last_activity_at: "2026-06-12T00:00:01.000Z",
+    pinned_profile_id: null,
+    scope_notice: {
+      kind: "intake_scope_notice",
+      source_pinned_profile_id: "prof-existing",
+      forked_session_id: "sess-fork-1",
+      points: ["a", "b", "c"],
+    },
+    archived: false,
+  };
+
+  it("getSession decodes pin + persisted scope notice from the ONE fetch", async () => {
+    const { fetch, calls } = spyFetch(200, SESSION_FIXTURE);
+    const client = new ApiClient({ fetchImpl: fetch });
+    const s = await client.getSession("sess-fork-1");
+    expect(calls[0]!.url).toBe("/api/sessions/sess-fork-1");
+    expect(s.pinned_profile_id).toBeNull();
+    expect(s.scope_notice?.source_pinned_profile_id).toBe("prof-existing");
+  });
+
+  it("patchSession sends the camelCase pin body (null clears; omitted leaves)", async () => {
+    const { fetch, calls } = spyFetch(200, { ...SESSION_FIXTURE, pinned_profile_id: "prof-2" });
+    const client = new ApiClient({ fetchImpl: fetch });
+    const s = await client.patchSession("sess-fork-1", { pinnedProfileId: "prof-2" });
+    expect(calls[0]!.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ pinnedProfileId: "prof-2" });
+    expect(s.pinned_profile_id).toBe("prof-2");
+  });
+
+  it("listSessions hits /api/sessions (optional pin filter on the query)", async () => {
+    const { fetch, calls } = spyFetch(200, [SESSION_FIXTURE]);
+    const client = new ApiClient({ fetchImpl: fetch });
+    const list = await client.listSessions();
+    expect(calls[0]!.url).toBe("/api/sessions");
+    expect(list).toHaveLength(1);
+  });
+});
+
 describe("ApiClient error decode — error envelope → ApiError", () => {
   it("a 409 envelope decodes into a typed ApiError with code + envelope", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch(409, ERROR_ENVELOPE_FIXTURE) });

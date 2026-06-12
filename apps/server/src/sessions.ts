@@ -40,7 +40,36 @@ export interface SessionResponse {
   created_at: string;
   last_activity_at: string;
   pinned_profile_id: string | null;
+  /** The persisted intake scope notice for a forked session, or null. Returned
+   *  on GET /api/sessions/:id (and the list/PATCH projections) so the rail can
+   *  re-hydrate the notice together with the pin in ONE fetch. */
+  scope_notice: IntakeScopeNotice | null;
   archived: boolean;
+}
+
+/** Re-assemble the wire IntakeScopeNotice from the opaque record persisted in
+ *  thread metadata. The stored slice omits forked_session_id (the notice lives
+ *  ON the forked thread — the id is the thread's own); a malformed/absent
+ *  record projects to null. */
+function scopeNoticeOf(s: RailSession): IntakeScopeNotice | null {
+  const raw = s.scopeNotice;
+  if (raw === null) return null;
+  const source = raw["source_pinned_profile_id"];
+  const points = raw["points"];
+  if (
+    raw["kind"] !== "intake_scope_notice" ||
+    typeof source !== "string" ||
+    !Array.isArray(points) ||
+    points.length !== 3
+  ) {
+    return null;
+  }
+  return {
+    kind: "intake_scope_notice",
+    source_pinned_profile_id: source,
+    forked_session_id: s.threadId,
+    points: [String(points[0]), String(points[1]), String(points[2])],
+  };
 }
 
 /** Project a product RailSession onto the snake_case wire SessionResponse. The
@@ -54,6 +83,7 @@ export function toSessionResponse(s: RailSession): SessionResponse {
     created_at: s.createdAt,
     last_activity_at: s.lastActivityAt,
     pinned_profile_id: s.pinnedProfileId,
+    scope_notice: scopeNoticeOf(s),
     archived: false,
   };
 }
@@ -75,17 +105,18 @@ export interface IntakeScopeNotice {
   points: [string, string, string];
 }
 
-/** Build the three-point IntakeScopeNotice content. The pinned-profile label is
- *  left to the UI (it has the make/model); the backend carries the ids + the
- *  structural three points. */
-function buildIntakeScopeNotice(
-  sourcePinnedProfileId: string,
-  forkedSessionId: string,
-): IntakeScopeNotice {
+/** The metadata-persisted slice of the notice. forked_session_id is omitted —
+ *  the notice is stored ON the forked thread, so the id is derived from the
+ *  thread itself at projection time (no chicken-and-egg with thread creation). */
+type StoredScopeNotice = Omit<IntakeScopeNotice, "forked_session_id">;
+
+/** Build the three-point scope-notice content (the persisted slice). The
+ *  pinned-profile label is left to the UI (it has the make/model); the backend
+ *  carries the ids + the structural three points. */
+function buildStoredScopeNotice(sourcePinnedProfileId: string): StoredScopeNotice {
   return {
     kind: "intake_scope_notice",
     source_pinned_profile_id: sourcePinnedProfileId,
-    forked_session_id: forkedSessionId,
     points: [
       "Creating a NEW search profile — this does not modify the profile pinned to the current session.",
       "Pin and work on the new profile in this new session; intake auto-binds the pin when it lands at the new profile's workspace.",
@@ -177,14 +208,18 @@ export class SessionService {
     }
 
     // Always a FRESH unpinned session (pinnedProfileId: null) — intake creates a
-    // new profile and must not inherit the old pin.
+    // new profile and must not inherit the old pin. The notice (pinned source
+    // only) is PERSISTED in the forked thread's metadata so re-entering the
+    // session — including after a server restart — re-hydrates it.
+    const stored = sourcePin !== null ? buildStoredScopeNotice(sourcePin) : null;
     const forked = await this.store.createSession({
       title: `New ${INTAKE_SKILL_ID}`,
       pinnedProfileId: null,
+      ...(stored !== null ? { scopeNotice: stored as unknown as Record<string, unknown> } : {}),
     });
 
     const scopeNotice =
-      sourcePin !== null ? buildIntakeScopeNotice(sourcePin, forked.threadId) : null;
+      stored !== null ? { ...stored, forked_session_id: forked.threadId } : null;
     return { sessionId: forked.threadId, scopeNotice };
   }
 }

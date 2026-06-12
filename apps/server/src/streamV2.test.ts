@@ -30,6 +30,18 @@ describe("UiStreamTranslator — frame→chunk mapping", () => {
     ]);
   });
 
+  it("a text frame's metadata (resolution) rides an extra persisted data-frame", () => {
+    const t = new UiStreamTranslator();
+    const chunks = t.translate(ev("text", { text: "Registered 3 dealers.", resolution: "pinned" }));
+    expect(chunks).toEqual([
+      { type: "text-start", id: "text-0" },
+      { type: "text-delta", id: "text-0", delta: "Registered 3 dealers." },
+      { type: "text-end", id: "text-0" },
+      // the prose is NOT duplicated — only the metadata keys ride the frame.
+      { type: "data-frame", id: "frame-0", data: { kind: "text", payload: { resolution: "pinned" } } },
+    ]);
+  });
+
   it("awaiting_user → data-gate keyed by decision_id (reconcile-by-id, not append)", () => {
     const t = new UiStreamTranslator();
     const payload = {

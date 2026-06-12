@@ -15,9 +15,11 @@
  * onDecision dispatcher (the parent posts form-decision). Stable data-testid.
  */
 
+import type { ApiClient } from "../api/client.js";
 import { gateTrack } from "../gate/gateTrack.js";
 import { IntakeForm, type DecisionAction } from "../intake/IntakeForm.js";
-import type { AssistantTurnView } from "../chat/messageModel.js";
+import { geosearchStopCode, type AssistantTurnView } from "../chat/messageModel.js";
+import { StopCard } from "./StopCard.js";
 
 export interface AssistantTurnProps {
   turn: AssistantTurnView;
@@ -25,6 +27,12 @@ export interface AssistantTurnProps {
   submitting: boolean;
   /** Post a form-decision for this turn's run (accept|decline|cancel). */
   onDecision: (action: DecisionAction, content?: Record<string, unknown>) => void;
+  /** The typed client (the STOP picker fetches active profiles live). */
+  client: ApiClient;
+  /** Start a fresh intake (the 0-active STOP card's CTA). */
+  onStartIntake: () => void;
+  /** Re-launch this turn's skill pinned to the picked profile (a NEW run). */
+  onPickStopProfile: (profileId: string) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -37,7 +45,14 @@ const STATUS_LABEL: Record<string, string> = {
   aborted: "Stopped",
 };
 
-export function AssistantTurn({ turn, submitting, onDecision }: AssistantTurnProps): JSX.Element {
+export function AssistantTurn({
+  turn,
+  submitting,
+  onDecision,
+  client,
+  onStartIntake,
+  onPickStopProfile,
+}: AssistantTurnProps): JSX.Element {
   // The rail renders only rail-tracked gate kinds (gateTrack is the single
   // kind→track routing point; banner-tracked kinds render in GateBannerHost).
   const rawGateKind = turn.awaitingUser?.specInline?.["kind"];
@@ -45,6 +60,9 @@ export function AssistantTurn({ turn, submitting, onDecision }: AssistantTurnPro
     turn.awaitingUser !== null &&
     turn.status === "awaiting_approval" &&
     gateTrack(typeof rawGateKind === "string" ? rawGateKind : null) === "rail";
+  // Typed profile-resolution STOP (error name + code allowlist) → the card with
+  // the answerable affordance (intake CTA / pick-by-vehicle picker).
+  const stopCode = geosearchStopCode(turn);
 
   return (
     <div className="turn assistant" data-testid="assistant-turn" data-status={turn.status}>
@@ -79,6 +97,15 @@ export function AssistantTurn({ turn, submitting, onDecision }: AssistantTurnPro
         </div>
       )}
 
+      {stopCode !== null && (
+        <StopCard
+          code={stopCode}
+          client={client}
+          onStartIntake={onStartIntake}
+          onPickProfile={onPickStopProfile}
+        />
+      )}
+
       {/* ZONE 3 — MILESTONES (completed tools). */}
       {turn.milestones.length > 0 && (
         <details className="zone-milestones" data-testid="turn-zone-milestones">
@@ -100,10 +127,16 @@ export function AssistantTurn({ turn, submitting, onDecision }: AssistantTurnPro
         </div>
       )}
 
-      {/* ZONE 5 — META (status + driver). */}
+      {/* ZONE 5 — META (status + driver + resolution provenance). */}
       <div className="zone-meta" data-testid="turn-zone-meta">
         <span data-testid="turn-status">{STATUS_LABEL[turn.status] ?? turn.status}</span>
         {turn.driverKind !== null && <span> · {turn.driverKind}</span>}
+        {turn.resolution !== null && (
+          <span data-testid="turn-resolution" data-resolution={turn.resolution}>
+            {" "}
+            · {turn.resolution === "pinned" ? "pinned profile" : "newest active profile (inferred)"}
+          </span>
+        )}
       </div>
     </div>
   );

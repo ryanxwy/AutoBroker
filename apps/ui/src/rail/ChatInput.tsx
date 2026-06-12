@@ -1,9 +1,12 @@
 /**
  * ChatInput — compose + slash parse + autocomplete. On
  * submit it parses the input: a `ready` slash result launches that skill direct;
- * anything else (typing/unknown/non-slash prose) launches freeform. A `typing`
- * result renders the up-to-8 skill autocomplete dropdown (Tab completes the first
- * candidate). The parent owns the actual launch (onSlash / onFreeform).
+ * non-slash prose launches freeform. A SLASH-PREFIXED input that does NOT
+ * resolve to a known skill (unknown_skill / still-typing) NEVER falls through
+ * to freeform (which would route it into intake) — it renders an inline hint
+ * and keeps the text for correction. A `typing` result renders the up-to-8
+ * skill autocomplete dropdown (Tab completes the first candidate). The parent
+ * owns the actual launch (onSlash / onFreeform).
  */
 
 import { useState } from "react";
@@ -19,6 +22,7 @@ export interface ChatInputProps {
 
 export function ChatInput({ knownSkills, disabled, onSlash, onFreeform }: ChatInputProps): JSX.Element {
   const [text, setText] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
   const parsed: SlashResult = parseSlashCommand(text, knownSkills);
   const candidates = parsed.kind === "typing" ? parsed.candidates : [];
 
@@ -27,17 +31,34 @@ export function ChatInput({ knownSkills, disabled, onSlash, onFreeform }: ChatIn
     const r = parseSlashCommand(text, knownSkills);
     if (r.kind === "ready") {
       onSlash(r.skill, r.args, r.note);
+    } else if (text.trim().startsWith("/")) {
+      // An unresolved slash never becomes freeform→intake — hint and keep the
+      // text so the user can fix the command.
+      const unknown = r.kind === "unknown_skill" ? r.skill : r.kind === "typing" ? r.partial : "";
+      setHint(
+        `Unknown command /${unknown} — known commands: ${knownSkills.map((s) => `/${s}`).join(", ")}`,
+      );
+      return;
     } else {
       onFreeform(text);
     }
+    setHint(null);
     setText("");
   };
 
-  const complete = (skill: string): void => setText(`/${skill} `);
+  const complete = (skill: string): void => {
+    setHint(null);
+    setText(`/${skill} `);
+  };
 
   return (
     <div className="chat-input" data-testid="chat-input">
       <div style={{ flex: 1, position: "relative" }}>
+        {hint !== null && (
+          <p className="muted" data-testid="slash-unknown-hint" role="alert" style={{ margin: "0 0 4px" }}>
+            {hint}
+          </p>
+        )}
         <textarea
           data-testid="chat-input-textarea"
           rows={2}

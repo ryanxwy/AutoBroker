@@ -139,5 +139,6 @@ export {
   RailSessionStore,
   RAIL_RESOURCE_ID,
   PIN_METADATA_KEY,
+  SCOPE_NOTICE_METADATA_KEY,
   type RailSession,
 } from "./railMemory.js";

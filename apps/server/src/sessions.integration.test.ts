@@ -326,6 +326,47 @@ describe("intake fork from pinned session", () => {
     expect(runStatus.json<{ session_id: string | null }>().session_id).toBe(body.session_id);
   });
 
+  it("the notice PERSISTS on the forked session (GET re-hydrates; PATCH pin never clobbers)", async () => {
+    const pinned = await createSession({ title: "src", pinnedProfileId: "prof-persist" });
+    const start = await server.app.inject({
+      method: "POST",
+      url: "/api/skill-runs",
+      payload: { skill: "search_profile_intake", input_mode: "slash", from_session_id: pinned.id },
+    });
+    const { session_id } = start.json<{ session_id: string }>();
+
+    interface NoticeResp extends SessionResp {
+      scope_notice: {
+        kind: string;
+        source_pinned_profile_id: string;
+        forked_session_id: string;
+        points: string[];
+      } | null;
+    }
+
+    // GET /api/sessions/:id returns the persisted notice — the SAME fetch the
+    // rail hydrates pin + notice from (one fetch, two facts).
+    const got = await server.app.inject({ method: "GET", url: `/api/sessions/${session_id}` });
+    const sess = got.json<NoticeResp>();
+    expect(sess.scope_notice).not.toBeNull();
+    expect(sess.scope_notice!.kind).toBe("intake_scope_notice");
+    expect(sess.scope_notice!.source_pinned_profile_id).toBe("prof-persist");
+    expect(sess.scope_notice!.forked_session_id).toBe(session_id);
+    expect(sess.scope_notice!.points).toHaveLength(3);
+
+    // A later pin PATCH (metadata shallow-merge sends ONLY the pin key) keeps
+    // the notice intact — the merge never clobbers sibling metadata.
+    const patched = await server.app.inject({
+      method: "PATCH",
+      url: `/api/sessions/${session_id}`,
+      payload: { pinnedProfileId: "prof-new" },
+    });
+    const after = patched.json<NoticeResp>();
+    expect(after.pinned_profile_id).toBe("prof-new");
+    expect(after.scope_notice).not.toBeNull();
+    expect(after.scope_notice!.source_pinned_profile_id).toBe("prof-persist");
+  });
+
   it("UNPINNED source → forks a fresh unpinned session, NO scope notice", async () => {
     const unpinned = await createSession({ title: "blank", pinnedProfileId: null });
 

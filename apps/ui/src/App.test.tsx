@@ -69,6 +69,19 @@ function mockFetch(opts: { posted?: Array<Record<string, unknown>>; profiles?: u
       ]);
     if (url.includes("/dealers")) return json([]);
     if (url.includes("/api/profiles")) return json(opts.profiles ?? []);
+    if (url.includes("/api/sessions/")) {
+      const id = url.slice(url.lastIndexOf("/") + 1);
+      return json({
+        id,
+        title: null,
+        created_at: "2026-06-12T00:00:00Z",
+        last_activity_at: "2026-06-12T00:00:00Z",
+        pinned_profile_id: null,
+        scope_notice: null,
+        archived: false,
+      });
+    }
+    if (url.endsWith("/api/sessions")) return json([]);
     if (url.endsWith("/api/skill-runs") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       opts.posted?.push(body);
@@ -167,6 +180,42 @@ describe("App — non-intake slash starts THAT skill", () => {
     expect(window.location.pathname).toBe("/runs/run-geo");
     // The typed slash renders as the user turn in the rail.
     expect(r.get("user-turn").textContent).toBe("/dealer_geosearch");
+    r.unmount();
+  });
+
+  it("slash key=value args spread into the start body (parsed args reach the POST)", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted }) });
+    const r = render(<App client={client} />);
+    await flush();
+
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/dealer_geosearch search_profile_id=prof-7");
+    click(r.get("chat-send"));
+    await flush();
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!["skill"]).toBe("dealer_geosearch");
+    expect(posted[0]!["search_profile_id"]).toBe("prof-7");
+    r.unmount();
+  });
+
+  it("an unknown slash renders an inline hint and NEVER falls through to freeform→intake", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ posted }) });
+    const r = render(<App client={client} />);
+    await flush();
+
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/definitely_not_a_skill now");
+    click(r.get("chat-send"));
+    await flush();
+
+    expect(posted).toHaveLength(0); // no start fired — not intake, not anything.
+    const hint = r.get("slash-unknown-hint");
+    expect(hint.textContent).toContain("Unknown command /definitely_not_a_skill");
+    // The text stays for correction.
+    expect((r.get("chat-input-textarea") as HTMLTextAreaElement).value).toContain(
+      "/definitely_not_a_skill",
+    );
     r.unmount();
   });
 

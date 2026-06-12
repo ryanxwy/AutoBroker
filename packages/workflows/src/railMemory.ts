@@ -62,6 +62,13 @@ export const RAIL_RESOURCE_ID = "local-user" as const;
  *  `sessions.pinned_profile_id` → thread metadata `pinnedProfileId`). */
 export const PIN_METADATA_KEY = "pinnedProfileId" as const;
 
+/** The thread-metadata key carrying the intake scope notice for a forked
+ *  session. Stored opaquely (the app layer owns the notice shape); persists in
+ *  mastra.db so re-entering the session after a restart re-hydrates the notice.
+ *  updateThread shallow-merges metadata, so a later pin PATCH (which sends only
+ *  the pin key) never clobbers this key. */
+export const SCOPE_NOTICE_METADATA_KEY = "scopeNotice" as const;
+
 /**
  * A product-shaped session, projected from a Mastra Memory thread. The route
  * layer maps this to the snake_case SessionResponse wire shape; this facade
@@ -75,6 +82,9 @@ export interface RailSession {
   title: string | null;
   /** The pinned search profile id from thread metadata, or null (unpinned). */
   pinnedProfileId: string | null;
+  /** The intake scope notice stored on a forked session, or null. Opaque to
+   *  this layer — the app projects it onto its wire shape. */
+  scopeNotice: Record<string, unknown> | null;
   /** Thread creation timestamp (ISO-8601 UTC). */
   createdAt: string;
   /** Thread last-activity timestamp (ISO-8601 UTC) — list sort key DESC. */
@@ -106,12 +116,24 @@ interface ThreadLike {
   updatedAt: Date | string;
 }
 
+/** Read the stored scope notice out of thread metadata (object → as-is). */
+function scopeNoticeFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  const raw = metadata?.[SCOPE_NOTICE_METADATA_KEY];
+  if (raw === null || raw === undefined || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  return raw as Record<string, unknown>;
+}
+
 /** Project a Mastra thread onto the product RailSession shape. */
 function projectThread(thread: ThreadLike): RailSession {
   return {
     threadId: thread.id,
     title: thread.title ?? null,
     pinnedProfileId: pinFromMetadata(thread.metadata),
+    scopeNotice: scopeNoticeFromMetadata(thread.metadata),
     createdAt: isoOf(thread.createdAt),
     lastActivityAt: isoOf(thread.updatedAt),
   };
@@ -184,16 +206,22 @@ export class RailSessionStore {
   /**
    * Create a new session (Mastra thread) for the single local user. `pinned
    * ProfileId` (when given) lands in thread metadata; null/absent → unpinned.
-   * Intake forks an unpinned session by passing pinnedProfileId: null.
+   * Intake forks an unpinned session by passing pinnedProfileId: null, plus a
+   * `scopeNotice` when the fork came from a pinned source — the notice persists
+   * in thread metadata (createThread accepts arbitrary metadata) so it survives
+   * a server restart and is recovered by re-entering the session.
    */
   async createSession(args: {
     title?: string | null;
     pinnedProfileId?: string | null;
+    scopeNotice?: Record<string, unknown> | null;
   }): Promise<RailSession> {
-    const metadata: Record<string, unknown> =
-      args.pinnedProfileId != null && args.pinnedProfileId.length > 0
+    const metadata: Record<string, unknown> = {
+      ...(args.pinnedProfileId != null && args.pinnedProfileId.length > 0
         ? { [PIN_METADATA_KEY]: args.pinnedProfileId }
-        : {};
+        : {}),
+      ...(args.scopeNotice != null ? { [SCOPE_NOTICE_METADATA_KEY]: args.scopeNotice } : {}),
+    };
     const thread = await this.memory.createThread({
       resourceId: RAIL_RESOURCE_ID,
       ...(args.title != null ? { title: args.title } : {}),
