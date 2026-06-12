@@ -177,6 +177,26 @@ export {
   type SrpWalkResult,
 } from "./inventorySiteScan.js";
 
+// The inventory_link_scan skill workflow contracts (skill #4 — the
+// link-driven sibling of inventory_site_scan, same batch_review card + resume
+// wire). The flat workflow steps land with the step-③ scaffold.
+export {
+  InventoryLinkScanStopError,
+  InventoryLinkScanCaptureLostError,
+  LINK_SCAN_REVIEW_QUESTION,
+  LINK_SCAN_SKIP_REASONS,
+  LinkScanReviewSuspendSchema,
+  LinkScanReviewResumeSchema,
+  LinkScanInputSchema,
+  LinkScanOutputSchema,
+  type InventoryLinkScanStopCode,
+  type LinkScanSkipReason,
+  type LinkScanReviewSuspend,
+  type LinkScanReviewResume,
+  type LinkScanInput,
+  type LinkScanOutput,
+} from "./inventoryLinkScan.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {
