@@ -27,6 +27,7 @@
 import { z } from "zod";
 
 import {
+  DealerListSchema,
   ErrorEnvelopeSchema,
   FormDecisionAckSchema,
   ModeSchema,
@@ -35,6 +36,7 @@ import {
   SkillListSchema,
   SkillRunSummarySchema,
   StartAckSchema,
+  type DealerList,
   type FormDecisionAck,
   type FormDecisionBody,
   type Mode,
@@ -169,6 +171,15 @@ export class ApiClient {
   async getProfile(id: string): Promise<ProfileRow> {
     const res = await this.fetchImpl(this.url(`/api/profiles/${encodeURIComponent(id)}`));
     return decode(res, ProfileRowSchema);
+  }
+
+  /** GET /api/profiles/:id/dealers → the dealer rows bound to one profile,
+   *  nearest-first (read-only projection; 404 for a missing profile). */
+  async listProfileDealers(id: string): Promise<DealerList> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/dealers`),
+    );
+    return decode(res, DealerListSchema);
   }
 
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */

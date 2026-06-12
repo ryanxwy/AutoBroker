@@ -85,7 +85,7 @@ id = "geosearch_button"
 skill = "dealer_geosearch"
 purpose = "Launch geosearch from the Home pipeline ledger's real Run button."
 gate_policy = "approve_safe"
-launch = "home_button"
+launch = "skills_popover"
 
 [[steps.anchors]]
 kind = "run_status"

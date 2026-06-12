@@ -182,9 +182,9 @@ describe("case loader", () => {
     expect(cellIdFor(c, geo)).toBe("live/dealer_geosearch/deepseek/A/slash");
   });
 
-  it("loads the geosearch ui_button case (step 2 launches from the Home Run button)", () => {
+  it("loads the geosearch ui_button case (step 2 launches from the Skills popover)", () => {
     const c = loadCase(join(CASES, "dealer_geosearch.ui_button.toml"));
-    expect(c.steps[1]!.launch).toBe("home_button");
+    expect(c.steps[1]!.launch).toBe("skills_popover");
     expect(c.steps[1]!.anchors.find((a) => a.kind === "cost_and_time")).toMatchObject({ optional: true });
   });
 

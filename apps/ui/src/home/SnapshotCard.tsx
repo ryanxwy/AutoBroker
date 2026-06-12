@@ -1,7 +1,7 @@
 /**
- * SnapshotCard — the active-search snapshot. Shows
+ * SnapshotCard — the search-file snapshot used on the profile route. Shows
  * Year/Make/Model/trim · location · Dealers/Threads/Best-OTD + a "View search
- * file" link. Also reused on the profile route. It consumes the dealer-SAFE
+ * file" link. It consumes the dealer-SAFE
  * ProfileSnapshot — which has NO budget accessor — so budget can never leak into
  * this summary surface (budget red-line: budget_max is internal-only, never
  * dealer-facing — see CLAUDE.md).
@@ -32,19 +32,6 @@ export function SnapshotCard({ snapshot }: { snapshot: ProfileSnapshot }): JSX.E
           View search file →
         </Link>
       )}
-    </section>
-  );
-}
-
-/** Shown when there is NO active profile yet (first-file preview). */
-export function FirstFilePreviewCard(): JSX.Element {
-  return (
-    <section className="card" data-testid="first-file-preview">
-      <h3>Your search file</h3>
-      <p className="muted">
-        Start a search and AutoBroker builds a living file here — the vehicle, your
-        location, the dealers it contacts, and the best out-the-door price found.
-      </p>
     </section>
   );
 }

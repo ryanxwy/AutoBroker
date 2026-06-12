@@ -704,8 +704,8 @@ function geosearchEmptyResultWaiver(
 /**
  * The UI-lane case runner: ONE server host + ONE driver browser session for the
  * WHOLE case (the non-tech-user journey), every step started by a REAL user
- * action (chat-rail slash/freeform text or the Home Run button — never POST
- * /api/skill-runs) and resumed by REAL clicks. Per step it keeps the API lane's
+ * action (chat-rail slash/freeform text or the Skills popover Run button —
+ * never POST /api/skill-runs) and resumed by REAL clicks. Per step it keeps the API lane's
  * full evidence spine: snapshot-before → drive → SSE drain (read-only evidence)
  * → snapshot-after → 6+1 anchors → S1/S2/S3 cross-check → verdict.json, with
  * the verdict's ui_checks now carrying the real DOM checks too.
@@ -761,8 +761,8 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       const beforeIds = await readProfileIds(host.apiBase);
 
       // ---- start the run BY USER ACTION -----------------------------------
-      if (step.launch === "home_button") {
-        await driver.clickHomeRunSkill(step.skill);
+      if (step.launch === "skills_popover") {
+        await driver.launchSkillFromPopover(step.skill);
       } else if (step.launch === "chat_freeform") {
         const prompt = step.inputInline?.["prompt"];
         if (typeof prompt !== "string" || prompt.trim() === "") {

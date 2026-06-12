@@ -2,10 +2,12 @@
 /**
  * App.test — the shell integration path. Drives the
  * real App with an injected ApiClient (mock fetch) + a mock EventSource so the
- * full chain runs without a network: home renders → "Start a new search" POSTs
- * start → the rail binds the run → the SSE awaiting_user frame surfaces the intake
- * form in the gate zone. Also asserts refresh recovery: mounting at /runs/:id with
- * no in-store turn re-binds + re-subscribes (server replays).
+ * full chain runs without a network: the canvas empty state renders → "Start a
+ * new search" POSTs start → the rail binds the run → the SSE awaiting_user frame
+ * surfaces the intake form in the gate zone (and the empty gate-banner host
+ * precedes app-main in document order). Also: launching a skill from the Skills
+ * popover (open → enabled Run button → POST), and refresh recovery — mounting at
+ * /runs/:id with no in-store turn re-binds + re-subscribes (server replays).
  */
 
 import { act } from "react";
@@ -62,6 +64,7 @@ function mockFetch(opts: { posted?: Array<Record<string, unknown>>; profiles?: u
         { name: "search_profile_intake", version: "1", summary: "Create a search", inputs: ["freeform"], outputs: "profile", sensitive: false, retries: 1 },
         { name: "dealer_geosearch", version: "1", summary: "Find dealers", inputs: ["search_profile_id"], outputs: "dealers", sensitive: false, retries: 1 },
       ]);
+    if (url.includes("/dealers")) return json([]);
     if (url.includes("/api/profiles")) return json(opts.profiles ?? []);
     if (url.endsWith("/api/skill-runs") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -96,10 +99,15 @@ describe("App — launch → rail bind → gate render", () => {
     const r = render(<App client={client} />);
     await flush(); // resolve mode/skills/profiles.
 
-    // Home renders with the hero CTA.
-    expect(r.query("hero-start-search")).not.toBeNull();
+    // The canvas empty state renders with the start CTA, and the (empty)
+    // gate-banner host precedes app-main in document order (the system-layer
+    // mount position that holds banner-gate-before-prose).
+    expect(r.query("canvas-start-search")).not.toBeNull();
+    const banner = r.get("gate-banner");
+    const main = r.get("app-main");
+    expect(banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    click(r.get("hero-start-search"));
+    click(r.get("canvas-start-search"));
     await flush(); // resolve the POST start + navigate.
 
     // Navigated to the run view; the rail bound the run.
@@ -161,8 +169,8 @@ describe("App — non-intake slash starts THAT skill", () => {
   });
 });
 
-describe("App — Home Run button launches implemented non-intake skills", () => {
-  it("the dealer_geosearch ledger Run button starts a generic slash run", async () => {
+describe("App — Skills popover launches implemented non-intake skills", () => {
+  it("open the popover → the enabled dealer_geosearch Run button starts a generic slash run", async () => {
     const posted: Array<Record<string, unknown>> = [];
     // One active profile so the pin-gated Run button is enabled.
     const profiles = [{ search_profile_id: "prof-1", make: "Hyundai", model: "Tucson Hybrid", year: 2026 }];
@@ -170,11 +178,20 @@ describe("App — Home Run button launches implemented non-intake skills", () =>
     const r = render(<App client={client} />);
     await flush();
 
+    // The popover-open step: trigger visible → click → panel visible (the
+    // popover refetches profiles+skills on every open).
+    expect(r.query("skills-popover")).toBeNull();
+    click(r.get("topbar-skills"));
+    await flush(); // resolve the on-open refetch.
+    expect(r.query("skills-popover")).not.toBeNull();
+
     const runBtn = r.get("ledger-run-dealer_geosearch") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(false);
     click(runBtn);
     await flush();
 
+    // The popover closed on Run, the POST fired, and the SPA navigated.
+    expect(r.query("skills-popover")).toBeNull();
     expect(posted).toHaveLength(1);
     expect(posted[0]!["skill"]).toBe("dealer_geosearch");
     expect(window.location.pathname).toBe("/runs/run-geo");

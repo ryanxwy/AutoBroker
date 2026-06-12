@@ -198,6 +198,19 @@ export const ProfileListSchema = z.array(ProfileRowSchema);
 export type ProfileList = z.infer<typeof ProfileListSchema>;
 
 // ---------------------------------------------------------------------------
+// Dealers — GET /api/profiles/:id/dealers: snake_case rows off the dealers
+// table joined through profile_dealers (candidate_status/bound_at carry the
+// per-profile binding state). Open records like the profile rows — the UI
+// reads the named columns it knows.
+// ---------------------------------------------------------------------------
+
+export const DealerRowSchema = z.record(z.string(), z.unknown());
+export type DealerRow = z.infer<typeof DealerRowSchema>;
+
+export const DealerListSchema = z.array(DealerRowSchema);
+export type DealerList = z.infer<typeof DealerListSchema>;
+
+// ---------------------------------------------------------------------------
 // Skills manifest — GET /api/skills. routes.ts:78-86 (SKILL_MANIFEST), returned
 // as a single-element array (routes.ts:279).
 // ---------------------------------------------------------------------------

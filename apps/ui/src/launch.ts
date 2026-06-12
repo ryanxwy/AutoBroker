@@ -1,7 +1,7 @@
 /**
- * launch — the intake launch orchestration. Four
- * home/rail entries (Hero CTA, Searches "+ New search", Pipeline Ledger Run,
- * WelcomeWizard) all funnel through `launchIntake`, which forces a fresh unpinned
+ * launch — the intake launch orchestration. The intake entries (the canvas
+ * empty-state CTA, the Searches popover "+ New search", and the Skills popover
+ * Run on intake) all funnel through `launchIntake`, which forces a fresh unpinned
  * session (never inherit a stale pin) and POSTs the start. Two start surfaces:
  *
  *   - slash  (`/search_profile_intake`) → input_mode 'slash', form direct (no

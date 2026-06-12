@@ -70,8 +70,8 @@ export type RawResume = z.infer<typeof RawResumeSchema>;
 const RESUME_STRUCTURAL_KEYS = new Set(["on", "action", "content_from", "content"]);
 
 /** How the UI lane starts a step: chat-rail slash text, chat-rail freeform
- *  prose, or the Home ledger Run button. Defaults from narrative.input_mode. */
-const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "home_button"]);
+ *  prose, or the Skills popover Run button. Defaults from narrative.input_mode. */
+const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "skills_popover"]);
 
 const RawStepSchema = z.object({
   id: z.string(),
@@ -115,7 +115,7 @@ export interface CaseResume {
 }
 
 /** The UI-lane launch surface for a step. */
-export type StepLaunch = "chat_slash" | "chat_freeform" | "home_button";
+export type StepLaunch = "chat_slash" | "chat_freeform" | "skills_popover";
 
 export interface CaseStep {
   id: string;

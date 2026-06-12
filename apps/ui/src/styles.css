@@ -91,15 +91,55 @@ input[aria-invalid="true"] { border-color: var(--danger); }
   border-left: 1px solid var(--border); background: var(--surface);
   display: flex; flex-direction: column; min-height: 0;
 }
+/* conversation mode: the rail takes the space, the canvas pane shrinks. */
+.app-body[data-layout="conversation"] .app-main { flex: 0 0 320px; min-width: 320px; }
+.app-body[data-layout="conversation"] .chat-rail { flex: 1; width: auto; }
 
 .backend-banner {
   background: var(--danger-bg); color: var(--text);
   border-bottom: 1px solid var(--danger); padding: 8px 16px; font-size: 13px;
 }
 
-/* ---- home -------------------------------------------------------------- */
-.hero { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 24px; }
-@media (min-width: 768px) { .hero { grid-template-columns: 1.2fr 1fr; } }
+/* ---- topbar popovers / mode switch / diagnostics ----------------------- */
+.popover-wrap { position: relative; }
+.popover-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+  min-width: 320px; max-height: 70vh; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.popover-row { padding: 6px 0; border-top: 1px solid var(--border); }
+.skills-group-title {
+  margin: 8px 0 2px; color: var(--text-muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.skills-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.skills-row .skills-row-text { flex: 1; }
+
+.modeswitch { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.modeswitch button { border: 0; border-radius: 0; font-size: 12px; background: transparent; }
+.modeswitch button.on { background: var(--accent-strong); color: #fff; }
+
+.diagnostics { position: relative; font-size: 12px; }
+.diagnostics summary {
+  cursor: pointer; color: var(--text-muted); list-style: none;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+}
+.diagnostics .diag-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 280px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px;
+}
+.diagnostics dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+.diagnostics dd { margin: 0; word-break: break-all; }
+
+/* ---- gate banner (system layer above the workbench/rail split) --------- */
+.gate-banner { padding: 0 16px; }
+.gate-banner:empty { display: none; }
+.gate-banner .gate-card { margin: 10px 0; }
+
+/* ---- canvas (workbench main pane) -------------------------------------- */
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px;
@@ -107,21 +147,27 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .snapshot-card dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0; }
 .snapshot-card dt { color: var(--text-muted); }
 
-.what-next { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-
-.ledger-row {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  margin-bottom: 8px; background: var(--surface);
+.canvas-runline code { background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+.canvas-empty ol { margin: 8px 0 16px; padding-left: 20px; }
+.profile-card { margin-bottom: 16px; }
+.chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.chip-row-label { color: var(--text-muted); font-size: 12px; min-width: 86px; }
+.chip-note { font-size: 11px; }
+.mini-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px; font-size: 12px;
 }
-.ledger-row summary { padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
-.ledger-row .stage-num {
-  width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2);
-  display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
-}
-.ledger-row .row-body { padding: 0 14px 12px 46px; color: var(--text-muted); }
-
-.wizard { border: 1px dashed var(--accent); }
-.wizard ol { margin: 8px 0 0; padding-left: 20px; }
+.mini-chip.locked { border-style: dashed; color: var(--text-muted); }
+.mini-chip.budget-lock { border-color: var(--warn); color: var(--warn); }
+.tile-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-top: 8px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.tile .t-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.tile .t-addr { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+.tile .t-status { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+.feed { margin-top: 16px; }
+.feed ul { margin: 6px 0; padding-left: 18px; }
+.feed .feed-done::marker { color: var(--ok); }
 
 /* ---- chat rail turns -------------------------------------------------- */
 .rail-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }

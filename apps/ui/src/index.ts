@@ -61,12 +61,15 @@ export {
 
 // --- gate + rail components -----------------------------------------------
 export { ApprovalPrompt } from "./gate/ApprovalPrompt.js";
+export { GateBannerHost } from "./gate/GateBannerHost.js";
+export { gateTrack } from "./gate/gateTrack.js";
+export type { GateTrack } from "./gate/gateTrack.js";
 export { AssistantTurn as AssistantTurnView } from "./rail/AssistantTurn.js";
 export { IntakeScopeNoticeCard } from "./rail/IntakeScopeNotice.js";
 export { parseSlashCommand } from "./rail/slashCommand.js";
 
-// --- home --------------------------------------------------------------
-export { runDisabled } from "./home/PipelineLedger.js";
+// --- workbench projections --------------------------------------------------
+export { groupSkillsByReadiness } from "./shell/SkillsPopover.js";
 export { toSnapshot, vehicleLabel, formatLocation, SUMMARY_EXCLUDED_KEYS } from "./home/profileView.js";
 
 // --- launch ----------------------------------------------------------------

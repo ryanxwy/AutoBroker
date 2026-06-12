@@ -15,6 +15,7 @@
  * onDecision dispatcher (the parent posts form-decision). Stable data-testid.
  */
 
+import { gateTrack } from "../gate/gateTrack.js";
 import { IntakeForm, type DecisionAction } from "../intake/IntakeForm.js";
 import type { AssistantTurn as AssistantTurnState } from "../store/useChat.js";
 
@@ -37,7 +38,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function AssistantTurn({ turn, submitting, onDecision }: AssistantTurnProps): JSX.Element {
-  const showGate = turn.awaitingUser !== null && turn.status === "awaiting_approval";
+  // The rail renders only rail-tracked gate kinds (gateTrack is the single
+  // kind→track routing point; banner-tracked kinds render in GateBannerHost).
+  const rawGateKind = turn.awaitingUser?.specInline?.["kind"];
+  const showGate =
+    turn.awaitingUser !== null &&
+    turn.status === "awaiting_approval" &&
+    gateTrack(typeof rawGateKind === "string" ? rawGateKind : null) === "rail";
 
   return (
     <div className="turn assistant" data-testid="assistant-turn" data-status={turn.status}>

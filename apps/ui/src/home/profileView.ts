@@ -1,7 +1,7 @@
 /**
  * profileView — read the named columns the home/snapshot surfaces need off an
  * open snake_case ProfileRow (wire.ts ProfileRowSchema is a passthrough record;
- * routes.ts:262-275). The SnapshotCard / WhatHappensNext consume these.
+ * routes.ts:262-275). The SnapshotCard / Canvas profile card consume these.
  *
  * BUDGET INVARIANT (budget red-line, see CLAUDE.md): budget_max is INTERNAL_ONLY —
  * it is DELIBERATELY not read here. This module is the only profile-projection
@@ -31,6 +31,9 @@ export interface ProfileSnapshot {
   model: string | null;
   trim: string | null;
   location: string | null;
+  searchRadiusMiles: number | null;
+  financingPreference: string | null;
+  phonePolicy: string | null;
   dealerCount: number | null;
   threadCount: number | null;
   bestOtd: number | null;
@@ -47,6 +50,9 @@ export function toSnapshot(row: ProfileRow): ProfileSnapshot {
     model: str(row, "model"),
     trim: str(row, "trim"),
     location: str(row, "location_query") ?? str(row, "location"),
+    searchRadiusMiles: num(row, "search_radius_miles"),
+    financingPreference: str(row, "financing_preference"),
+    phonePolicy: str(row, "phone_policy"),
     dealerCount: num(row, "dealer_count"),
     threadCount: num(row, "thread_count"),
     bestOtd: num(row, "best_otd"),

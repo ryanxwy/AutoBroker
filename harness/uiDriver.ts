@@ -5,7 +5,8 @@
  * REAL built dashboard served by the SUT, and exposes the user-action verbs the
  * case resume scripts need: type into the chat rail, fill the rendered intake
  * form by its real widgets, click the real Submit/Cancel/override buttons,
- * click the Home ledger Run button, and wait for the turn's terminal rendering.
+ * launch a skill from the top-bar Skills popover's Run button, and wait for the
+ * turn's terminal rendering.
  *
  * Every verb acts through the DOM exactly as a non-technical user would —
  * NEVER through POST /api/skill-runs or /form-decision (the API lane owns
@@ -17,8 +18,10 @@
  *
  * Selector surface: the committed stable data-testid set only
  * (chat-input-textarea / chat-send / intake-form / intake-field-<name> /
- * intake-submit / intake-decline / gate-force-override-* / ledger-run-<skill>
- * / assistant-turn[data-status] / turn-zone-* / turn-declined / turn-error).
+ * intake-submit / intake-decline / gate-force-override-* / topbar-skills /
+ * skills-popover / ledger-run-<skill> (the popover row's Run button) /
+ * gate-banner / assistant-turn[data-status] / turn-zone-* / turn-declined /
+ * turn-error).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
  * imports `playwright` to drive the test browser (the dependency-cruiser rule
@@ -230,14 +233,21 @@ export class UiDriver {
     await this.page.click(tid("gate-force-override-decline"));
   }
 
-  /** Return to Home the way a user would (browser Back; URL fallback) and click
-   *  the ledger row's real Run button for the skill (waits for the pin gate to
-   *  enable it — Home refetches profiles on mount). */
-  async clickHomeRunSkill(skillId: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
-    await this.page.goBack().catch(() => {});
-    if (new URL(this.page.url()).pathname !== "/") {
-      await this.page.goto(this.baseUrl, { waitUntil: "domcontentloaded" });
-    }
+  /** Open the top-bar Skills popover: wait for the trigger to be visible, click
+   *  it, wait for the panel. The popover refetches profiles+skills on every
+   *  open, so a just-created profile flips the pin-gated Run buttons enabled
+   *  without any page navigation. */
+  async openSkillsPopover(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("topbar-skills"), { timeout: timeoutMs });
+    await this.page.click(tid("topbar-skills"));
+    await this.page.waitForSelector(tid("skills-popover"), { timeout: timeoutMs });
+  }
+
+  /** Launch a skill from the Skills popover's real Run button (waits for the
+   *  pin gate to enable it — `:not([disabled])` on a real <button>). No
+   *  return-to-Home step: the popover is reachable from every route. */
+  async launchSkillFromPopover(skillId: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.openSkillsPopover(timeoutMs);
     const sel = `${tid(`ledger-run-${skillId}`)}:not([disabled])`;
     await this.page.waitForSelector(sel, { timeout: timeoutMs });
     await this.page.click(sel);
@@ -310,6 +320,36 @@ export class UiDriver {
       ok: observed.gate && observed.gateBeforeMeta && observed.gateBeforeText !== false,
     });
     await this.screenshot("gate-before-prose");
+  }
+
+  /** banner_gate_before_prose: the app-level gate banner host PRECEDES the main
+   *  workbench region and any prose zone in document order
+   *  (compareDocumentPosition — the same mechanism as the rail-track check;
+   *  the banner track holds gate-before-prose by mount position, the rail by
+   *  zone order). The banner host never reuses turn-zone-gate. */
+  async checkBannerGateBeforeProse(): Promise<void> {
+    const observed = (await this.page.evaluate(
+      `(() => {
+        const banner = document.querySelector('[data-testid="gate-banner"]');
+        const main = document.querySelector('[data-testid="app-main"]');
+        const text = document.querySelector('[data-testid="turn-zone-text"]');
+        if (banner === null || main === null) return { banner: banner !== null, bannerBeforeMain: false, bannerBeforeText: null };
+        const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+        return {
+          banner: true,
+          bannerBeforeMain: Boolean(banner.compareDocumentPosition(main) & FOLLOWING),
+          bannerBeforeText: text === null ? null : Boolean(banner.compareDocumentPosition(text) & FOLLOWING),
+        };
+      })()`,
+    )) as { banner: boolean; bannerBeforeMain: boolean; bannerBeforeText: boolean | null };
+    this.record({
+      surface: "dom:app-shell",
+      selector: `${tid("gate-banner")} vs ${tid("app-main")}/${tid("turn-zone-text")}`,
+      expected: "gate banner host precedes app-main and any prose zone in DOM order",
+      observed: `banner=${observed.banner} bannerBeforeMain=${observed.bannerBeforeMain} bannerBeforeText=${String(observed.bannerBeforeText)}`,
+      ok: observed.banner && observed.bannerBeforeMain && observed.bannerBeforeText !== false,
+    });
+    await this.screenshot("banner-gate-before-prose");
   }
 
   /** form_seeded (freeform): at least one field widget VISIBLY carries a
