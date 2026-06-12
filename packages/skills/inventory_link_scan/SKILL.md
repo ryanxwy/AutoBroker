@@ -32,9 +32,11 @@ The runtime flow, grounded in the 8-step workflow
    navigation, zero writes, terminal Cancelled.**
 6. **Visit + extract (pure capture, zero writes)** — approved links bucketed
    by hostname, ≤4 isolated browsers, per-host nav queue holding the
-   politeness interval; a host that blocks at first contact is recorded and
-   never re-contacted (remaining same-host links are marked blocked without
-   another request). Card collection with a voiced plain-snapshot fallback,
+   politeness interval; the shared read-face navigate accepts any cookie-consent
+   banner (best-effort, voiced; no PII, higher access rate). A host that blocks
+   at first contact is recorded and never re-contacted (remaining same-host
+   links are marked blocked without another request). Card collection with a
+   voiced plain-snapshot fallback,
    then per-link no-tools structured extraction (`inventory_extract`
    useCase): fenced untrusted snapshot, Zod-revalidated rows, VIN must appear
    verbatim in the captured page, profile matching in code

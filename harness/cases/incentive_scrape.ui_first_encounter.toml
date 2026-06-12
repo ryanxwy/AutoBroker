@@ -23,28 +23,30 @@
 # source stays structurally inactive — the run's only site contact is the OEM
 # offers page.
 #
-# EMPTY-WORLD SHAPE (the real-world default for this skill). The seed offers
-# URL is the brand's national offers page. Its whitelist-class cash
-# (customer_cash / loyalty / military / conquest / lease_cash) is served ONLY
-# through a personalized, multi-parameter offers feed that a cold, isolated,
-# headless capture cannot reach: the brand-AND-zip data feed is a two-parameter
-# request (rejected by the single-parameter SSRF rule), and the rendered
-# "featured cash" module is gated behind a warm personalization session that
-# the read-only cold browser never establishes (a {zip}-localized URL was tried
-# and does not surface that cash to the cold capture). So the page the skill
-# honestly observes is the all-MSRP grid — zero whitelist cash. That is a VALID
-# empty real-world result, not a code bug:
-#   - step 2's profile-scoped Δ>=1 manufacturer_incentives anchor is satisfied
-#     as a TRUE Δ>=1 on any run where the page does serve cash, and otherwise
-#     downgrades to a DOCUMENTED table_min_rows waiver (auto-derived from the
-#     deterministic confirm summary: "N scraped, 0 incentive(s) saved", no
-#     failed/blocked brand, browser activity present). A blocked/failed scrape
-#     is NOT waivable — it surfaces RED.
-#   - step 3 proves NO-RE-ASK (approval_gate absent) but NOT a cache-skip: an
-#     empty slice writes no manufacturer_incentives row, so there is no 7-day
-#     cache marker — the second run re-navigates (browser_activity present) and
-#     stays empty (Δ=0 EXACT, also waiver-eligible). The no-re-ask proof is the
-#     load-bearing behavior here, and it holds regardless of the empty world.
+# LOCALIZED-CASH SHAPE (the expected path). The seed offers URL is the brand's
+# national offers page. Its whitelist-class cash (customer_cash / loyalty /
+# military / conquest / lease_cash) is served against the visitor's REGION: the
+# cold all-MSRP grid carries no cash until the page is localized to a ZIP. The
+# capture reaches it WITHOUT leaking any user data: the read face accepts the
+# page's cookie consent (raises access rate; a cookie click carries no PII) and
+# types the profile's ZIP DIGITS ONLY into the page's OWN location/ZIP picker
+# (the page then makes its own region XHR — sidestepping the single-parameter
+# SSRF rule entirely, since the skill never constructs a two-param URL). The ZIP
+# field on the national offers page is a collapsed picker, so the localizer
+# force-fills it (voiced) — and the localized "Featured Cash" module renders in
+# the SAME cold, isolated, headless channel:chromium surface the harness drives.
+#   - step 2's profile-scoped Δ>=1 manufacturer_incentives anchor is the TRUE
+#     expected GREEN: the localized page serves cash, the whitelist keeps it,
+#     and the (make,model,zip) slice gains rows. The table_min_rows waiver
+#     (auto-derived from the deterministic confirm summary "N scraped, 0
+#     incentive(s) saved", no failed/blocked brand, browser activity present)
+#     is now the GENUINE-EMPTY FALLBACK ONLY — it fires only if a future run
+#     truly finds zero whitelist cash, never as the expected path. A
+#     blocked/failed scrape is NOT waivable — it surfaces RED.
+#   - step 3 proves NO-RE-ASK (approval_gate absent). When step 2 wrote rows, a
+#     fresh same-URL scrape replaces them in place (Δ=0 EXACT, browser activity
+#     present — no 7-day cache marker skip is asserted here). The no-re-ask
+#     proof is the load-bearing behavior and holds regardless of cash volume.
 
 [meta]
 id = "incentive_scrape_ui_first_encounter"
@@ -165,7 +167,7 @@ expect = "absent"
 [[steps]]
 id = "scrape_no_ask"
 skill = "incentive_scrape"
-purpose = "Second run, same brand: NO approval gate (registry hit). The empty slice left no cache marker, so this run re-navigates and stays empty (Δ=0)."
+purpose = "Second run, same brand: NO approval gate (registry hit). A fresh same-URL scrape replaces the slice in place, so the profile-scoped delta is Δ=0 EXACT (browser activity present)."
 gate_policy = "approve_safe"
 launch = "chat_slash"
 
@@ -182,11 +184,11 @@ kind = "approval_gate"      # the behavioral no-re-ask proof: the registry
 expect = "absent"           # entry from step 2 means NO gate fires here.
 
 [[steps.anchors]]
-kind = "table_min_rows"     # the slice is untouched this run (Δ=0 EXACT) — an
-table = "manufacturer_incentives"   # empty world stays empty; a real-cash world
-scope = "profile"           # already wrote its rows in step 2 and a fresh same-URL
-delta_min = 0               # scrape replaces them in place (still Δ=0).
-exact = true
+kind = "table_min_rows"     # the slice nets Δ=0 EXACT this run: step 2 wrote the
+table = "manufacturer_incentives"   # localized cash rows and a fresh same-URL scrape
+scope = "profile"           # replaces them in place (delete-then-insert), so the
+delta_min = 0               # profile-scoped count is unchanged. (A genuinely empty
+exact = true                # world also nets Δ=0 — the anchor holds either way.)
 
 [[steps.anchors]]
 kind = "no_external_mutation"

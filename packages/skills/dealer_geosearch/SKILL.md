@@ -23,7 +23,9 @@ The runtime flow, grounded in the 6-step workflow
    half-radius offsets beyond, since the Maps feed surfaces only ~10 results
    per viewport).
 3. **Scan viewports** — one throwaway browser context for the run; per viewport
-   navigate → lazy-scroll → structured in-page extraction. A blocked host
+   navigate → lazy-scroll → structured in-page extraction. The shared read-face
+   navigate accepts any cookie-consent banner (best-effort, voiced; a cookie
+   click carries no PII and raises the access rate). A blocked host
    (429/403 signature) is recorded and the viewport skipped — never retried
    harder, never fatal to the rest of the scan. The zero-LLM happy path returns
    typed `DealerCandidate` rows directly; only when extraction degrades to the

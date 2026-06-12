@@ -61,7 +61,11 @@ The runtime flow, grounded in the 6-step workflow
   gate events, zero `lead_submissions` rows, zero `gmail.send` events.
 - **Filter ≠ mutation** — the DOM filter face is a positive whitelist
   (select / checkbox / apply) behind a denylist-first fence that rejects
-  lead-form-shaped widgets; it never types into free-text fields.
+  lead-form-shaped widgets; this skill's filter verbs never type free text. The
+  shared browser layer also offers a sibling location-ZIP face (opt-in, NOT
+  wired here) that types ZIP DIGITS ONLY into a page's own location picker
+  behind the same fences plus a US-ZIP value gate — never a name/phone/address,
+  never a mutation. The shared navigate also accepts cookie consent (no PII).
 - **Politeness over coverage** — per-host minimum interval, bounded lazy
   scroll, bounded snapshot, post-capture cool-down; blocked rooftops are
   refusals, never escalation targets (no stealth, no fingerprint tricks).

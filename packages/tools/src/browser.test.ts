@@ -12,18 +12,23 @@ import { describe, expect, it } from "vitest";
 import {
   assertFilterTargetAllowed,
   assertIsolated,
+  assertZipTargetAllowed,
+  assertZipValue,
   BrowserIsolationError,
   capSnapshot,
   computeBackoffMs,
   FilterInteractionRefusedError,
   gatedSubmitForm,
+  LocationZipRefusedError,
   NULL_EMITTER,
   openedOnce,
   parseRobotsDisallow,
   politenessDelayMs,
   probeFilterTarget,
+  probeZipTarget,
   rowsComplete,
   runFilterVerb,
+  runLocationZip,
   SNAPSHOT_CAP_CHARS,
   type BrowserEmitter,
   type FilterControlPage,
@@ -31,6 +36,8 @@ import {
   type FilterDomElement,
   type FilterTargetProbe,
   type FormPage,
+  type ZipControlPage,
+  type ZipTargetProbe,
 } from "./browser.js";
 import { ExternalMutationsBlockedError, type Approver } from "./gate/index.js";
 
@@ -584,5 +591,242 @@ describe("runFilterVerb — probe, fence, act; a refusal never touches the page"
     expect(apply.ops).toEqual(["click:button.go"]);
 
     expect(actions).toEqual(["filter_tick:#cond-new", "filter_apply:button.go"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Location-ZIP face — fences + the hard US-ZIP value constraint. Types the
+// profile ZIP into a page's own location picker (ZIP digits only); never an
+// identity field, never a lead-capture form.
+// ---------------------------------------------------------------------------
+
+describe("assertZipValue — only a US ZIP types, never identity", () => {
+  it("accepts a 5-digit ZIP and ZIP+4", () => {
+    expect(() => assertZipValue("92614")).not.toThrow();
+    expect(() => assertZipValue("92614-1234")).not.toThrow();
+  });
+
+  it("refuses every non-ZIP value LOUDLY (name, phone, street, partial digits)", () => {
+    for (const bad of [
+      "Jane Doe", // a name
+      "949-555-0173", // a phone
+      "123 Main St", // a street address
+      "9261", // too few digits
+      "926145", // too many digits
+      "abcde", // letters
+      "", // empty
+      "92614 ", // trailing space
+    ]) {
+      expect(() => assertZipValue(bad)).toThrow(LocationZipRefusedError);
+      expect(() => assertZipValue(bad)).toThrow(/not a US ZIP/);
+    }
+  });
+});
+
+describe("assertZipTargetAllowed — three fences + the input allowlist", () => {
+  function zipProbe(overrides: Partial<ZipTargetProbe> = {}): ZipTargetProbe {
+    return {
+      tag: "input",
+      inputType: "text",
+      name: "zipcode",
+      id: null,
+      placeholder: "Enter ZIP",
+      accessibleText: "ZIP Code",
+      inPiiForm: false,
+      ...overrides,
+    };
+  }
+
+  it("allows a ZIP/postal/location input (text/tel/number/search)", () => {
+    expect(() => assertZipTargetAllowed("#zip", zipProbe())).not.toThrow();
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inputType: "tel" }))).not.toThrow();
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inputType: "number" }))).not.toThrow();
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inputType: "search" }))).not.toThrow();
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inputType: null }))).not.toThrow();
+    // wording allowlist matches on name / id / placeholder / accessibleText
+    expect(() =>
+      assertZipTargetAllowed("#x", zipProbe({ name: null, placeholder: null, accessibleText: "", id: "postal-code" })),
+    ).not.toThrow();
+    expect(() =>
+      assertZipTargetAllowed("#x", zipProbe({ name: null, id: null, placeholder: "Your location" })),
+    ).not.toThrow();
+  });
+
+  it("(a) refuses a ZIP field that ALSO reads like a lead-capture control", () => {
+    expect(() =>
+      assertZipTargetAllowed("#zip", zipProbe({ accessibleText: "ZIP — Get Quote" })),
+    ).toThrow(/denylist/);
+    expect(() => assertZipTargetAllowed(".eprice-bar #zip", zipProbe())).toThrow(/denylist/);
+  });
+
+  it("(b) refuses a ZIP field sitting inside an email/phone lead form", () => {
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inPiiForm: true }))).toThrow(
+      /lead-capture form/,
+    );
+  });
+
+  it("(c) refuses a non-input, or an input of the wrong type", () => {
+    expect(() => assertZipTargetAllowed("select", zipProbe({ tag: "select", inputType: null }))).toThrow(
+      /only text\/tel\/number\/search/,
+    );
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inputType: "email" }))).toThrow(
+      /only text\/tel\/number\/search/,
+    );
+    expect(() => assertZipTargetAllowed("#zip", zipProbe({ inputType: "checkbox" }))).toThrow(
+      /only text\/tel\/number\/search/,
+    );
+  });
+
+  it("(d) refuses a name/contact input (no zip/postal/location wording)", () => {
+    expect(() =>
+      assertZipTargetAllowed(
+        "#fullname",
+        zipProbe({ name: "fullname", id: "fullname", placeholder: "Full name", accessibleText: "Your name" }),
+      ),
+    ).toThrow(/must read zip \/ postal \/ location/);
+    expect(() =>
+      assertZipTargetAllowed(
+        "#phone",
+        zipProbe({ inputType: "tel", name: "phone", id: null, placeholder: "Phone number", accessibleText: "Phone" }),
+      ),
+    ).toThrow(/must read zip \/ postal \/ location/);
+  });
+});
+
+describe("runLocationZip — value gate first, then probe → fence → fill → submit", () => {
+  function fakeZipPage(
+    probeResult: ZipTargetProbe | null,
+    opts: { failUnlessForced?: boolean } = {},
+  ): {
+    page: ZipControlPage;
+    ops: string[];
+  } {
+    const ops: string[] = [];
+    return {
+      ops,
+      page: {
+        evaluate: async () => probeResult,
+        fill: async (selector, value, options) => {
+          if (opts.failUnlessForced && options?.force !== true) {
+            throw new Error("not actionable (collapsed picker)");
+          }
+          ops.push(`fill:${selector}:${value}${options?.force ? ":force" : ""}`);
+        },
+        press: async (selector, key, options) => {
+          if (opts.failUnlessForced && options?.force !== true) {
+            throw new Error("not actionable (collapsed picker)");
+          }
+          ops.push(`press:${selector}:${key}${options?.force ? ":force" : ""}`);
+        },
+      },
+    };
+  }
+
+  function cleanZipProbe(overrides: Partial<ZipTargetProbe> = {}): ZipTargetProbe {
+    return {
+      tag: "input",
+      inputType: "text",
+      name: "zip",
+      id: null,
+      placeholder: "ZIP",
+      accessibleText: "ZIP Code",
+      inPiiForm: false,
+      ...overrides,
+    };
+  }
+
+  it("a non-ZIP value is refused BEFORE the page is even probed", async () => {
+    const { page, ops } = fakeZipPage(cleanZipProbe());
+    await expect(
+      runLocationZip({ page, emitter: NULL_EMITTER, selector: "#zip", zip: "Jane Doe" }),
+    ).rejects.toThrow(/not a US ZIP/);
+    expect(ops).toEqual([]); // value gate fires before any evaluate/fill
+  });
+
+  it("a refused target (name field) never fills", async () => {
+    const { page, ops } = fakeZipPage(
+      cleanZipProbe({ name: "fullname", placeholder: "Full name", accessibleText: "Your name" }),
+    );
+    await expect(
+      runLocationZip({ page, emitter: NULL_EMITTER, selector: "#fullname", zip: "92614" }),
+    ).rejects.toThrow(LocationZipRefusedError);
+    expect(ops).toEqual([]);
+  });
+
+  it("a ZIP into a ZIP input fills, submits via Enter, and voices location_zip", async () => {
+    const { page, ops } = fakeZipPage(cleanZipProbe());
+    const actions: string[] = [];
+    const emitter: BrowserEmitter = {
+      ...NULL_EMITTER,
+      action: (type, target) => {
+        actions.push(`${type}:${target}`);
+      },
+    };
+    await runLocationZip({ page, emitter, selector: "#zip", zip: "92614" });
+    expect(ops).toEqual(["fill:#zip:92614", "press:#zip:Enter"]);
+    expect(actions).toEqual(["location_zip:#zip = 92614"]);
+  });
+
+  it("a collapsed picker (present but not actionable) force-fills and VOICES the fallback", async () => {
+    const { page, ops } = fakeZipPage(cleanZipProbe(), { failUnlessForced: true });
+    const actions: string[] = [];
+    const emitter: BrowserEmitter = {
+      ...NULL_EMITTER,
+      action: (type, target) => {
+        actions.push(`${type}:${target}`);
+      },
+    };
+    await runLocationZip({ page, emitter, selector: "#zip", zip: "92614" });
+    expect(ops).toEqual(["fill:#zip:92614:force", "press:#zip:Enter:force"]);
+    // the fallback is voiced (never silent) BEFORE the success voice
+    expect(actions).toEqual(["location_zip_forced:#zip", "location_zip:#zip = 92614"]);
+  });
+
+  it("a selector matching nothing refuses (loudly, zero actions)", async () => {
+    const { page, ops } = fakeZipPage(null);
+    await expect(
+      runLocationZip({ page, emitter: NULL_EMITTER, selector: "#zip", zip: "92614" }),
+    ).rejects.toThrow(/no element matches/);
+    expect(ops).toEqual([]);
+  });
+});
+
+describe("probeZipTarget survives page.evaluate serialization", () => {
+  it("rehydrated from source (no module scope), it still describes a ZIP input", () => {
+    // The function SOURCE ships into the page — module-scope references do not
+    // exist there. Rebuilding from toString() in an empty scope reproduces that
+    // boundary: any out-of-scope reference throws.
+    const rehydrated = new Function(`return (${probeZipTarget.toString()});`)() as typeof probeZipTarget;
+
+    const input = makeEl({
+      tag: "input",
+      attrs: { type: "text", name: "zip", id: "zip-input", placeholder: "Enter ZIP" },
+    });
+    const fakeDoc: FilterDomDocument = {
+      querySelector: (sel) => (sel === "#zip-input" || sel === 'label[for="zip-input"]' ? (sel === "#zip-input" ? input : null) : null),
+    };
+    const probe = withDocument(fakeDoc, () => rehydrated("#zip-input"));
+    expect(probe).not.toBeNull();
+    expect(probe?.tag).toBe("input");
+    expect(probe?.inputType).toBe("text");
+    expect(probe?.name).toBe("zip");
+    expect(probe?.id).toBe("zip-input");
+    expect(probe?.placeholder).toBe("Enter ZIP");
+    expect(probe?.inPiiForm).toBe(false);
+  });
+
+  it("flags a ZIP input inside an email/phone lead form (the structural fence)", () => {
+    const piiForm = makeEl({
+      tag: "form",
+      query: { [PII_FORM_SELECTOR]: makeEl({ tag: "input", attrs: { type: "tel" } }) },
+    });
+    const wrapper = makeEl({ tag: "div", parent: piiForm });
+    const input = makeEl({
+      tag: "input",
+      attrs: { type: "text", name: "zip" },
+      parent: wrapper,
+    });
+    const probe = withDocument({ querySelector: () => input }, () => probeZipTarget("input"));
+    expect(probe?.inPiiForm).toBe(true);
   });
 });

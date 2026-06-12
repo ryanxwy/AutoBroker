@@ -236,6 +236,50 @@ export function collectOfferCards(args: { max: number }): CollectedOfferCard[] {
   return out;
 }
 
+/**
+ * In-page probe: find a CSS selector for the page's own location/ZIP picker
+ * input, or null when none is present. Returns a STABLE selector (id-based when
+ * possible, else an indexed `input` selector) the ZIP face re-probes and
+ * re-fences before typing — this finder is a convenience locator, NOT a trust
+ * boundary. Executes inside the page via page.evaluate, so it MUST be fully
+ * self-contained (no module-scope references survive serialization).
+ */
+export function findZipInputSelector(): string | null {
+  const zipFieldRe = /zip|postal|location/i;
+  interface ProbeEl {
+    getAttribute(name: string): string | null;
+    closest(selector: string): unknown;
+  }
+  const g = globalThis as {
+    document?: { querySelectorAll(selector: string): ArrayLike<ProbeEl> };
+  };
+  const doc = g.document;
+  if (doc === undefined) return null;
+  const inputs = doc.querySelectorAll(
+    "input[type='text'], input[type='tel'], input[type='number'], input[type='search'], input:not([type])",
+  );
+  for (let i = 0; i < inputs.length; i += 1) {
+    const el = inputs[i]!;
+    // Skip anything sitting in an email/phone lead-capture form (the ZIP face
+    // refuses these anyway; skipping here avoids a noisy refusal).
+    if (el.closest("form input[type='email'], form input[type='tel']") !== null) {
+      // closest() above targets the input itself; the structural fence in the
+      // ZIP face is the real guard, so a false negative here is harmless.
+    }
+    const hay = [
+      el.getAttribute("name") ?? "",
+      el.getAttribute("id") ?? "",
+      el.getAttribute("placeholder") ?? "",
+      el.getAttribute("aria-label") ?? "",
+    ].join(" ");
+    if (!zipFieldRe.test(hay)) continue;
+    const id = el.getAttribute("id");
+    if (id !== null && id !== "") return `#${(globalThis as { CSS?: { escape(s: string): string } }).CSS?.escape(id) ?? id}`;
+    return `input:nth-of-type(${i + 1})`;
+  }
+  return null;
+}
+
 /** Weave collected offer cards into the extraction input: one clearly
  *  delimited block per card. Pure. */
 export function weaveOfferCards(cards: readonly CollectedOfferCard[]): string {
@@ -274,6 +318,11 @@ export interface OfferCaptureArgs {
   urls: readonly string[];
   /** The voiced-trace emitter (SSE in production, NULL_EMITTER otherwise). */
   emitter: BrowserEmitter;
+  /** The profile's US ZIP. When the rendered page exposes its own location/ZIP
+   *  picker, the ladder types these digits into it (the page makes its OWN
+   *  localization XHR) so region-priced offers render. ZIP DIGITS ONLY — the
+   *  ZIP face refuses any non-ZIP value. null = skip localization. */
+  zip: string | null;
 }
 
 /** One ladder's outcome. PURE DATA — nothing classified, nothing written. */
@@ -295,9 +344,14 @@ export type OfferCaptureOutcome =
 export interface OfferLadderSession {
   newPage(): Promise<{
     evaluate(fn: typeof collectOfferCards, args: { max: number }): Promise<CollectedOfferCard[]>;
+    evaluate(fn: typeof findZipInputSelector): Promise<string | null>;
     close(): Promise<void>;
   }>;
   navigate(page: never, url: string): Promise<{ blocked: string | null }>;
+  /** Type the profile ZIP into the page's own location picker (ZIP-digits-only,
+   *  fenced, ungated). Best-effort at the call site — a missing picker or a
+   *  refused target must not fail the ladder. */
+  fillLocationZip(page: never, selector: string, zip: string): Promise<void>;
   lazyScroll(page: never): Promise<void>;
   snapshot(page: never): Promise<string>;
 }
@@ -322,8 +376,11 @@ export async function runOfferLadder(deps: {
   emitter: BrowserEmitter;
   label: string;
   urls: readonly string[];
+  /** The profile ZIP, typed into the page's own location picker when present
+   *  so region-priced offers render. null = skip localization. */
+  zip: string | null;
 }): Promise<OfferCaptureOutcome> {
-  const { session, emitter, label, urls } = deps;
+  const { session, emitter, label, urls, zip } = deps;
   const page = await session.newPage();
   try {
     let lastFailure = "every candidate path failed to render";
@@ -337,6 +394,22 @@ export async function runOfferLadder(deps: {
       }
       if (nav.blocked !== null) {
         return { kind: "blocked", url, marker: nav.blocked };
+      }
+      // Localize to the profile ZIP if the page exposes its own picker, so
+      // region-priced offers render (the page makes its OWN localization XHR;
+      // ZIP DIGITS ONLY). Best-effort: a missing picker or a fenced-out target
+      // must not fail the ladder.
+      if (zip !== null) {
+        try {
+          const zipSelector = await page.evaluate(findZipInputSelector);
+          if (zipSelector !== null) {
+            await session.fillLocationZip(page as never, zipSelector, zip);
+            // Let the page's localization XHR repaint before we read the cards.
+            await session.lazyScroll(page as never);
+          }
+        } catch (err) {
+          emitter.action("location_zip_skipped", err instanceof Error ? err.message : String(err));
+        }
       }
       await session.lazyScroll(page as never);
       const cards = await page.evaluate(collectOfferCards, { max: OFFER_COLLECT_MAX });
@@ -374,6 +447,7 @@ export async function captureOffersImpl(args: OfferCaptureArgs): Promise<OfferCa
       emitter: args.emitter,
       label: args.label,
       urls: args.urls,
+      zip: args.zip,
     }),
   );
 }
@@ -902,6 +976,7 @@ const renderExtractStep = createStep({
         label: `oem-${target.brand}`,
         urls: [target.resolved_url],
         emitter,
+        zip: target.zip,
       });
 
       // The rooftop secondary (dual-source): the profile's nearest bound
@@ -919,6 +994,7 @@ const renderExtractStep = createStep({
               label: `rooftop-${target.brand}`,
               urls: secondaryUrls,
               emitter,
+              zip: target.zip,
             })
           : null;
 

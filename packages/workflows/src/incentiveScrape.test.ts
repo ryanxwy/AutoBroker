@@ -428,6 +428,7 @@ import { MalformedToolCallAbort } from "@autobroker/model";
 
 import {
   collectOfferCards,
+  findZipInputSelector,
   rooftopSpecialsUrls,
   runOfferLadder,
   setIncentiveScrapeBrowserEmitterFactory,
@@ -449,18 +450,28 @@ function recordingEmitter(): BrowserEmitter & { actions: Array<[string, string]>
   };
 }
 
-/** A fake ladder session scripted per-URL. */
+/** A fake ladder session scripted per-URL. `zipSelector` (per-URL) makes the
+ *  fake page report a location picker; `zipFills` records every fillLocationZip
+ *  call so the localization wiring is observable. */
 function fakeLadderSession(script: {
   navigate: (url: string) => { blocked: string | null } | Error;
   cards?: Record<string, ReturnType<typeof collectOfferCards>>;
   snapshot?: Record<string, string>;
-}): OfferLadderSession & { navigated: string[] } {
+  zipSelector?: Record<string, string | null>;
+}): OfferLadderSession & { navigated: string[]; zipFills: Array<[string, string]> } {
   const navigated: string[] = [];
+  const zipFills: Array<[string, string]> = [];
   let currentUrl = "";
   return {
     navigated,
+    zipFills,
     newPage: async () => ({
-      evaluate: async () => script.cards?.[currentUrl] ?? [],
+      // The single fake evaluate serves both in-page probes; it discriminates
+      // on the function passed (cards vs the zip-selector finder).
+      evaluate: (async (fn: unknown) =>
+        fn === findZipInputSelector
+          ? (script.zipSelector?.[currentUrl] ?? null)
+          : (script.cards?.[currentUrl] ?? [])) as never,
       close: async () => undefined,
     }),
     navigate: (async (_page: never, url: string) => {
@@ -470,6 +481,9 @@ function fakeLadderSession(script: {
       if (out instanceof Error) throw out;
       return out;
     }) as OfferLadderSession["navigate"],
+    fillLocationZip: async (_page: never, selector: string, zip: string) => {
+      zipFills.push([selector, zip]);
+    },
     lazyScroll: async () => undefined,
     snapshot: async () => script.snapshot?.[currentUrl] ?? "",
   };
@@ -482,7 +496,7 @@ describe("runOfferLadder (the capture discipline, session-injected)", () => {
 
   it("blocked at first contact stops the WHOLE ladder — later paths never contacted", async () => {
     const session = fakeLadderSession({ navigate: () => ({ blocked: "akamai_block_page" }) });
-    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2, U3] });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2, U3], zip: null });
     expect(out).toEqual({ kind: "blocked", url: U1, marker: "akamai_block_page" });
     expect(session.navigated).toEqual([U1]); // one contact, nothing more
   });
@@ -493,7 +507,7 @@ describe("runOfferLadder (the capture discipline, session-injected)", () => {
       navigate: () => ({ blocked: null }),
       cards: { [U1]: [{ offerText: "$1,500 Retail Bonus Cash" }] },
     });
-    const out = await runOfferLadder({ session, emitter, label: "x", urls: [U1] });
+    const out = await runOfferLadder({ session, emitter, label: "x", urls: [U1], zip: null });
     expect(out.kind).toBe("captured");
     if (out.kind !== "captured") throw new Error("unreachable");
     expect(out.snapshotText).toContain("[OFFER 1]");
@@ -507,7 +521,7 @@ describe("runOfferLadder (the capture discipline, session-injected)", () => {
       navigate: () => ({ blocked: null }),
       snapshot: { [U1]: "Current offers … ".repeat(40) }, // > the thin bound
     });
-    const out = await runOfferLadder({ session, emitter, label: "oem-hyundai", urls: [U1] });
+    const out = await runOfferLadder({ session, emitter, label: "oem-hyundai", urls: [U1], zip: null });
     expect(out.kind).toBe("captured");
     if (out.kind !== "captured") throw new Error("unreachable");
     expect(out.snapshotFallback).toBe(true);
@@ -519,7 +533,7 @@ describe("runOfferLadder (the capture discipline, session-injected)", () => {
       navigate: () => ({ blocked: null }),
       snapshot: { [U1]: "404", [U2]: "not found", [U3]: "nope" },
     });
-    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2, U3] });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2, U3], zip: null });
     expect(out.kind).toBe("failed");
     expect(session.navigated).toEqual([U1, U2, U3]);
   });
@@ -529,10 +543,75 @@ describe("runOfferLadder (the capture discipline, session-injected)", () => {
       navigate: (url) => (url === U1 ? new Error("net::ERR_NAME_NOT_RESOLVED") : { blocked: null }),
       cards: { [U2]: [{ offerText: "$500 Loyalty Cash" }] },
     });
-    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2] });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2], zip: null });
     expect(out.kind).toBe("captured");
     if (out.kind !== "captured") throw new Error("unreachable");
     expect(out.url).toBe(U2);
+  });
+
+  it("localizes to the profile ZIP when the page exposes a picker (digits only)", async () => {
+    const session = fakeLadderSession({
+      navigate: () => ({ blocked: null }),
+      zipSelector: { [U1]: "#dealer-zip" },
+      cards: { [U1]: [{ offerText: "$2,000 Featured Cash on 2026 Tucson Hybrid" }] },
+    });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1], zip: "92614" });
+    expect(out.kind).toBe("captured");
+    expect(session.zipFills).toEqual([["#dealer-zip", "92614"]]); // the page's own picker, ZIP digits only
+  });
+
+  it("skips localization when no picker is present, and never fills with a null ZIP", async () => {
+    const noPicker = fakeLadderSession({ navigate: () => ({ blocked: null }), cards: { [U1]: [{ offerText: "$1k Bonus Cash here" }] } });
+    await runOfferLadder({ session: noPicker, emitter: NULL_EMITTER, label: "x", urls: [U1], zip: "92614" });
+    expect(noPicker.zipFills).toEqual([]); // page reported no picker
+
+    const nullZip = fakeLadderSession({ navigate: () => ({ blocked: null }), zipSelector: { [U1]: "#zip" }, cards: { [U1]: [{ offerText: "$1k Bonus Cash here" }] } });
+    await runOfferLadder({ session: nullZip, emitter: NULL_EMITTER, label: "x", urls: [U1], zip: null });
+    expect(nullZip.zipFills).toEqual([]); // no zip to localize with
+  });
+});
+
+describe("findZipInputSelector (the in-page picker finder)", () => {
+  it("rehydrated from source (no module scope), it finds a ZIP input by id", () => {
+    const rehydrated = new Function(`return (${findZipInputSelector.toString()});`)() as typeof findZipInputSelector;
+
+    interface FakeEl {
+      attrs: Record<string, string>;
+      getAttribute(name: string): string | null;
+      closest(selector: string): unknown;
+    }
+    const make = (attrs: Record<string, string>): FakeEl => ({
+      attrs,
+      getAttribute: (n) => attrs[n] ?? null,
+      closest: () => null,
+    });
+    const keyword = make({ type: "search", name: "q", placeholder: "Search models" });
+    const zip = make({ type: "text", id: "dealer-zip", placeholder: "ZIP code" });
+    const fakeDoc = { querySelectorAll: () => [keyword, zip] };
+    const g = globalThis as { document?: unknown; CSS?: unknown };
+    const prevDoc = g.document;
+    g.document = fakeDoc;
+    try {
+      expect(rehydrated()).toBe("#dealer-zip"); // skips the keyword search, finds the ZIP field
+    } finally {
+      if (prevDoc === undefined) delete g.document;
+      else g.document = prevDoc;
+    }
+  });
+
+  it("returns null when there is no ZIP/postal/location input", () => {
+    const rehydrated = new Function(`return (${findZipInputSelector.toString()});`)() as typeof findZipInputSelector;
+    const make = (attrs: Record<string, string>) => ({ getAttribute: (n: string) => attrs[n] ?? null, closest: () => null });
+    const fakeDoc = { querySelectorAll: () => [make({ type: "text", name: "q", placeholder: "Search" })] };
+    const g = globalThis as { document?: unknown };
+    const prevDoc = g.document;
+    g.document = fakeDoc;
+    try {
+      expect(rehydrated()).toBeNull();
+    } finally {
+      if (prevDoc === undefined) delete g.document;
+      else g.document = prevDoc;
+    }
   });
 });
 

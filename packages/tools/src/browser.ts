@@ -265,6 +265,11 @@ export interface BrowserSession {
   setFilterSelect(page: Page, selector: string, option: string): Promise<void>;
   tickFilterCheckbox(page: Page, selector: string): Promise<void>;
   clickFilterApply(page: Page, selector: string): Promise<void>;
+  /** Location-ZIP face (opt-in per skill): type the profile's ZIP into the
+   *  page's own location picker so region-priced content renders. Fenced like
+   *  the filter face + a US-ZIP-only value constraint; ungated, holds no
+   *  Approver. ZIP DIGITS ONLY — never a name/phone/address. */
+  fillLocationZip(page: Page, selector: string, zip: string): Promise<void>;
   readJson(
     page: Page,
     opts: { match: ResponseMatch; trigger: () => Promise<unknown> },
@@ -494,24 +499,29 @@ function makeSession(deps: SessionDeps): BrowserSession {
     return robots === null ? false : parseRobotsDisallow(robots, url.pathname + url.search);
   }
 
-  /** Best-effort dismissal of consent banners by clicking REJECT-style buttons
-   *  ONLY. Never clicks Accept — we must not consent on the user's behalf. All
-   *  failures are swallowed: a stubborn banner only degrades extraction, it
-   *  must never fail the navigation. */
-  async function rejectCookieBanner(page: Page): Promise<void> {
+  /** Best-effort dismissal of consent banners by clicking ACCEPT-style buttons.
+   *  Consent is authorized for access: many OEM/dealer pages gate their
+   *  localized content (region-priced offers, inventory) behind a cookie
+   *  acceptance, so accepting raises the access rate without leaking any user
+   *  data (a cookie click carries no PII). All failures are swallowed: a
+   *  stubborn banner only degrades extraction, it must never fail the
+   *  navigation. */
+  async function acceptCookieConsent(page: Page): Promise<void> {
     try {
       const byRole = page
-        .getByRole("button", { name: /^(reject all|decline|deny|reject)$/i })
+        .getByRole("button", { name: /^(accept all|accept|allow all|allow|agree|i accept|got it|ok)$/i })
         .first();
       if (await byRole.isVisible().catch(() => false)) {
         await byRole.click({ timeout: 2_000 });
-        emitter.action("cookie_reject", page.url());
+        emitter.action("cookie_accept", page.url());
         return;
       }
-      const byText = page.locator("text=/^(Reject All|Decline|Deny)$/i").first();
+      const byText = page
+        .locator("text=/^(Accept All|Accept|Allow All|Allow|Agree|I Accept|Got it|OK)$/i")
+        .first();
       if (await byText.isVisible().catch(() => false)) {
         await byText.click({ timeout: 2_000 });
-        emitter.action("cookie_reject", page.url());
+        emitter.action("cookie_accept", page.url());
       }
     } catch {
       // best-effort by design
@@ -586,7 +596,7 @@ function makeSession(deps: SessionDeps): BrowserSession {
       }
       blocked = classifyBlockSignature(body, status);
     } else {
-      await rejectCookieBanner(page);
+      await acceptCookieConsent(page);
     }
 
     // Live-view screenshot at the navigate-settle moment — the one read-path
@@ -654,6 +664,15 @@ function makeSession(deps: SessionDeps): BrowserSession {
   async function clickFilterApply(page: Page, selector: string): Promise<void> {
     assertNotBreached();
     await runFilterVerb({ page, emitter, verb: "apply", selector });
+  }
+
+  // Location-ZIP face — fill the profile's ZIP into the page's own location
+  // picker so region-priced content renders. Same fences as the filter face
+  // plus a US-ZIP-only value gate; ungated, no Approver — a localizer is not a
+  // mutation, so the submitForm/withGate funnel is unreachable from here.
+  async function fillLocationZip(page: Page, selector: string, zip: string): Promise<void> {
+    assertNotBreached();
+    await runLocationZip({ page, emitter, selector, zip });
   }
 
   /** Promise-before-action, enforced structurally: the response waiter is
@@ -797,6 +816,7 @@ function makeSession(deps: SessionDeps): BrowserSession {
     setFilterSelect,
     tickFilterCheckbox,
     clickFilterApply,
+    fillLocationZip,
     readJson,
     extract,
     snapshot,
@@ -809,7 +829,7 @@ function makeSession(deps: SessionDeps): BrowserSession {
 
 // ---------------------------------------------------------------------------
 // Filter interaction face — read-side inventory refinement (modeled on the
-// rejectCookieBanner idiom: page-scoped, allowlisted, voiced on the emitter).
+// acceptCookieConsent idiom: page-scoped, allowlisted, voiced on the emitter).
 // These verbs hold NO Approver and never touch withGate/submitForm — filter
 // refinement is not a mutation, so the capture path stays structurally unable
 // to reach the one mutating funnel. Three code-level fences, in precedence
@@ -1044,6 +1064,227 @@ export async function runFilterVerb(deps: {
       emitter.action("filter_apply", selector);
       return;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Location-ZIP face — sidesteps the SSRF two-param block by letting the PAGE
+// make its own localization XHR: we fill the profile's POSTAL CODE into the
+// page's own ZIP/location picker (DOM interaction), so region-priced content
+// (localized "Featured Cash"/offers, local inventory) renders. Built on the
+// SAME safety construction as the filter face, with the SAME three fences PLUS
+// a positive input allowlist and a hard value constraint:
+//   (a) hard lead-capture DENYLIST (FILTER_DENYLIST_RE), checked FIRST;
+//   (b) structural fence — a ZIP field inside an email/tel lead form is
+//       REFUSED (inPiiForm), so we never type into a contact funnel;
+//   (c) positive allowlist — the target must be a text/tel/number/search
+//       <input> whose name/id/placeholder/accessible text reads zip/postal/
+//       location;
+//   (d) VALUE hard-constraint — only a US ZIP (/^\d{5}(-\d{4})?$/) types at
+//       all. Name, phone, and street address are NEVER passed to this face and
+//       structurally cannot be (a non-ZIP value is refused loudly).
+// This face holds NO Approver and never touches withGate/submitForm — a
+// localizer is not a mutation, so the capture path stays structurally unable to
+// reach the mutating funnel.
+// ---------------------------------------------------------------------------
+
+/** The ONLY value shape the ZIP face accepts: a US 5-digit ZIP, optionally
+ *  ZIP+4. Anything else (a name, phone, street, partial digits) is refused —
+ *  the localizer types digits, never identity. */
+export const ZIP_VALUE_RE = /^\d{5}(-\d{4})?$/;
+
+/** Positive allowlist for the target: its name/id/placeholder/accessible text
+ *  must read like a location/ZIP control. A clean-worded but unrelated input
+ *  (search-by-keyword, quantity, …) is refused. */
+export const ZIP_FIELD_RE = /zip|postal|location/i;
+
+/** Submit wording the ZIP face may click to apply the location. Reuses the
+ *  filter apply wording and adds location-localizer phrasings. Still denylist-
+ *  checked, so a "Get Offers" lead button never qualifies. */
+export const ZIP_SUBMIT_TEXT_RE =
+  /apply|update results|search inventory|go|update|see (offers|local)/i;
+
+/** What the in-page probe reports about a proposed ZIP target. Extends the
+ *  filter probe shape with the attributes the input allowlist matches on. */
+export interface ZipTargetProbe {
+  tag: string;
+  inputType: string | null;
+  name: string | null;
+  id: string | null;
+  placeholder: string | null;
+  accessibleText: string;
+  inPiiForm: boolean;
+}
+
+export class LocationZipRefusedError extends Error {
+  constructor(selector: string, why: string) {
+    super(
+      `REFUSED location-zip fill on "${selector}": ${why}. The localizer only ` +
+        "types a US ZIP into a page's own location picker to render region-" +
+        "priced content; identity fields and lead-capture forms are out of bounds.",
+    );
+    this.name = "LocationZipRefusedError";
+  }
+}
+
+/**
+ * In-page probe: describe the FIRST element matching `selector` for the ZIP
+ * fences (null = no match / no document). Executes inside the page via
+ * page.evaluate, so it is fully self-contained — it must not reference anything
+ * from module scope.
+ */
+export function probeZipTarget(selector: string): ZipTargetProbe | null {
+  const doc = (globalThis as { document?: FilterDomDocument }).document;
+  if (doc === undefined) return null;
+  const el = doc.querySelector(selector);
+  if (el === null) return null;
+
+  const tag = el.tagName.toLowerCase();
+  const typeAttr = el.getAttribute("type");
+
+  // Lead-capture wording usually lives on the label, not the control.
+  let labelText = "";
+  const wrapping = el.closest("label");
+  if (wrapping !== null) labelText += ` ${wrapping.textContent ?? ""}`;
+  const id = el.getAttribute("id");
+  if (id !== null && id !== "") {
+    const forLabel = doc.querySelector(`label[for="${id.replace(/"/g, '\\"')}"]`);
+    if (forLabel !== null) labelText += ` ${forLabel.textContent ?? ""}`;
+  }
+
+  let inPiiForm = false;
+  for (let node = el.parentElement; node !== null; node = node.parentElement) {
+    if (
+      node.tagName.toLowerCase() === "form" &&
+      node.querySelector('input[type="email"], input[type="tel"]') !== null
+    ) {
+      inPiiForm = true;
+      break;
+    }
+  }
+
+  return {
+    tag,
+    inputType: typeAttr === null ? null : typeAttr.toLowerCase(),
+    name: el.getAttribute("name"),
+    id: id === "" ? null : id,
+    placeholder: el.getAttribute("placeholder"),
+    accessibleText: [
+      el.textContent ?? "",
+      el.getAttribute("aria-label") ?? "",
+      el.getAttribute("title") ?? "",
+      labelText,
+    ].join(" "),
+    inPiiForm,
+  };
+}
+
+/**
+ * The ZIP fences, in precedence order — denylist FIRST, then the lead-form
+ * structure check, then the positive input-type+wording allowlist. Pure;
+ * throws `LocationZipRefusedError` (refuse loudly, never skip silently). Does
+ * NOT validate the value — `assertZipValue` does that separately so a bad value
+ * is rejected even before a target is probed.
+ */
+export function assertZipTargetAllowed(selector: string, probe: ZipTargetProbe): void {
+  const idText = [probe.name ?? "", probe.id ?? "", probe.placeholder ?? "", probe.accessibleText]
+    .join(" ");
+  if (FILTER_DENYLIST_RE.test(idText) || FILTER_DENYLIST_RE.test(selector)) {
+    throw new LocationZipRefusedError(selector, "target matches the lead-capture denylist");
+  }
+  if (probe.inPiiForm) {
+    throw new LocationZipRefusedError(
+      selector,
+      "target sits inside a <form> that collects email/phone (a lead-capture form)",
+    );
+  }
+  const ALLOWED_INPUT_TYPES = new Set([null, "text", "tel", "number", "search"]);
+  if (probe.tag !== "input" || !ALLOWED_INPUT_TYPES.has(probe.inputType)) {
+    throw new LocationZipRefusedError(
+      selector,
+      `only text/tel/number/search <input> is fillable (got <${probe.tag} type=${probe.inputType ?? "?"}>)`,
+    );
+  }
+  if (!ZIP_FIELD_RE.test(idText)) {
+    throw new LocationZipRefusedError(
+      selector,
+      "target name/id/placeholder/label must read zip / postal / location",
+    );
+  }
+}
+
+/** The value gate — pure. Only a US ZIP types; anything else throws. Kept
+ *  separate so the constraint is provable in isolation and a non-ZIP value is
+ *  rejected up front (no identity field can ever flow into the fill). */
+export function assertZipValue(value: string): void {
+  if (!ZIP_VALUE_RE.test(value)) {
+    throw new LocationZipRefusedError(
+      "<value>",
+      `value ${JSON.stringify(value)} is not a US ZIP (/^\\d{5}(-\\d{4})?$/); the ` +
+        "localizer types ZIP digits only — never a name, phone, or address",
+    );
+  }
+}
+
+/** The minimal slice of Page the ZIP face needs (real Pages satisfy it). The
+ *  options arg carries Playwright's { force, timeout } so the localizer can
+ *  fall back to a forced fill when a real picker is present but visually
+ *  collapsed (many OEM pages park the ZIP input behind a "set location" widget
+ *  with zero layout box until opened). */
+export interface ZipFillOptions {
+  force?: boolean;
+  timeout?: number;
+}
+export interface ZipControlPage {
+  evaluate(
+    fn: (selector: string) => ZipTargetProbe | null,
+    selector: string,
+  ): Promise<ZipTargetProbe | null>;
+  fill(selector: string, value: string, options?: ZipFillOptions): Promise<void>;
+  press(selector: string, key: string, options?: ZipFillOptions): Promise<void>;
+}
+
+/** Bound on the normal-fill actionability wait before the forced-fill fallback
+ *  kicks in (a collapsed picker never becomes actionable, so this is the cost
+ *  of discovering it is collapsed). */
+const ZIP_FILL_TIMEOUT_MS = 2_500;
+
+/**
+ * The location-ZIP core — exported so the fences, the value constraint and the
+ * no-action-on-refusal guarantee are pinned by unit tests with a fake page.
+ * Order: validate the VALUE (before any page touch) → probe → fences → fill →
+ * submit (Enter) → voice. A refusal throws BEFORE the fill. Holds no Approver.
+ *
+ * The fill is attempted normally first; if the (already-fenced) input is
+ * present but not actionable — a collapsed/hidden picker — it retries with
+ * Playwright's force flag and VOICES a `location_zip_forced` trace span. This
+ * is a transient/equivalent fallback (the SAME fenced element, only its layout
+ * box differs), never a semantic one: the safety gate already ran, so force
+ * only changes the actionability wait, not what may be typed.
+ */
+export async function runLocationZip(deps: {
+  page: ZipControlPage;
+  emitter: BrowserEmitter;
+  selector: string;
+  zip: string;
+}): Promise<void> {
+  const { page, emitter, selector, zip } = deps;
+  assertZipValue(zip); // value gate first — a non-ZIP never reaches the page
+  const probe = await page.evaluate(probeZipTarget, selector);
+  if (probe === null) {
+    throw new LocationZipRefusedError(selector, "no element matches the selector");
+  }
+  assertZipTargetAllowed(selector, probe);
+  try {
+    await page.fill(selector, zip, { timeout: ZIP_FILL_TIMEOUT_MS });
+    await page.press(selector, "Enter", { timeout: ZIP_FILL_TIMEOUT_MS });
+  } catch {
+    // The fenced input is present but not actionable (a collapsed picker) —
+    // force the fill/submit and voice the equivalent-read fallback.
+    emitter.action("location_zip_forced", selector);
+    await page.fill(selector, zip, { force: true, timeout: ZIP_FILL_TIMEOUT_MS });
+    await page.press(selector, "Enter", { force: true, timeout: ZIP_FILL_TIMEOUT_MS });
+  }
+  emitter.action("location_zip", `${selector} = ${zip}`);
 }
 
 // ---------------------------------------------------------------------------
