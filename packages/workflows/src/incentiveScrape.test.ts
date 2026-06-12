@@ -414,3 +414,428 @@ describe("incentive_scrape profile resolution", () => {
     expect(output.summary).toContain("missing_zip");
   });
 });
+
+// ---------------------------------------------------------------------------
+// step-4 fallback gating — the map documented in the workflow header, PINNED
+// ---------------------------------------------------------------------------
+
+import { NULL_EMITTER, type BrowserEmitter } from "@autobroker/tools";
+import { MalformedToolCallAbort } from "@autobroker/model";
+
+import {
+  collectOfferCards,
+  rooftopSpecialsUrls,
+  runOfferLadder,
+  setIncentiveScrapeBrowserEmitterFactory,
+  weaveOfferCards,
+  type OfferLadderSession,
+} from "./incentiveScrape.js";
+
+/** A recording emitter (the voiced-trace assertions read .actions). */
+function recordingEmitter(): BrowserEmitter & { actions: Array<[string, string]> } {
+  const actions: Array<[string, string]> = [];
+  return {
+    actions,
+    opened: () => undefined,
+    action: (type: string, target: string) => {
+      actions.push([type, target]);
+    },
+    error: () => undefined,
+    closed: () => undefined,
+  };
+}
+
+/** A fake ladder session scripted per-URL. */
+function fakeLadderSession(script: {
+  navigate: (url: string) => { blocked: string | null } | Error;
+  cards?: Record<string, ReturnType<typeof collectOfferCards>>;
+  snapshot?: Record<string, string>;
+}): OfferLadderSession & { navigated: string[] } {
+  const navigated: string[] = [];
+  let currentUrl = "";
+  return {
+    navigated,
+    newPage: async () => ({
+      evaluate: async () => script.cards?.[currentUrl] ?? [],
+      close: async () => undefined,
+    }),
+    navigate: (async (_page: never, url: string) => {
+      navigated.push(url);
+      currentUrl = url;
+      const out = script.navigate(url);
+      if (out instanceof Error) throw out;
+      return out;
+    }) as OfferLadderSession["navigate"],
+    lazyScroll: async () => undefined,
+    snapshot: async () => script.snapshot?.[currentUrl] ?? "",
+  };
+}
+
+describe("runOfferLadder (the capture discipline, session-injected)", () => {
+  const U1 = "https://www.rooftop.example/specials";
+  const U2 = "https://www.rooftop.example/offers";
+  const U3 = "https://www.rooftop.example/new-vehicle-specials";
+
+  it("blocked at first contact stops the WHOLE ladder — later paths never contacted", async () => {
+    const session = fakeLadderSession({ navigate: () => ({ blocked: "akamai_block_page" }) });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2, U3] });
+    expect(out).toEqual({ kind: "blocked", url: U1, marker: "akamai_block_page" });
+    expect(session.navigated).toEqual([U1]); // one contact, nothing more
+  });
+
+  it("cards captured → woven blocks, NO snapshot_fallback voice", async () => {
+    const emitter = recordingEmitter();
+    const session = fakeLadderSession({
+      navigate: () => ({ blocked: null }),
+      cards: { [U1]: [{ offerText: "$1,500 Retail Bonus Cash" }] },
+    });
+    const out = await runOfferLadder({ session, emitter, label: "x", urls: [U1] });
+    expect(out.kind).toBe("captured");
+    if (out.kind !== "captured") throw new Error("unreachable");
+    expect(out.snapshotText).toContain("[OFFER 1]");
+    expect(out.snapshotFallback).toBe(false);
+    expect(emitter.actions).toEqual([]);
+  });
+
+  it("card-less thick render → plain snapshot, VOICED snapshot_fallback (never silent)", async () => {
+    const emitter = recordingEmitter();
+    const session = fakeLadderSession({
+      navigate: () => ({ blocked: null }),
+      snapshot: { [U1]: "Current offers … ".repeat(40) }, // > the thin bound
+    });
+    const out = await runOfferLadder({ session, emitter, label: "oem-hyundai", urls: [U1] });
+    expect(out.kind).toBe("captured");
+    if (out.kind !== "captured") throw new Error("unreachable");
+    expect(out.snapshotFallback).toBe(true);
+    expect(emitter.actions).toEqual([["snapshot_fallback", "oem-hyundai"]]);
+  });
+
+  it("thin card-less renders fall through to the next path; an exhausted ladder fails", async () => {
+    const session = fakeLadderSession({
+      navigate: () => ({ blocked: null }),
+      snapshot: { [U1]: "404", [U2]: "not found", [U3]: "nope" },
+    });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2, U3] });
+    expect(out.kind).toBe("failed");
+    expect(session.navigated).toEqual([U1, U2, U3]);
+  });
+
+  it("a navigation ERROR (dead path, not a refusal) tries the next path", async () => {
+    const session = fakeLadderSession({
+      navigate: (url) => (url === U1 ? new Error("net::ERR_NAME_NOT_RESOLVED") : { blocked: null }),
+      cards: { [U2]: [{ offerText: "$500 Loyalty Cash" }] },
+    });
+    const out = await runOfferLadder({ session, emitter: NULL_EMITTER, label: "x", urls: [U1, U2] });
+    expect(out.kind).toBe("captured");
+    if (out.kind !== "captured") throw new Error("unreachable");
+    expect(out.url).toBe(U2);
+  });
+});
+
+describe("collectOfferCards (the in-page collector)", () => {
+  it("rehydrated from source (no module scope), it still collects leaf-most offer cards", () => {
+    // The function SOURCE ships into the page — module-scope constants do not
+    // exist there. Rebuilding from toString() in an empty scope reproduces
+    // that boundary: any out-of-scope reference throws.
+    const rehydrated = new Function(
+      `return (${collectOfferCards.toString()});`,
+    )() as typeof collectOfferCards;
+
+    interface FakeEl {
+      textContent: string | null;
+      contains(other: FakeEl): boolean;
+      children?: FakeEl[];
+    }
+    const leafA: FakeEl = {
+      textContent: "  $1,500 Retail Bonus Cash on 2026 Tucson Hybrid. Expires 07/06/2026. ",
+      contains: () => false,
+    };
+    const leafB: FakeEl = {
+      textContent: "0.99% APR for 60 months on select models, well-qualified buyers",
+      contains: () => false,
+    };
+    const wrapper: FakeEl = {
+      textContent: `${leafA.textContent} ${leafB.textContent}`,
+      contains: (other) => other === leafA || other === leafB,
+    };
+    const noMoney: FakeEl = {
+      textContent: "Build your Hyundai. Explore the full lineup and find a dealer near you today.",
+      contains: () => false,
+    };
+    const fakeDoc = { querySelectorAll: () => [wrapper, leafA, leafB, noMoney] };
+    const g = globalThis as { document?: unknown };
+    const prevDoc = g.document;
+    g.document = fakeDoc;
+    try {
+      const cards = rehydrated({ max: 10 });
+      expect(cards).toHaveLength(2); // wrapper dropped (contains leaves), no-money dropped
+      expect(cards[0]!.offerText).toContain("$1,500 Retail Bonus Cash");
+      expect(cards[1]!.offerText).toContain("0.99% APR");
+    } finally {
+      if (prevDoc === undefined) delete g.document;
+      else g.document = prevDoc;
+    }
+  });
+
+  it("weaveOfferCards delimits one block per card", () => {
+    const woven = weaveOfferCards([{ offerText: "A" }, { offerText: "B" }]);
+    expect(woven).toBe("[OFFER 1]\nA\n\n[OFFER 2]\nB");
+  });
+
+  it("rooftopSpecialsUrls: canned paths off a usable site; denied/aggregator hosts yield none", () => {
+    expect(rooftopSpecialsUrls("https://www.tustinhyundai.com/")).toEqual([
+      "https://www.tustinhyundai.com/specials",
+      "https://www.tustinhyundai.com/offers",
+      "https://www.tustinhyundai.com/new-vehicle-specials",
+    ]);
+    expect(rooftopSpecialsUrls("https://www.cars.com/dealers/x")).toEqual([]);
+    expect(rooftopSpecialsUrls(null)).toEqual([]);
+    expect(rooftopSpecialsUrls("not a url")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// workflow-level fallback gating (dual source, discrepancy, #1244)
+// ---------------------------------------------------------------------------
+
+function seedRooftopDealer(profileId = "prof-1", website = "https://www.tustinhyundai.com/"): void {
+  db.$client
+    .prepare(
+      "INSERT INTO dealers (dealer_id, name, website, country, state, postal_code, city) " +
+        "VALUES (?, ?, ?, 'US', 'CA', '92614', 'Irvine')",
+    )
+    .run("dealer-rooftop-1", "Tustin Hyundai", website);
+  db.$client
+    .prepare(
+      "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'candidate')",
+    )
+    .run(profileId, "dealer-rooftop-1");
+}
+
+/** A capture stub that scripts the OEM arm and the rooftop arm separately. */
+function dualCaptureStub(script: {
+  oem: OfferCaptureOutcome | "record-only";
+  rooftop: OfferCaptureOutcome;
+  record?: { calls: OfferCaptureArgs[] };
+}) {
+  return async (args: OfferCaptureArgs): Promise<OfferCaptureOutcome> => {
+    script.record?.calls.push(args);
+    if (args.label.startsWith("oem-")) {
+      if (script.oem === "record-only") throw new Error("unexpected OEM capture");
+      return script.oem;
+    }
+    return script.rooftop;
+  };
+}
+
+/** A harness stub returning different rows per snapshot marker. */
+function perSourceHarnessStub(bySnippet: Record<string, Record<string, unknown>[]>) {
+  return (async (input: { prompt: string }) => {
+    for (const [snippet, incentives] of Object.entries(bySnippet)) {
+      if (input.prompt.includes(snippet)) return { object: { incentives }, usage: NO_USAGE };
+    }
+    throw new Error("no scripted rows for this prompt");
+  }) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"];
+}
+
+const CASH_1500 = { type: "customer_cash", amount: 1500, expires: "2026-07-06", eligibility: "all" };
+const CASH_2500 = { type: "customer_cash", amount: 2500, expires: "2026-07-06", eligibility: "all" };
+
+describe("incentive_scrape dual-source gating (the voiced fallback map)", () => {
+  afterEach(() => {
+    setIncentiveScrapeBrowserEmitterFactory(() => NULL_EMITTER);
+  });
+
+  async function approvedRun(runId: string) {
+    const { run, result } = await startRun(runId);
+    expect((result as { status: string }).status).toBe("suspended");
+    return run.resume({ step: "resolveOemSource", resumeData: { action: "save", url: null } });
+  }
+
+  it("OEM blocked → rooftop becomes the source: VOICED oem_source_fallback, rooftop provenance persisted", async () => {
+    seedProfile();
+    seedRooftopDealer();
+    const emitter = recordingEmitter();
+    setIncentiveScrapeBrowserEmitterFactory(() => emitter);
+    installDeps({
+      captureOffers: dualCaptureStub({
+        oem: { kind: "blocked", url: SEED_URL, marker: "akamai_block_page" },
+        rooftop: {
+          kind: "captured",
+          url: "https://www.tustinhyundai.com/specials",
+          snapshotText: "ROOFTOP $1,500 Retail Bonus Cash",
+          snapshotFallback: false,
+        },
+      }),
+      harnessGenerate: perSourceHarnessStub({ ROOFTOP: [CASH_1500] }),
+    });
+
+    const final = await approvedRun("inc-fb-1");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.brandsScraped).toBe(1);
+    expect(output.sourceFallbacks).toBe(1);
+    expect(output.summary).toContain("rooftop only");
+    expect(emitter.actions).toContainEqual(["oem_source_fallback", "hyundai"]);
+    const rows = incentiveRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!["scrape_source_url"]).toBe("https://www.tustinhyundai.com/specials");
+  });
+
+  it("both arms refused → blocked failure, ONE contact per arm, never escalated, zero writes", async () => {
+    seedProfile();
+    seedRooftopDealer();
+    const record = { calls: [] as OfferCaptureArgs[] };
+    installDeps({
+      captureOffers: dualCaptureStub({
+        oem: { kind: "blocked", url: SEED_URL, marker: "akamai_block_page" },
+        rooftop: { kind: "blocked", url: "https://www.tustinhyundai.com/specials", marker: "403" },
+        record,
+      }),
+      harnessGenerate: harnessNeverCalled,
+    });
+
+    const final = await approvedRun("inc-fb-2");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.brandsExtractionFailed).toBe(1);
+    expect(output.summary).toContain("blocked");
+    expect(record.calls).toHaveLength(2); // one ladder per arm — no retries
+    expect(incentiveRows()).toHaveLength(0);
+  });
+
+  it("dual capture, same programs → cross-verified (confidence boost), single-source truth persisted", async () => {
+    seedProfile();
+    seedRooftopDealer();
+    installDeps({
+      captureOffers: dualCaptureStub({
+        oem: { kind: "captured", url: SEED_URL, snapshotText: "OEMPAGE offers", snapshotFallback: false },
+        rooftop: {
+          kind: "captured",
+          url: "https://www.tustinhyundai.com/specials",
+          snapshotText: "ROOFTOP specials",
+          snapshotFallback: false,
+        },
+      }),
+      harnessGenerate: perSourceHarnessStub({ OEMPAGE: [CASH_1500], ROOFTOP: [CASH_1500] }),
+    });
+
+    const final = await approvedRun("inc-fb-3");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.crossVerifiedBrands).toBe(1);
+    expect(output.sourceDiscrepancies).toBe(0);
+    const rows = incentiveRows();
+    expect(rows).toHaveLength(1); // the OEM truth set, never a union
+    expect(rows[0]!["scrape_source_url"]).toBe(SEED_URL);
+  });
+
+  it("dual capture, same type different amount → VOICED source_discrepancy + an honest summary note", async () => {
+    seedProfile();
+    seedRooftopDealer();
+    const emitter = recordingEmitter();
+    setIncentiveScrapeBrowserEmitterFactory(() => emitter);
+    installDeps({
+      captureOffers: dualCaptureStub({
+        oem: { kind: "captured", url: SEED_URL, snapshotText: "OEMPAGE offers", snapshotFallback: false },
+        rooftop: {
+          kind: "captured",
+          url: "https://www.tustinhyundai.com/specials",
+          snapshotText: "ROOFTOP specials",
+          snapshotFallback: false,
+        },
+      }),
+      harnessGenerate: perSourceHarnessStub({ OEMPAGE: [CASH_1500], ROOFTOP: [CASH_2500] }),
+    });
+
+    const final = await approvedRun("inc-fb-4");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.crossVerifiedBrands).toBe(0);
+    expect(output.sourceDiscrepancies).toBe(1);
+    expect(output.summary).toContain("DISAGREE");
+    expect(emitter.actions.some(([type]) => type === "source_discrepancy")).toBe(true);
+    // The persisted truth is still the OEM set — the rooftop only verifies.
+    const rows = incentiveRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!["amount"]).toBe(1500);
+  });
+
+  it("two profiles, ONE brand: a single first-encounter approval covers both targets", async () => {
+    seedProfile({ id: "prof-a", accountId: "acct-1", zip: "92614" });
+    seedProfile({ id: "prof-b", model: "Elantra", accountId: "acct-2", zip: "90001" });
+    installDeps();
+    const { run, result } = await startRun("inc-fb-5");
+    expect((result as { status: string }).status).toBe("suspended");
+    const final = await run.resume({
+      step: "resolveOemSource",
+      resumeData: { action: "save", url: null },
+    });
+    expect((final as { status: string }).status).toBe("success");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.targetsTotal).toBe(2);
+    expect(output.brandsScraped).toBe(2); // brand-keyed registry covered both
+    const registry = readIncentiveRegistry(registryPath());
+    expect(Object.keys(registry)).toEqual(["hyundai"]);
+  });
+});
+
+describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
+  it("a THROWN MalformedToolCallAbort fails the run — persist never reached, zero rows", async () => {
+    seedProfile();
+    installDeps({
+      harnessGenerate: (async () => {
+        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+      }) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"],
+    });
+    const { run, result } = await startRun("inc-1244-a");
+    expect((result as { status: string }).status).toBe("suspended");
+    const final = await run.resume({
+      step: "resolveOemSource",
+      resumeData: { action: "save", url: null },
+    });
+    expect((final as { status: string }).status).toBe("failed");
+    expect(errorMessageOf(final)).toMatch(/[Mm]alformed/);
+    expect(incentiveRows()).toHaveLength(0); // capture happened; persist never did
+  });
+
+  it("a SUSPEND-SHAPED harness return fail-closes identically (the defensive branch)", async () => {
+    seedProfile();
+    installDeps({
+      harnessGenerate: (async () => ({
+        suspended: true,
+        reason: "malformed_tool_call",
+        signals: ["finish_reason_not_tool_calls"],
+      })) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"],
+    });
+    const { run, result } = await startRun("inc-1244-b");
+    expect((result as { status: string }).status).toBe("suspended");
+    const final = await run.resume({
+      step: "resolveOemSource",
+      resumeData: { action: "save", url: null },
+    });
+    expect((final as { status: string }).status).toBe("failed");
+    expect(incentiveRows()).toHaveLength(0);
+  });
+
+  it("rows that fail the Zod contract drop + count; the run stays honest", async () => {
+    seedProfile();
+    installDeps({
+      harnessGenerate: harnessStub([
+        { type: "customer_cash", amount: 1500, expires: "2026-07-06", eligibility: "all" },
+        { type: "customer_cash", amount: -5, expires: null, eligibility: "all" }, // ge-0 violated
+        { type: "customer_cash", amount: 500, expires: "July 6", eligibility: "all" }, // prose date
+      ]),
+    });
+    const { run } = await startRun("inc-zod-1");
+    const final = await run.resume({
+      step: "resolveOemSource",
+      resumeData: { action: "save", url: null },
+    });
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.rowsInvalidDropped).toBe(2);
+    expect(output.incentivesWritten).toBe(1);
+  });
+});

@@ -251,6 +251,7 @@ export {
   collectOfferCards,
   weaveOfferCards,
   rooftopSpecialsUrls,
+  runOfferLadder,
   captureOffersImpl,
   OFFER_COLLECT_MAX,
   OFFER_RENDER_MIN_CHARS,
@@ -259,6 +260,7 @@ export {
   type CollectedOfferCard,
   type OfferCaptureArgs,
   type OfferCaptureOutcome,
+  type OfferLadderSession,
 } from "./incentiveScrape.js";
 
 // The registered-workflows map for createMastraInstance({ workflows }) and the

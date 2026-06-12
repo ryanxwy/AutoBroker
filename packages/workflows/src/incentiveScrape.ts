@@ -290,62 +290,91 @@ export type OfferCaptureOutcome =
   | { kind: "blocked"; url: string; marker: string | null }
   | { kind: "failed"; message: string };
 
+/** The narrow session slice the ladder drives (the real BrowserSession
+ *  satisfies it; tests stub it with a fake page). */
+export interface OfferLadderSession {
+  newPage(): Promise<{
+    evaluate(fn: typeof collectOfferCards, args: { max: number }): Promise<CollectedOfferCard[]>;
+    close(): Promise<void>;
+  }>;
+  navigate(page: never, url: string): Promise<{ blocked: string | null }>;
+  lazyScroll(page: never): Promise<void>;
+  snapshot(page: never): Promise<string>;
+}
+
 /**
- * The REAL capture ladder: ONE isolated throwaway browser for the ladder's
- * host, candidate URLs serial inside (the session's per-host politeness
- * throttle paces them). Per URL: navigate → blocked = STOP the ladder
- * (recorded, never escalated) → lazy-scroll → deterministic offer-card
- * collection (cards → woven blocks; card-less → VOICED plain-snapshot
- * fallback, thin renders fall through to the next path). Read faces only.
+ * One capture ladder over an ALREADY-OPEN session: candidate URLs serial
+ * (the session's per-host politeness throttle paces them). Per URL:
+ * navigate → BLOCKED = STOP the whole ladder (recorded, never escalated, the
+ * remaining paths are NEVER contacted — a refusing host is not poked again
+ * this run) → lazy-scroll → deterministic offer-card collection (cards →
+ * woven blocks; card-less → VOICED plain-snapshot fallback; a thin card-less
+ * render is a dead/404 page and falls through to the next path). Read faces
+ * only — this path can express navigation, scrolling and read-only DOM
+ * evaluation; it holds no Approver, so the one mutating browser face is
+ * structurally unreachable.
+ *
+ * Exported for unit tests with a fake session (captureOffersImpl is the
+ * production caller, wrapping it in an isolated throwaway browser).
  */
+export async function runOfferLadder(deps: {
+  session: OfferLadderSession;
+  emitter: BrowserEmitter;
+  label: string;
+  urls: readonly string[];
+}): Promise<OfferCaptureOutcome> {
+  const { session, emitter, label, urls } = deps;
+  const page = await session.newPage();
+  try {
+    let lastFailure = "every candidate path failed to render";
+    for (const url of urls) {
+      let nav: { blocked: string | null };
+      try {
+        nav = await session.navigate(page as never, url);
+      } catch (err) {
+        lastFailure = err instanceof Error ? err.message : String(err);
+        continue; // a dead path is not a refusal — try the next one
+      }
+      if (nav.blocked !== null) {
+        return { kind: "blocked", url, marker: nav.blocked };
+      }
+      await session.lazyScroll(page as never);
+      const cards = await page.evaluate(collectOfferCards, { max: OFFER_COLLECT_MAX });
+      if (cards.length > 0) {
+        return {
+          kind: "captured",
+          url,
+          snapshotText: capSnapshot(weaveOfferCards(cards)),
+          snapshotFallback: false,
+        };
+      }
+      // Card-less DOM → the plain page-text snapshot (equivalent-read
+      // fallback: auto-allowed, VOICED — never silent).
+      const snapshot = await session.snapshot(page as never);
+      if (snapshot.length >= OFFER_RENDER_MIN_CHARS) {
+        emitter.action("snapshot_fallback", label);
+        return { kind: "captured", url, snapshotText: snapshot, snapshotFallback: true };
+      }
+      lastFailure = `thin render at ${url} (${snapshot.length} chars)`;
+    }
+    return { kind: "failed", message: lastFailure };
+  } finally {
+    await page.close().catch(() => undefined);
+  }
+}
+
+/** The REAL capture ladder: ONE isolated throwaway browser for the ladder's
+ *  host (named `${runId}-${label}` so trace files never collide), then the
+ *  serial ladder above. */
 export async function captureOffersImpl(args: OfferCaptureArgs): Promise<OfferCaptureOutcome> {
   if (args.urls.length === 0) return { kind: "failed", message: "no candidate URLs" };
-  return withBrowserContext(
-    `${args.runId}-${args.label}`,
-    { emitter: args.emitter },
-    async (session): Promise<OfferCaptureOutcome> => {
-      const page = await session.newPage();
-      try {
-        let lastFailure = "every candidate path failed to render";
-        for (const url of args.urls) {
-          let nav: { blocked: string | null };
-          try {
-            nav = await session.navigate(page, url);
-          } catch (err) {
-            lastFailure = err instanceof Error ? err.message : String(err);
-            continue; // a dead path is not a refusal — try the next one
-          }
-          if (nav.blocked !== null) {
-            // The host refused at first contact: record, stop the WHOLE
-            // ladder — a refusing host is never poked again this run.
-            return { kind: "blocked", url, marker: nav.blocked };
-          }
-          await session.lazyScroll(page);
-          const cards = await page.evaluate(collectOfferCards, { max: OFFER_COLLECT_MAX });
-          if (cards.length > 0) {
-            return {
-              kind: "captured",
-              url,
-              snapshotText: capSnapshot(weaveOfferCards(cards)),
-              snapshotFallback: false,
-            };
-          }
-          // Card-less DOM → the plain page-text snapshot (equivalent-read
-          // fallback: auto-allowed, VOICED — never silent). A thin render is
-          // a dead/404 page, not an offers page: fall through to the next
-          // candidate path instead of extracting noise.
-          const snapshot = await session.snapshot(page);
-          if (snapshot.length >= OFFER_RENDER_MIN_CHARS) {
-            args.emitter.action("snapshot_fallback", args.label);
-            return { kind: "captured", url, snapshotText: snapshot, snapshotFallback: true };
-          }
-          lastFailure = `thin render at ${url} (${snapshot.length} chars)`;
-        }
-        return { kind: "failed", message: lastFailure };
-      } finally {
-        await page.close().catch(() => undefined);
-      }
-    },
+  return withBrowserContext(`${args.runId}-${args.label}`, { emitter: args.emitter }, (session) =>
+    runOfferLadder({
+      session: session as unknown as OfferLadderSession,
+      emitter: args.emitter,
+      label: args.label,
+      urls: args.urls,
+    }),
   );
 }
 
