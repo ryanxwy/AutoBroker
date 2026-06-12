@@ -139,13 +139,13 @@ describe("chunkFrame / flag", () => {
     expect(chunkFrame({ type: "finish" })).toBe('data: {"type":"finish"}\n\n');
   });
 
-  it("streamV2Enabled reads AUTOBROKER_STREAM_V2=1 (default off — legacy /stream stays default)", () => {
+  it("streamV2Enabled defaults ON (the rail consumes it); AUTOBROKER_STREAM_V2=0 disables", () => {
     const prior = process.env.AUTOBROKER_STREAM_V2;
     try {
       delete process.env.AUTOBROKER_STREAM_V2;
-      expect(streamV2Enabled()).toBe(false);
-      process.env.AUTOBROKER_STREAM_V2 = "1";
       expect(streamV2Enabled()).toBe(true);
+      process.env.AUTOBROKER_STREAM_V2 = "0";
+      expect(streamV2Enabled()).toBe(false);
     } finally {
       if (prior === undefined) delete process.env.AUTOBROKER_STREAM_V2;
       else process.env.AUTOBROKER_STREAM_V2 = prior;

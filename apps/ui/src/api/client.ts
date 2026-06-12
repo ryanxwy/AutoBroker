@@ -6,15 +6,15 @@
  * error envelope into a typed ApiError.
  *
  * Routes covered (apps/server/src/routes.ts):
- *   POST /api/skill-runs                     :144  startRun
- *   GET  /api/skill-runs/:id                 :166  runStatus
- *   POST /api/skill-runs/:id/form-decision   :237  formDecision
- *   GET  /api/profiles                       :262  listProfiles
- *   GET  /api/profiles/:id                   :268  getProfile
- *   GET  /api/skills                         :278  listSkills
- *   GET  /api/mode                           :283  getMode
- * The SSE stream (GET /api/skill-runs/:id/stream, :176) is NOT fetched here —
- * it is owned by the single EventSource hook (useRunStream.ts).
+ *   POST /api/skill-runs                     startRun
+ *   GET  /api/skill-runs/:id                 runStatus
+ *   GET  /api/skill-runs/:id/stream-v2       streamRun (raw SSE Response — the
+ *                                            chat transport decodes the chunks)
+ *   POST /api/skill-runs/:id/form-decision   formDecision
+ *   GET  /api/profiles                       listProfiles
+ *   GET  /api/profiles/:id                   getProfile
+ *   GET  /api/skills                         listSkills
+ *   GET  /api/mode                           getMode
  *
  * `/api/sessions` is in the design but the server exposes
  * NO sessions route yet (routes.ts has none) — a sessions client lands with the
@@ -71,30 +71,39 @@ export class ApiError extends Error {
   }
 }
 
+/** Parse a body as JSON (null on empty/malformed) and build the typed ApiError
+ *  for a non-2xx response (envelope-decoded, synthetic code otherwise). */
+function apiErrorFrom(status: number, json: unknown): ApiError {
+  const parsed = ErrorEnvelopeSchema.safeParse(json);
+  if (parsed.success) {
+    const e = parsed.data.error;
+    return new ApiError(status, e.code, e.message, {
+      ...(e.field !== undefined ? { field: e.field } : {}),
+      envelope: e,
+    });
+  }
+  // Not our envelope (gateway error, empty body) → synthetic code.
+  return new ApiError(status, `http_${status}`, `request failed (${status})`, {
+    envelope: null,
+  });
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return text.length > 0 ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Decode a response body with `schema`, throwing a typed ApiError on a non-2xx
  *  (envelope-decoded) or a DecodeError on a 2xx that fails the schema. */
 async function decode<T>(res: Response, schema: z.ZodType<T>): Promise<T> {
   const text = await res.text();
-  let json: unknown;
-  try {
-    json = text.length > 0 ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
+  const json = parseJson(text);
 
   if (!res.ok) {
-    const parsed = ErrorEnvelopeSchema.safeParse(json);
-    if (parsed.success) {
-      const e = parsed.data.error;
-      throw new ApiError(res.status, e.code, e.message, {
-        ...(e.field !== undefined ? { field: e.field } : {}),
-        envelope: e,
-      });
-    }
-    // Not our envelope (gateway error, empty body) → synthetic code.
-    throw new ApiError(res.status, `http_${res.status}`, `request failed (${res.status})`, {
-      envelope: null,
-    });
+    throw apiErrorFrom(res.status, json);
   }
 
   const parsed = schema.safeParse(json);
@@ -143,6 +152,23 @@ export class ApiClient {
   async runStatus(runId: string): Promise<SkillRunSummary> {
     const res = await this.fetchImpl(this.url(`/api/skill-runs/${encodeURIComponent(runId)}`));
     return decode(res, SkillRunSummarySchema);
+  }
+
+  /** GET /api/skill-runs/:id/stream-v2 — the AI SDK UI-message-stream SSE.
+   *  Returns the RAW streaming Response (the chat transport decodes it chunk by
+   *  chunk); a non-2xx decodes the error envelope into a typed ApiError. */
+  async streamRun(runId: string, signal?: AbortSignal): Promise<Response> {
+    const res = await this.fetchImpl(
+      this.url(`/api/skill-runs/${encodeURIComponent(runId)}/stream-v2`),
+      {
+        headers: { accept: "text/event-stream" },
+        ...(signal !== undefined ? { signal } : {}),
+      },
+    );
+    if (!res.ok) {
+      throw apiErrorFrom(res.status, parseJson(await res.text()));
+    }
+    return res;
   }
 
   /** POST /api/skill-runs/:id/form-decision → 200 ack (routes.ts:237). The

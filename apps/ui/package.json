@@ -17,7 +17,9 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@ai-sdk/react": "3.0.202",
     "@autobroker/core": "workspace:*",
+    "ai": "6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^4.0.0",

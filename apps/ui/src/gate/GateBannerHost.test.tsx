@@ -7,32 +7,25 @@
  * banner host empty (the rail's gate zone owns it).
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { GateBannerHost } from "./GateBannerHost.js";
-import { useChat } from "../store/useChat.js";
+import type { AwaitingUserPayload } from "../chat/messageModel.js";
 import { render } from "../test/render.js";
 
-/** Seed one session whose assistant turn is awaiting_user on a suspend of `kind`. */
-function seedAwaiting(runId: string, kind: string): void {
-  const s = useChat.getState();
-  s.createSession({ sessionId: "sess-1" });
-  s.appendAssistantTurn(runId);
-  s.applyRunFrame(runId, {
-    ts: "t1",
-    kind: "awaiting_user",
-    payload: { decision_id: "d1", form_kind: kind, step: "confirm", spec_inline: { kind } },
-  });
+/** The projected pending suspend for a gate of `kind` (what App passes down). */
+function awaiting(kind: string): AwaitingUserPayload {
+  return {
+    decisionId: "d1",
+    formKind: kind,
+    step: "confirm",
+    specInline: { kind },
+  };
 }
-
-beforeEach(() => {
-  useChat.getState().__reset();
-});
 
 describe("GateBannerHost — never-hidden pending card", () => {
   it("a banner-tracked 'approval' suspend renders the visible pending card with no decision controls", () => {
-    seedAwaiting("run-1", "approval");
-    const r = render(<GateBannerHost activeRunId="run-1" />);
+    const r = render(<GateBannerHost awaiting={awaiting("approval")} />);
     const card = r.get("gate-banner-pending");
     expect(card.textContent).toContain("approval");
     expect(card.hidden).toBe(false);
@@ -42,8 +35,7 @@ describe("GateBannerHost — never-hidden pending card", () => {
   });
 
   it("a rail-tracked 'data_collection' suspend leaves the banner host empty", () => {
-    seedAwaiting("run-2", "data_collection");
-    const r = render(<GateBannerHost activeRunId="run-2" />);
+    const r = render(<GateBannerHost awaiting={awaiting("data_collection")} />);
     expect(r.query("gate-banner-pending")).toBeNull();
     r.unmount();
   });

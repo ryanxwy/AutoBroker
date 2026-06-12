@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 /**
  * App.test — the shell integration path. Drives the
- * real App with an injected ApiClient (mock fetch) + a mock EventSource so the
- * full chain runs without a network: the canvas empty state renders → "Start a
- * new search" POSTs start → the rail binds the run → the SSE awaiting_user frame
- * surfaces the intake form in the gate zone (and the empty gate-banner host
- * precedes app-main in document order). Also: launching a skill from the Skills
- * popover (open → enabled Run button → POST), and refresh recovery — mounting at
- * /runs/:id with no in-store turn re-binds + re-subscribes (server replays).
+ * real App with an injected ApiClient (mock fetch, including a hand-driven
+ * /stream-v2 SSE body) so the full chain runs without a network: the canvas
+ * empty state renders → "Start a new search" POSTs start → the single
+ * App-level useChat opens the run's stream → the data-gate chunk surfaces the
+ * intake form in the gate zone (and the empty gate-banner host precedes
+ * app-main in document order). Also: launching a skill from the Skills popover
+ * (open → enabled Run button → POST), and refresh recovery — mounting at
+ * /runs/:id with no in-chat message reconnects (server replays).
  */
 
 import { act } from "react";
@@ -15,49 +16,51 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App.js";
 import { ApiClient } from "./api/client.js";
-import { __resetRunStreamRegistryForTests } from "./api/useRunStream.js";
-import { useChat } from "./store/useChat.js";
-import { change, click, render } from "./test/render.js";
-import type { SseEvent } from "./api/wire.js";
+import { render, change, click } from "./test/render.js";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// --- mock EventSource (one live instance the test drives) -----------------
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  static readonly CLOSED = 2;
-  readonly CLOSED = 2;
-  url: string;
-  readyState = 1;
-  onmessage: ((ev: MessageEvent) => void) | null = null;
-  onerror: ((ev: Event) => void) | null = null;
-  closed = false;
+// --- mock /stream-v2 (one live SSE body per subscribed run) ----------------
+class MockStream {
+  static instances: MockStream[] = [];
+  readonly url: string;
+  readonly response: Response;
+  private controller!: ReadableStreamDefaultController<Uint8Array>;
+  private readonly encoder = new TextEncoder();
+
   constructor(url: string) {
     this.url = url;
-    MockEventSource.instances.push(this);
+    const body = new ReadableStream<Uint8Array>({
+      start: (c): void => {
+        this.controller = c;
+      },
+    });
+    this.response = new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream", "x-vercel-ai-ui-message-stream": "v1" },
+    });
+    MockStream.instances.push(this);
   }
-  emit(ev: SseEvent): void {
-    act(() => this.onmessage?.({ data: JSON.stringify(ev) } as MessageEvent));
-  }
-  close(): void {
-    this.closed = true;
-    this.readyState = 2;
-  }
-}
-(globalThis as unknown as { EventSource: unknown }).EventSource = MockEventSource;
 
-function frame(kind: string, payload: Record<string, unknown>, ts: string): SseEvent {
-  return { ts, kind, payload };
+  emit(chunk: Record<string, unknown>): void {
+    this.controller.enqueue(this.encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+  }
+
+  end(): void {
+    this.controller.enqueue(this.encoder.encode("data: [DONE]\n\n"));
+    this.controller.close();
+  }
 }
 
 /** A mock fetch that answers the routes the App calls. `posted` captures every
  *  POST /api/skill-runs body; `profiles` seeds the active-profile list (the
- *  Home ledger pin gate reads it). */
+ *  Skills-popover pin gate reads it). */
 function mockFetch(opts: { posted?: Array<Record<string, unknown>>; profiles?: unknown[] } = {}): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     const json = (body: unknown, status = 200): Response =>
       new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (url.includes("/stream-v2")) return new MockStream(url).response;
     if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x" });
     if (url.endsWith("/api/skills"))
       return json([
@@ -77,24 +80,35 @@ function mockFetch(opts: { posted?: Array<Record<string, unknown>>; profiles?: u
 }
 
 beforeEach(() => {
-  MockEventSource.instances = [];
-  __resetRunStreamRegistryForTests();
-  useChat.getState().__reset();
+  MockStream.instances = [];
   window.history.pushState({}, "", "/");
 });
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Flush microtasks AND the stream read loop (macrotask turns). */
 function flush(): Promise<void> {
   return act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 4; i += 1) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
   });
 }
 
+const COLLECT_GATE = {
+  type: "data-gate",
+  id: "d1",
+  data: {
+    decision_id: "d1",
+    form_kind: "data_collection",
+    step: "collect",
+    spec_inline: { kind: "data_collection", form_kind: "intake", seed_fields: null },
+  },
+};
+
 describe("App — launch → rail bind → gate render", () => {
-  it("Start a new search launches intake and the SSE form surfaces in the gate zone", async () => {
+  it("Start a new search launches intake and the streamed gate surfaces in the gate zone", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });
     const r = render(<App client={client} />);
     await flush(); // resolve mode/skills/profiles.
@@ -108,26 +122,28 @@ describe("App — launch → rail bind → gate render", () => {
     expect(banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     click(r.get("canvas-start-search"));
-    await flush(); // resolve the POST start + navigate.
+    await flush(); // resolve the POST start + open the stream + navigate.
 
-    // Navigated to the run view; the rail bound the run.
+    // Navigated to the run view; the single chat opened the run's stream.
     expect(window.location.pathname).toBe("/runs/run-xyz");
-    const es = MockEventSource.instances[0];
-    expect(es).toBeDefined();
+    const stream = MockStream.instances[0];
+    expect(stream).toBeDefined();
+    expect(stream!.url).toContain("/api/skill-runs/run-xyz/stream-v2");
 
-    // Drive the awaiting_user form frame → the gate zone shows the intake form.
-    es!.emit(frame("init", { run_id: "run-xyz", driver_kind: "deepseek_apikey" }, "t0"));
-    es!.emit(
-      frame(
-        "awaiting_user",
-        { decision_id: "d1", form_kind: "data_collection", step: "collect", spec_inline: { kind: "data_collection", form_kind: "intake", seed_fields: null } },
-        "t1",
-      ),
-    );
+    // Drive the protocol chunks → the gate zone shows the intake form.
+    stream!.emit({ type: "start", messageId: "run-xyz" });
+    stream!.emit({
+      type: "data-frame",
+      id: "frame-0",
+      data: { kind: "init", payload: { run_id: "run-xyz", driver_kind: "deepseek_apikey" } },
+    });
+    stream!.emit(COLLECT_GATE);
     await flush();
 
     expect(r.query("turn-zone-gate")).not.toBeNull();
     expect(r.query("intake-form")).not.toBeNull();
+    // The turn carries the projected awaiting status (the stable DOM contract).
+    expect(r.get("assistant-turn").getAttribute("data-status")).toBe("awaiting_approval");
     r.unmount();
   });
 });
@@ -149,6 +165,8 @@ describe("App — non-intake slash starts THAT skill", () => {
     // A generic start never forks (no from_session_id — only intake forks).
     expect("from_session_id" in posted[0]!).toBe(false);
     expect(window.location.pathname).toBe("/runs/run-geo");
+    // The typed slash renders as the user turn in the rail.
+    expect(r.get("user-turn").textContent).toBe("/dealer_geosearch");
     r.unmount();
   });
 
@@ -195,28 +213,64 @@ describe("App — Skills popover launches implemented non-intake skills", () => 
     expect(posted).toHaveLength(1);
     expect(posted[0]!["skill"]).toBe("dealer_geosearch");
     expect(window.location.pathname).toBe("/runs/run-geo");
+    // A button launch sends the SILENT stream carrier — no user turn renders.
+    expect(r.query("user-turn")).toBeNull();
     r.unmount();
   });
 });
 
 describe("App — refresh recovery", () => {
-  it("mounting at /runs/:id with no in-store turn re-binds and re-subscribes", async () => {
+  it("mounting at /runs/:id with no in-chat message re-binds and re-subscribes", async () => {
     window.history.pushState({}, "", "/runs/run-recovered");
     const client = new ApiClient({ fetchImpl: mockFetch() });
     const r = render(<App client={client} />);
     await flush();
 
-    // A fresh EventSource opened for the recovered run (server replays the backlog).
-    const es = MockEventSource.instances.find((e) => e.url.includes("run-recovered"));
-    expect(es).toBeDefined();
+    // A fresh stream opened for the recovered run (server replays the backlog).
+    const stream = MockStream.instances.find((s) => s.url.includes("run-recovered"));
+    expect(stream).toBeDefined();
 
-    // The replayed awaiting_user re-surfaces the form (draft restore is in the form).
-    es!.emit(frame("init", { driver_kind: "deepseek_apikey" }, "t0"));
-    es!.emit(
-      frame("awaiting_user", { decision_id: "d9", form_kind: "data_collection", step: "collect", spec_inline: { kind: "data_collection", form_kind: "intake", seed_fields: null } }, "t1"),
-    );
+    // The replayed gate re-surfaces the form (draft restore is in the form).
+    stream!.emit({ type: "start", messageId: "run-recovered" });
+    stream!.emit({
+      type: "data-frame",
+      id: "frame-0",
+      data: { kind: "init", payload: { driver_kind: "deepseek_apikey" } },
+    });
+    stream!.emit({ ...COLLECT_GATE, id: "d9", data: { ...COLLECT_GATE.data, decision_id: "d9" } });
     await flush();
     expect(r.query("intake-form")).not.toBeNull();
+    r.unmount();
+  });
+});
+
+describe("App — declined terminal renders the cancelled line", () => {
+  it("an aborted{user_declined} data-frame + abort chunk projects data-status declined", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    click(r.get("canvas-start-search"));
+    await flush();
+    const stream = MockStream.instances[0]!;
+    stream.emit({ type: "start", messageId: "run-xyz" });
+    stream.emit(COLLECT_GATE);
+    await flush();
+    expect(r.query("intake-form")).not.toBeNull();
+
+    // The decline lands as the persisted aborted data-frame + the abort chunk.
+    stream.emit({
+      type: "data-frame",
+      id: "frame-9",
+      data: { kind: "aborted", payload: { reason: "user_declined" } },
+    });
+    stream.emit({ type: "abort", reason: "user_declined" });
+    stream.end();
+    await flush();
+
+    expect(r.get("assistant-turn").getAttribute("data-status")).toBe("declined");
+    expect(r.query("turn-declined")).not.toBeNull();
+    expect(r.query("intake-form")).toBeNull();
     r.unmount();
   });
 });

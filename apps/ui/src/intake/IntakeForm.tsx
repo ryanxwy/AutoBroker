@@ -21,7 +21,7 @@ import {
   MalformedRetryGate,
 } from "../gate/IntakeGates.js";
 import { FormBoundary } from "./FormBoundary.js";
-import type { AwaitingUserPayload } from "../api/useRunStream.js";
+import type { AwaitingUserPayload } from "../chat/messageModel.js";
 
 export type DecisionAction = "accept" | "decline" | "cancel";
 

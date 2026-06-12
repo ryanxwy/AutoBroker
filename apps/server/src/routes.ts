@@ -331,10 +331,11 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
 
   // ---- GET /api/skill-runs/:id/stream-v2 — AI SDK UI-message-stream --------
-  // Flag-parallel to the legacy /stream above (which stays the default): the
-  // SAME pubsub channel translated onto the UI-message-stream protocol
-  // (UiStreamTranslator owns the frame→chunk mapping). Registered only when
-  // AUTOBROKER_STREAM_V2=1.
+  // Flag-parallel to the legacy /stream above (untouched — the harness/API-lane
+  // readers keep it): the SAME pubsub channel translated onto the
+  // UI-message-stream protocol (UiStreamTranslator owns the frame→chunk
+  // mapping). The dashboard rail consumes THIS route; AUTOBROKER_STREAM_V2=0
+  // disables it during the parallel window.
   if (streamV2Enabled()) {
     app.get(
       "/api/skill-runs/:id/stream-v2",

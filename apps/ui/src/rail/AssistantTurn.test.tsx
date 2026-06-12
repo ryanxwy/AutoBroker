@@ -11,13 +11,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AssistantTurn } from "./AssistantTurn.js";
 import { click, render } from "../test/render.js";
-import type { AssistantTurn as AssistantTurnState } from "../store/useChat.js";
+import type { AssistantTurnView } from "../chat/messageModel.js";
 
-function turnState(overrides: Partial<AssistantTurnState>): AssistantTurnState {
+function turnState(overrides: Partial<AssistantTurnView>): AssistantTurnView {
   return {
-    clientId: "c1",
     runId: "run-1",
-    role: "assistant",
     status: "awaiting_approval",
     text: "",
     milestones: [],

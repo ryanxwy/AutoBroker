@@ -52,10 +52,11 @@ export const STREAM_V2_HEADERS: Record<string, string> = {
 /** The stream terminator sentinel (protocol-standard). */
 export const STREAM_V2_DONE = "[DONE]";
 
-/** Flag-parallel rollout: the legacy /stream stays the default; /stream-v2
- *  registers only when AUTOBROKER_STREAM_V2=1 (the repo's env-flag idiom). */
+/** Flag-parallel rollout: the dashboard's chat rail consumes /stream-v2, so it
+ *  registers by DEFAULT; AUTOBROKER_STREAM_V2=0 disables it during the parallel
+ *  window (the legacy /stream stays untouched for the harness/API-lane readers). */
 export function streamV2Enabled(): boolean {
-  return process.env.AUTOBROKER_STREAM_V2 === "1";
+  return process.env.AUTOBROKER_STREAM_V2 !== "0";
 }
 
 /** Serialize one protocol chunk as an SSE frame (`data: <json>\n\n`). */

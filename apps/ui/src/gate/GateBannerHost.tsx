@@ -11,31 +11,19 @@
  * the never-hidden safety floor in case a banner-tracked kind arrives before
  * its decision surface is built (a pending gate must always be visible).
  *
- * Dependency wall: app/ui layer. Reads the chat store; never the network.
+ * Presentational: the App (the single useChat host) projects the active run's
+ * pending suspend and passes it down; this component never reads the network.
  */
 
-import type { AwaitingUserPayload } from "../api/useRunStream.js";
-import { useChat } from "../store/useChat.js";
+import type { AwaitingUserPayload } from "../chat/messageModel.js";
 import { gateTrack } from "./gateTrack.js";
 
-/** The pending suspend payload for the active run, or null. */
-function selectAwaiting(
-  sessions: ReturnType<typeof useChat.getState>["sessions"],
-  activeRunId: string | null,
-): AwaitingUserPayload | null {
-  if (activeRunId === null) return null;
-  for (const session of Object.values(sessions)) {
-    for (const turn of session.turns) {
-      if (turn.role === "assistant" && turn.runId === activeRunId && turn.status === "awaiting_approval") {
-        return turn.awaitingUser;
-      }
-    }
-  }
-  return null;
-}
-
-export function GateBannerHost({ activeRunId }: { activeRunId: string | null }): JSX.Element {
-  const awaiting = useChat((s) => selectAwaiting(s.sessions, activeRunId));
+export function GateBannerHost({
+  awaiting,
+}: {
+  /** The active run's pending suspend (null when not suspended). */
+  awaiting: AwaitingUserPayload | null;
+}): JSX.Element {
   const rawKind = awaiting?.specInline?.["kind"];
   const kind = typeof rawKind === "string" ? rawKind : null;
   const showBanner = awaiting !== null && gateTrack(kind) === "banner";

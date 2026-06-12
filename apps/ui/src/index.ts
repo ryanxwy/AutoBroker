@@ -14,21 +14,26 @@
 export { ApiClient, ApiError, apiClient } from "./api/client.js";
 export type { ApiClientOptions } from "./api/client.js";
 
-export { useRunStream, __resetRunStreamRegistryForTests } from "./api/useRunStream.js";
+// --- the chat stack (the single App-level useChat's collaborators) ---------
+export { projectAssistantTurn, projectTurns, readAwaitingUser } from "./chat/messageModel.js";
 export type {
-  RunStreamState,
+  RunUIMessage,
+  RunDataParts,
+  AssistantTurnView as AssistantTurnState,
   AwaitingUserPayload,
-  UseRunStreamOptions,
-} from "./api/useRunStream.js";
-
-export { useChat } from "./store/useChat.js";
-export type {
-  Session,
-  Turn,
-  UserTurn,
-  AssistantTurn,
   Milestone,
-} from "./store/useChat.js";
+  TurnView,
+} from "./chat/messageModel.js";
+export { RunChatTransport } from "./chat/transport.js";
+export { uiChunkStream } from "./chat/uiStream.js";
+export { useDecision } from "./chat/useDecision.js";
+export type { DecisionController } from "./chat/useDecision.js";
+
+// --- the LEGACY stream stack (deleted by the next slice; unused by the App) -
+export { useRunStream, __resetRunStreamRegistryForTests } from "./api/useRunStream.js";
+export type { RunStreamState, UseRunStreamOptions } from "./api/useRunStream.js";
+export { useChat } from "./store/useChat.js";
+export type { Session, Turn, UserTurn, AssistantTurn } from "./store/useChat.js";
 
 export * from "./api/wire.js";
 

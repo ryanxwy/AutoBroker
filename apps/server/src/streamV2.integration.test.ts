@@ -11,7 +11,7 @@
  *       profile/audit rows, status 'declined') and EXACTLY ONE terminal
  *       abort{reason:'user_declined'} reaches the client — subscribed LIVE
  *       (before the decline), so the decline flows down an open stream.
- *   (c) the flag: route absent (404 envelope) unless AUTOBROKER_STREAM_V2=1;
+ *   (c) the flag: AUTOBROKER_STREAM_V2=0 unregisters the route (404 envelope);
  *       legacy /stream remains live and untouched either way.
  *
  * ISOLATION: fresh tmp AUTOBROKER_DATA_DIR per case; never ~/.autobroker*;
@@ -306,7 +306,7 @@ describe("F′3 — decline over a LIVE v2 stream", () => {
 
 describe("flag-parallel rollout", () => {
   it("with the flag OFF the v2 route does not exist; legacy /stream still serves", async () => {
-    delete process.env[V2_FLAG];
+    process.env[V2_FLAG] = "0";
     const s = await buildWith();
     const { runId } = await startSlashToCollect(s);
 

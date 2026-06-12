@@ -17,10 +17,10 @@
 
 import { gateTrack } from "../gate/gateTrack.js";
 import { IntakeForm, type DecisionAction } from "../intake/IntakeForm.js";
-import type { AssistantTurn as AssistantTurnState } from "../store/useChat.js";
+import type { AssistantTurnView } from "../chat/messageModel.js";
 
 export interface AssistantTurnProps {
-  turn: AssistantTurnState;
+  turn: AssistantTurnView;
   /** True while a decision is in flight (disables the gate actions). */
   submitting: boolean;
   /** Post a form-decision for this turn's run (accept|decline|cancel). */
