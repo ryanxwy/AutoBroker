@@ -12,9 +12,14 @@
  * basic-string keys validated against the core registry-row contract):
  *
  *   [hyundai]
- *   url_template = "https://www.hyundaiusa.com/us/en/offers?zip={zip}&model={model}"
+ *   url_template = "https://www.hyundaiusa.com/us/en/offers"
  *   added_at = "2026-06-12T18:00:00.000Z"
  *   added_for_profile = "sp_a1b2c3"
+ *
+ * A template may carry AT MOST one `?key={placeholder}` pair: the source-URL
+ * validator rejects `&` anywhere in a query, so a multi-param template can
+ * never validate after substitution. Param-free (like the example) is the
+ * normal shape — zip/model targeting happens at extraction, not in the URL.
  *
  * The reader fails LOUD on anything it does not understand (an unreadable
  * registry must surface, not silently become "never approved anything").
