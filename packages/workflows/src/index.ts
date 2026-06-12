@@ -198,6 +198,7 @@ export {
   bucketLinksByHost,
   captureOneLink,
   captureLinksParallelImpl,
+  runLinkBucket,
   type InventoryLinkScanWorkflowDeps,
   type InventoryLinkScanStopCode,
   type LinkScanSkipReason,

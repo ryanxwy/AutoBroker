@@ -97,6 +97,30 @@
  * structurally absent from this file — only year/make/model/trim reach
  * classification, and only make/model reach the extraction prompt.
  *
+ * FALLBACK GATING MAP (semantic → suspend/abort; transient → auto + voiced):
+ *   - reviewGate decline/cancel        → terminal `declined`, zero nav, zero
+ *                                        writes (semantic, human-decided).
+ *   - card-less DOM → plain snapshot   → AUTO-allowed equivalent read, voiced
+ *                                        `snapshot_fallback` + tallied (the
+ *                                        transient class — never silent).
+ *   - blocked navigation               → recorded at first contact, host-wide
+ *                                        for the rest of the bucket, never
+ *                                        retried harder, never escalated;
+ *                                        surfaced in the confirm counts.
+ *   - malformed structured call (#1244)→ hitlAvailable=false on every extract
+ *                                        call: the harness facade's armed
+ *                                        detector hard-aborts with the typed
+ *                                        MalformedToolCallAbort — the run
+ *                                        FAILS (zero writes; persist is never
+ *                                        reached), never a prose fallthrough.
+ *   - unrenderable suspend payload     → the suspend payload is schema-bound
+ *                                        (LinkScanReviewSuspendSchema) and the
+ *                                        card host falls back to its
+ *                                        never-hidden pending placeholder on a
+ *                                        defensive-parse miss — the same gate
+ *                                        face, fail-closed: nothing proceeds
+ *                                        without a decision on THIS suspend.
+ *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
  * (InventoryListing), @autobroker/model (typed abort + suspend type),
  * @autobroker/tools (resolver + source loader + browser session + pure
@@ -478,63 +502,78 @@ export async function captureOneLink(deps: {
   }
 }
 
-/** The REAL per-bucket task: ONE isolated throwaway browser for the bucket's
- *  host (named `${runId}-${host}` so trace files never collide), links serial
- *  inside behind the per-host nav queue, a per-link try/catch so one link
- *  degrades — never kills — its same-host siblings. Once the host refuses
- *  (blocked at first contact), the REST of the bucket is marked blocked
- *  WITHOUT further contact — a refusing host is never poked again this run. */
-const realLinkBucketRunner: LinkBucketRunner = async (args, bucket) => {
-  return withBrowserContext(
-    `${args.runId}-${bucket.host}`,
-    { emitter: args.emitter },
-    async (session) => {
-      // Per-host nav queue: every navigation in this task chains through one
-      // promise, so at most ONE navigation per host is in flight at the
-      // session's existing politeness throttle.
-      let navChain: Promise<unknown> = Promise.resolve();
-      const queueNav = (
-        page: SessionPage,
-        url: string,
-      ): Promise<{ blocked: string | null }> => {
-        const turn = navChain.then(() => session.navigate(page, url));
-        navChain = turn.catch(() => undefined);
-        return turn;
-      };
+/**
+ * One bucket's serial link loop over an ALREADY-OPEN session: per-host nav
+ * queue (≤1 in-flight navigation per host at the politeness throttle), a
+ * per-link try/catch so one link degrades — never kills — its same-host
+ * siblings, and the blocked-at-first-contact discipline: once the host
+ * refuses, the REST of the bucket is marked blocked WITHOUT further contact
+ * (a refusing host is never poked again this run, and a block is never
+ * "escalated" with retries — the navigate face already did its bounded
+ * backoff before classifying).
+ *
+ * Exported for unit tests with a fake session (the real bucket runner wraps
+ * it in an isolated throwaway browser).
+ */
+export async function runLinkBucket(deps: {
+  session: BrowserSession;
+  emitter: BrowserEmitter;
+  bucket: LinkBucket;
+}): Promise<SourceCaptureOutcome[]> {
+  const { session, emitter, bucket } = deps;
+  // Per-host nav queue: every navigation in this task chains through one
+  // promise, so at most ONE navigation per host is in flight at the
+  // session's existing politeness throttle.
+  let navChain: Promise<unknown> = Promise.resolve();
+  const queueNav = (
+    page: SessionPage,
+    url: string,
+  ): Promise<{ blocked: string | null }> => {
+    const turn = navChain.then(() => session.navigate(page, url));
+    navChain = turn.catch(() => undefined);
+    return turn;
+  };
 
-      const outcomes: SourceCaptureOutcome[] = [];
-      let hostBlockedMarker: string | null = null;
-      for (const target of bucket.targets) {
-        if (hostBlockedMarker !== null) {
-          // The host already refused this run — record, don't re-contact.
-          outcomes.push(blockedLinkOutcome(target, hostBlockedMarker, true));
-          continue;
-        }
-        try {
-          const outcome = await captureOneLink({
-            session,
-            queueNav,
-            emitter: args.emitter,
-            target,
-            host: bucket.host,
-          });
-          if (outcome.status === "blocked") {
-            const parsed = JSON.parse(outcome.errorJson ?? "{}") as { marker?: string | null };
-            hostBlockedMarker = parsed.marker ?? "blocked";
-          }
-          outcomes.push(outcome);
-        } catch (err) {
-          outcomes.push(
-            failedLinkOutcome(
-              target,
-              "capture_error",
-              err instanceof Error ? err.message : String(err),
-            ),
-          );
-        }
+  const outcomes: SourceCaptureOutcome[] = [];
+  let hostBlockedMarker: string | null = null;
+  for (const target of bucket.targets) {
+    if (hostBlockedMarker !== null) {
+      // The host already refused this run — record, don't re-contact.
+      outcomes.push(blockedLinkOutcome(target, hostBlockedMarker, true));
+      continue;
+    }
+    try {
+      const outcome = await captureOneLink({
+        session,
+        queueNav,
+        emitter,
+        target,
+        host: bucket.host,
+      });
+      if (outcome.status === "blocked") {
+        const parsed = JSON.parse(outcome.errorJson ?? "{}") as { marker?: string | null };
+        hostBlockedMarker = parsed.marker ?? "blocked";
       }
-      return outcomes;
-    },
+      outcomes.push(outcome);
+    } catch (err) {
+      outcomes.push(
+        failedLinkOutcome(
+          target,
+          "capture_error",
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
+    }
+  }
+  return outcomes;
+}
+
+/** The REAL per-bucket task: ONE isolated throwaway browser for the bucket's
+ *  host (named `${runId}-${host}` so trace files never collide), then the
+ *  serial bucket loop above. */
+const realLinkBucketRunner: LinkBucketRunner = async (args, bucket) => {
+  return withBrowserContext(`${args.runId}-${bucket.host}`, { emitter: args.emitter }, (session) =>
+    runLinkBucket({ session, emitter: args.emitter, bucket }),
   );
 };
 

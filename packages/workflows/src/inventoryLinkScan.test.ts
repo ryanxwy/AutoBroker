@@ -611,3 +611,276 @@ describe("inventory_link_scan — extract guards + profile filter + persist mark
     expect(out.summary).toContain("plain-text snapshot fallback");
   });
 });
+
+// ---------------------------------------------------------------------------
+// step-④ fallback gating: blocked-at-first-contact, voiced snapshot fallback,
+// per-link isolation, whole-bucket degrade, #1244 hard-abort.
+// ---------------------------------------------------------------------------
+
+import type { BrowserEmitter, BrowserSession } from "@autobroker/tools";
+import {
+  bucketLinksByHost,
+  captureLinksParallelImpl,
+  captureOneLink,
+  runLinkBucket,
+  type LinkBucketRunner,
+} from "./inventoryLinkScan.js";
+
+/** Recording emitter (the voiced-trace assertions read `actions`). */
+function recordingEmitter(): BrowserEmitter & { actions: Array<[string, string]> } {
+  const actions: Array<[string, string]> = [];
+  return {
+    actions,
+    opened: () => undefined,
+    action: (type: string, target: string) => {
+      actions.push([type, target]);
+    },
+    error: () => undefined,
+    closed: () => undefined,
+  };
+}
+
+/** A fake session whose navigate is scripted per URL. Pages record evaluate/
+ *  close; lazyScroll and snapshot are counted. */
+function fakeSession(script: {
+  navigate: (url: string) => { blocked: string | null } | Error;
+  cards?: Array<{ href: string; cardText: string }>;
+  snapshotText?: string;
+}) {
+  const calls = { navigate: [] as string[], lazyScroll: 0, snapshot: 0, evaluate: 0 };
+  const page = {
+    evaluate: async () => {
+      calls.evaluate += 1;
+      return script.cards ?? [];
+    },
+    close: async () => undefined,
+  };
+  const session = {
+    newPage: async () => page,
+    navigate: async (_page: unknown, url: string) => {
+      calls.navigate.push(url);
+      const r = script.navigate(url);
+      if (r instanceof Error) throw r;
+      return { robotsDisallowed: false, blocked: r.blocked };
+    },
+    lazyScroll: async () => {
+      calls.lazyScroll += 1;
+    },
+    snapshot: async () => {
+      calls.snapshot += 1;
+      return script.snapshotText ?? "plain page text";
+    },
+  } as unknown as BrowserSession;
+  return { session, calls };
+}
+
+describe("inventory_link_scan — capture fallback gating (fake session)", () => {
+  it("blocked at FIRST CONTACT: recorded, nothing scrolled or snapshotted, never escalated", async () => {
+    const { session, calls } = fakeSession({ navigate: () => ({ blocked: "http_403" }) });
+    const emitter = recordingEmitter();
+    const target = { sourceId: "src-1", url: "https://www.d-a.com/new/" };
+    const queueNav: Parameters<typeof captureOneLink>[0]["queueNav"] = (page, url) =>
+      session.navigate(page, url);
+
+    const outcome = await captureOneLink({ session, queueNav, emitter, target, host: "www.d-a.com" });
+    expect(outcome.status).toBe("blocked");
+    expect(JSON.parse(outcome.errorJson ?? "{}")).toEqual({ reason: "blocked", marker: "http_403" });
+    expect(calls.navigate).toEqual(["https://www.d-a.com/new/"]); // exactly ONE contact
+    expect(calls.lazyScroll).toBe(0);
+    expect(calls.snapshot).toBe(0);
+    expect(calls.evaluate).toBe(0);
+  });
+
+  it("card-less DOM → plain snapshot, VOICED as snapshot_fallback (auto-allowed, never silent)", async () => {
+    const { session, calls } = fakeSession({
+      navigate: () => ({ blocked: null }),
+      cards: [],
+      snapshotText: "VDP page text 2026 Hyundai Tucson",
+    });
+    const emitter = recordingEmitter();
+    const target = { sourceId: "src-1", url: "https://www.d-a.com/vehicle/1" };
+    const queueNav: Parameters<typeof captureOneLink>[0]["queueNav"] = (page, url) =>
+      session.navigate(page, url);
+
+    const outcome = await captureOneLink({ session, queueNav, emitter, target, host: "www.d-a.com" });
+    expect(outcome.status).toBe("scanned");
+    expect(outcome.snapshotFallback).toBe(true);
+    expect(outcome.snapshotText).toBe("VDP page text 2026 Hyundai Tucson");
+    expect(calls.snapshot).toBe(1);
+    expect(emitter.actions).toContainEqual(["snapshot_fallback", "www.d-a.com"]);
+  });
+
+  it("a card-bearing DOM weaves URL-tailed blocks and does NOT voice the fallback", async () => {
+    const { session } = fakeSession({
+      navigate: () => ({ blocked: null }),
+      cards: [{ href: "https://www.d-a.com/new/1.htm", cardText: "2026 Hyundai Tucson SEL $33,999" }],
+    });
+    const emitter = recordingEmitter();
+    const target = { sourceId: "src-1", url: "https://www.d-a.com/new/" };
+    const queueNav: Parameters<typeof captureOneLink>[0]["queueNav"] = (page, url) =>
+      session.navigate(page, url);
+
+    const outcome = await captureOneLink({ session, queueNav, emitter, target, host: "www.d-a.com" });
+    expect(outcome.snapshotFallback).toBe(false);
+    expect(outcome.snapshotText).toContain("URL: https://www.d-a.com/new/1.htm");
+    expect(outcome.cardHrefs).toEqual(["https://www.d-a.com/new/1.htm"]);
+    expect(emitter.actions.filter(([t]) => t === "snapshot_fallback")).toHaveLength(0);
+  });
+
+  it("runLinkBucket: once the host refuses, the REST of the bucket is blocked WITHOUT re-contact", async () => {
+    const { session, calls } = fakeSession({ navigate: () => ({ blocked: "http_429" }) });
+    const emitter = recordingEmitter();
+    const bucket = {
+      host: "www.d-a.com",
+      targets: [
+        { sourceId: "src-1", url: "https://www.d-a.com/new/" },
+        { sourceId: "src-2", url: "https://www.d-a.com/used/" },
+      ],
+    };
+    const outcomes = await runLinkBucket({ session, emitter, bucket });
+    expect(outcomes.map((o) => o.status)).toEqual(["blocked", "blocked"]);
+    expect(calls.navigate).toEqual(["https://www.d-a.com/new/"]); // ONE contact total
+    expect(JSON.parse(outcomes[1]!.errorJson ?? "{}")).toEqual({
+      reason: "blocked",
+      marker: "http_429",
+      propagated: true,
+    });
+  });
+
+  it("runLinkBucket: one link's navigation ERROR degrades that link only — siblings proceed", async () => {
+    let first = true;
+    const { session, calls } = fakeSession({
+      navigate: () => {
+        if (first) {
+          first = false;
+          return new Error("net::ERR_NAME_NOT_RESOLVED");
+        }
+        return { blocked: null };
+      },
+      cards: [{ href: "https://www.d-a.com/new/1.htm", cardText: "2026 Hyundai Tucson SEL" }],
+    });
+    const emitter = recordingEmitter();
+    const bucket = {
+      host: "www.d-a.com",
+      targets: [
+        { sourceId: "src-1", url: "https://www.d-a.com/dead/" },
+        { sourceId: "src-2", url: "https://www.d-a.com/new/" },
+      ],
+    };
+    const outcomes = await runLinkBucket({ session, emitter, bucket });
+    expect(outcomes.map((o) => o.status)).toEqual(["failed", "scanned"]);
+    expect(JSON.parse(outcomes[0]!.errorJson ?? "{}")).toMatchObject({ reason: "capture_error" });
+    expect(calls.navigate).toHaveLength(2);
+  });
+
+  it("captureLinksParallelImpl: a whole-bucket failure degrades to per-link failed outcomes, input order kept", async () => {
+    const targets = [
+      { sourceId: "src-1", url: "https://www.d-a.com/new/" },
+      { sourceId: "src-2", url: "https://www.d-b.com/new/" },
+      { sourceId: "src-3", url: "https://www.d-a.com/used/" },
+    ];
+    // Same-host links share ONE bucket (d-a twice), preserving first-seen order.
+    expect(bucketLinksByHost(targets).map((b) => b.host)).toEqual(["www.d-a.com", "www.d-b.com"]);
+
+    const runBucket: LinkBucketRunner = async (_args, bucket) => {
+      if (bucket.host === "www.d-b.com") throw new Error("browser never launched");
+      return bucket.targets.map((t) => ({
+        sourceId: t.sourceId,
+        status: "scanned" as const,
+        errorJson: null,
+        snapshotText: "ok",
+        cardHrefs: [],
+        snapshotFallback: false,
+      }));
+    };
+    const outcomes = await captureLinksParallelImpl(
+      { runId: "r-pool", targets, emitter: recordingEmitter() },
+      runBucket,
+    );
+    expect(outcomes.map((o) => `${o.sourceId}:${o.status}`)).toEqual([
+      "src-1:scanned",
+      "src-2:failed",
+      "src-3:scanned",
+    ]);
+    expect(JSON.parse(outcomes[1]!.errorJson ?? "{}")).toMatchObject({ reason: "scan_task_error" });
+  });
+});
+
+describe("inventory_link_scan — #1244 hard-abort (fail-closed, zero writes)", () => {
+  it("a malformed structured call aborts the run typed; persist is never reached", async () => {
+    seedProfile();
+    seedDealer({ id: "d-a", name: "Dealer A" });
+    const srcA = seedLink("d-a", URL_A);
+
+    __setInventoryLinkScanDepsForTests({
+      // hitlAvailable=false on this lane: the facade THROWS the typed abort.
+      harnessGenerate: (async () => {
+        const { MalformedToolCallAbort } = await import("@autobroker/model");
+        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+      }) as unknown as InventoryLinkScanWorkflowDeps["harnessGenerate"],
+      captureLinks: captureStub({ calls: [] }, (args) =>
+        args.targets.map((t) => scannedLink(t.sourceId)),
+      ),
+    });
+
+    const { run, result } = await startRun("link-1244-1");
+    expect(result.status).toBe("suspended");
+    const final = await run.resume({
+      step: "reviewGate",
+      resumeData: { action: "approve", approved_dealer_ids: [srcA] },
+    });
+    expect(final.status).toBe("failed");
+    expect(errorMessageOf(final)).toContain("Malformed tool call (#1244 fail-closed)");
+
+    // Fail-closed = ZERO writes: the source row stays pending, no listings.
+    expect(sourceStatus(srcA)).toBe("pending");
+    expect(rowCount("inventory_listings")).toBe(0);
+  });
+
+  it("a suspend-SHAPED harness return (defensive branch) also hard-aborts", async () => {
+    seedProfile();
+    seedDealer({ id: "d-a", name: "Dealer A" });
+    const srcA = seedLink("d-a", URL_A);
+
+    __setInventoryLinkScanDepsForTests({
+      harnessGenerate: (async () => ({
+        suspended: true,
+        signals: ["empty_tool_calls"],
+      })) as unknown as InventoryLinkScanWorkflowDeps["harnessGenerate"],
+      captureLinks: captureStub({ calls: [] }, (args) =>
+        args.targets.map((t) => scannedLink(t.sourceId)),
+      ),
+    });
+
+    const { run, result } = await startRun("link-1244-2");
+    expect(result.status).toBe("suspended");
+    const final = await run.resume({
+      step: "reviewGate",
+      resumeData: { action: "approve", approved_dealer_ids: [srcA] },
+    });
+    expect(final.status).toBe("failed");
+    expect(errorMessageOf(final)).toContain("Malformed tool call (#1244 fail-closed)");
+    expect(sourceStatus(srcA)).toBe("pending");
+    expect(rowCount("inventory_listings")).toBe(0);
+  });
+});
+
+describe("inventory_link_scan — the suspend payload stays renderable (<8KB, schema-bound)", () => {
+  it("a realistic 25-link batch suspends under the 8KB card bound and parses the card schema", async () => {
+    seedProfile();
+    for (let i = 0; i < 25; i += 1) {
+      const id = `d-${String(i).padStart(2, "0")}`;
+      seedDealer({ id, name: `Citywide Hyundai Superstore ${i} of Greater Orange County` });
+      seedLink(id, `https://www.${id}-hyundai-of-orange-county.example/new-inventory/index.htm?make=Hyundai&model=Tucson&year=2026&page=${i}`);
+    }
+    __setInventoryLinkScanDepsForTests({
+      harnessGenerate: harnessNeverCalled,
+      captureLinks: captureNeverCalled,
+    });
+    const { result } = await startRun("link-8kb-1");
+    expect(result.status).toBe("suspended");
+    const payload = suspendPayloadOf(result);
+    expect(LinkScanReviewSuspendSchema.parse(payload).targets).toHaveLength(25);
+    expect(JSON.stringify(payload).length).toBeLessThan(8 * 1024);
+  });
+});
