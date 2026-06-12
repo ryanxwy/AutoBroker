@@ -18,29 +18,51 @@ The skill manifest layer: a typed `SkillDef` registry plus a per-skill
 
 ## The 17 skills
 
-Derived from `src/registry.ts` (build order, phase 1 → 5):
+Derived from `src/registry.ts` (build order, phase 1 → 5). For implemented
+skills the Doc column links the per-skill `SKILL.md`; planned skills get their
+`SKILL.md` together with their acceptance commit — no placeholder docs are
+written ahead of the build.
 
-| Phase | Skill | Risk | Status |
-|---|---|---|---|
-| 1 | `search_profile_intake` | local_write | implemented |
-| 1 | `quote_audit` | read_only | planned |
-| 1 | `quote_compare` | read_only | planned |
-| 1 | `inventory_compare` | read_only | planned |
-| 2 | `dealer_geosearch` | local_write | planned |
-| 2 | `inventory_site_scan` | local_write | planned |
-| 2 | `inventory_link_scan` | local_write | planned |
-| 2 | `incentive_scrape` | local_write | planned |
-| 3 | `dealer_inbox_check` | local_write | planned |
-| 3 | `dealer_reply_extract` | local_write | planned |
-| 3 | `dealer_hygiene` | destructive | planned |
-| 4 | `quote_pipeline` | local_write | planned |
-| 4 | `daily_digest` | local_write | planned |
-| 4 | `pipeline_reset` | destructive | planned |
-| 5 | `dealer_web_lead_submit` | irreversible | planned |
-| 5 | `negotiation_followup` | irreversible | planned |
-| 5 | `dealer_closeout_email` | irreversible | planned |
+| Phase | Skill | Risk | Status | Doc |
+|---|---|---|---|---|
+| 1 | `search_profile_intake` | local_write | implemented | [SKILL.md](search_profile_intake/SKILL.md) |
+| 1 | `quote_audit` | read_only | planned | — |
+| 1 | `quote_compare` | read_only | planned | — |
+| 1 | `inventory_compare` | read_only | planned | — |
+| 2 | `dealer_geosearch` | local_write | implemented | [SKILL.md](dealer_geosearch/SKILL.md) |
+| 2 | `inventory_site_scan` | local_write | implemented | [SKILL.md](inventory_site_scan/SKILL.md) |
+| 2 | `inventory_link_scan` | local_write | planned | — |
+| 2 | `incentive_scrape` | local_write | planned | — |
+| 3 | `dealer_inbox_check` | local_write | planned | — |
+| 3 | `dealer_reply_extract` | local_write | planned | — |
+| 3 | `dealer_hygiene` | destructive | planned | — |
+| 4 | `quote_pipeline` | local_write | planned | — |
+| 4 | `daily_digest` | local_write | planned | — |
+| 4 | `pipeline_reset` | destructive | planned | — |
+| 5 | `dealer_web_lead_submit` | irreversible | planned | — |
+| 5 | `negotiation_followup` | irreversible | planned | — |
+| 5 | `dealer_closeout_email` | irreversible | planned | — |
 
 The registry in `src/registry.ts` is authoritative; this table mirrors it.
+
+## Reading & running a skill
+
+- **Read** the skill's `SKILL.md` first — three fixed sections: **Phases**
+  (the runtime flow, step by step), **Guardrails** (the load-bearing
+  invariants; these are enforced in code, not prompt text), **References**
+  (in-repo paths to the workflow, tools, schema, and harness cases).
+- **Run from the dashboard** (the normal path): start the server + built UI,
+  then either type the slash command (e.g. `/dealer_geosearch`) into the chat
+  rail or use the Skills popover's Run button. Approval / batch-review /
+  typed-YES gates always render as cards before any side effect.
+- **Run from the harness** (live verification): `pnpm harness intake --case
+  harness/cases/<case>.toml --layer L2` drives the same skill end-to-end —
+  UI-lane cases (`lane = "ui"`) operate the real dashboard DOM via Playwright
+  exactly like a non-technical user. Accepted cases are listed in
+  `harness/regression-corpus.txt` and re-run by `scripts/regression.sh`.
+- **Verification standard**: a skill counts as implemented only after its live
+  UI-lane rounds are GREEN (two independent rounds + the decline path); the
+  per-skill `SKILL.md` lands in the same acceptance commit.
 
 ## Build order — dependency × risk
 

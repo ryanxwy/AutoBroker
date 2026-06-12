@@ -17,6 +17,22 @@ ls harness/cases/*.deferred.toml 2>/dev/null || echo "  (none)"
 echo "-- step-6 cross-provider smoke debt (cases exist, runs deferred in dev period):"
 ls harness/cases/*anthropic*.toml harness/cases/*openai*.toml 2>/dev/null || echo "  (none)"
 
+echo "-- implemented skills missing their SKILL.md (doc rides the acceptance commit):"
+node -e '
+  const fs = require("fs");
+  const src = fs.readFileSync("packages/skills/src/registry.ts", "utf8");
+  const consts = {};
+  for (const m of src.matchAll(/const ([A-Z_]+_SKILL_ID) = "([a-z_]+)"/g)) consts[m[1]] = m[2];
+  const missing = [];
+  for (const m of src.matchAll(/id: (?:"([a-z_]+)"|([A-Z_]+_SKILL_ID)),[\s\S]{0,400}?status: "(implemented|planned)"/g)) {
+    const id = m[1] ?? consts[m[2]];
+    if (m[3] === "implemented" && id && !fs.existsSync(`packages/skills/${id}/SKILL.md`))
+      missing.push(id);
+  }
+  if (missing.length) missing.forEach((id) => console.log(`  ${id} — create packages/skills/${id}/SKILL.md`));
+  else console.log("  (none — every implemented skill has its SKILL.md)");
+' 2>/dev/null || echo "  (check skipped — node unavailable)"
+
 echo "-- regression freshness:"
 latest="$HOME/.autobroker-ts/regression/latest.txt"
 if [ -f "$latest" ]; then
