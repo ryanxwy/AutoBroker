@@ -24,7 +24,10 @@ module.exports = {
     // /dist/ = build output; apps/ui/e2e = the Playwright e2e harness (test
     // infrastructure that legitimately boots the full server stack + drives a
     // browser, so it lives OUTSIDE the layered src/ wall — like a .test file).
-    exclude: { path: "/dist/|apps/ui/e2e/" },
+    // apps/desktop/smoke = the Electron shell's deterministic Playwright smoke
+    // suite (same test-infrastructure carve-out); apps/desktop/bundle = the
+    // generated self-contained server bundle (gitignored build artifact).
+    exclude: { path: "/dist/|apps/ui/e2e/|apps/desktop/(smoke|bundle)/" },
   },
   forbidden: [
     // ---- layer DAG: lower layers must not reach up -------------------------

@@ -37,7 +37,8 @@ export async function main(): Promise<BuiltServer> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
   const built = await buildServer();
   await built.app.listen({ host: HOST, port });
-  console.info(JSON.stringify({ server: "listening", host: HOST, port }));
+  // Report the ACTUAL bound port (PORT=0 → ephemeral), not the configured one.
+  console.info(JSON.stringify({ server: "listening", host: HOST, port: (built.app.server.address() as { port: number }).port }));
   return built;
 }
 

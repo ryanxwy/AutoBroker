@@ -20,7 +20,10 @@
     "lint:deps": "depcruise packages apps harness",
     "check:strings": "bash scripts/check-forbidden-strings.sh",
     "harness": "pnpm --filter @autobroker/harness run harness --",
-    "harness:export": "pnpm --filter @autobroker/harness run export-daily --"
+    "harness:export": "pnpm --filter @autobroker/harness run export-daily --",
+    "desktop:bundle": "pnpm --filter @autobroker/desktop run bundle",
+    "desktop:start": "pnpm --filter @autobroker/desktop run start",
+    "desktop:smoke": "pnpm --filter @autobroker/desktop run smoke"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
