@@ -15,10 +15,11 @@
  *                      at intake (geosearch cannot run on a half-built profile).
  *   1 planViewports  — pure: tileViewports (zoom + Maps search URL + the 1-or-5
  *                      viewport tiling) from the profile's make + coords + radius.
- *   2 scanViewports  — the ONLY side-effecting scan: one throwaway browser
- *                      context for the whole run (withBrowserContext), per
- *                      viewport newPage → navigate → blocked marker = record +
- *                      skip (never aborts the run) → lazyScroll →
+ *   2 scanViewports  — the ONLY side-effecting scan: one ISOLATED throwaway
+ *                      browser per viewport (withBrowserContext per call), all
+ *                      viewports in flight concurrently with staggered starts;
+ *                      per viewport newPage → navigate → blocked marker =
+ *                      record + skip (never aborts the run) → lazyScroll →
  *                      extractWithFallback(mapsExtractor). Evaluate rows are
  *                      DealerCandidate candidates directly (per-row Zod
  *                      safeParse, invalid rows dropped + counted). The snapshot
@@ -193,54 +194,75 @@ export type ViewportScanOutcome =
   | { label: string; kind: "blocked"; marker: string }
   | { label: string; kind: "failed"; message: string };
 
+/** Gap between consecutive browser launches in the parallel viewport scan.
+ *  Staggering keeps the five first-contact requests from landing in the same
+ *  instant (the network-visible timing stays human-paced) and spreads the
+ *  heavyweight browser launches instead of thundering-herding the CPU. */
+const VIEWPORT_LAUNCH_STAGGER_MS = 1_750;
+
+function staggerDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * The REAL viewport scan: one throwaway browser context for the run, then per
- * viewport newPage → navigate (a blocked classification is recorded and the
- * viewport skipped — a refusing host never aborts the whole run) → lazyScroll →
- * extractWithFallback(mapsExtractor). Each viewport is isolated in its own
- * try/catch so one dead viewport degrades the run instead of killing it; the
- * caller decides what an all-failed scan means. Read-only: this function never
- * clicks, fills, or submits anything.
+ * The REAL viewport scan: one ISOLATED throwaway browser per viewport
+ * (withBrowserContext launches a fresh browser each call — the per-viewport
+ * runId suffix keeps trace files apart), all viewports in flight concurrently
+ * with staggered starts. Per viewport: newPage → navigate (a blocked
+ * classification is recorded and the viewport skipped — a refusing host never
+ * aborts the whole run) → lazyScroll → extractWithFallback(mapsExtractor).
+ * Each task converts its own failure into a `failed` outcome, so one dead
+ * viewport degrades the run instead of killing it; the caller decides what an
+ * all-failed scan means. The result array preserves the input viewport order,
+ * so downstream dedup/rank/upsert see exactly what the serial loop produced.
+ * NOTE: the per-host politeness throttle is browser-session-scoped — isolated
+ * browsers cannot see each other, and the launch stagger is what spaces the
+ * five Maps first contacts. This scan (one navigation per session) is the one
+ * deliberate exception to per-host serial navigation.
+ * Read-only: this function never clicks, fills, or submits anything.
  */
 async function scanViewportsImpl(args: ViewportScanArgs): Promise<ViewportScanOutcome[]> {
-  return withBrowserContext(args.runId, { emitter: args.emitter }, async (session) => {
-    const outcomes: ViewportScanOutcome[] = [];
-    for (const vp of args.viewports) {
+  return Promise.all(
+    args.viewports.map(async (vp, i): Promise<ViewportScanOutcome> => {
       try {
-        const page = await session.newPage();
-        try {
-          const nav = await session.navigate(page, vp.url);
-          if (nav.blocked !== null) {
-            outcomes.push({ label: vp.label, kind: "blocked", marker: nav.blocked });
-            continue;
-          }
-          await session.lazyScroll(page);
-          const extracted = await session.extractWithFallback(page, mapsExtractor, [
-            ...MAPS_EXTRACT_REQUIRED_FIELDS,
-          ]);
-          if (extracted.via === "evaluate") {
-            outcomes.push({ label: vp.label, kind: "rows", rows: extracted.rows });
-          } else {
-            outcomes.push({
-              label: vp.label,
-              kind: "snapshot",
-              completeRows: extracted.completeRows,
-              snapshotText: extracted.snapshotText,
-            });
-          }
-        } finally {
-          await page.close().catch(() => undefined);
-        }
+        if (i > 0) await staggerDelay(i * VIEWPORT_LAUNCH_STAGGER_MS);
+        return await withBrowserContext(
+          `${args.runId}-vp${vp.label}`,
+          { emitter: args.emitter },
+          async (session): Promise<ViewportScanOutcome> => {
+            const page = await session.newPage();
+            try {
+              const nav = await session.navigate(page, vp.url);
+              if (nav.blocked !== null) {
+                return { label: vp.label, kind: "blocked", marker: nav.blocked };
+              }
+              await session.lazyScroll(page);
+              const extracted = await session.extractWithFallback(page, mapsExtractor, [
+                ...MAPS_EXTRACT_REQUIRED_FIELDS,
+              ]);
+              if (extracted.via === "evaluate") {
+                return { label: vp.label, kind: "rows", rows: extracted.rows };
+              }
+              return {
+                label: vp.label,
+                kind: "snapshot",
+                completeRows: extracted.completeRows,
+                snapshotText: extracted.snapshotText,
+              };
+            } finally {
+              await page.close().catch(() => undefined);
+            }
+          },
+        );
       } catch (err) {
-        outcomes.push({
+        return {
           label: vp.label,
           kind: "failed",
           message: err instanceof Error ? err.message : String(err),
-        });
+        };
       }
-    }
-    return outcomes;
-  });
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
