@@ -84,6 +84,19 @@ const ExpectStopSchema = z.enum([
   "profile_missing_fields",
 ]);
 
+/** The UI-lane edge behaviors (rotation-pool corner cases, 1–2 per skill —
+ *  these cases stay OUT of the regression corpus):
+ *    reload_mid_form     — fill part of the form, reload the page, assert the
+ *                          draft restored (resume banner + values), complete.
+ *    double_click_submit — double-click the intake submit; the button must
+ *                          disable after the first click and exactly ONE
+ *                          profile row may land (pair with a global-exact
+ *                          table_min_rows anchor).
+ *    sse_break           — knock the TEST browser offline mid-run for ~2s
+ *                          (breaks the live SSE), assert recovery reaches the
+ *                          terminal with no duplicated rendering. */
+const EdgeSchema = z.enum(["reload_mid_form", "double_click_submit", "sse_break"]);
+
 const RawStepSchema = z.object({
   id: z.string(),
   skill: z.string(),
@@ -97,6 +110,9 @@ const RawStepSchema = z.object({
   /** This step terminates in a typed STOP: the runner asserts the STOP card
    *  (and, for the intake-pointing codes, drives the CTA) after terminal. */
   expect_stop: ExpectStopSchema.optional(),
+  /** UI-lane edge behavior the runner applies while driving this step
+   *  (rotation-pool corner case; unknown values fail loud at parse). */
+  edge: EdgeSchema.optional(),
   input_inline: z.record(z.string(), z.unknown()).optional(),
   resume: z.array(RawResumeSchema).optional(),
   anchors: z.array(RawAnchorSchema),
@@ -138,6 +154,9 @@ export type StepLaunch = "chat_slash" | "chat_freeform" | "skills_popover" | "st
 /** A typed profile-resolution STOP code (run terminates error + STOP card). */
 export type ExpectStop = z.infer<typeof ExpectStopSchema>;
 
+/** A UI-lane edge behavior (rotation-pool corner case). */
+export type StepEdge = z.infer<typeof EdgeSchema>;
+
 export interface CaseStep {
   id: string;
   skill: string;
@@ -150,6 +169,8 @@ export interface CaseStep {
   profileScopeFrom: string | null;
   /** The typed STOP this step must terminate in, or null (normal terminal). */
   expectStop: ExpectStop | null;
+  /** The UI-lane edge behavior applied while driving this step, or null. */
+  edge: StepEdge | null;
   inputInline: Record<string, unknown> | null;
   resume: CaseResume[];
   anchors: AnchorSpec[];
@@ -277,6 +298,7 @@ export function toCase(raw: TomlTable): Case {
     launch: s.launch ?? (parsed.narrative.input_mode === "freeform" ? "chat_freeform" : "chat_slash"),
     profileScopeFrom: s.profile_scope_from ?? null,
     expectStop: s.expect_stop ?? null,
+    edge: s.edge ?? null,
     inputInline: s.input_inline ?? null,
     resume: (s.resume ?? []).map((r) => {
       const action = coerceAction(r.action);

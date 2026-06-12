@@ -213,6 +213,126 @@ export class UiDriver {
     await this.page.click(tid("intake-submit"));
   }
 
+  /** clickSubmitTwice: DOUBLE-click the intake submit (the impatient-user
+   *  edge). Records the load-bearing ui_check: the button must DISABLE after
+   *  the first click lands (React flushes the submitting state at the end of
+   *  the discrete click event, so the second click of the pair hits a disabled
+   *  button and never double-fires the decision). The exactly-one-row proof is
+   *  the case's global-exact table anchor, not this check. */
+  async clickSubmitTwice(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("intake-submit")}:not([disabled])`, { timeout: timeoutMs });
+    await this.page.dblclick(tid("intake-submit"));
+    let disabled = false;
+    try {
+      // The accept decision keeps the form in its submitting state while the
+      // server resumes the workflow — a multi-second observable window.
+      await this.page.waitForSelector(`${tid("intake-submit")}[disabled]`, { timeout: timeoutMs });
+      disabled = true;
+    } catch {
+      disabled = false;
+    }
+    this.record({
+      surface: "dom:intake-form",
+      selector: `${tid("intake-submit")}[disabled]`,
+      expected: "submit button disables after the first click of a double-click",
+      observed: disabled ? "button disabled" : "button never disabled",
+      ok: disabled,
+    });
+    await this.screenshot("submit-double-click");
+  }
+
+  /** Reload the page mid-journey (the accidental-refresh edge) and wait for
+   *  the SPA shell to come back. The /runs/:id route survives the reload; the
+   *  refresh-recovery path re-opens the stream and the form draft restores
+   *  from localStorage (keyed by the stable runId). */
+  async reloadPage(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.reload({ waitUntil: "domcontentloaded" });
+    await this.page.waitForSelector(tid("app-main"), { timeout: timeoutMs });
+  }
+
+  /** checkDraftRestored: after a mid-form reload, the form re-renders with the
+   *  resume banner AND at least one field visibly carrying its pre-reload
+   *  value (PII fields come back EMPTY by design — the draft strips them, so
+   *  the check looks for ANY restored value, which slash mode can only get
+   *  from the draft). Records ok:false rather than throwing. */
+  async checkDraftRestored(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    let bannerVisible = false;
+    try {
+      await this.page.waitForSelector(tid("intake-form"), { timeout: timeoutMs });
+      await this.page.waitForSelector(tid("resume-banner"), { timeout: timeoutMs });
+      bannerVisible = true;
+    } catch {
+      bannerVisible = false;
+    }
+    const restored = (await this.page.evaluate(
+      `(() => {
+        const widgets = Array.from(document.querySelectorAll('[data-testid^="intake-field-"]'));
+        const filled = [];
+        for (const w of widgets) {
+          if (w instanceof HTMLInputElement) {
+            if ((w.type === "radio" || w.type === "checkbox") && w.checked) {
+              filled.push(w.getAttribute("data-testid") ?? "");
+            } else if (w.type !== "radio" && w.type !== "checkbox" && w.value.trim() !== "") {
+              filled.push(w.getAttribute("data-testid") ?? "");
+            }
+          }
+        }
+        return filled;
+      })()`,
+    )) as string[];
+    this.record({
+      surface: "dom:intake-form",
+      selector: `${tid("resume-banner")} + [data-testid^="intake-field-"]`,
+      expected: "resume banner visible AND >=1 field value restored from the draft",
+      observed: `banner=${bannerVisible} restored: ${restored.slice(0, 6).join(", ") || "none"}`,
+      ok: bannerVisible && restored.length > 0,
+    });
+    await this.screenshot("draft-restored");
+  }
+
+  /** Click the resume banner's Continue (keep the restored draft values). */
+  async clickResumeContinue(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("resume-continue"), { timeout: timeoutMs });
+    await this.page.click(tid("resume-continue"));
+  }
+
+  /** Knock the TEST browser's network offline/online (breaks the dashboard's
+   *  live SSE mid-run — the product browser the SUT drives is a different
+   *  process and stays online). */
+  async setOffline(offline: boolean): Promise<void> {
+    await this.context.setOffline(offline);
+  }
+
+  /** Wait for the zone-4 browser trail to render on the active turn — the
+   *  signal that the run is mid-flight ON THE DASHBOARD (browser frames only
+   *  flow while the product browser scans). */
+  async waitForBrowserTrail(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("turn-browser-trail"), { timeout: timeoutMs });
+  }
+
+  /** checkNoDuplicateSummary: after an SSE break + recovery, the terminal
+   *  summary must render EXACTLY ONCE (a reconnect that replayed the backlog
+   *  without prefix-skipping would append duplicate text parts — the same
+   *  mechanism that would double milestones). `marker` is a regex matched
+   *  globally against the turn's prose zone. */
+  async checkNoDuplicateSummary(marker: RegExp): Promise<void> {
+    const text = await this.page
+      .locator(tid("turn-zone-text"))
+      .first()
+      .textContent()
+      .catch(() => null);
+    const matches = text === null ? [] : (text.match(new RegExp(marker.source, "g")) ?? []);
+    const turnCount = await this.page.locator(tid("assistant-turn")).count();
+    this.record({
+      surface: "dom:chat-rail",
+      selector: tid("turn-zone-text"),
+      expected: `exactly one summary match for /${marker.source}/ and one assistant turn`,
+      observed: `matches=${matches.length} turns=${turnCount} text="${(text ?? "").slice(0, 80)}"`,
+      ok: matches.length === 1 && turnCount === 1,
+    });
+    await this.screenshot("no-duplicate-summary");
+  }
+
   /** Click the real form Cancel (decline — terminal, zero write). */
   async clickDecline(): Promise<void> {
     await this.page.click(tid("intake-decline"));

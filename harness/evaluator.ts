@@ -245,13 +245,16 @@ function evalTableMinRows(
   const after = counts.after[spec.table] ?? 0;
 
   if (spec.scope === "global") {
-    // Global form: count(table) >= min (fallback only).
+    // Global form: count(table) >= min (fallback only). exact=true pins the
+    // TOTAL count — the double-submit guard ("one profile row, not two") needs
+    // it because a duplicate row carries a DIFFERENT profile id and would slip
+    // past any profile-scoped delta.
     const min = spec.min ?? 1;
-    const ok = after >= min;
+    const ok = spec.exact ? after === min : after >= min;
     return {
       kind: "table_min_rows",
       ok,
-      expected: `global count >= ${min}`,
+      expected: spec.exact ? `global count = ${min}` : `global count >= ${min}`,
       observed: after,
       detail: `table=${spec.table} (global fallback — profile scope preferred, §R5)`,
     };

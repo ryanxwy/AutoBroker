@@ -301,6 +301,46 @@ describe("case loader", () => {
     `;
     expect(() => parseCase(src)).toThrow(/unknown anchor kind/);
   });
+
+  it("loads the three EDGE cases (rotation pool: reload / double-click / SSE break)", () => {
+    const reload = loadCase(join(CASES, "search_profile_intake.ui_reload.toml"));
+    expect(reload.id).toBe("search_profile_intake_ui_reload_mid_form");
+    expect(reload.lane).toBe("ui");
+    expect(reload.steps[0]!.edge).toBe("reload_mid_form");
+
+    const dbl = loadCase(join(CASES, "search_profile_intake.ui_double_click.toml"));
+    expect(dbl.steps[0]!.edge).toBe("double_click_submit");
+    // The double-click guard: a GLOBAL exact-1 row bound (a duplicate profile
+    // would carry a different id and slip past any profile-scoped delta).
+    expect(
+      dbl.steps[0]!.anchors.find((a) => a.kind === "table_min_rows" && a.scope === "global"),
+    ).toMatchObject({ table: "search_profiles", scope: "global", min: 1, exact: true });
+
+    const sse = loadCase(join(CASES, "dealer_geosearch.ui_sse_break.toml"));
+    expect(sse.steps.map((s) => s.edge)).toEqual([null, "sse_break"]);
+    expect(sse.steps[1]!.skill).toBe("dealer_geosearch");
+  });
+
+  it("fails LOUD on an unknown edge value (the closed enum)", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "B"
+      skills = ["search_profile_intake"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "search_profile_intake"
+      edge = "tab_close"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow();
+  });
 });
 
 describe("case skill ids ∈ registry", () => {

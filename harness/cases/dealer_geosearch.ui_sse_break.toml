@@ -1,0 +1,122 @@
+# harness/cases/dealer_geosearch.ui_sse_break.toml — ROTATION-POOL EDGE
+# (sse_break): the ui_narrative journey with the live SSE BROKEN mid-run. The
+# 120-mile geosearch scan is the natural long step: once the zone-4 browser
+# trail proves the run is in flight on the dashboard, the TEST browser goes
+# offline for ~2s (the /stream-v2 connection drops), then back online. The
+# transport must reconnect (backlog replay with prefix skip) and the run must
+# reach its terminal with NOTHING duplicated — asserted via the
+# no-duplicate-summary ui_check (the confirm summary renders exactly once on
+# exactly one turn) on top of the ui_narrative anchor set.
+# Rotation pool only — NOT in harness/regression-corpus.txt.
+
+[meta]
+id = "dealer_geosearch_ui_sse_break"
+archetype = "A"            # browser archetype — the product browser drives Maps.
+skills = ["search_profile_intake", "dealer_geosearch"]
+risk_group = "E"           # read-only discovery + local-write upsert; no mutation gate.
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake (the journey root, no edge) ------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — geosearch's input."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch with the SSE broken mid-run --------------------
+
+[[steps]]
+id = "geosearch_sse_break"
+skill = "dealer_geosearch"
+purpose = "Discover dealers with the dashboard's live stream broken ~2s mid-scan."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+edge = "sse_break"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"   # browser.* SSE frames from the product browser.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # profile_dealers_present.
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # read-only browsing; submit physically ungated here.
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path: no ledger row is a valid outcome.
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # fresh unpinned session + single active profile.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

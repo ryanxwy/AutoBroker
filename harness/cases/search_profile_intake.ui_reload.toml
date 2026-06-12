@@ -1,0 +1,84 @@
+# harness/cases/search_profile_intake.ui_reload.toml — ROTATION-POOL EDGE
+# (reload_mid_form): the simulated non-tech user types "/search_profile_intake",
+# fills PART of the rendered form (the non-PII slice), accidentally RELOADS the
+# page mid-form, and must land back on the same run with the draft RESTORED
+# (resume banner + the partially-filled values — drafts are PII-stripped, keyed
+# by the stable runId), continue, complete the form, and submit. Same anchors as
+# the ui_slash twin; the verdict's ui_checks ADD the draft-restored check.
+# Rotation pool only — NOT in harness/regression-corpus.txt.
+
+[meta]
+id = "search_profile_intake_ui_reload_mid_form"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_reload"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile with an accidental mid-form page reload (draft must restore)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+edge = "reload_mid_form"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"   # partial fill → reload → restore → complete.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "audit_log"
+scope = "profile"
+action = "search_profile_intake"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # keystone, tolerance 0.
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

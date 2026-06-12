@@ -37,6 +37,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { INTAKE_FIELD_META } from "@autobroker/core";
+
 import { loadCase, cellIdFor, PROVIDER_DRIVER_KIND, type Case, type CaseStep, type CaseResume } from "./cases.js";
 import { buildRunDetail, type RunDetail } from "./detail.js";
 import { assertDriverKindLockStep } from "./driverKind.js";
@@ -531,6 +533,11 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
   if (lane === "ui") return cmdUiCase(opts, c);
 
   const step = opts.step ? c.steps.find((s) => s.id === opts.step) ?? fail(`no step "${opts.step}" in case`) : c.steps[0]!;
+  if (step.edge !== null) {
+    // The edges are USER-SURFACE behaviors (reload, double-click, offline) —
+    // they only exist on the UI lane; silently ignoring one would hollow the case.
+    fail(`step "${step.id}" carries edge="${step.edge}" — edge cases run on the UI lane only (--lane ui)`);
+  }
   const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
 
   // (1b) Pin the harness's OWN in-process DB reads to the throwaway --db
@@ -654,9 +661,20 @@ async function assertAppShellServed(apiBase: string): Promise<void> {
   }
 }
 
+/** The PII field names the draft store strips before persist — the
+ *  reload_mid_form partial fill EXCLUDES them so every partially-filled value
+ *  is provably restorable (derived from the same single source as the UI). */
+const INTAKE_PII_FIELD_SET = new Set(
+  Object.entries(INTAKE_FIELD_META)
+    .filter(([, meta]) => (meta as { sensitivity?: string }).sensitivity === "pii")
+    .map(([name]) => name),
+);
+
 /** Drive one step's resume[] script as REAL DOM actions, capturing the
  *  DOM-derived ui_checks at the right moments. maxMs bounds the suspend-surface
- *  waits (a freeform launch runs the prefill LLM call BEFORE the form renders). */
+ *  waits (a freeform launch runs the prefill LLM call BEFORE the form renders).
+ *  The step's `edge` (rotation-pool corner case) bends the drive: a mid-form
+ *  reload + draft-restore leg, or a double-click on the submit. */
 async function driveResumeScriptDom(driver: UiDriver, step: CaseStep, maxMs: number): Promise<void> {
   for (const resume of step.resume) {
     if (resume.on === "data_collection") {
@@ -667,9 +685,29 @@ async function driveResumeScriptDom(driver: UiDriver, step: CaseStep, maxMs: num
       // values are LLM-nondeterministic) BEFORE the driver touches it.
       if (step.launch === "chat_freeform") await driver.checkFormSeeded();
       if (resume.action === "accept") {
-        await driver.fillRenderedForm(resume.content ?? {});
+        const content = resume.content ?? {};
+        if (step.edge === "reload_mid_form") {
+          // Fill PART of the form (the non-PII slice — the draft strips PII,
+          // so only non-PII values can prove restoration), let the debounced
+          // autosave land, reload mid-form, assert the draft restored, keep it
+          // via Continue, then complete the form below.
+          const partial = Object.fromEntries(
+            Object.entries(content).filter(([k]) => !INTAKE_PII_FIELD_SET.has(k)),
+          );
+          await driver.fillRenderedForm(partial);
+          await driver.screenshot("form-partial-filled");
+          await sleep(800); // comfortably past the draft autosave debounce
+          await driver.reloadPage(maxMs);
+          await driver.checkDraftRestored(maxMs);
+          await driver.clickResumeContinue();
+        }
+        await driver.fillRenderedForm(content);
         await driver.screenshot("form-filled");
-        await driver.clickSubmit();
+        if (step.edge === "double_click_submit") {
+          await driver.clickSubmitTwice();
+        } else {
+          await driver.clickSubmit();
+        }
       } else {
         await driver.clickDecline();
       }
@@ -827,8 +865,28 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 
       // ---- drive the resume script as DOM actions, then await the terminal -
       await driveResumeScriptDom(driver, step, stepMaxMs);
+      if (step.edge === "sse_break") {
+        // Break the live SSE mid-run: wait until the dashboard provably shows
+        // the run in flight (the zone-4 browser trail), knock the TEST browser
+        // offline for ~2s, restore. The transport's reconnect+skip must reach
+        // the terminal with nothing duplicated (asserted after terminal).
+        if (step.skill !== "dealer_geosearch") {
+          fail(`step "${step.id}": edge=sse_break is wired for dealer_geosearch (its long browse step) only`);
+        }
+        await driver.waitForBrowserTrail(stepMaxMs);
+        await driver.screenshot("pre-sse-break");
+        await driver.setOffline(true);
+        await sleep(2_000);
+        await driver.setOffline(false);
+        await driver.screenshot("post-sse-break");
+      }
       const uiTerminal = await driver.waitForTerminal(stepMaxMs);
       await driver.checkTerminalSummaryVisible(uiTerminal);
+      if (step.edge === "sse_break" && uiTerminal === "done") {
+        // The recovery must not have duplicated the rendering: the geosearch
+        // confirm summary appears exactly once on exactly one assistant turn.
+        await driver.checkNoDuplicateSummary(/dealer\(s\) discovered/);
+      }
 
       // ---- typed-STOP choreography (expect_stop steps) ---------------------
       // The card must render with the expected stop code; the intake-pointing
