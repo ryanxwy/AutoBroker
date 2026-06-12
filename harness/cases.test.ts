@@ -520,6 +520,71 @@ describe("B2 batch grammar (max_seconds / pin_label / batch rows / suspend.targe
   });
 });
 
+describe("B3 seed grammar ([[seed.dealer_inventory_sources]])", () => {
+  const seededCase = (extra = "") => `
+    [meta]
+    id = "x"
+    archetype = "A"
+    skills = ["inventory_link_scan"]
+    [narrative]
+    session_origin = "fresh_unpinned"
+    input_mode = "slash"
+    provider = "deepseek"
+    [[seed.dealer_inventory_sources]]
+    dealer = "Tustin Hyundai"
+    url = "https://www.tustinhyundai.com/new-inventory/index.htm"
+    ${extra}
+    [[steps]]
+    id = "s"
+    skill = "inventory_link_scan"
+    [[steps.anchors]]
+    kind = "run_status"
+    expect = ["done"]
+  `;
+
+  it("parses seed rows with the manual default source_type", () => {
+    const c = parseCase(seededCase());
+    expect(c.seed).toEqual({
+      dealerInventorySources: [
+        {
+          dealer: "Tustin Hyundai",
+          url: "https://www.tustinhyundai.com/new-inventory/index.htm",
+          sourceType: "manual",
+        },
+      ],
+    });
+  });
+
+  it("accepts an explicit source_type and the pending status literal", () => {
+    const c = parseCase(seededCase('source_type = "reply_link"\n    status = "pending"'));
+    expect(c.seed?.dealerInventorySources[0]?.sourceType).toBe("reply_link");
+  });
+
+  it("rejects a non-pending status (the seeder writes nothing else)", () => {
+    expect(() => parseCase(seededCase('status = "scanned"'))).toThrow();
+  });
+
+  it("a case with no seed section parses with seed null", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "A"
+      skills = ["inventory_link_scan"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      [[steps]]
+      id = "s"
+      skill = "inventory_link_scan"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(parseCase(src).seed).toBeNull();
+  });
+});
+
 describe("case skill ids ∈ registry", () => {
   const REGISTRY_IDS = new Set(SKILLS.map((s) => s.id));
   const files = readdirSync(CASES).filter((f) => f.endsWith(".toml"));

@@ -60,12 +60,14 @@ import { policy } from "@autobroker/model";
 import {
   GEOSEARCH_SKILL_ID,
   INTAKE_SKILL_ID,
+  INVENTORY_LINK_SCAN_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
 } from "@autobroker/skills";
 import {
   beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
+  INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
@@ -399,19 +401,30 @@ const BatchReviewAcceptContentSchema = z.object({
 });
 
 /**
- * The batch_review resume shaping. decline/cancel → the step's decline
+ * The batch_review resume shaping, shared by BOTH scan skills (one wire
+ * contract, two suspended-step names: inventory_site_scan's "batchReview",
+ * inventory_link_scan's "reviewGate"). decline/cancel → the step's decline
  * resumeData (cancel normalizes to decline — the step schema has no 'cancel'
  * member); accept → validate {approved_dealer_ids} and require EVERY id to be
  * one of the targets the suspend actually showed (read off the retained
- * suspend payload) — anything else is 400 content_invalid and the suspend
- * stays answerable.
+ * suspend payload — on link_scan the generic dealer_id key carries SOURCE
+ * ids) — anything else is 400 content_invalid and the suspend stays
+ * answerable.
  */
-function inventoryScanResume(
+function batchReviewResumeFor(
+  expectedStep: string,
+): NonNullable<RunDescriptor["resume"]> {
+  return (step, decision, suspendPayload) =>
+    batchReviewResume(expectedStep, step, decision, suspendPayload);
+}
+
+function batchReviewResume(
+  expectedStep: string,
   step: string,
   decision: FormDecisionBody["decision"],
   suspendPayload: Record<string, unknown>,
 ): { resumeData: unknown; ackBody: Record<string, unknown> } {
-  if (step !== "batchReview") {
+  if (step !== expectedStep) {
     throw new FormDecisionError(
       "unsupported_action",
       400,
@@ -500,13 +513,67 @@ export const inventorySiteScanDescriptor: RunDescriptor = {
     };
   },
 
-  resume: inventoryScanResume,
+  resume: batchReviewResumeFor("batchReview"),
 
   // The workflow's confirm step templates the full deterministic summary —
   // pass it through (declined runs never reach summaryText).
   summaryText(result: unknown): string {
     const r = result as { summary?: string } | undefined;
     return r?.summary ?? "Inventory site scan complete.";
+  },
+};
+
+// ===========================================================================
+// inventory_link_scan — the fourth registered descriptor (browser skill with
+// ONE batch_review suspend over pending inventory LINKS). Same wire contract
+// as inventory_site_scan's card; the suspended step is "reviewGate" and the
+// approved ids are SOURCE ids (validated ⊆ the retained suspend payload's
+// shown rows through the shared batchReviewResume seam).
+// ===========================================================================
+
+/** The link-scan start body fields. Only `search_profile_id` matters to the
+ *  workflow — links come from pending dealer_inventory_sources rows, never
+ *  from the start body; envelope fields ride the same body and are ignored. */
+const LinkScanStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The link-scan workflow inputData shape. */
+interface LinkScanStartInput {
+  search_profile_id: string | null;
+}
+
+/** The inventory_link_scan descriptor. */
+export const inventoryLinkScanDescriptor: RunDescriptor = {
+  skillId: INVENTORY_LINK_SCAN_SKILL_ID,
+  workflowId: INVENTORY_LINK_SCAN_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's LLM useCase
+  // (inventory_extract, shared with the site scan) to — flipping in lock-step
+  // with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("inventory_extract").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): LinkScanStartInput {
+    const parsed = LinkScanStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume: batchReviewResumeFor("reviewGate"),
+
+  // The workflow's confirm step templates the full deterministic summary —
+  // pass it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Inventory link scan complete.";
   },
 };
 
@@ -519,6 +586,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   intakeRunDescriptor,
   dealerGeosearchDescriptor,
   inventorySiteScanDescriptor,
+  inventoryLinkScanDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));

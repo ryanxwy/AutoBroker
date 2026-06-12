@@ -4,6 +4,11 @@
  * (session_origin / input_mode / provider / profile), [[steps]] (each with
  * resume[] scripts + an anchors[] tripwire array). The anchor specs are parsed
  * into the evaluator's AnchorSpec union so a case is fully declarative.
+ * An optional [[seed.dealer_inventory_sources]] section declares pending
+ * inventory-link rows the UI-lane runner writes into the ISOLATED case DB
+ * right before the case's first inventory_link_scan step (dealer resolved by
+ * name against the scoped profile's bound dealers; fail-loud on no/ambiguous
+ * match).
  *
  * The case grammar maps onto the committed wire contract:
  *   - [narrative.profile]  → the form content the collect-step resume submits.
@@ -165,6 +170,25 @@ const RawStepSchema = z.object({
   anchors: z.array(RawAnchorSchema),
 });
 
+/** One `[[seed.dealer_inventory_sources]]` entry: a pending inventory-link
+ *  row the runner writes into the ISOLATED case DB right before the case's
+ *  first inventory_link_scan step (the dev-period source bootstrap —
+ *  dealer_reply_extract writes the same rows in production later). `dealer`
+ *  is a dealer NAME (exact, else unique case-insensitive substring) resolved
+ *  against the scoped profile's bound dealers at apply time — zero/ambiguous
+ *  matches fail LOUD. `status` may only be authored as "pending" (the seeder
+ *  writes nothing else). */
+const RawSeedSourceSchema = z.object({
+  dealer: z.string().min(1),
+  url: z.string().min(1),
+  source_type: z.string().min(1).optional(),
+  status: z.literal("pending").optional(),
+});
+
+const RawSeedSchema = z.object({
+  dealer_inventory_sources: z.array(RawSeedSourceSchema).min(1),
+});
+
 const RawCaseSchema = z.object({
   meta: z.object({
     id: z.string(),
@@ -172,6 +196,7 @@ const RawCaseSchema = z.object({
     skills: z.array(z.string()).min(1),
     risk_group: z.string().optional(),
   }),
+  seed: RawSeedSchema.optional(),
   narrative: z.object({
     session_origin: z.enum(["fresh_unpinned", "reuse_pinned"]),
     input_mode: InputModeSchema,
@@ -239,6 +264,13 @@ export interface CaseStep {
   anchors: AnchorSpec[];
 }
 
+/** One parsed dealer_inventory_sources seed row (see RawSeedSourceSchema). */
+export interface CaseSeedSource {
+  dealer: string;
+  url: string;
+  sourceType: string;
+}
+
 export interface Case {
   id: string;
   archetype: "A" | "B";
@@ -250,6 +282,9 @@ export interface Case {
   /** The case-declared driver lane (runner --lane overrides; default "api"). */
   lane: "ui" | "api";
   profile: Record<string, unknown> | null;
+  /** Pre-step DB seeds (isolated case DB only), or null. UI-lane only —
+   *  applied right before the first inventory_link_scan step. */
+  seed: { dealerInventorySources: CaseSeedSource[] } | null;
   steps: CaseStep[];
 }
 
@@ -449,6 +484,16 @@ export function toCase(raw: TomlTable): Case {
     provider: parsed.narrative.provider,
     lane: parsed.narrative.lane ?? "api",
     profile,
+    seed:
+      parsed.seed === undefined
+        ? null
+        : {
+            dealerInventorySources: parsed.seed.dealer_inventory_sources.map((s) => ({
+              dealer: s.dealer,
+              url: s.url,
+              sourceType: s.source_type ?? "manual",
+            })),
+          },
     steps,
   };
 }

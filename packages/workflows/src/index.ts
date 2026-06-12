@@ -177,10 +177,16 @@ export {
   type SrpWalkResult,
 } from "./inventorySiteScan.js";
 
-// The inventory_link_scan skill workflow contracts (skill #4 — the
-// link-driven sibling of inventory_site_scan, same batch_review card + resume
-// wire). The flat workflow steps land with the step-③ scaffold.
+// The inventory_link_scan skill workflow (skill #4 — the link-driven sibling
+// of inventory_site_scan: 8 flat steps, one batch_review suspend on the SAME
+// card + resume wire). Test-only deps seam + the app-set per-run
+// browser-emitter factory are exported alongside the contracts.
 export {
+  inventoryLinkScanWorkflow,
+  INVENTORY_LINK_SCAN_WORKFLOW_ID,
+  setLinkScanBrowserEmitterFactory,
+  __setInventoryLinkScanDepsForTests,
+  __resetInventoryLinkScanDepsForTests,
   InventoryLinkScanStopError,
   InventoryLinkScanCaptureLostError,
   LINK_SCAN_REVIEW_QUESTION,
@@ -189,12 +195,21 @@ export {
   LinkScanReviewResumeSchema,
   LinkScanInputSchema,
   LinkScanOutputSchema,
+  bucketLinksByHost,
+  captureOneLink,
+  captureLinksParallelImpl,
+  type InventoryLinkScanWorkflowDeps,
   type InventoryLinkScanStopCode,
   type LinkScanSkipReason,
   type LinkScanReviewSuspend,
   type LinkScanReviewResume,
   type LinkScanInput,
   type LinkScanOutput,
+  type LinkCaptureTarget,
+  type LinkScanCaptureArgs,
+  type SourceCaptureOutcome,
+  type LinkBucket,
+  type LinkBucketRunner,
 } from "./inventoryLinkScan.js";
 
 // The registered-workflows map for createMastraInstance({ workflows }) and the

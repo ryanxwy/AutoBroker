@@ -218,9 +218,10 @@ function sleep(ms: number): Promise<void> {
 /**
  * Tiny worker-pool: run `count` jobs with at most `limit` in flight,
  * preserving result order. The shared semaphore idiom for the browser tasks,
- * the VDP tabs and the extract calls.
+ * the VDP tabs and the extract calls (exported — the link-scan sibling
+ * workflow pools its buckets and extract calls with the same helper).
  */
-async function runWorkerPool<T>(
+export async function runWorkerPool<T>(
   limit: number,
   count: number,
   run: (i: number) => Promise<T>,
@@ -1500,8 +1501,9 @@ function vehicleLabel(p: {
 
 /** Parse the profile's acceptable-trims JSON blob into a string list, or null.
  *  An unparseable blob degrades to null: it only loosens exact-vs-near trim
- *  classification, never correctness of the scan itself. */
-function parseAcceptableTrims(raw: string | null): string[] | null {
+ *  classification, never correctness of the scan itself. (Exported — the
+ *  link-scan sibling workflow reads the same profile blob.) */
+export function parseAcceptableTrims(raw: string | null): string[] | null {
   if (raw === null || raw.trim() === "") return null;
   try {
     const parsed: unknown = JSON.parse(raw);

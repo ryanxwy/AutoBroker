@@ -1,0 +1,217 @@
+# harness/cases/inventory_link_scan.ui_button.toml — the link scan launched
+# from the SKILLS POPOVER RUN BUTTON in a fresh UNPINNED world, UI-LANE, ONE
+# browser session end-to-end:
+#
+#   step 1  intake via chat-rail SLASH (the corpus Tucson profile).
+#   step 2  "/dealer_geosearch" via slash — binds the real nearby dealers the
+#           [[seed.dealer_inventory_sources]] entries resolve against.
+#   (seed)  right before step 3 the runner writes the pending inventory-link
+#           rows below into the ISOLATED case DB (the dev-period source
+#           bootstrap — dealer_reply_extract writes these rows in production
+#           later). Seeds land BEFORE the step's before-snapshot, so the
+#           step's table deltas measure only what the run itself wrote.
+#   step 3  inventory_link_scan from the TopBar Skills popover's real Run
+#           button. The batch_review card renders on the gate-banner track
+#           with ONE ROW PER LINK; the driver decides PER ROW (one explicit
+#           skip + default approve for the rest — both row verbs exercised;
+#           the card-skipped link stays PENDING), submits, real pages are
+#           captured read-only, listings extracted + matched + written
+#           profile-scoped.
+#
+# LIVE-OPERATOR NOTE: the seed `dealer` fields resolve against the names
+# geosearch ACTUALLY discovers (exact, else unique substring), and the row
+# script's `match` must equal the discovered name EXACTLY. "Tustin Hyundai"
+# is the established high-confidence rooftop; if the other names/hosts drift
+# from the live Maps world, adjust the seed dealer/url pairs and the
+# [[steps.resume.rows]] match string — the run fails LOUD on any mismatch.
+#
+# cost_and_time is REQUIRED on step 3 (extraction is an LLM phase). The
+# dealer_inventory_sources anchor is GLOBAL-scoped with an absolute min: the
+# seeded rows pre-date the step's snapshot (delta would be 0 by design); the
+# run's own writes show as the inventory_listings profile-scoped delta.
+
+[meta]
+id = "inventory_link_scan_ui_button"
+archetype = "A"
+skills = ["search_profile_intake", "dealer_geosearch", "inventory_link_scan"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- pending inventory links seeded before the link_scan step ---------------
+# Synthetic-but-realistic SRP URLs on REAL dealer hostnames from the profile's
+# discovered world (the live operator adjusts to the real radius if needed).
+
+[[seed.dealer_inventory_sources]]
+dealer = "Tustin Hyundai"
+url = "https://www.tustinhyundai.com/new-inventory/index.htm?make=Hyundai&model=Tucson"
+source_type = "manual"
+
+[[seed.dealer_inventory_sources]]
+dealer = "Garden Grove Hyundai"
+url = "https://www.gardengrovehyundai.com/new-inventory/index.htm"
+source_type = "manual"
+
+[[seed.dealer_inventory_sources]]
+dealer = "Hyundai of Anaheim"
+url = "https://www.hyundaianaheim.com/new-inventory/index.htm"
+source_type = "manual"
+
+# ---- step 1: intake (the journey root) --------------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — the scan's match context."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch (binds the dealers the seeds resolve against) --
+
+[[steps]]
+id = "geosearch_run"
+skill = "dealer_geosearch"
+purpose = "Discover dealers near the profile so the link seeds can bind to real dealer rows."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path (evaluate-extract).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # unpinned session + single active profile.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: inventory_link_scan from the Skills popover Run button ----------
+
+[[steps]]
+id = "link_scan_button"
+skill = "inventory_link_scan"
+purpose = "Launch from the popover Run button; decide the link batch PER ROW; scan approved links."
+gate_policy = "approve_safe"
+launch = "skills_popover"
+max_seconds = 1200          # PER-STEP budget: a few links' capture + extract.
+
+[[steps.resume]]
+on = "batch_review"
+action = "accept"
+default_decision = "approve"   # every unmatched row → explicit per-row Approve.
+
+[[steps.resume.rows]]
+match = "Garden Grove Hyundai" # one explicit per-row Skip — stays PENDING.
+decision = "skip"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "table_min_rows"     # the seeded source rows exist (seeded pre-snapshot,
+table = "dealer_inventory_sources"
+scope = "global"            # so the run-window DELTA is 0 by design — assert
+min = 1                     # presence, not a count the live world varies).
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # still unpinned → the inferred branch, voiced.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

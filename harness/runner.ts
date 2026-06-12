@@ -59,6 +59,7 @@ import {
 import { snapshotCounts, openReadHandle, type TableCounts } from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
+import { applyInventorySourceSeeds } from "./seed.js";
 import { planBatchRowDecisions, UiDriver } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -440,6 +441,7 @@ function pendingKind(step: string): string {
     case "prefill":
       return "malformed_tool_call";
     case "batchReview":
+    case "reviewGate": // inventory_link_scan's batch_review step
       return "batch_review";
     default:
       return "data_collection";
@@ -625,6 +627,11 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
   const lane: "ui" | "api" = opts.lane ?? c.lane;
   if (lane === "ui") return cmdUiCase(opts, c);
 
+  if (c.seed !== null) {
+    // Seeds bootstrap a journey's mid-case DB state (profile + dealers must
+    // already exist) — only the UI-lane journey runner applies them.
+    fail("case carries [[seed.*]] sections — seeded cases run on the UI lane only (--lane ui)");
+  }
   const step = opts.step ? c.steps.find((s) => s.id === opts.step) ?? fail(`no step "${opts.step}" in case`) : c.steps[0]!;
   if (step.edge !== null) {
     // The edges are USER-SURFACE behaviors (reload, double-click, offline) —
@@ -954,6 +961,11 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
     // Per-step profile-scoped profile_dealers deltas (the discovery counts a
     // later batch step's batch_rows_from cross-check reads).
     const dealersDeltaByStep = new Map<string, number>();
+    // [[seed.dealer_inventory_sources]] applies ONCE, right before the case's
+    // first inventory_link_scan step (the consuming skill) — by then the
+    // journey's intake+geosearch steps created the profile and bound the
+    // dealers the seed entries resolve against.
+    let seedsApplied = false;
 
     for (const step of c.steps) {
       // PER-STEP budget: the CLI --max-seconds overrides; else the step's TOML
@@ -979,6 +991,26 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         scopeProfileId = null;
       } else {
         scopeProfileId = latestProfileId;
+      }
+
+      // ---- pre-step DB seed (inventory_link_scan source bootstrap) --------
+      // Applied BEFORE the step's before-snapshot, so the seeded rows are part
+      // of the baseline: the step's own table deltas measure ONLY what the run
+      // wrote (a decline case's Δ=0-exact anchors stay honest).
+      if (!seedsApplied && c.seed !== null && step.skill === "inventory_link_scan") {
+        if (scopeProfileId === null) {
+          fail(`step "${step.id}": [[seed.*]] needs a profile in scope (run intake first)`);
+        }
+        const applied = applyInventorySourceSeeds({
+          dbPath: opts.db,
+          profileId: scopeProfileId,
+          seeds: c.seed.dealerInventorySources,
+        });
+        console.error(
+          `[seed] dealer_inventory_sources: ${applied.seeded} row(s) inserted ` +
+            `(${applied.sourceIds.length} declared) for profile ${scopeProfileId}`,
+        );
+        seedsApplied = true;
       }
 
       const before = snapshotCounts(scopeProfileId);

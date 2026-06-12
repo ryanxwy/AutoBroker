@@ -1,0 +1,188 @@
+# harness/cases/inventory_link_scan.ui_decline.toml — the batch_review DECLINE
+# twin, UI-LANE, ONE browser session end-to-end. The card suspends BEFORE any
+# link is opened, so this case is safe to run live/unattended: the decline
+# must be terminal with ZERO inventory writes and ZERO browser navigation on
+# the scan run (the reviewGate suspend precedes every Browser launch by
+# construction — even the pre-review junk/US skip marks only land at the
+# post-approval persist step, which a decline never reaches).
+#
+#   step 1  intake via chat-rail SLASH (the corpus Tucson profile).
+#   step 2  "/dealer_geosearch" via slash — binds the dealers the seeds
+#           resolve against (real Maps browsing, local upsert).
+#   (seed)  the pending link rows below are written into the ISOLATED case DB
+#           right before step 3, BEFORE its before-snapshot — so the Δ=0
+#           EXACT anchors below measure the run's own writes honestly.
+#   step 3  "/inventory_link_scan" via slash → the batch_review card renders
+#           (one row per link) → the driver clicks the REAL Decline button.
+#           Terminal `declined`; BOTH inventory tables Δ=0 EXACT; the seeded
+#           rows stay last_status='pending'; no browser.* frame ever flows on
+#           the scan run (browser_activity expect=absent). No cost_and_time
+#           anchor — the decline path is zero-LLM by construction.
+
+[meta]
+id = "inventory_link_scan_ui_decline"
+archetype = "A"
+skills = ["search_profile_intake", "dealer_geosearch", "inventory_link_scan"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- pending inventory links seeded before the link_scan step ---------------
+# Names resolve against the live-discovered dealers (exact, else unique
+# substring); zero site contact happens in this case, so only the names need
+# to hold — the live operator adjusts if the discovered world drifts.
+
+[[seed.dealer_inventory_sources]]
+dealer = "Tustin Hyundai"
+url = "https://www.tustinhyundai.com/new-inventory/index.htm?make=Hyundai&model=Tucson"
+source_type = "manual"
+
+[[seed.dealer_inventory_sources]]
+dealer = "Hyundai of Anaheim"
+url = "https://www.hyundaianaheim.com/new-inventory/index.htm"
+source_type = "manual"
+
+# ---- step 1: intake (the journey root) --------------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch (the seeds need bound dealers) -----------------
+
+[[steps]]
+id = "geosearch_run"
+skill = "dealer_geosearch"
+purpose = "Discover dealers so the link seeds can bind to real dealer rows."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path (evaluate-extract).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # unpinned session + single active profile.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: the link batch card → DECLINE (terminal, zero writes, zero nav) -
+
+[[steps]]
+id = "link_scan_decline"
+skill = "inventory_link_scan"
+purpose = "Decline at the REAL link review card — declined terminal, zero writes, zero navigation."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]       # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # inventory_listings Δ=0 EXACT (decline = zero writes).
+table = "inventory_listings"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # dealer_inventory_sources Δ=0 EXACT (the seeded
+table = "dealer_inventory_sources"
+scope = "profile"           # rows pre-date the snapshot and stay pending —
+delta_min = 0               # not even a status mark lands on a decline).
+exact = true
+
+[[steps.anchors]]
+kind = "browser_activity"
+expect = "absent"           # the suspend precedes ANY Browser launch — zero nav.
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
