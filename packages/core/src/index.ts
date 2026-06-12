@@ -56,6 +56,21 @@ export {
 export type { InventoryListing, InventoryStatus } from "./schema/inventoryListing.js";
 
 export {
+  IncentiveSchema,
+  IncentiveTypeSchema,
+  IncentiveEligibilitySchema,
+  IncentiveSourceRegistryEntrySchema,
+  INCENTIVE_TYPES,
+  INCENTIVE_ELIGIBILITIES,
+} from "./schema/incentive.js";
+export type {
+  Incentive,
+  IncentiveType,
+  IncentiveEligibility,
+  IncentiveSourceRegistryEntry,
+} from "./schema/incentive.js";
+
+export {
   SearchProfileSchema,
   SearchProfileStatusSchema,
   PhonePolicySchema,

@@ -213,6 +213,31 @@ export {
   type LinkBucketRunner,
 } from "./inventoryLinkScan.js";
 
+// The incentive_scrape skill contracts (skill #5 — typed input/output, the
+// OEM first-encounter suspend/resume vocabulary, the incentive_extract emit
+// shape + fenced prompt, and the typed STOP / skip / fail vocabularies). The
+// workflow itself lands beside them; skill-local, single-use (see header
+// rationale in the contracts file).
+export {
+  IncentiveScrapeInputSchema,
+  IncentiveScrapeOutputSchema,
+  IncentiveScrapeStopError,
+  INCENTIVE_SKIP_REASONS,
+  INCENTIVE_FAIL_REASONS,
+  OemFirstEncounterSuspendSchema,
+  OemFirstEncounterResumeSchema,
+  IncentiveExtractSchema,
+  buildIncentiveExtractPrompt,
+  type IncentiveScrapeInput,
+  type IncentiveScrapeOutput,
+  type IncentiveScrapeStopCode,
+  type IncentiveSkipReason,
+  type IncentiveFailReason,
+  type OemFirstEncounterSuspend,
+  type OemFirstEncounterResume,
+  type IncentiveExtract,
+} from "./incentiveScrapeContracts.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

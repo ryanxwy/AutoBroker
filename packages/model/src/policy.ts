@@ -54,6 +54,14 @@ export const USE_CASES = [
    * emit_result tool; never Output.object + tools.
    */
   "inventory_extract",
+  /**
+   * Manufacturer-incentive extraction for the incentive_scrape skill: the
+   * SECOND phase of a two-phase pipeline (tools-only OEM/rooftop page capture
+   * first, then this separate no-tools structured call over the fenced offers
+   * snapshot) emitting the flat 4-field Incentive rows. On DeepSeek that
+   * means a single emit_result tool; never Output.object + tools.
+   */
+  "incentive_extract",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
   /**
@@ -89,6 +97,9 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Snapshot row extraction (two-phase: capture is zero-LLM); single
   // emit_result tool on DeepSeek, same discipline as geosearch_extract.
   inventory_extract: "deepseek.chat",
+  // Offer-card row extraction (two-phase: capture is zero-LLM); single
+  // emit_result tool on DeepSeek, same discipline as inventory_extract.
+  incentive_extract: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
   // Routes to anthropic.chat (supportsOutputObjectWithTools:true) so the harness
   // takes the NATIVE output_object strategy. Swapping to "openai.chat" is a
