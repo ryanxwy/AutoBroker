@@ -4,7 +4,8 @@
  * protocol (UIMessageChunk JSON over SSE), so an @ai-sdk/react useChat client
  * can render a run as one assistant message. The server stays a PURE frame
  * translator — no model calls, no DB; it reads the same pubsub channel the
- * legacy /stream route reads, which remains untouched as the default surface.
+ * legacy /stream route reads, which remains live for the harness/API-lane
+ * readers (the dashboard rail consumes THIS route).
  *
  * THE MAPPING (one wire frame → one-or-more protocol chunks, in order):
  *   - first, once per connection: start{messageId: runId} — the assistant
@@ -51,13 +52,6 @@ export const STREAM_V2_HEADERS: Record<string, string> = {
 
 /** The stream terminator sentinel (protocol-standard). */
 export const STREAM_V2_DONE = "[DONE]";
-
-/** Flag-parallel rollout: the dashboard's chat rail consumes /stream-v2, so it
- *  registers by DEFAULT; AUTOBROKER_STREAM_V2=0 disables it during the parallel
- *  window (the legacy /stream stays untouched for the harness/API-lane readers). */
-export function streamV2Enabled(): boolean {
-  return process.env.AUTOBROKER_STREAM_V2 !== "0";
-}
 
 /** Serialize one protocol chunk as an SSE frame (`data: <json>\n\n`). */
 export function chunkFrame(chunk: UIMessageChunk): string {

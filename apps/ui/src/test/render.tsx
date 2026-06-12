@@ -1,9 +1,8 @@
 /**
- * render — a tiny RTL-free render helper for component tests, following the
- * scaffold's useRunStream.test pattern (react-dom/client + act under happy-dom; no
- * @testing-library dep). Exposes the container + query-by-testid helpers + a
- * click/change/submit driver. Kept under src/test/ (no `.test` suffix) so vitest
- * does not pick it up as a suite.
+ * render — a tiny RTL-free render helper for component tests
+ * (react-dom/client + act under happy-dom; no @testing-library dep). Exposes
+ * the container + query-by-testid helpers + a click/change/submit driver. Kept
+ * under src/test/ (no `.test` suffix) so vitest does not pick it up as a suite.
  */
 
 import { act } from "react";

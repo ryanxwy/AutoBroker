@@ -6,7 +6,7 @@
  * trace). A mock fetch returns each fixture; we assert the client decodes it (or
  * throws the typed ApiError on a non-2xx / schema-mismatch).
  *
- * Pure (node env) — no DOM. The SSE hook's DOM tests live in useRunStream.test.ts.
+ * Pure (node env) — no DOM. The stream decode tests live in chat/uiStream.test.ts.
  */
 
 import { describe, expect, it } from "vitest";

@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SseEvent } from "./runPubSub.js";
-import { UiStreamTranslator, chunkFrame, streamV2Enabled } from "./streamV2.js";
+import { UiStreamTranslator, chunkFrame } from "./streamV2.js";
 
 function ev(kind: SseEvent["kind"], payload: Record<string, unknown> = {}): SseEvent {
   return { ts: "2026-06-12T00:00:00.000Z", kind, payload };
@@ -134,21 +134,8 @@ describe("UiStreamTranslator — frame→chunk mapping", () => {
   });
 });
 
-describe("chunkFrame / flag", () => {
+describe("chunkFrame", () => {
   it("serializes one chunk as a data: SSE frame", () => {
     expect(chunkFrame({ type: "finish" })).toBe('data: {"type":"finish"}\n\n');
-  });
-
-  it("streamV2Enabled defaults ON (the rail consumes it); AUTOBROKER_STREAM_V2=0 disables", () => {
-    const prior = process.env.AUTOBROKER_STREAM_V2;
-    try {
-      delete process.env.AUTOBROKER_STREAM_V2;
-      expect(streamV2Enabled()).toBe(true);
-      process.env.AUTOBROKER_STREAM_V2 = "0";
-      expect(streamV2Enabled()).toBe(false);
-    } finally {
-      if (prior === undefined) delete process.env.AUTOBROKER_STREAM_V2;
-      else process.env.AUTOBROKER_STREAM_V2 = prior;
-    }
   });
 });

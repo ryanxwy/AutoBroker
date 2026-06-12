@@ -3,9 +3,10 @@
  *
  * The runnable surface is the Vite entry (index.html → src/main.tsx → <App/>).
  * This barrel exposes the testable, framework-thin pieces (the typed API client,
- * the single SSE hook, the chat store, the wire schemas) so tests and a future
- * desktop shell import a stable entry. The UI never touches the product DB or
- * external APIs — it renders server state over /api + SSE only (five-layer wall).
+ * the chat-stack collaborators — message projection, transport, decision hook —
+ * and the wire schemas) so tests and a future desktop shell import a stable
+ * entry. The UI never touches the product DB or external APIs — it renders
+ * server state over /api + SSE only (five-layer wall).
  *
  * Approval UX rule (non-negotiable): the human approval for the 3 irreversible
  * skills is NEVER hidden on any surface; the gate renders before the prose.
@@ -28,12 +29,6 @@ export { RunChatTransport } from "./chat/transport.js";
 export { uiChunkStream } from "./chat/uiStream.js";
 export { useDecision } from "./chat/useDecision.js";
 export type { DecisionController } from "./chat/useDecision.js";
-
-// --- the LEGACY stream stack (deleted by the next slice; unused by the App) -
-export { useRunStream, __resetRunStreamRegistryForTests } from "./api/useRunStream.js";
-export type { RunStreamState, UseRunStreamOptions } from "./api/useRunStream.js";
-export { useChat } from "./store/useChat.js";
-export type { Session, Turn, UserTurn, AssistantTurn } from "./store/useChat.js";
 
 export * from "./api/wire.js";
 

@@ -11,8 +11,8 @@
  *       profile/audit rows, status 'declined') and EXACTLY ONE terminal
  *       abort{reason:'user_declined'} reaches the client — subscribed LIVE
  *       (before the decline), so the decline flows down an open stream.
- *   (c) the flag: AUTOBROKER_STREAM_V2=0 unregisters the route (404 envelope);
- *       legacy /stream remains live and untouched either way.
+ *   (c) coexistence: legacy /stream remains live and untouched alongside the
+ *       v2 route; an unknown run 404s on both.
  *
  * ISOLATION: fresh tmp AUTOBROKER_DATA_DIR per case; never ~/.autobroker*;
  * AUTOBROKER_TEST_AUTO_APPROVE is never set.
@@ -38,7 +38,6 @@ import { buildServer, type BuiltServer } from "./server.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
-const V2_FLAG = "AUTOBROKER_STREAM_V2";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_SQL = join(
@@ -57,7 +56,6 @@ let db: Db;
 let server: BuiltServer;
 let originalDataDir: string | undefined;
 let originalDbOverride: string | undefined;
-let originalV2Flag: string | undefined;
 
 const NO_USAGE = {
   costUsd: null,
@@ -145,11 +143,9 @@ function parseV2(body: string): { chunks: Array<Record<string, unknown>>; done: 
 beforeEach(async () => {
   originalDataDir = process.env[DATA_DIR];
   originalDbOverride = process.env[DB_OVERRIDE];
-  originalV2Flag = process.env[V2_FLAG];
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-streamv2-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
-  process.env[V2_FLAG] = "1";
 
   db = openDb();
   db.$client.exec(readFileSync(MIGRATION_SQL, "utf8"));
@@ -169,8 +165,6 @@ afterEach(async () => {
   else process.env[DATA_DIR] = originalDataDir;
   if (originalDbOverride === undefined) delete process.env[DB_OVERRIDE];
   else process.env[DB_OVERRIDE] = originalDbOverride;
-  if (originalV2Flag === undefined) delete process.env[V2_FLAG];
-  else process.env[V2_FLAG] = originalV2Flag;
 });
 
 async function buildWith(): Promise<BuiltServer> {
@@ -304,26 +298,15 @@ describe("F′3 — decline over a LIVE v2 stream", () => {
 // (c) flag + legacy coexistence
 // ---------------------------------------------------------------------------
 
-describe("flag-parallel rollout", () => {
-  it("with the flag OFF the v2 route does not exist; legacy /stream still serves", async () => {
-    process.env[V2_FLAG] = "0";
+describe("coexistence with the legacy /stream", () => {
+  it("unknown run → 404 envelope on BOTH stream routes (legacy stays live)", async () => {
     const s = await buildWith();
-    const { runId } = await startSlashToCollect(s);
-
-    const v2 = await s.app.inject({ method: "GET", url: `/api/skill-runs/${runId}/stream-v2` });
+    const v2 = await s.app.inject({ method: "GET", url: "/api/skill-runs/ghost/stream-v2" });
     expect(v2.statusCode).toBe(404);
+    expect(v2.json<{ error: { code: string } }>().error.code).toBe("no_skill_run");
 
-    // Legacy stays untouched (subscribe replays the open backlog; this run is
-    // still suspended so we only assert the route is live, via a ghost run).
-    const ghost = await s.app.inject({ method: "GET", url: "/api/skill-runs/ghost/stream" });
-    expect(ghost.statusCode).toBe(404);
-    expect(ghost.json<{ error: { code: string } }>().error.code).toBe("no_skill_run");
-  });
-
-  it("unknown run on the v2 route → 404 envelope", async () => {
-    const s = await buildWith();
-    const res = await s.app.inject({ method: "GET", url: "/api/skill-runs/ghost/stream-v2" });
-    expect(res.statusCode).toBe(404);
-    expect(res.json<{ error: { code: string } }>().error.code).toBe("no_skill_run");
+    const legacy = await s.app.inject({ method: "GET", url: "/api/skill-runs/ghost/stream" });
+    expect(legacy.statusCode).toBe(404);
+    expect(legacy.json<{ error: { code: string } }>().error.code).toBe("no_skill_run");
   });
 });
