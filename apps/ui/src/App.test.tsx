@@ -54,13 +54,29 @@ class MockStream {
 
 /** A mock fetch that answers the routes the App calls. `posted` captures every
  *  POST /api/skill-runs body; `profiles` seeds the active-profile list (the
- *  Skills-popover pin gate reads it). */
-function mockFetch(opts: { posted?: Array<Record<string, unknown>>; profiles?: unknown[] } = {}): typeof fetch {
+ *  Skills-popover pin gate reads it); `sessions` seeds GET /api/sessions (rows
+ *  may carry last_run_id); `deadRuns` 404 their /stream-v2 (post-restart: no
+ *  live channel); `runStatus` answers GET /api/skill-runs/:id by run id. */
+function mockFetch(
+  opts: {
+    posted?: Array<Record<string, unknown>>;
+    profiles?: unknown[];
+    sessions?: Array<Record<string, unknown>>;
+    deadRuns?: string[];
+    runStatus?: Record<string, Record<string, unknown>>;
+  } = {},
+): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     const json = (body: unknown, status = 200): Response =>
       new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-    if (url.includes("/stream-v2")) return new MockStream(url).response;
+    if (url.includes("/stream-v2")) {
+      const runId = /skill-runs\/([^/]+)\/stream-v2/.exec(url)?.[1];
+      if (runId !== undefined && (opts.deadRuns ?? []).includes(runId)) {
+        return json({ error: { code: "no_skill_run", message: `no skill run ${runId}` } }, 404);
+      }
+      return new MockStream(url).response;
+    }
     if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x" });
     if (url.endsWith("/api/skills"))
       return json([
@@ -71,22 +87,30 @@ function mockFetch(opts: { posted?: Array<Record<string, unknown>>; profiles?: u
     if (url.includes("/api/profiles")) return json(opts.profiles ?? []);
     if (url.includes("/api/sessions/")) {
       const id = url.slice(url.lastIndexOf("/") + 1);
-      return json({
-        id,
-        title: null,
-        created_at: "2026-06-12T00:00:00Z",
-        last_activity_at: "2026-06-12T00:00:00Z",
-        pinned_profile_id: null,
-        scope_notice: null,
-        archived: false,
-      });
+      const seeded = (opts.sessions ?? []).find((s) => s["id"] === id);
+      return json(
+        seeded ?? {
+          id,
+          title: null,
+          created_at: "2026-06-12T00:00:00Z",
+          last_activity_at: "2026-06-12T00:00:00Z",
+          pinned_profile_id: null,
+          scope_notice: null,
+          last_run_id: null,
+          archived: false,
+        },
+      );
     }
-    if (url.endsWith("/api/sessions")) return json([]);
+    if (url.endsWith("/api/sessions")) return json(opts.sessions ?? []);
     if (url.endsWith("/api/skill-runs") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       opts.posted?.push(body);
       const runId = body["skill"] === "dealer_geosearch" ? "run-geo" : "run-xyz";
       return json({ run_id: runId, session_id: "sess-1", scope_notice: null }, 201);
+    }
+    const statusMatch = /\/api\/skill-runs\/([^/]+)$/.exec(url);
+    if (statusMatch !== null && opts.runStatus?.[statusMatch[1]!] !== undefined) {
+      return json(opts.runStatus[statusMatch[1]!]);
     }
     return json({ error: { code: "not_found", message: "no route" } }, 404);
   }) as typeof fetch;
@@ -289,6 +313,55 @@ describe("App — refresh recovery", () => {
     stream!.emit({ ...COLLECT_GATE, id: "d9", data: { ...COLLECT_GATE.data, decision_id: "d9" } });
     await flush();
     expect(r.query("intake-form")).not.toBeNull();
+    r.unmount();
+  });
+});
+
+describe("App — session re-entry after a server restart (terminal recovery)", () => {
+  const FINISHED_SESSION = {
+    id: "sess-old",
+    title: "Yesterday's search",
+    created_at: "2026-06-11T00:00:00Z",
+    last_activity_at: "2026-06-11T00:01:00Z",
+    pinned_profile_id: null,
+    scope_notice: null,
+    last_run_id: "run-old",
+    archived: false,
+  };
+  const DONE_SUMMARY = {
+    run_id: "run-old",
+    skill: "dealer_geosearch",
+    status: "done",
+    session_id: "sess-old",
+    pending: null,
+    events: [],
+  };
+
+  it("popover pill reads the BOUND run's status; entering the session lands the durable terminal", async () => {
+    const client = new ApiClient({
+      fetchImpl: mockFetch({
+        sessions: [FINISHED_SESSION],
+        deadRuns: ["run-old"], // post-restart: the finished run has no channel.
+        runStatus: { "run-old": DONE_SUMMARY },
+      }),
+    });
+    const r = render(<App client={client} />);
+    await flush();
+
+    // Open the Searches popover: the session row carries the terminal pill of
+    // ITS bound run (run-old → done), not a global latest-run guess.
+    click(r.get("topbar-searches"));
+    await flush();
+    const pill = r.get("session-pill-sess-old");
+    expect(pill.getAttribute("data-status")).toBe("done");
+
+    // Enter the session: /stream-v2 404s (no live channel after restart), so
+    // the status fallback synthesizes the terminal turn from durable storage.
+    click(r.get("searches-session-sess-old"));
+    await flush();
+    expect(window.location.pathname).toBe("/runs/run-old");
+    expect(r.get("assistant-turn").getAttribute("data-status")).toBe("done");
+    expect(r.get("turn-zone-text").textContent).toContain("recovered after a restart");
     r.unmount();
   });
 });

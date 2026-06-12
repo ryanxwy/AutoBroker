@@ -262,6 +262,59 @@ export function geosearchStopCode(turn: AssistantTurnView): GeosearchStopCode | 
     : null;
 }
 
+// ---------------------------------------------------------------------------
+// post-restart terminal recovery (the status-fallback message)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the assistant message for a run whose stream no longer exists (after a
+ * server restart, finished runs have no live channel — /stream-v2 404s), from
+ * the durable status read (GET /api/skill-runs/:id resolves Mastra storage).
+ * The parts mirror what the wire would have carried, so projectAssistantTurn
+ * lands the SAME terminal rendering. The original prose summary lives only in
+ * the dead process's stream backlog, so a `done` turn carries an honest
+ * recovered note instead. Returns null for a non-terminal status (a live run
+ * has a live channel — nothing to synthesize).
+ */
+export function recoveredTurnMessage(summary: {
+  run_id: string;
+  skill: string;
+  status: string;
+}): RunUIMessage | null {
+  const terminal =
+    summary.status === "done"
+      ? { kind: "done", payload: {} }
+      : summary.status === "error"
+        ? { kind: "error", payload: { reason: "workflow_failed" } }
+        : summary.status === "declined"
+          ? { kind: "aborted", payload: { reason: "user_declined" } }
+          : summary.status === "aborted"
+            ? { kind: "aborted", payload: { reason: "canceled" } }
+            : null;
+  if (terminal === null) return null;
+
+  const parts: RunUIMessage["parts"] = [
+    {
+      type: "data-frame",
+      id: "frame-recovered-init",
+      data: { kind: "init", payload: { run_id: summary.run_id, skill: summary.skill } },
+    },
+  ];
+  if (summary.status === "done") {
+    parts.push({
+      type: "text",
+      text: "This run finished earlier — its terminal state was recovered after a restart.",
+    });
+  }
+  parts.push({
+    type: "data-frame",
+    id: "frame-recovered-terminal",
+    data: { ...terminal, payload: { ...terminal.payload, recovered: "status_fallback" } },
+  });
+
+  return { id: summary.run_id, role: "assistant", parts };
+}
+
 /** Concatenate a message's text parts (the user-turn rendering). */
 function messageText(message: RunUIMessage): string {
   let text = "";

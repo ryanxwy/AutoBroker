@@ -203,6 +203,7 @@ describe("ApiClient — sessions (pin + scope_notice in one fetch)", () => {
       forked_session_id: "sess-fork-1",
       points: ["a", "b", "c"],
     },
+    last_run_id: null,
     archived: false,
   };
 

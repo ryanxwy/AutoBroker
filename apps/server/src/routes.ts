@@ -266,6 +266,19 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
     try {
       const { runId } = await skillRuns.start({ skill: body.skill, input, sessionId });
+      // Durable run↔session link (thread metadata): the Searches popover's
+      // per-session terminal pill and post-restart re-entry both read it. The
+      // run IS already started — a failed metadata write is voiced, never a
+      // failed ack (the client would otherwise retry into a duplicate run).
+      if (sessionId !== null) {
+        try {
+          await sessions.recordRun(sessionId, runId);
+        } catch (err) {
+          console.warn(
+            `routes: failed to record run ${runId} on session ${sessionId}: ${String(err)}`,
+          );
+        }
+      }
       reply.code(201);
       // The IntakeScopeNotice rides the start response so the rail can render it
       // as the forked session's first system part (non-skippable). null when the

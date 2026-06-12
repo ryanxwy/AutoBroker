@@ -69,6 +69,12 @@ export const PIN_METADATA_KEY = "pinnedProfileId" as const;
  *  the pin key) never clobbers this key. */
 export const SCOPE_NOTICE_METADATA_KEY = "scopeNotice" as const;
 
+/** The thread-metadata key carrying the LAST run started from this session.
+ *  Written at run start, so the link survives a server restart (the in-process
+ *  runId→sessionId map does not) — re-entering a session can re-bind its
+ *  bound run and read that run's terminal state from durable storage. */
+export const LAST_RUN_METADATA_KEY = "lastRunId" as const;
+
 /**
  * A product-shaped session, projected from a Mastra Memory thread. The route
  * layer maps this to the snake_case SessionResponse wire shape; this facade
@@ -85,6 +91,9 @@ export interface RailSession {
   /** The intake scope notice stored on a forked session, or null. Opaque to
    *  this layer — the app projects it onto its wire shape. */
   scopeNotice: Record<string, unknown> | null;
+  /** The LAST run started from this session (thread metadata, durable across
+   *  restarts), or null when no run was ever started here. */
+  lastRunId: string | null;
   /** Thread creation timestamp (ISO-8601 UTC). */
   createdAt: string;
   /** Thread last-activity timestamp (ISO-8601 UTC) — list sort key DESC. */
@@ -127,6 +136,12 @@ function scopeNoticeFromMetadata(
   return raw as Record<string, unknown>;
 }
 
+/** Read the last-run link out of thread metadata (absent/empty → null). */
+function lastRunFromMetadata(metadata: Record<string, unknown> | undefined): string | null {
+  const raw = metadata?.[LAST_RUN_METADATA_KEY];
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
 /** Project a Mastra thread onto the product RailSession shape. */
 function projectThread(thread: ThreadLike): RailSession {
   return {
@@ -134,6 +149,7 @@ function projectThread(thread: ThreadLike): RailSession {
     title: thread.title ?? null,
     pinnedProfileId: pinFromMetadata(thread.metadata),
     scopeNotice: scopeNoticeFromMetadata(thread.metadata),
+    lastRunId: lastRunFromMetadata(thread.metadata),
     createdAt: isoOf(thread.createdAt),
     lastActivityAt: isoOf(thread.updatedAt),
   };
@@ -303,6 +319,26 @@ export class RailSessionStore {
       id: threadId,
       title: nextTitle,
       metadata: metadataPatch,
+    });
+    return projectThread(updated as ThreadLike);
+  }
+
+  /**
+   * Record the run just started from this session in thread metadata (the
+   * durable runId→session link — the in-process map dies with the server).
+   * Same shallow-merge discipline as the pin patch: only the lastRunId key
+   * rides the metadata patch; title is carried forward (updateThread replaces
+   * it). A missing thread is a no-op null (the caller logs, never fails the
+   * already-started run).
+   */
+  async recordLastRun(threadId: string, runId: string): Promise<RailSession | null> {
+    const current = await this.memory.getThreadById({ threadId });
+    if (current === null) return null;
+    const cur = current as ThreadLike;
+    const updated = await this.memory.updateThread({
+      id: threadId,
+      title: cur.title ?? "",
+      metadata: { [LAST_RUN_METADATA_KEY]: runId },
     });
     return projectThread(updated as ThreadLike);
   }

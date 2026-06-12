@@ -145,6 +145,10 @@ export const SessionResponseSchema = z.object({
   last_activity_at: z.string(),
   pinned_profile_id: z.string().nullable(),
   scope_notice: IntakeScopeNoticeSchema.nullable(),
+  /** The LAST run started from this session (durable thread metadata), or
+   *  null. Drives the per-session terminal pill (the session's BOUND run, not
+   *  a global latest-run guess) and post-restart session re-entry. */
+  last_run_id: z.string().nullable(),
   archived: z.boolean(),
 });
 export type SessionResponse = z.infer<typeof SessionResponseSchema>;

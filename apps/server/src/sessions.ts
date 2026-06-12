@@ -44,6 +44,11 @@ export interface SessionResponse {
    *  on GET /api/sessions/:id (and the list/PATCH projections) so the rail can
    *  re-hydrate the notice together with the pin in ONE fetch. */
   scope_notice: IntakeScopeNotice | null;
+  /** The LAST run started from this session (durable thread metadata), or
+   *  null. The Searches popover's per-session terminal pill reads THIS run's
+   *  status — the session's own bound turn, never a global latest-run guess —
+   *  and re-entering the session re-binds it after a restart. */
+  last_run_id: string | null;
   archived: boolean;
 }
 
@@ -84,6 +89,7 @@ export function toSessionResponse(s: RailSession): SessionResponse {
     last_activity_at: s.lastActivityAt,
     pinned_profile_id: s.pinnedProfileId,
     scope_notice: scopeNoticeOf(s),
+    last_run_id: s.lastRunId,
     archived: false,
   };
 }
@@ -188,6 +194,16 @@ export class SessionService {
   /** DELETE /api/sessions/:id — remove the thread (cascades messages). */
   async delete(threadId: string): Promise<void> {
     await this.store.deleteSession(threadId);
+  }
+
+  /**
+   * Record the run just started from a session (the durable runId→session
+   * link; the in-memory map dies with the process). Called by the start route
+   * AFTER the run is live — a failed write must never fail the start ack, so
+   * the route treats errors as voiced-but-non-fatal.
+   */
+  async recordRun(sessionId: string, runId: string): Promise<void> {
+    await this.store.recordLastRun(sessionId, runId);
   }
 
   /**

@@ -19,12 +19,53 @@
 
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
-import type { Mode, ProfileList, SessionList, SkillList, SkillManifest } from "../api/wire.js";
+import type { Mode, ProfileList, SessionList, SkillList, SkillManifest, SkillRunSummary } from "../api/wire.js";
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { useLayout } from "../store/layout.js";
 import { Popover } from "./Popover.js";
 import { SkillsPopoverList } from "./SkillsPopover.js";
+
+/** Short pill wording per projected run status (terminal + in-flight). */
+const SESSION_PILL_LABEL: Record<string, string> = {
+  pending: "Starting…",
+  running: "Running",
+  awaiting_approval: "Awaiting input",
+  done: "Done",
+  error: "Error",
+  declined: "Cancelled",
+  aborted: "Stopped",
+};
+
+/**
+ * The per-session terminal pill: reads the status of the session's BOUND run
+ * (last_run_id off the session row — never a global latest-run guess) from
+ * GET /api/skill-runs/:id, which resolves from durable Mastra storage even
+ * after a server restart. Rows mount on every popover open, so the read is
+ * fresh per open. Renders nothing while loading or when the run is unknown.
+ */
+function SessionStatusPill({
+  client,
+  sessionId,
+  runId,
+}: {
+  client: ApiClient;
+  sessionId: string;
+  runId: string;
+}): JSX.Element | null {
+  const status = useAsync<SkillRunSummary>(() => client.runStatus(runId), [runId]);
+  if (status.kind !== "ok") return null;
+  const s = status.data.status;
+  return (
+    <span
+      className="session-pill"
+      data-testid={`session-pill-${sessionId}`}
+      data-status={s}
+    >
+      {SESSION_PILL_LABEL[s] ?? s}
+    </span>
+  );
+}
 
 export interface TopBarProps {
   client: ApiClient;
@@ -147,7 +188,10 @@ export function TopBar({
                     >
                       {s.title ?? s.id}
                       {s.pinned_profile_id !== null ? " (pinned)" : ""}
-                    </button>
+                    </button>{" "}
+                    {s.last_run_id !== null && (
+                      <SessionStatusPill client={client} sessionId={s.id} runId={s.last_run_id} />
+                    )}
                   </div>
                 ))}
               </>

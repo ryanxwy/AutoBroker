@@ -406,3 +406,64 @@ describe("intake fork from pinned session", () => {
     expect(body.scope_notice).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// durable run↔session link (last_run_id — the per-session terminal pill +
+// post-restart session re-entry both read it)
+// ---------------------------------------------------------------------------
+
+describe("last_run_id (durable run link in thread metadata)", () => {
+  it("a session with no run carries last_run_id null", async () => {
+    const s = await createSession({ title: "no-run-yet" });
+    expect((s as unknown as { last_run_id: string | null }).last_run_id).toBeNull();
+  });
+
+  it("a session-linked start records the run; a pin PATCH never clobbers it", async () => {
+    const rail = await createSession({ title: "rail", pinnedProfileId: null });
+    const start = await server.app.inject({
+      method: "POST",
+      url: "/api/skill-runs",
+      payload: { skill: "search_profile_intake", input_mode: "slash", session_id: rail.id },
+    });
+    expect(start.statusCode).toBe(201);
+    const { run_id } = start.json<{ run_id: string }>();
+
+    interface LinkResp extends SessionResp {
+      last_run_id: string | null;
+    }
+    // The session-linked run is durable on the thread (metadata shallow-merge).
+    const got = await server.app.inject({ method: "GET", url: `/api/sessions/${rail.id}` });
+    expect(got.json<LinkResp>().last_run_id).toBe(run_id);
+
+    // It also rides the LIST projection (the popover pill's data source).
+    const list = await server.app.inject({ method: "GET", url: "/api/sessions" });
+    const row = list.json<LinkResp[]>().find((r) => r.id === rail.id);
+    expect(row?.last_run_id).toBe(run_id);
+
+    // A later pin PATCH sends only the pin key — the run link survives.
+    const patched = await server.app.inject({
+      method: "PATCH",
+      url: `/api/sessions/${rail.id}`,
+      payload: { pinnedProfileId: "prof-later" },
+    });
+    expect(patched.json<LinkResp>().last_run_id).toBe(run_id);
+  });
+
+  it("the intake fork records the run on the FORK, not the source", async () => {
+    const pinned = await createSession({ title: "src", pinnedProfileId: "prof-link" });
+    const start = await server.app.inject({
+      method: "POST",
+      url: "/api/skill-runs",
+      payload: { skill: "search_profile_intake", input_mode: "slash", from_session_id: pinned.id },
+    });
+    const { run_id, session_id } = start.json<{ run_id: string; session_id: string }>();
+
+    interface LinkResp extends SessionResp {
+      last_run_id: string | null;
+    }
+    const fork = await server.app.inject({ method: "GET", url: `/api/sessions/${session_id}` });
+    expect(fork.json<LinkResp>().last_run_id).toBe(run_id);
+    const source = await server.app.inject({ method: "GET", url: `/api/sessions/${pinned.id}` });
+    expect(source.json<LinkResp>().last_run_id).toBeNull();
+  });
+});

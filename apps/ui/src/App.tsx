@@ -45,6 +45,7 @@ import {
 } from "./chat/browserView.js";
 import {
   projectTurns,
+  recoveredTurnMessage,
   type RunUIMessage,
   type TurnView,
 } from "./chat/messageModel.js";
@@ -116,6 +117,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     id: string;
     pinned_profile_id: string | null;
     scope_notice: IntakeScopeNotice | null;
+    last_run_id?: string | null;
   }): void => {
     sessionIdRef.current = s.id;
     setPinnedProfileId(s.pinned_profile_id);
@@ -167,7 +169,19 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
 
   const onSelectSession = (sessionId: string): void => {
     setRailTitle("Session");
-    hydrateSession(sessionId);
+    // One fetch hydrates pin + notice AND re-binds the session's BOUND run:
+    // navigating to /runs/:id hands the rest to the refresh-recovery effect
+    // (stream replay when the channel is live; status-fallback synthesis when
+    // the server restarted and only the durable terminal state remains).
+    client
+      .getSession(sessionId)
+      .then((s) => {
+        applySession(s);
+        if (s.last_run_id !== null) navigate(`/runs/${s.last_run_id}`);
+      })
+      .catch((err: unknown) => {
+        setLaunchError(err instanceof Error ? err.message : "Could not load the session.");
+      });
   };
 
   // ---- launch (intake entries + slash/freeform + Skills popover) ------------
@@ -283,6 +297,20 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         chat.messages = [];
         setBrowserView(EMPTY_BROWSER_VIEW);
         await chat.resumeStream({ body: { runId } });
+        // After a SERVER RESTART a finished run has no live channel (stream
+        // 404 → resumeStream lands nothing). The terminal state is still
+        // durable in Mastra storage — read it once and synthesize the
+        // matching terminal message so the turn renders correctly.
+        if (!chat.messages.some((m) => m.id === runId)) {
+          try {
+            const summary = await client.runStatus(runId);
+            const recovered = recoveredTurnMessage(summary);
+            if (recovered !== null) chat.messages = [recovered];
+          } catch {
+            // Unknown run / unreachable server: the rail stays empty and the
+            // canvas still shows the route's run id — nothing to invent.
+          }
+        }
       })();
     }
   }, [route, chat]);

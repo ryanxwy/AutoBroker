@@ -13,6 +13,7 @@ import {
   geosearchStopCode,
   projectAssistantTurn,
   projectTurns,
+  recoveredTurnMessage,
   type RunUIMessage,
 } from "./messageModel.js";
 
@@ -169,5 +170,32 @@ describe("projectTurns — the rendered turn list", () => {
     expect(turns).toHaveLength(2);
     expect(turns[0]).toEqual({ kind: "user", id: "u1", text: "/dealer_geosearch" });
     expect(turns[1]).toMatchObject({ kind: "assistant", id: "run-9" });
+  });
+});
+
+describe("recoveredTurnMessage — the post-restart status-fallback message", () => {
+  it("done → init + recovered note + done frame; projection lands status done", () => {
+    const msg = recoveredTurnMessage({ run_id: "run-9", skill: "dealer_geosearch", status: "done" });
+    expect(msg).not.toBeNull();
+    expect(msg!.id).toBe("run-9");
+    const turn = projectAssistantTurn(msg!);
+    expect(turn.status).toBe("done");
+    expect(turn.skill).toBe("dealer_geosearch");
+    expect(turn.text).toContain("recovered after a restart");
+  });
+
+  it("declined → aborted{user_declined} projects to declined; error → error", () => {
+    const declined = recoveredTurnMessage({ run_id: "r", skill: "s", status: "declined" });
+    expect(projectAssistantTurn(declined!).status).toBe("declined");
+    const error = recoveredTurnMessage({ run_id: "r", skill: "s", status: "error" });
+    expect(projectAssistantTurn(error!).status).toBe("error");
+    const aborted = recoveredTurnMessage({ run_id: "r", skill: "s", status: "aborted" });
+    expect(projectAssistantTurn(aborted!).status).toBe("aborted");
+  });
+
+  it("non-terminal statuses synthesize NOTHING (a live run has a live channel)", () => {
+    expect(recoveredTurnMessage({ run_id: "r", skill: "s", status: "running" })).toBeNull();
+    expect(recoveredTurnMessage({ run_id: "r", skill: "s", status: "awaiting_approval" })).toBeNull();
+    expect(recoveredTurnMessage({ run_id: "r", skill: "s", status: "pending" })).toBeNull();
   });
 });
