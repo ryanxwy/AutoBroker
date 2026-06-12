@@ -24,10 +24,17 @@
  *   - resolver STOPs       → 0 / 2+ / pinned / inferred-newest branches.
  *   - filter ladder        → template-hit / DOM-hit / fallback / blocked
  *                            decision logic over a stubbed page IO.
+ *   - browser-walk fallback→ scout-null → in-browser homepage walk (resolved /
+ *                            blocked / unresolved), at the walk helper AND the
+ *                            captureOneDealer wiring (fake session).
+ *   - URL weave            → delimited per-card blocks ending with verbatim
+ *                            URL lines; VDP candidates off the same set.
  *   - scan-task isolation  → one throwing bucket degrades to failed outcomes,
  *                            never kills the others; same-host dealers bucket.
  *   - extract phase        → per-row Zod rejection counting, VIN provenance
- *                            drops, VDP VIN attach, #1244 fail-closed.
+ *                            drops, URL provenance strips (out-of-set URL →
+ *                            null + counted; in-set persists on the URL arm),
+ *                            VDP VIN attach, #1244 fail-closed.
  *   - persist              → invoked exactly ONCE, after capture.
  *   - flat-shape structural check (no nested workflow step).
  *
@@ -42,26 +49,39 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { closeDb, openDb, persistScanResults, type Db } from "@autobroker/tools";
+import {
+  closeDb,
+  openDb,
+  persistScanResults,
+  type BrowserEmitter,
+  type BrowserSession,
+  type Db,
+} from "@autobroker/tools";
 
 import { createMastraInstance } from "./mastra.js";
 import {
+  browserWalkSrp,
   bucketTargetsByHost,
+  captureOneDealer,
   computeScanTargets,
   FILTERED_RENDER_MIN_CHARS,
   harvestVinFromSnapshot,
   inventorySiteScanWorkflow,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
   scanDealersParallelImpl,
+  selectVdpCandidates,
   walkFilterLadder,
+  weaveCardsForExtraction,
   __resetInventoryScanDepsForTests,
   __setInventoryScanDepsForTests,
+  type CollectedCard,
   type DealerCaptureOutcome,
   type FilterLadderIo,
   type InventoryScanWorkflowDeps,
   type ProfileDealerRowSlice,
   type ScanDealersArgs,
   type ScanTargetRow,
+  type SrpWalkIo,
 } from "./inventorySiteScan.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
@@ -211,7 +231,8 @@ function listing(over: Partial<Record<string, unknown>> = {}): Record<string, un
 }
 
 /** A scanned capture outcome for a target (snapshot defaults to containing
- *  VIN_A so a VIN_A-bearing row passes provenance). */
+ *  VIN_A so a VIN_A-bearing row passes provenance; cardHrefs defaults to
+ *  containing the `listing()` fixture URL so it passes URL provenance). */
 function scannedOutcome(
   t: ScanTargetRow,
   over: Partial<DealerCaptureOutcome> = {},
@@ -223,6 +244,7 @@ function scannedOutcome(
     rung: "i_hit",
     errorJson: null,
     snapshotText: `New 2026 Hyundai Tucson SEL ${VIN_A} $33,999`,
+    cardHrefs: ["https://www.d-a.com/new/Hyundai-Tucson-1.htm"],
     vdpVins: [],
     ...over,
   };
@@ -725,6 +747,213 @@ describe("walkFilterLadder — 3-rung decision logic", () => {
 });
 
 // ---------------------------------------------------------------------------
+// browserWalkSrp — the in-browser SRP fallback (plain-fetch scout came up null)
+// ---------------------------------------------------------------------------
+
+describe("browserWalkSrp — in-browser SRP fallback", () => {
+  interface WalkScript {
+    /** url → blocked marker (absent = clean nav). */
+    blocked?: Record<string, string>;
+    /** urls whose navigation throws (net error). */
+    throwOn?: string[];
+    html?: string;
+    /** Where the homepage navigation LANDED (default: last navigated url). */
+    landedUrl?: string;
+  }
+
+  function fakeWalkIo(script: WalkScript) {
+    const navs: string[] = [];
+    const io: SrpWalkIo = {
+      navigate: async (url) => {
+        if ((script.throwOn ?? []).includes(url)) throw new Error(`net error: ${url}`);
+        navs.push(url);
+        return { blocked: script.blocked?.[url] ?? null };
+      },
+      pageHtml: async () => script.html ?? "<html></html>",
+      pageUrl: () => script.landedUrl ?? navs[navs.length - 1] ?? "about:blank",
+    };
+    return { io, navs };
+  }
+
+  const HOME = "https://www.walk.com/";
+
+  it("a fingerprinted homepage resolves the canned SRP path origin-absolute (no probe nav)", async () => {
+    const { io, navs } = fakeWalkIo({
+      html: "<script src='https://static.dealer.com/x.js'></script>",
+    });
+    expect(await browserWalkSrp(io, HOME)).toEqual({
+      kind: "resolved",
+      srpUrl: "https://www.walk.com/new-inventory/index.htm",
+      platform: "dealercom",
+      docLoads: 1,
+    });
+    expect(navs).toEqual([HOME]); // fingerprinted platform: the ladder vets the path
+  });
+
+  it("resolves against where the homepage LANDED when redirects change host", async () => {
+    const { io } = fakeWalkIo({
+      html: "Powered by DealerFire",
+      landedUrl: "https://www.walk-landing.com/home",
+    });
+    const out = await browserWalkSrp(io, HOME);
+    expect(out.kind).toBe("resolved");
+    if (out.kind !== "resolved") return;
+    expect(out.srpUrl).toBe("https://www.walk-landing.com/new-inventory.htm");
+  });
+
+  it("a blocked homepage navigation is a blocked outcome (never escalated)", async () => {
+    const { io } = fakeWalkIo({ blocked: { [HOME]: "cloudflare_challenge" } });
+    expect(await browserWalkSrp(io, HOME)).toEqual({
+      kind: "blocked",
+      url: HOME,
+      marker: "cloudflare_challenge",
+      docLoads: 1,
+    });
+  });
+
+  it("a homepage navigation error (non-blocked) is unresolved", async () => {
+    const { io } = fakeWalkIo({ throwOn: [HOME] });
+    expect(await browserWalkSrp(io, HOME)).toEqual({ kind: "unresolved", docLoads: 1 });
+  });
+
+  it("no fingerprint hit probes the canned default path: ok → resolved, error → unresolved, blocked → blocked", async () => {
+    const dflt = "https://www.walk.com/new-inventory";
+
+    const ok = fakeWalkIo({ html: "<html>plain dealer site</html>" });
+    expect(await browserWalkSrp(ok.io, HOME)).toEqual({
+      kind: "resolved",
+      srpUrl: dflt,
+      platform: "default",
+      docLoads: 2,
+    });
+    expect(ok.navs).toEqual([HOME, dflt]);
+
+    const dead = fakeWalkIo({ html: "<html>plain dealer site</html>", throwOn: [dflt] });
+    expect(await browserWalkSrp(dead.io, HOME)).toEqual({ kind: "unresolved", docLoads: 2 });
+
+    const blocked = fakeWalkIo({
+      html: "<html>plain dealer site</html>",
+      blocked: { [dflt]: "akamai_denied" },
+    });
+    expect(await browserWalkSrp(blocked.io, HOME)).toEqual({
+      kind: "blocked",
+      url: dflt,
+      marker: "akamai_denied",
+      docLoads: 2,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captureOneDealer — the scout-null fallback wiring (fake session + nav queue)
+// ---------------------------------------------------------------------------
+
+describe("captureOneDealer — scout-null browser-walk fallback", () => {
+  const WALK_DEALER: ScanTargetRow = {
+    dealer_id: "d-walk",
+    name: "Walk Dealer",
+    website: "https://www.walk-a.com/",
+    distance_miles: 3,
+  };
+
+  interface CaptureScript {
+    blocked?: Record<string, string>;
+    throwOn?: string[];
+    homepageHtml?: string;
+    pageText?: string;
+    cards?: CollectedCard[];
+  }
+
+  function fakeCapture(script: CaptureScript) {
+    const navs: string[] = [];
+    const actions: string[] = [];
+    const page = {
+      url: () => navs[navs.length - 1] ?? "about:blank",
+      content: async () => script.homepageHtml ?? "<html></html>",
+      close: async () => undefined,
+      waitForLoadState: async () => undefined,
+      evaluate: async () => script.cards ?? [],
+    };
+    const session = {
+      newPage: async () => page,
+      snapshot: async () => script.pageText ?? "x".repeat(FILTERED_RENDER_MIN_CHARS),
+      lazyScroll: async () => undefined,
+      setFilterSelect: async () => undefined,
+      clickFilterApply: async () => undefined,
+    } as unknown as BrowserSession;
+    const queueNav = async (_page: unknown, url: string) => {
+      if ((script.throwOn ?? []).includes(url)) throw new Error(`net error: ${url}`);
+      navs.push(url);
+      return { blocked: script.blocked?.[url] ?? null };
+    };
+    const emitter: BrowserEmitter = {
+      opened() {},
+      closed() {},
+      error() {},
+      action(type, target) {
+        actions.push(`${type}|${target}`);
+      },
+    };
+    return {
+      session,
+      queueNav: queueNav as Parameters<typeof captureOneDealer>[0]["queueNav"],
+      emitter,
+      navs,
+      actions,
+    };
+  }
+
+  async function capture(fx: ReturnType<typeof fakeCapture>) {
+    return captureOneDealer({
+      session: fx.session,
+      queueNav: fx.queueNav,
+      emitter: fx.emitter,
+      profile: LADDER_PROFILE,
+      dealer: WALK_DEALER,
+      host: "www.walk-a.com",
+      resolveSrpImpl: async () => null, // the plain-fetch scout came up empty
+    });
+  }
+
+  it("resolveSrp-null + browser walk succeeds → the dealer scans through the ladder (voiced)", async () => {
+    const card: CollectedCard = {
+      href: "https://www.walk-a.com/new/Hyundai-Tucson-9.htm",
+      cardText: "New 2026 Hyundai Tucson SEL $33,999",
+    };
+    const fx = fakeCapture({
+      homepageHtml: "<script src='https://static.dealer.com/x.js'></script>",
+      cards: [card],
+    });
+    const out = await capture(fx);
+    expect(out.status).toBe("scanned");
+    expect(out.rung).toBe("i_hit");
+    expect(out.cardHrefs).toEqual([card.href]);
+    expect(out.snapshotText).toContain(`URL: ${card.href}`);
+    expect(fx.actions.some((a) => a.startsWith("srp_browser_walk|"))).toBe(true);
+    // homepage walked first, then the rung-i filtered template URL
+    expect(fx.navs[0]).toBe(WALK_DEALER.website);
+    expect(fx.navs[1]).toContain("make=Hyundai");
+  });
+
+  it("resolveSrp-null + blocked homepage → blocked dealer outcome, zero further navigation", async () => {
+    const fx = fakeCapture({ blocked: { [WALK_DEALER.website]: "cloudflare_challenge" } });
+    const out = await capture(fx);
+    expect(out.status).toBe("blocked");
+    expect(out.rung).toBe("blocked");
+    expect(out.errorJson).toContain("cloudflare_challenge");
+    expect(fx.navs).toEqual([WALK_DEALER.website]);
+  });
+
+  it("both probes fail → srp_unresolved stays the terminal failure", async () => {
+    const fx = fakeCapture({ throwOn: [WALK_DEALER.website] });
+    const out = await capture(fx);
+    expect(out.status).toBe("failed");
+    expect(out.errorJson).toContain("srp_unresolved");
+    expect(fx.actions.some((a) => a.startsWith("scan_srp_unresolved|"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // scanDealersParallelImpl — bucket pool isolation (fake bucket runner)
 // ---------------------------------------------------------------------------
 
@@ -750,6 +979,7 @@ describe("scanDealersParallelImpl — task isolation", () => {
         rung: "iii_fallback" as const,
         errorJson: null,
         snapshotText: "snapshot",
+        cardHrefs: [],
         vdpVins: [],
       }));
     });
@@ -846,6 +1076,50 @@ describe("inventory_site_scan — extract phase", () => {
     expect(rows).toEqual([{ vin: VIN_B }]); // tracking param stripped, URL matched
   });
 
+  it("an LLM-emitted listing_url OUTSIDE the collected href set is cleared + counted; the key-less row dies at persist", async () => {
+    seedOne();
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        listing({ vin: null, listing_url: "https://www.d-a.com/invented/999.htm" }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
+    });
+    const final = await runApproved("scan-urlprov-1");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as Record<string, unknown>;
+    expect(out["urlProvenanceStripped"]).toBe(1);
+    expect(out["listingsFound"]).toBe(1); // the row survived extraction…
+    expect(out["listingsWritten"]).toBe(0); // …but had neither VIN nor URL left
+    expect(rowCount("inventory_listings")).toBe(0);
+  });
+
+  it("an in-set listing_url passes provenance (compared after normalization) and persists on the URL arm", async () => {
+    seedOne();
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        // utm-decorated variant of a collected href: normalization matches it.
+        listing({
+          vin: null,
+          listing_url: "https://www.d-a.com/new/Hyundai-Tucson-1.htm?utm_source=srp",
+        }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
+    });
+    const final = await runApproved("scan-urlprov-2");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as Record<string, unknown>;
+    expect(out["urlProvenanceStripped"]).toBe(0);
+    expect(out["listingsWritten"]).toBe(1);
+    const row = db.$client
+      .prepare("SELECT vin, listing_url, normalized_listing_url FROM inventory_listings")
+      .get() as { vin: string | null; listing_url: string; normalized_listing_url: string };
+    expect(row.vin).toBeNull();
+    expect(row.listing_url).toContain("Hyundai-Tucson-1.htm");
+    expect(row.normalized_listing_url).toBe("https://www.d-a.com/new/Hyundai-Tucson-1.htm");
+  });
+
   it("a malformed tool call (suspend-shaped harness return) fail-closes: run failed, zero listings", async () => {
     seedOne();
     const harnessGenerate = (async () => ({
@@ -938,6 +1212,42 @@ describe("inventory_site_scan — persist discipline", () => {
       .get() as { last_status: string; blocked_count: number };
     expect(blockedRow.last_status).toBe("blocked");
     expect(blockedRow.blocked_count).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// the URL weave + VDP candidate selection (pure helpers over collected cards)
+// ---------------------------------------------------------------------------
+
+describe("weaveCardsForExtraction — URL-woven extraction input", () => {
+  it("one delimited block per card, each ending with its verbatim URL line", () => {
+    const woven = weaveCardsForExtraction([
+      { href: "https://www.d.com/new/1.htm", cardText: "New 2026 Hyundai Tucson SEL $33,999" },
+      { href: "https://www.d.com/new/2.htm", cardText: "New 2026 Hyundai Tucson Limited $39,499" },
+    ]);
+    expect(woven).toBe(
+      "[CARD 1]\nNew 2026 Hyundai Tucson SEL $33,999\nURL: https://www.d.com/new/1.htm" +
+        "\n\n[CARD 2]\nNew 2026 Hyundai Tucson Limited $39,499\nURL: https://www.d.com/new/2.htm",
+    );
+  });
+});
+
+describe("selectVdpCandidates — VIN-less make+model cards off the collected set", () => {
+  it("keeps make+model VIN-less cards only, capped by the page budget", () => {
+    const cards: CollectedCard[] = [
+      { href: "https://www.d.com/new/1.htm", cardText: "New 2026 Hyundai Tucson SEL" },
+      { href: "https://www.d.com/new/2.htm", cardText: `New 2026 Hyundai Tucson SEL VIN ${VIN_A}` },
+      { href: "https://www.d.com/new/3.htm", cardText: "New 2026 Honda CR-V EX" },
+      { href: "https://www.d.com/new/4.htm", cardText: "New 2026 Hyundai Tucson XRT" },
+    ];
+    expect(selectVdpCandidates(cards, { make: "Hyundai", model: "Tucson", max: 5 })).toEqual([
+      "https://www.d.com/new/1.htm",
+      "https://www.d.com/new/4.htm",
+    ]);
+    expect(selectVdpCandidates(cards, { make: "Hyundai", model: "Tucson", max: 1 })).toEqual([
+      "https://www.d.com/new/1.htm",
+    ]);
+    expect(selectVdpCandidates(cards, { make: "Hyundai", model: "Tucson", max: 0 })).toEqual([]);
   });
 });
 

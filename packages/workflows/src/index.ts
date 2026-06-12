@@ -147,7 +147,10 @@ export {
   scanHostnameOf,
   isDeniedScanHost,
   walkFilterLadder,
-  collectVdpLinkCandidates,
+  browserWalkSrp,
+  collectInventoryCards,
+  weaveCardsForExtraction,
+  selectVdpCandidates,
   harvestVinFromSnapshot,
   scanDealersParallelImpl,
   SCAN_CONCURRENCY,
@@ -169,6 +172,9 @@ export {
   type FilterLadderIo,
   type FilterLadderOutcome,
   type FilterRungExit,
+  type CollectedCard,
+  type SrpWalkIo,
+  type SrpWalkResult,
 } from "./inventorySiteScan.js";
 
 // The registered-workflows map for createMastraInstance({ workflows }) and the
