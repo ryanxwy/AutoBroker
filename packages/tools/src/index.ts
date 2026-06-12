@@ -157,6 +157,25 @@ export {
   type SupersedeReason,
 } from "./inventory/persist.js";
 
+// inventory_link_scan deterministic core — the junk-link pre-filter (5 closed
+// rules, single source of truth), the profile accept/reject policy, and the
+// pending-source loader + seeder (frozen parity ids).
+export {
+  classifySkipUrl,
+  filterForProfile,
+  SKIP_URL_REASONS,
+  PROFILE_FILTER_REJECT_REASONS,
+  type SkipUrlReason,
+  type ProfileFilterRejectReason,
+  type ProfileFilterResult,
+} from "./inventory/linkScanPure.js";
+export {
+  listPendingSources,
+  seedInventorySource,
+  type PendingSourceRow,
+  type SeedInventorySourceOptions,
+} from "./inventory/sources.js";
+
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
