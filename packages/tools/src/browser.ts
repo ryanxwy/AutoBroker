@@ -346,7 +346,11 @@ export async function withBrowserContext<T>(
     if (headless) {
       // Product engine: ephemeral browser + incognito-style context. No profile
       // directory exists on disk; nothing persists between sessions.
-      browser = await chromium.launch({ headless: true });
+      // channel:"chromium" = the NEW headless mode (the full browser binary,
+      // not the legacy headless shell) — its network fingerprint matches real
+      // Chrome, which measurably lowers first-request anti-bot refusals on
+      // dealer sites; the legacy shell announced itself at the TLS layer.
+      browser = await chromium.launch({ headless: true, channel: "chromium" });
       context = await browser.newContext({ serviceWorkers: "block" });
     } else {
       // Headed debug engine: a persistent context needs a profile dir — give it
