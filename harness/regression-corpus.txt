@@ -13,6 +13,8 @@ search_profile_intake.ui_slash.toml
 search_profile_intake.ui_freeform.toml
 search_profile_intake.ui_decline.toml
 
-# dealer_geosearch — accepted 2026-06-10 (UI-lane two rounds)
+# dealer_geosearch — accepted 2026-06-10 (UI-lane two rounds); STOP cases accepted 2026-06-12 (profile-guard slice)
 dealer_geosearch.ui_narrative.toml
 dealer_geosearch.ui_button.toml
+dealer_geosearch.stop_intake_cta.toml
+dealer_geosearch.stop_picker.toml

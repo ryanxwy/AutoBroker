@@ -125,5 +125,12 @@ kind = "cost_and_time"
 optional = true             # zero-LLM happy path: no ledger row is a valid outcome.
 
 [[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # fresh unpinned session + single active profile →
+                            # the resolver INFERS newest-active (provenance must
+                            # say so on the wire; the pinned arm is asserted by
+                            # dealer_geosearch.stop_picker).
+
+[[steps.anchors]]
 kind = "malformed_tool_call"
 expect = "absent"
