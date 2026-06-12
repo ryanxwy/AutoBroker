@@ -92,7 +92,10 @@ describe("resolveSrp", () => {
       [srpUrl]: () => new Response(htmlWith("42 new vehicles"), { status: 200 }),
     });
 
-    await expect(resolveSrp(HOMEPAGE, { fetchImpl: impl })).resolves.toEqual({ srpUrl });
+    await expect(resolveSrp(HOMEPAGE, { fetchImpl: impl })).resolves.toEqual({
+      srpUrl,
+      platform: "dealeron_v1",
+    });
     expect(calls.map((c) => c.url)).toEqual([HOMEPAGE, srpUrl]);
     // Both probes are plain GETs — never HEAD (dealer sites 405 on HEAD).
     expect(calls.every((c) => c.method === "GET")).toBe(true);
@@ -105,7 +108,10 @@ describe("resolveSrp", () => {
       [srpUrl]: () => new Response(htmlWith("inventory"), { status: 200 }),
     });
 
-    await expect(resolveSrp(HOMEPAGE, { fetchImpl: impl })).resolves.toEqual({ srpUrl });
+    await expect(resolveSrp(HOMEPAGE, { fetchImpl: impl })).resolves.toEqual({
+      srpUrl,
+      platform: "default",
+    });
   });
 
   it("returns null on a block-signature homepage and never probes further", async () => {

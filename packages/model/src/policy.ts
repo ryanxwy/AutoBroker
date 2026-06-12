@@ -46,6 +46,14 @@ export const USE_CASES = [
    * 12-field DealerCandidate schema; never Output.object + tools on DeepSeek.
    */
   "geosearch_extract",
+  /**
+   * Inventory-listing extraction for the site/link scan skills: the SECOND
+   * phase of a two-phase pipeline (tools-only capture first, then this
+   * separate no-tools structured call over the fenced page snapshot) emitting
+   * the flat 11-field InventoryListing rows. On DeepSeek that means a single
+   * emit_result tool; never Output.object + tools.
+   */
+  "inventory_extract",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
   /**
@@ -78,6 +86,9 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Snapshot-fallback parsing only; single emit_result tool; never
   // Output.object + tools on DeepSeek (supportsOutputObjectWithTools false).
   geosearch_extract: "deepseek.chat",
+  // Snapshot row extraction (two-phase: capture is zero-LLM); single
+  // emit_result tool on DeepSeek, same discipline as geosearch_extract.
+  inventory_extract: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
   // Routes to anthropic.chat (supportsOutputObjectWithTools:true) so the harness
   // takes the NATIVE output_object strategy. Swapping to "openai.chat" is a

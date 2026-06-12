@@ -30,12 +30,25 @@ const USER_AGENT =
   "Chrome/126.0.0.0 Safari/537.36";
 
 /**
+ * Internal platform label: one of the four fingerprinted dealer platforms, or
+ * "default" when no fingerprint hits. Pipeline plumbing only — drives the
+ * per-platform filter URL templates and selector map downstream; it is NEVER
+ * persisted to any table.
+ */
+export type DealerPlatform =
+  | "dealeron_v1"
+  | "dealerfire"
+  | "dealerinspire"
+  | "dealercom"
+  | "default";
+
+/**
  * Platform fingerprint table: [internal label, homepage-HTML marker, canned SRP
  * path]. Checked in order, first match wins. Dealer.com is the broadest
  * fingerprint — kept LAST so the more specific platforms get a chance first.
  */
 const PLATFORM_FINGERPRINTS: ReadonlyArray<
-  readonly [platform: string, marker: RegExp, cannedPath: string]
+  readonly [platform: DealerPlatform, marker: RegExp, cannedPath: string]
 > = [
   ["dealeron_v1", /DealerOn/i, "/new-vehicles/"],
   ["dealerfire", /DealerFire|Powered by DealerFire/i, "/new-inventory.htm"],
@@ -50,16 +63,27 @@ const PLATFORM_FINGERPRINTS: ReadonlyArray<
 const DEFAULT_SRP_PATH = "/new-inventory";
 
 /**
+ * Fingerprint a homepage HTML against the platform table: the first matching
+ * platform's label + canned SRP path, or the generic default. Pure.
+ */
+export function fingerprintPlatform(homepageHtml: string): {
+  platform: DealerPlatform;
+  srpPath: string;
+} {
+  for (const [platform, marker, cannedPath] of PLATFORM_FINGERPRINTS) {
+    if (marker.test(homepageHtml)) {
+      return { platform, srpPath: cannedPath };
+    }
+  }
+  return { platform: "default", srpPath: DEFAULT_SRP_PATH };
+}
+
+/**
  * Return the most-likely SRP path for a homepage HTML: the canned path of the
  * first matching platform fingerprint, or the generic default. Pure.
  */
 export function likelySrpPath(homepageHtml: string): string {
-  for (const [, marker, cannedPath] of PLATFORM_FINGERPRINTS) {
-    if (marker.test(homepageHtml)) {
-      return cannedPath;
-    }
-  }
-  return DEFAULT_SRP_PATH;
+  return fingerprintPlatform(homepageHtml).srpPath;
 }
 
 export interface ScoutOptions {
@@ -68,15 +92,18 @@ export interface ScoutOptions {
 }
 
 /**
- * Resolve a dealer homepage to a probed-live SRP URL, or null when it can't be
+ * Resolve a dealer homepage to a probed-live SRP URL plus the platform label
+ * the fingerprint hit ("default" when none did), or null when it can't be
  * done cheaply (the caller falls back to the browser walk). Null on: homepage
  * network error / timeout, anti-bot block signature, homepage HTTP >= 400, or
- * a canned-path probe that is anything but a fresh 200.
+ * a canned-path probe that is anything but a fresh 200. The platform label is
+ * internal pipeline plumbing (filter templates / selector map) — never
+ * persisted.
  */
 export async function resolveSrp(
   homepageUrl: string,
   opts: ScoutOptions = {},
-): Promise<{ srpUrl: string } | null> {
+): Promise<{ srpUrl: string; platform: DealerPlatform } | null> {
   const fetchImpl = opts.fetchImpl ?? fetch;
 
   const home = await probeGet(fetchImpl, homepageUrl);
@@ -87,10 +114,11 @@ export async function resolveSrp(
 
   // Canned paths are origin-absolute ("/new-vehicles/"), so this resolves
   // against the homepage's origin regardless of any homepage path component.
-  const srpUrl = new URL(likelySrpPath(home.body), homepageUrl).toString();
+  const { platform, srpPath } = fingerprintPlatform(home.body);
+  const srpUrl = new URL(srpPath, homepageUrl).toString();
   const probe = await probeGet(fetchImpl, srpUrl);
   if (probe === null || probe.status !== 200) return null;
-  return { srpUrl };
+  return { srpUrl, platform };
 }
 
 interface ProbeCapture {

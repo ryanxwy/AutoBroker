@@ -49,6 +49,13 @@ export { DealerCandidateSchema } from "./schema/dealerCandidate.js";
 export type { DealerCandidate } from "./schema/dealerCandidate.js";
 
 export {
+  InventoryListingSchema,
+  InventoryStatusSchema,
+  INVENTORY_STATUSES,
+} from "./schema/inventoryListing.js";
+export type { InventoryListing, InventoryStatus } from "./schema/inventoryListing.js";
+
+export {
   SearchProfileSchema,
   SearchProfileStatusSchema,
   PhonePolicySchema,
