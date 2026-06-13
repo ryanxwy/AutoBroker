@@ -97,6 +97,24 @@ export type AnchorSpec =
        *  STOP assertions use run_status + the stop ui_checks instead. */
       kind: "resolution";
       expect: "pinned" | "inferred_newest";
+    }
+  | {
+      /** A pure-DOM assertion against a widget by its stable data-testid. This
+       *  anchor is NOT scored by evalAnchor — the evaluator has no live page.
+       *  The UI-lane driver runs the assertion live and records a UiCheck the
+       *  verdict carries through its ui_checks channel; the case grammar parses
+       *  + validates the spec here only. */
+      kind: "dom_state";
+      testid: string;
+      expect: "visible" | "absent" | "text" | "count" | "disabled";
+      /** How the testid matches the DOM. "exact" (default) targets one specific
+       *  widget; "prefix" targets a dynamic-id family (data-testid^=) — used to
+       *  count or assert the absence of a row family like searches-row-<id>. */
+      match?: "exact" | "prefix";
+      /** expect="text": the substring the widget's text must carry. */
+      value?: string;
+      /** expect="count": how many matching widgets must be present. */
+      count?: number;
     };
 
 export interface AnchorResult {
@@ -232,6 +250,21 @@ export function evalAnchor(
                   ? "no text frame carried a resolution payload (provenance not threaded?)"
                   : "resolution provenance mismatch",
             }),
+      };
+    }
+
+    case "dom_state": {
+      // dom_state is evaluated DRIVER-SIDE, not here: evalAnchor sees only the
+      // drained RunDetail + DB, never the live page. The UI-lane driver runs
+      // the real assertion against its page and records a UiCheck that flows
+      // into the verdict's ui_checks. This branch exists only to satisfy the
+      // switch's exhaustiveness; it returns a no-op passthrough so a stray
+      // call never silently scores false.
+      return {
+        kind: spec.kind,
+        ok: true,
+        expected: "(driver-recorded)",
+        observed: "(see ui_checks)",
       };
     }
 

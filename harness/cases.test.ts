@@ -597,9 +597,289 @@ describe("case skill ids ∈ registry", () => {
     it(`${f}: every meta.skills[] and step.skill is a registry id`, () => {
       const c = loadCase(join(CASES, f));
       for (const id of c.skills) expect(REGISTRY_IDS).toContain(id);
-      for (const step of c.steps) expect(REGISTRY_IDS).toContain(step.skill);
+      // A kind="ui" step has no skill (runless); only kind="skill" steps name one.
+      for (const step of c.steps) {
+        if (step.skill !== null) expect(REGISTRY_IDS).toContain(step.skill);
+      }
     });
   }
+});
+
+describe("U-C pure-UI step grammar (kind=ui / fixture_state / ui_actions / dom_state)", () => {
+  const SKILL_HEADER = (skill: string) => `
+    [meta]
+    id = "x"
+    archetype = "B"
+    skills = ["${skill}"]
+    [narrative]
+    session_origin = "fresh_unpinned"
+    input_mode = "slash"
+    provider = "deepseek"
+    lane = "ui"
+  `;
+
+  it("loads a kind=ui step (no skill) with ui_actions + dom_state anchors", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "create"
+      skill = "search_profile_intake"
+      [[steps.resume]]
+      on = "data_collection"
+      action = "decline"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["declined"]
+
+      [[steps]]
+      id = "open_searches"
+      kind = "ui"
+      [[steps.ui_actions]]
+      verb = "click"
+      testid = "topbar-searches"
+      [[steps.ui_actions]]
+      verb = "fill"
+      testid = "searches-filter"
+      value = "Tucson"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "searches-popover"
+      expect = "visible"
+    `;
+    const c = parseCase(src);
+    const ui = c.steps[1]!;
+    expect(ui.kind).toBe("ui");
+    expect(ui.skill).toBeNull();
+    expect(ui.uiActions).toEqual([
+      { verb: "click", testid: "topbar-searches" },
+      { verb: "fill", testid: "searches-filter", value: "Tucson" },
+    ]);
+    expect(ui.anchors).toEqual([{ kind: "dom_state", testid: "searches-popover", expect: "visible", match: "exact" }]);
+    // A default (kind-less) step is kind="skill".
+    expect(c.steps[0]!.kind).toBe("skill");
+  });
+
+  it("an empty ui_actions array maps to null", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "create"
+      skill = "search_profile_intake"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+      [[steps]]
+      id = "ui_only"
+      kind = "ui"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "app-main"
+      expect = "visible"
+    `;
+    expect(parseCase(src).steps[1]!.uiActions).toBeNull();
+  });
+
+  it("fails LOUD when kind=ui ALSO sets skill (mutually exclusive)", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "bad"
+      kind = "ui"
+      skill = "search_profile_intake"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "app-main"
+      expect = "visible"
+    `;
+    expect(() => parseCase(src)).toThrow(/kind="ui" and skill are mutually exclusive/);
+  });
+
+  it("fails LOUD when a kind=skill step (default) has no skill", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "bad"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow(/kind="skill" requires skill/);
+  });
+
+  it("loads fixture_state and fails LOUD on a duplicate within one case", () => {
+    const ok = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "a"
+      skill = "search_profile_intake"
+      fixture_state = "two_active_profiles"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(parseCase(ok).steps[0]!.fixtureState).toBe("two_active_profiles");
+
+    const dup = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "a"
+      skill = "search_profile_intake"
+      fixture_state = "world_x"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+      [[steps]]
+      id = "b"
+      skill = "search_profile_intake"
+      fixture_state = "world_x"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(dup)).toThrow(/duplicate fixture_state "world_x"/);
+  });
+
+  it("loads every dom_state expect value (visible/absent/text/count/disabled)", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "create"
+      skill = "search_profile_intake"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+      [[steps]]
+      id = "ui"
+      kind = "ui"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "app-main"
+      expect = "visible"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "gate-banner"
+      expect = "absent"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "turn-zone-text"
+      expect = "text"
+      value = "discovered"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "searches-row-"
+      expect = "count"
+      count = 2
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "intake-submit"
+      expect = "disabled"
+    `;
+    const anchors = parseCase(src).steps[1]!.anchors;
+    expect(anchors.map((a) => a.kind)).toEqual(["dom_state", "dom_state", "dom_state", "dom_state", "dom_state"]);
+    expect(anchors[2]).toEqual({ kind: "dom_state", testid: "turn-zone-text", expect: "text", value: "discovered", match: "exact" });
+    expect(anchors[3]).toEqual({ kind: "dom_state", testid: "searches-row-", expect: "count", count: 2, match: "exact" });
+  });
+
+  it("fails LOUD on a dom_state anchor with a bad expect", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "ui"
+      kind = "ui"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "app-main"
+      expect = "shown"
+    `;
+    expect(() => parseCase(src)).toThrow(/dom_state anchor requires expect/);
+  });
+
+  it("fails LOUD on a dom_state anchor with no testid", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "ui"
+      kind = "ui"
+      [[steps.anchors]]
+      kind = "dom_state"
+      expect = "visible"
+    `;
+    expect(() => parseCase(src)).toThrow(/dom_state anchor requires testid/);
+  });
+
+  it("fails LOUD when a runless kind=ui step carries a run-scoped anchor", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "ui"
+      kind = "ui"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    expect(() => parseCase(src)).toThrow(/anchors must be dom_state only/);
+  });
+
+  it("fails LOUD when a kind=ui step declares zero dom_state anchors (would score a vacuous GREEN)", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "create"
+      skill = "search_profile_intake"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+      [[steps]]
+      id = "ui_no_dom"
+      kind = "ui"
+      anchors = []
+      [[steps.ui_actions]]
+      verb = "click"
+      testid = "topbar-searches"
+    `;
+    expect(() => parseCase(src)).toThrow(/kind="ui" must declare at least one dom_state anchor/);
+  });
+
+  it("carries the dom_state match mode (default exact; explicit prefix)", () => {
+    const src = `
+      ${SKILL_HEADER("search_profile_intake")}
+      [[steps]]
+      id = "create"
+      skill = "search_profile_intake"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+      [[steps]]
+      id = "ui"
+      kind = "ui"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "searches-popover"
+      expect = "visible"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "searches-row-"
+      expect = "count"
+      count = 2
+      match = "prefix"
+    `;
+    const anchors = parseCase(src).steps[1]!.anchors;
+    expect(anchors[0]).toEqual({ kind: "dom_state", testid: "searches-popover", expect: "visible", match: "exact" });
+    expect(anchors[1]).toEqual({ kind: "dom_state", testid: "searches-row-", expect: "count", count: 2, match: "prefix" });
+  });
+
+  it("loads the U-C proof case (a real skill step then a pure-UI step)", () => {
+    const c = loadCase(join(CASES, "ui_step_smoke.uc.toml"));
+    expect(c.lane).toBe("ui");
+    expect(c.steps).toHaveLength(2);
+    expect(c.steps[0]!.kind).toBe("skill");
+    expect(c.steps[0]!.skill).toBe("search_profile_intake");
+    const ui = c.steps[1]!;
+    expect(ui.kind).toBe("ui");
+    expect(ui.skill).toBeNull();
+    expect(ui.uiActions?.length).toBeGreaterThanOrEqual(1);
+    expect(ui.anchors.every((a) => a.kind === "dom_state")).toBe(true);
+  });
 });
 
 describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", () => {

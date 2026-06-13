@@ -62,6 +62,19 @@ const RawAnchorSchema = z.object({
   /** cost_and_time only: the step's happy path is ZERO-LLM by design, so an
    *  empty ledger is a valid recorded outcome (not RED). */
   optional: z.boolean().optional(),
+  /** dom_state only: the stable data-testid of the widget the assertion reads.
+   *  Required for that kind (a dom_state with no testid fails LOUD at parse). */
+  testid: z.string().optional(),
+  /** dom_state expect="text" only: the substring the widget's text must carry. */
+  value: z.string().optional(),
+  /** dom_state expect="count" only: how many widgets matching the testid must
+   *  be present. */
+  count: z.number().optional(),
+  /** dom_state only: how the testid matches the DOM. "exact" (default) matches
+   *  one specific widget (data-testid="<testid>"); "prefix" matches a family of
+   *  dynamic-id widgets (data-testid^="<testid>") — used to count or assert the
+   *  absence of a row family like searches-row-<id>. */
+  match: z.enum(["exact", "prefix"]).optional(),
 });
 type RawAnchor = z.infer<typeof RawAnchorSchema>;
 
@@ -136,9 +149,29 @@ const ExpectStopSchema = z.enum([
  *                          terminal with no duplicated rendering. */
 const EdgeSchema = z.enum(["reload_mid_form", "double_click_submit", "sse_break"]);
 
+/** One generic DOM verb a pure-UI step drives: click/fill/press a widget by its
+ *  stable data-testid, or reload the whole page. `value` carries the fill text
+ *  or the key name (press); it is unused for click/reload. */
+const RawUiActionSchema = z.object({
+  verb: z.enum(["click", "fill", "press", "reload"]),
+  testid: z.string(),
+  value: z.string().optional(),
+});
+
 const RawStepSchema = z.object({
   id: z.string(),
-  skill: z.string(),
+  /** "skill" (default) = the step starts a real skill run; "ui" = a pure-UI
+   *  step that drives DOM verbs against the SAME live browser and scores
+   *  dom_state anchors WITHOUT starting a run (no skill, no poller, no POST). */
+  kind: z.enum(["skill", "ui"]).optional(),
+  /** A pre-built deterministic fixture state the runner installs before this
+   *  step (the foundation later slices key their fixture worlds off). Optional;
+   *  duplicate values within one case fail LOUD at parse. */
+  fixture_state: z.string().optional(),
+  /** kind="ui" steps: the ordered DOM verbs the runner replays against the live
+   *  browser before scoring this step's dom_state anchors. */
+  ui_actions: z.array(RawUiActionSchema).optional(),
+  skill: z.string().optional(),
   purpose: z.string().optional(),
   gate_policy: z.enum(["approve_safe", "deny_all"]).optional(),
   launch: LaunchSchema.optional(),
@@ -167,7 +200,7 @@ const RawStepSchema = z.object({
   batch_rows_from: z.string().optional(),
   input_inline: z.record(z.string(), z.unknown()).optional(),
   resume: z.array(RawResumeSchema).optional(),
-  anchors: z.array(RawAnchorSchema),
+  anchors: z.array(RawAnchorSchema).default([]),
 });
 
 /** One `[[seed.dealer_inventory_sources]]` entry: a pending inventory-link
@@ -236,9 +269,24 @@ export type ExpectStop = z.infer<typeof ExpectStopSchema>;
 /** A UI-lane edge behavior (rotation-pool corner case). */
 export type StepEdge = z.infer<typeof EdgeSchema>;
 
+/** One generic DOM verb a pure-UI step drives (see RawUiActionSchema). */
+export interface CaseUiAction {
+  verb: "click" | "fill" | "press" | "reload";
+  testid: string;
+  value?: string;
+}
+
 export interface CaseStep {
   id: string;
-  skill: string;
+  /** "skill" = the step starts a real skill run; "ui" = a runless pure-UI step
+   *  (DOM verbs + dom_state anchors only, no skill/poller/POST). */
+  kind: "skill" | "ui";
+  /** kind="skill" steps name the skill they run; null on a kind="ui" step. */
+  skill: string | null;
+  /** A deterministic fixture state installed before this step, or null. */
+  fixtureState: string | null;
+  /** kind="ui" steps: the ordered DOM verbs replayed before scoring, or null. */
+  uiActions: CaseUiAction[] | null;
   purpose: string | null;
   gatePolicy: "approve_safe" | "deny_all";
   /** UI-lane start surface (explicit, or derived from narrative.input_mode). */
@@ -375,6 +423,26 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
       }
       return { kind: "resolution", expect };
     }
+    case "dom_state": {
+      // A pure-DOM assertion against a widget by its stable data-testid. PARSED
+      // and validated here, but NOT scored by evalAnchor (which has no live
+      // page) — the UI-lane driver runs the assertion and records a UiCheck the
+      // verdict carries through its ui_checks channel.
+      if (raw.testid === undefined) throw new Error("dom_state anchor requires testid");
+      const expect = typeof raw.expect === "string" ? raw.expect : undefined;
+      const allowed = ["visible", "absent", "text", "count", "disabled"] as const;
+      if (expect === undefined || !(allowed as readonly string[]).includes(expect)) {
+        throw new Error('dom_state anchor requires expect = "visible" | "absent" | "text" | "count" | "disabled"');
+      }
+      return {
+        kind: "dom_state",
+        testid: raw.testid,
+        expect: expect as "visible" | "absent" | "text" | "count" | "disabled",
+        match: raw.match ?? "exact",
+        ...(raw.value !== undefined ? { value: raw.value } : {}),
+        ...(raw.count !== undefined ? { count: raw.count } : {}),
+      };
+    }
     default:
       throw new Error(`unknown anchor kind "${raw.kind}" in case (typo? unsupported anchor?)`);
   }
@@ -417,7 +485,17 @@ export function toCase(raw: TomlTable): Case {
 
   const steps: CaseStep[] = parsed.steps.map((s) => ({
     id: s.id,
-    skill: s.skill,
+    kind: s.kind ?? "skill",
+    skill: s.skill ?? null,
+    fixtureState: s.fixture_state ?? null,
+    uiActions:
+      s.ui_actions !== undefined && s.ui_actions.length > 0
+        ? s.ui_actions.map((a) => ({
+            verb: a.verb,
+            testid: a.testid,
+            ...(a.value !== undefined ? { value: a.value } : {}),
+          }))
+        : null,
     purpose: s.purpose ?? null,
     gatePolicy: s.gate_policy ?? "approve_safe",
     launch: s.launch ?? (parsed.narrative.input_mode === "freeform" ? "chat_freeform" : "chat_slash"),
@@ -458,7 +536,43 @@ export function toCase(raw: TomlTable): Case {
   // a stop_picker launch needs its pick-by-vehicle-label key, and a
   // profile_scope_from must name an EARLIER step in the same case.
   const seen = new Set<string>();
+  const fixtureStates = new Set<string>();
   for (const step of steps) {
+    // kind="ui" is a RUNLESS step (DOM verbs + dom_state anchors only) — it must
+    // NOT name a skill; kind="skill" (the default) REQUIRES one. They are
+    // mutually exclusive so a mis-authored step never both runs and asserts.
+    if (step.kind === "ui") {
+      if (step.skill !== null) {
+        throw new Error(`step "${step.id}": kind="ui" and skill are mutually exclusive`);
+      }
+    } else if (step.skill === null) {
+      throw new Error(`step "${step.id}": kind="skill" requires skill`);
+    }
+    // A runless ui step has NO run of its own, so a run-scoped anchor
+    // (run_status / table delta / cost / etc.) would score against nothing —
+    // its anchors must be dom_state only (the prior step's run anchors stay on
+    // that step).
+    if (step.kind === "ui") {
+      const nonDom = step.anchors.find((a) => a.kind !== "dom_state");
+      if (nonDom !== undefined) {
+        throw new Error(
+          `step "${step.id}": a kind="ui" step has no run — its anchors must be dom_state only (found "${nonDom.kind}")`,
+        );
+      }
+      // A runless ui step asserts ONLY through dom_state. With zero dom_state
+      // anchors it scores a vacuous GREEN (the verdict spine satisfies the
+      // non-vacuous guard, but no DOM was actually asserted) — reject it.
+      if (!step.anchors.some((a) => a.kind === "dom_state")) {
+        throw new Error(`step "${step.id}": kind="ui" must declare at least one dom_state anchor`);
+      }
+    }
+    // Duplicate fixture_state within one case is ambiguous (which world wins?).
+    if (step.fixtureState !== null) {
+      if (fixtureStates.has(step.fixtureState)) {
+        throw new Error(`duplicate fixture_state "${step.fixtureState}"`);
+      }
+      fixtureStates.add(step.fixtureState);
+    }
     if (step.launch === "stop_picker") {
       const label = step.inputInline?.["pick_label"];
       if (typeof label !== "string" || label.trim() === "") {
@@ -519,7 +633,9 @@ export function loadCase(path: string): Case {
   return parseCase(readFileSync(path, "utf8"));
 }
 
-/** Build the cell_id: live/{skill}/{provider}/{archetype}/{input_mode}. */
+/** Build the cell_id: live/{skill}/{provider}/{archetype}/{input_mode}. A
+ *  runless kind="ui" step carries no skill, so it keys on "ui" instead (the
+ *  step-id suffix on the evidence dir keeps two ui steps distinct). */
 export function cellIdFor(c: Case, step: CaseStep): string {
-  return `live/${step.skill}/${c.provider}/${c.archetype}/${c.inputMode}`;
+  return `live/${step.skill ?? "ui"}/${c.provider}/${c.archetype}/${c.inputMode}`;
 }

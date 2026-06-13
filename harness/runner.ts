@@ -645,6 +645,11 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     fail("case carries [[seed.*]] sections — seeded cases run on the UI lane only (--lane ui)");
   }
   const step = opts.step ? c.steps.find((s) => s.id === opts.step) ?? fail(`no step "${opts.step}" in case`) : c.steps[0]!;
+  if (step.kind === "ui") {
+    // A pure-UI step has no run to POST — it drives DOM verbs + dom_state
+    // anchors against the live dashboard, which only the UI lane has.
+    fail(`step "${step.id}" is kind="ui" — pure-UI steps run on the UI lane only (--lane ui)`);
+  }
   if (step.edge !== null) {
     // The edges are USER-SURFACE behaviors (reload, double-click, offline) —
     // they only exist on the UI lane; silently ignoring one would hollow the case.
@@ -957,6 +962,82 @@ function incentiveScrapeEmptyResultWaiver(
   };
 }
 
+/** Replay one pure-UI step (kind="ui"): drive the generic DOM verbs, score the
+ *  dom_state anchors, then assemble the verdict off the PRIOR step's run detail
+ *  (the live DOM reflects that run) + the recorded DOM checks. A pure-UI step
+ *  has no run, so it never POSTs and never polls; its anchors are dom_state only
+ *  (enforced at parse). A ui step as the journey's FIRST step has no prior run
+ *  to read — fail loud rather than score against nothing. */
+async function driveUiOnlyStep(args: {
+  driver: UiDriver;
+  opts: RunnerOpts;
+  c: Case;
+  step: CaseStep;
+  prevRunId: string | null;
+  host: HostHandle;
+  stepMaxMs: number;
+  scopeProfileId: string | null;
+}): Promise<VerdictDoc> {
+  const { driver, opts, c, step, prevRunId, host, stepMaxMs, scopeProfileId } = args;
+  if (prevRunId === null) {
+    fail(`step "${step.id}": a kind="ui" step needs a prior run's DOM to act on (none yet)`);
+  }
+
+  // Replay the generic verbs in author order against the persistent page.
+  for (const action of step.uiActions ?? []) {
+    if (action.verb === "click") {
+      await driver.clickTestid(action.testid, stepMaxMs);
+    } else if (action.verb === "fill") {
+      await driver.fillTestid(action.testid, action.value ?? "", stepMaxMs);
+    } else if (action.verb === "press") {
+      await driver.pressKey(action.testid, action.value ?? "Enter", stepMaxMs);
+    } else {
+      await driver.reloadBrowser(stepMaxMs);
+    }
+  }
+
+  // Score the dom_state anchors against the live page (recordDomState pushes a
+  // UiCheck per anchor — the channel the verdict carries).
+  for (const anchor of step.anchors) {
+    if (anchor.kind !== "dom_state") continue; // parse already forbids non-dom anchors here.
+    await driver.recordDomState(anchor.testid, anchor.expect, anchor.value, anchor.count, anchor.match);
+  }
+
+  // The DOM reflects the prior step's run; read that detail so the verdict's
+  // S1/S2/S3 spine stays populated. The dom_state anchors passthrough in
+  // evalAnchor; the real assertions are in the recorded DOM checks.
+  const detail = await buildRunDetail(host.apiBase, prevRunId);
+  // A runless ui step performs no DB write, so before/after are snapshotted
+  // back-to-back (Δ=0 by construction). They exist only to keep the evidence
+  // and evaluateStep shape uniform with the run-bearing steps, not to assert.
+  const before = snapshotCounts(scopeProfileId);
+  const after = snapshotCounts(scopeProfileId);
+  const verdict = await evaluateStep({
+    apiBase: host.apiBase,
+    c,
+    step,
+    runId: prevRunId,
+    detail,
+    before,
+    after,
+    profileId: scopeProfileId,
+    layer: opts.layer,
+    lane: "ui",
+    domChecks: [...driver.checks],
+  });
+  const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
+    "verdict.json": verdict,
+    "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, lane: "ui", kind: "ui", profileId: scopeProfileId },
+    "run.json": { priorRunId: prevRunId, uiActions: step.uiActions ?? [] },
+    "db-before.json": before,
+    "db-after.json": after,
+  });
+  console.log(
+    JSON.stringify({ harness: "ui", step: step.id, kind: "ui", verdict: verdict.verdict, status: verdict.status, cell: verdict.cell_id, evidence: dir }),
+  );
+  return verdict;
+}
+
 /**
  * The UI-lane case runner: ONE server host + ONE driver browser session for the
  * WHOLE case (the non-tech-user journey), every step started by a REAL user
@@ -1026,6 +1107,37 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       const cellDir = evidenceDirName(cellIdFor(c, step), step.id);
       driver.beginStep(join(opts.evidenceRoot, cellDir, "screenshots"));
 
+      // ---- pure-UI step (kind="ui"): a user does DOM actions, no run --------
+      // No startRun, no poller, no POST: replay the generic verbs against the
+      // SAME persistent browser, then score the dom_state anchors via
+      // recordDomState (which pushes UiChecks). The verdict is produced
+      // normally off the PRIOR step's run detail (the DOM reflects that run's
+      // terminal state) + the recorded DOM checks. The anchors themselves are
+      // dom_state only (enforced at parse), so they passthrough in evalAnchor
+      // and the real assertions live in ui_checks.
+      if (step.kind === "ui") {
+        const verdict = await driveUiOnlyStep({
+          driver,
+          opts,
+          c,
+          step,
+          prevRunId,
+          host,
+          stepMaxMs,
+          scopeProfileId: latestProfileId,
+        });
+        results.push({ cell: verdict.cell_id, step: step.id, verdict: verdict.verdict });
+        if (verdict.verdict !== "GREEN" && verdict.verdict !== "GREEN_WITH_WAIVER") {
+          exitCode = 1;
+          break;
+        }
+        continue;
+      }
+
+      // Past here the step is kind="skill": parse guarantees a skill (the ui
+      // branch above returned), so narrow it for the run path.
+      const skill = step.skill ?? fail(`step "${step.id}": kind="skill" with no skill (parse invariant breached)`);
+
       // The profile scope this step's snapshots/anchors read against: an
       // explicit profile_scope_from wins; an intake step scopes to NOTHING
       // before the run (it creates its own profile); otherwise the latest.
@@ -1069,7 +1181,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 
       // ---- start the run BY USER ACTION -----------------------------------
       if (step.launch === "skills_popover") {
-        await driver.launchSkillFromPopover(step.skill);
+        await driver.launchSkillFromPopover(skill);
       } else if (step.launch === "chat_freeform") {
         const prompt = step.inputInline?.["prompt"];
         if (typeof prompt !== "string" || prompt.trim() === "") {
@@ -1086,7 +1198,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         }
         await driver.pickProfileStopOption(label, stepMaxMs);
       } else {
-        await driver.typeInChatRail(`/${step.skill}`);
+        await driver.typeInChatRail(`/${skill}`);
       }
       // A freeform start runs the prefill LLM call BEFORE the ack/navigation,
       // so the route wait gets the full step budget.

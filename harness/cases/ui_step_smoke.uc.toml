@@ -1,0 +1,111 @@
+# harness/cases/ui_step_smoke.uc.toml — the pure-UI step proof case.
+# UI-LANE, ONE server + ONE browser session:
+#   step 1  intake via chat-rail SLASH (a real skill run — creates the Tucson
+#           profile and renders its terminal turn on the dashboard).
+#   step 2  kind="ui": a RUNLESS step. The simulated user opens the Searches
+#           popover (a couple of generic DOM verbs against the SAME browser),
+#           then the step scores dom_state anchors against the live page — NO
+#           skill run, NO poller, NO POST. The verdict is assembled off the
+#           prior run's detail + the recorded DOM checks.
+#
+# This case proves the U-C machinery PARSES (the grammar test loads it). The
+# end-to-end runner-branch execution (driveUiOnlyStep) is exercised live by the
+# later deterministic fixture runner that builds on this foundation.
+
+[meta]
+id = "ui_step_smoke"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake (a real skill run — the journey root) -------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard (chat-rail slash)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: a pure-UI step (kind="ui" — no run) ----------------------------
+# Open the top-bar Searches popover by clicking its real trigger, then assert
+# the popover (a specific element → exact match) is visible and exactly one
+# profile row (the searches-row-<id> family → prefix match) rendered on the live
+# DOM. The anchors are dom_state ONLY (a runless step has no run to score run
+# anchors).
+
+[[steps]]
+id = "open_searches_popover"
+kind = "ui"
+purpose = "A user opens the Searches popover; assert the live DOM state — no run."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-popover"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-"
+expect = "count"
+count = 1
+match = "prefix"

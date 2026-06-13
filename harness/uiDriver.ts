@@ -887,4 +887,99 @@ export class UiDriver {
       .catch(() => null);
     return (text ?? "").trim();
   }
+
+  // ---- generic verb layer (pure-UI steps: any widget by data-testid) --------
+  // These complement the named, choreography-specific verbs above. A pure-UI
+  // case step drives a sequence of these against the SAME persistent page, then
+  // scores dom_state assertions through recordDomState. The selector is always
+  // built from the stable data-testid set (kebab-case), never a CSS path.
+
+  /** Click any widget by its data-testid (waits for it to be present). */
+  async clickTestid(testid: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid(testid), { timeout: timeoutMs });
+    await this.page.click(tid(testid));
+  }
+
+  /** Fill any text input/textarea by its data-testid. */
+  async fillTestid(testid: string, value: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid(testid), { timeout: timeoutMs });
+    await this.page.fill(tid(testid), value);
+  }
+
+  /** Focus a widget by its data-testid and press a key (e.g. "Enter", "Escape"). */
+  async pressKey(testid: string, key: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid(testid), { timeout: timeoutMs });
+    await this.page.press(tid(testid), key);
+  }
+
+  /** Reload the whole page and wait for the SPA shell to come back (the generic
+   *  twin of reloadPage — same recovery, available to any pure-UI step). */
+  async reloadBrowser(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.reload({ waitUntil: "domcontentloaded" });
+    await this.page.waitForSelector(tid("app-main"), { timeout: timeoutMs });
+  }
+
+  /**
+   * recordDomState: run a dom_state assertion against the live page and push a
+   * UiCheck (the same channel every named check uses). The five expects:
+   *   visible  — the widget is present and visible.
+   *   absent   — zero matching widgets are present.
+   *   text     — the widget's text content carries `value` (substring).
+   *   count    — exactly `count` matching widgets are present.
+   *   disabled — the widget carries the disabled attribute.
+   * `match` selects the testid match mode: "exact" (default) builds the exact
+   * data-testid selector for one specific widget; "prefix" builds the CSS
+   * attribute-prefix selector (data-testid^=) for a dynamic-id widget family
+   * (e.g. counting or asserting the absence of searches-row-<id> rows). All five
+   * expects respect the mode. Records ok:false rather than throwing, so the
+   * verdict carries the evidence.
+   */
+  async recordDomState(
+    testid: string,
+    expect: "visible" | "absent" | "text" | "count" | "disabled",
+    value?: string,
+    count?: number,
+    match: "exact" | "prefix" = "exact",
+  ): Promise<void> {
+    const sel = match === "prefix" ? `[data-testid^="${testid}"]` : tid(testid);
+    let observed: string;
+    let ok: boolean;
+    if (expect === "visible") {
+      const visible = await this.page.locator(sel).first().isVisible().catch(() => false);
+      observed = visible ? "visible" : "not visible/absent";
+      ok = visible;
+    } else if (expect === "absent") {
+      const n = await this.page.locator(sel).count();
+      observed = `${n} matching widget(s)`;
+      ok = n === 0;
+    } else if (expect === "text") {
+      const text = (await this.page.locator(sel).first().textContent().catch(() => null)) ?? "";
+      observed = `text="${text.trim().slice(0, 80)}"`;
+      ok = value !== undefined && text.includes(value);
+    } else if (expect === "count") {
+      const n = await this.page.locator(sel).count();
+      observed = `${n} matching widget(s)`;
+      ok = count !== undefined && n === count;
+    } else {
+      // disabled — distinguish a missing element (absent) from a present one
+      // that is simply not disabled (enabled), mirroring count/visible.
+      const present = (await this.page.locator(sel).count()) > 0;
+      const disabled = present && (await this.page.locator(sel).first().isDisabled().catch(() => false));
+      observed = disabled ? "disabled" : present ? "enabled" : "absent";
+      ok = disabled;
+    }
+    this.record({
+      surface: `dom:${testid}`,
+      selector: sel,
+      expected:
+        expect === "text"
+          ? `text contains "${value ?? ""}"`
+          : expect === "count"
+            ? `${count ?? "?"} matching widget(s)`
+            : expect,
+      observed,
+      ok,
+    });
+    await this.screenshot(`dom-state-${testid}-${expect}`);
+  }
 }
