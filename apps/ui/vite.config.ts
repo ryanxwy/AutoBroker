@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 /**
  * Vite config for the dashboard SPA.
@@ -25,5 +25,11 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+  },
+  test: {
+    // Exclude the compiled copies in dist/ so each test runs exactly once, from
+    // src — without this, `pnpm --filter @autobroker/ui test` double-discovers
+    // the stale dist/**/*.test.js copies (matching the repo-root vitest config).
+    exclude: ["**/node_modules/**", "**/dist/**"],
   },
 });

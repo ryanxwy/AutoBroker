@@ -8,6 +8,7 @@
  * the card open with the error line.
  */
 
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../api/client.js";
@@ -47,9 +48,11 @@ function mockFetch(opts: {
   }) as typeof fetch;
 }
 
-function flush(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 0));
-}
+const flush = (): Promise<void> =>
+  act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 
 beforeEach(() => {
   vi.restoreAllMocks();
