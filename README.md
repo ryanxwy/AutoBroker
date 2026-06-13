@@ -98,3 +98,10 @@ invariant set.
 The legacy Python implementation is frozen at **`../AutoBroker-Python`** and is
 read-only until all 17 skills reach parity-GREEN, at which point AutoBroker (TS)
 takes over and the Python repo retires.
+
+---
+
+## Setup / Onboarding
+
+- [Agent setup guide](docs/onboarding/AGENT_GUIDE.md) — step-by-step instructions for an AI agent configuring a fresh install.
+- [User guide](docs/onboarding/USER_GUIDE.md) — plain-language setup for the owner.
