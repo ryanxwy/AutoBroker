@@ -8,6 +8,13 @@
  * lists on EVERY open (the top bar never remounts, so a list fetched once
  * would go stale — e.g. a skill enabled by a just-finished intake).
  *
+ * The active-searches and sessions lists ALSO subscribe to the data-change bus
+ * (and window refocus): a write landing while the Searches popover is already
+ * open (a restored profile, a run that just created/removed one) refetches the
+ * open list in place, so the panel reflects the live write without a
+ * close/reopen. (The skills manifest is not on the bus — the on-open refetch
+ * covers it.)
+ *
  * PIN LIFECYCLE lives in the Searches popover: each active search row carries
  * a Pin verb (binds the CURRENT rail session to that profile; creates a session
  * when none exists yet) and the pinned row shows Unpin. The Sessions section
@@ -18,6 +25,7 @@
  */
 
 import { ApiClient } from "../api/client.js";
+import { useDataRefetch } from "../api/useDataChanged.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import type { Mode, ProfileList, SessionList, SkillList, SkillManifest, SkillRunSummary } from "../api/wire.js";
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
@@ -26,6 +34,12 @@ import { useLayout } from "../store/layout.js";
 import { ClosedSearchesGroup } from "./ClosedSearchesGroup.js";
 import { Popover } from "./Popover.js";
 import { SkillsPopoverList } from "./SkillsPopover.js";
+
+// Module-level stable literals — the data-change bus keys the active-searches
+// and sessions lists subscribe under. Stable identity matters: useDataRefetch's
+// effect deps on the array, so an inline literal would re-register every render.
+const PROFILE_KINDS = ["profiles"] as const;
+const SESSION_KINDS = ["sessions"] as const;
 
 /** Short pill wording per projected run status (terminal + in-flight). */
 const SESSION_PILL_LABEL: Record<string, string> = {
@@ -103,6 +117,10 @@ export function TopBar({
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   const sessions = useAsync<SessionList>(() => client.listSessions(), []);
   const skills = useAsync<SkillList>(() => client.listSkills(), []);
+  // Subscribe the open-popover lists to the data-change bus + refocus, so a
+  // write landing while the popover is open refreshes them in place.
+  useDataRefetch(PROFILE_KINDS, profiles.refetch);
+  useDataRefetch(SESSION_KINDS, sessions.refetch);
   const layoutMode = useLayout((s) => s.mode);
   const setLayoutMode = useLayout((s) => s.setMode);
 
