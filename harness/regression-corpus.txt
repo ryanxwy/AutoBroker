@@ -29,3 +29,10 @@ dealer_pipeline.ui_prefix.toml
 # inventory_link_scan — accepted 2026-06-12 (UI-lane two rounds + decline; seeds verified against the live Maps world)
 # ui_button stays accepted-but-rotated (2 rooftop contacts per run — politeness budget)
 inventory_link_scan.ui_decline.toml
+
+# incentive_scrape — accepted 2026-06-13 (UI-lane first-encounter + decline; full 7-step loop, P2 关账).
+# ui_first_encounter stays accepted-but-rotated: it contacts the OEM offers page
+# (one site contact + ~$0.005 extraction LLM per run, true-path Δ=10 cash rows at
+# acceptance). The decline case proves the first-encounter gate at zero contact /
+# zero cost, so it carries the always-on slot.
+incentive_scrape.ui_decline.toml

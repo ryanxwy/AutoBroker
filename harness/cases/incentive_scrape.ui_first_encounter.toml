@@ -43,9 +43,13 @@
 #     is now the GENUINE-EMPTY FALLBACK ONLY — it fires only if a future run
 #     truly finds zero whitelist cash, never as the expected path. A
 #     blocked/failed scrape is NOT waivable — it surfaces RED.
-#   - step 3 proves NO-RE-ASK (approval_gate absent). When step 2 wrote rows, a
-#     fresh same-URL scrape replaces them in place (Δ=0 EXACT, browser activity
-#     present — no 7-day cache marker skip is asserted here). The no-re-ask
+#   - step 3 proves NO-RE-ASK (approval_gate absent). The registry entry written
+#     in step 2 means no gate fires here; and because step 2 just scraped this
+#     same URL seconds earlier, the in-run 7-day cache gate SKIPS re-navigation
+#     ("0 scraped, 1 skipped (fresh <7d)") — the slice nets Δ=0 EXACT with no
+#     second site contact. (step 3 asserts nothing about browser_activity, so it
+#     holds whether the cache skips now or a future >7d replace re-navigates; the
+#     delete-then-insert replace path is unit-pinned separately.) The no-re-ask
 #     proof is the load-bearing behavior and holds regardless of cash volume.
 
 [meta]
@@ -167,7 +171,7 @@ expect = "absent"
 [[steps]]
 id = "scrape_no_ask"
 skill = "incentive_scrape"
-purpose = "Second run, same brand: NO approval gate (registry hit). A fresh same-URL scrape replaces the slice in place, so the profile-scoped delta is Δ=0 EXACT (browser activity present)."
+purpose = "Second run, same brand: NO approval gate (registry hit). Step 2's fresh scrape left a <7d cache marker, so the 7-day cache gate skips re-navigation and the profile-scoped delta is Δ=0 EXACT."
 gate_policy = "approve_safe"
 launch = "chat_slash"
 
@@ -185,10 +189,10 @@ expect = "absent"           # entry from step 2 means NO gate fires here.
 
 [[steps.anchors]]
 kind = "table_min_rows"     # the slice nets Δ=0 EXACT this run: step 2 wrote the
-table = "manufacturer_incentives"   # localized cash rows and a fresh same-URL scrape
-scope = "profile"           # replaces them in place (delete-then-insert), so the
-delta_min = 0               # profile-scoped count is unchanged. (A genuinely empty
-exact = true                # world also nets Δ=0 — the anchor holds either way.)
+table = "manufacturer_incentives"   # localized cash rows and left a <7d cache marker, so
+scope = "profile"           # step 3's 7-day cache gate skips re-navigation entirely
+delta_min = 0               # (0 scraped) — the profile-scoped count is unchanged. (A
+exact = true                # genuinely empty world also nets Δ=0 — holds either way.)
 
 [[steps.anchors]]
 kind = "no_external_mutation"
