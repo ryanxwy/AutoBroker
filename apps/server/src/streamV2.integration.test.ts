@@ -237,6 +237,20 @@ describe("GET /api/skill-runs/:id/stream-v2 — accept path", () => {
     const terminals = types.filter((t) => t === "finish" || t === "abort" || t === "error");
     expect(terminals).toEqual(["finish"]);
     expect(types[types.length - 1]).toBe("finish");
+
+    // The fresh-by-default pulse rides a data.changed data-frame, emitted by the
+    // REAL stack BEFORE the terminal finish — proof the single-terminal
+    // invariant did NOT discard it. A created intake run touches profiles +
+    // sessions; profile_id names the row it wrote.
+    const pulseIdx = chunks.findIndex(
+      (c) => c["type"] === "data-frame" && (c["data"] as { kind: string }).kind === "data.changed",
+    );
+    expect(pulseIdx).toBeGreaterThan(-1);
+    const finishIdx = chunks.findIndex((c) => c["type"] === "finish");
+    expect(pulseIdx).toBeLessThan(finishIdx); // emit-before-done ordering, end to end.
+    const pulsePayload = (chunks[pulseIdx]!["data"] as { payload: Record<string, unknown> }).payload;
+    expect(pulsePayload["kinds"]).toEqual(["profiles", "sessions"]);
+    expect(typeof pulsePayload["profile_id"]).toBe("string");
   });
 });
 

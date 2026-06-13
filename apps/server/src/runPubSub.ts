@@ -65,6 +65,13 @@ export const EVENT_KINDS = [
   "browser.action",
   "browser.error",
   "browser.closed",
+  // data.changed — a NON-terminal "a write landed" pulse the UI uses for
+  // fresh-by-default auto-refresh: payload {profile_id, kinds:string[]} names
+  // the data families a just-completed skill touched (e.g. ["dealers"]). It
+  // rides the RUN channel (no per-resource stream) and is emitted BEFORE the
+  // terminal `done` (after `done` the single-terminal invariant would discard
+  // it). NOT in TERMINAL_EVENT_KINDS.
+  "data.changed",
   "done",
   "error",
   "aborted",

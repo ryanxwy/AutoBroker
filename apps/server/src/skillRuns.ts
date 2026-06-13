@@ -746,6 +746,52 @@ function formKindFor(payload: Record<string, unknown>): string {
   return typeof kind === "string" ? kind : "data_collection";
 }
 
+/**
+ * The data families a completed skill's run touched, keyed by workflowId — the
+ * `kinds` carried on the data.changed pulse the UI reads to refetch exactly the
+ * views that render those families (intake writes profiles+sessions; geosearch
+ * writes dealers; the inventory scans write listings; incentive_scrape writes
+ * incentives). An UNKNOWN workflowId (a future email/quote skill not yet mapped)
+ * defaults to the broad safe set so its writes never go unseen — a future skill
+ * may then narrow itself. Threads/messages/quotes are listed for the skills that
+ * will write them as those surfaces land. This is the ONLY place the skill→data
+ * mapping lives (the workflow/tools layers have no pubsub access).
+ */
+function affectedKinds(workflowId: string): string[] {
+  switch (workflowId) {
+    case SEARCH_PROFILE_INTAKE_WORKFLOW_ID:
+      return ["profiles", "sessions"];
+    case DEALER_GEOSEARCH_WORKFLOW_ID:
+      return ["dealers"];
+    case INVENTORY_SITE_SCAN_WORKFLOW_ID:
+    case INVENTORY_LINK_SCAN_WORKFLOW_ID:
+      return ["listings"];
+    case INCENTIVE_SCRAPE_WORKFLOW_ID:
+      return ["incentives"];
+    default:
+      // A skill whose data family is not mapped yet — refetch broadly rather
+      // than leave a view silently stale.
+      return ["profiles", "sessions", "dealers", "listings", "incentives"];
+  }
+}
+
+/** The profile id a completed run's output carries, read defensively across the
+ *  three skill output shapes (intake → profileId; geosearch → searchProfileId;
+ *  the scans/incentive → search_profile_id). Null when none is present (a
+ *  headless/profile-less terminal) — a null-scoped pulse refetches the lists
+ *  unscoped, which is still correct (just broader). */
+function resultProfileId(result: unknown): string | null {
+  const r = (result ?? {}) as {
+    profileId?: unknown;
+    searchProfileId?: unknown;
+    search_profile_id?: unknown;
+  };
+  for (const v of [r.profileId, r.searchProfileId, r.search_profile_id]) {
+    if (typeof v === "string" && v !== "") return v;
+  }
+  return null;
+}
+
 /** Stable body key for same-vs-different claim detection (Phase 1). */
 function bodyKeyOf(body: FormDecisionBody): string {
   // Canonical: action + sorted-key content JSON. decline/cancel have no content.
@@ -1061,12 +1107,27 @@ export class SkillRunService {
       // the terminal TEXT frame payload — skill-agnostic copy, the done frame
       // stays {}.
       run.terminal = true;
+      const descriptor = this.descriptorOf(run);
       const textPayload: Record<string, unknown> = {
-        text: this.descriptorOf(run).summaryText(r.result),
+        text: descriptor.summaryText(r.result),
       };
       const resolution = (r.result as { resolution?: unknown } | undefined)?.resolution;
       if (typeof resolution === "string") textPayload["resolution"] = resolution;
       this.pubsub.append(runId, { kind: "text", payload: textPayload });
+      // The fresh-by-default pulse: a completed skill wrote rows, so name the
+      // touched data families (off the workflowId) + the profile they belong to
+      // (off r.result.profileId) so the dashboard refetches exactly the stale
+      // views WITHOUT a manual reload. CRITICAL ORDERING: this is appended
+      // BEFORE the terminal `done` — appended after `done` the single-terminal
+      // invariant ("wire wins") would DISCARD it. A declined/failed run never
+      // reaches here, so it emits no pulse.
+      this.pubsub.append(runId, {
+        kind: "data.changed",
+        payload: {
+          profile_id: resultProfileId(r.result),
+          kinds: affectedKinds(descriptor.workflowId),
+        },
+      });
       this.pubsub.append(runId, { kind: "done", payload: {} });
       return;
     }

@@ -168,6 +168,35 @@ describe("runPubSub — appendTransient (fan-out-only, never logged)", () => {
   });
 });
 
+describe("runPubSub — data.changed is a valid NON-terminal kind", () => {
+  it("append('data.changed') returns ok and does NOT terminate the run", () => {
+    const ps = new RunPubSub();
+    ps.attachInit("r1", "dealer_geosearch");
+    // The fresh-by-default pulse appends cleanly and leaves the run live, so a
+    // later text/done can still land (it is emitted BEFORE the terminal done).
+    expect(
+      ps.append("r1", { kind: "data.changed", payload: { profile_id: "p1", kinds: ["dealers"] } }),
+    ).toBe(true);
+    expect(ps.isTerminal("r1")).toBe(false);
+    expect(ps.append("r1", { kind: "done", payload: {} })).toBe(true);
+    expect(ps.isTerminal("r1")).toBe(true);
+    expect(ps.snapshot("r1").map((e) => e.kind)).toEqual(["init", "data.changed", "done"]);
+  });
+
+  it("a data.changed appended AFTER done is discarded (the wire-wins ordering it must avoid)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ps = new RunPubSub();
+    ps.attachInit("r1", "dealer_geosearch");
+    ps.append("r1", { kind: "done", payload: {} });
+    // This is the failure mode the emit-before-done ordering exists to prevent.
+    expect(
+      ps.append("r1", { kind: "data.changed", payload: { profile_id: null, kinds: ["dealers"] } }),
+    ).toBe(false);
+    expect(ps.snapshot("r1").map((e) => e.kind)).toEqual(["init", "done"]);
+    warn.mockRestore();
+  });
+});
+
 describe("runPubSub — unknown kind rejection (no drift)", () => {
   it("append with an unknown kind throws", () => {
     const ps = new RunPubSub();

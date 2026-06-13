@@ -89,14 +89,26 @@ function bootstrapDb(): void {
   }
 }
 
+/** A minimal structural view of the RunPubSub the emit-data-changed route uses
+ *  — the host imports @autobroker/server's buildServer (which OWNS the pubsub
+ *  type); this avoids importing the class type just for the route signature. */
+interface FixturePubSub {
+  has(runId: string): boolean;
+  append(runId: string, ev: { kind: string; payload?: Record<string, unknown> }): boolean;
+}
+
 /** Register the test-only /__e2e/* routes (fixture mode only), OUTSIDE /api so
  *  the product wall is untouched. The runner POSTs these to install a fixture
  *  world + flip the stub scenario; the audit read lets a case prove a row landed
- *  in the isolated product DB. */
-function registerFixtureRoutes(app: {
-  post: (path: string, handler: (req: { body?: unknown }, reply: { code: (n: number) => void }) => unknown) => void;
-  get: (path: string, handler: (req: { query?: unknown }, reply: { code: (n: number) => void }) => unknown) => void;
-}): void {
+ *  in the isolated product DB; emit-data-changed deterministically pushes a
+ *  data.changed pulse onto an OPEN run channel (the SSE→refetch proof). */
+function registerFixtureRoutes(
+  app: {
+    post: (path: string, handler: (req: { body?: unknown }, reply: { code: (n: number) => void }) => unknown) => void;
+    get: (path: string, handler: (req: { query?: unknown }, reply: { code: (n: number) => void }) => unknown) => void;
+  },
+  pubsub: FixturePubSub,
+): void {
   // Flip the stub scenario (geocode outcome + trim verdict).
   app.post("/__e2e/scenario", async (req, reply) => {
     setScenario((req.body ?? {}) as Partial<Scenario>);
@@ -155,6 +167,32 @@ function registerFixtureRoutes(app: {
       adb.$client.close();
     }
   });
+
+  // Deterministically emit a NON-terminal data.changed pulse onto an OPEN run
+  // channel — the functional proof that the dashboard auto-refreshes a stale
+  // view from an SSE pulse WITHOUT a reload. This mirrors the product emit
+  // (skillRuns.translate appends data.changed before the terminal done) without
+  // running a real skill: the case opens a run stream in the rail, seeds new
+  // rows, then POSTs here so the SSE pulse reaches the live SPA. Refuses an
+  // unknown/closed run (the channel must be live for the pulse to fan out).
+  app.post("/__e2e/emit-data-changed", async (req, reply) => {
+    const body = (req.body ?? {}) as { run_id?: unknown; kinds?: unknown; profile_id?: unknown };
+    const runId = typeof body.run_id === "string" ? body.run_id : "";
+    if (runId === "" || !pubsub.has(runId)) {
+      reply.code(400);
+      return { ok: false, error: `emit-data-changed needs an OPEN run_id (got "${runId}")` };
+    }
+    const kinds = Array.isArray(body.kinds)
+      ? body.kinds.filter((k): k is string => typeof k === "string")
+      : ["profiles", "sessions", "dealers", "listings", "incentives"];
+    const profileId = typeof body.profile_id === "string" ? body.profile_id : null;
+    const appended = pubsub.append(runId, {
+      kind: "data.changed",
+      payload: { profile_id: profileId, kinds },
+    });
+    reply.code(200);
+    return { ok: appended, run_id: runId, kinds };
+  });
 }
 
 async function main(): Promise<void> {
@@ -193,7 +231,7 @@ async function main(): Promise<void> {
 
   if (FIXTURE_MODE) {
     // Test-only control + read routes, OUTSIDE /api (the product wall is untouched).
-    registerFixtureRoutes(built.app as never);
+    registerFixtureRoutes(built.app as never, built.pubsub as unknown as FixturePubSub);
   }
   const listenAddr = await built.app.listen({ host: "127.0.0.1", port: 0 });
   const addr = built.app.server.address();

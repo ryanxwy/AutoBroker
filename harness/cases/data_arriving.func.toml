@@ -1,0 +1,77 @@
+# harness/cases/data_arriving.func.toml — FUNCTIONAL lane: the REALTIME DATA
+# REACTIVITY (auto-refresh) proof for U-H.
+#
+# Proves the dashboard reflects a server-side data write WITHOUT a manual
+# page/Electron reload, driven by a data.changed pulse on the open run stream:
+#
+#   1. Install data_arriving (1 active Hyundai profile + 2 bound dealers). The
+#      Canvas shows the profile card + exactly TWO dealer tiles.
+#   2. Open a run stream in the rail: type /search_profile_intake + Send. Intake
+#      navigates to /runs/:id and suspends at the collect form — the rail is now
+#      SUBSCRIBED to that run's /stream-v2 (the channel data.changed rides).
+#   3. data_arriving: the runner grows the world (binds a THIRD dealer to the
+#      SAME profile) WITHOUT a reload, then emits a data.changed{kinds=["dealers"]}
+#      pulse onto the open run channel. The SPA's SSE→refetch path refetches the
+#      dealer tiles IN PLACE.
+#   4. ASSERT: exactly THREE dealer tiles — with NO reload ui_action between the
+#      data change and the assertion. The only thing that could have grown the
+#      view from 2→3 is the pulse-driven refetch, so this genuinely proves the
+#      SSE→refetch wiring (not a coincidental reload/popover refetch).
+#
+# WHY DEALERS: the DealerTiles view (keyed "dealers") is exactly the projection
+# that goes stale today after a geosearch write until a manual reload — this
+# closes that gap. The intake form stays open (suspended) the whole time; we
+# never submit it (zero LLM, the fixture lane stubs the model anyway).
+
+[meta]
+id = "data_arriving_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "data_arriving"
+kind = "ui"
+fixture_state = "data_arriving"
+purpose = "An open dashboard auto-refreshes a stale dealer projection from a data.changed SSE pulse — no reload."
+
+# Open a run stream in the rail (intake suspends at the collect form — the
+# stream stays open and subscribed). These are the ONLY ui_actions: there is no
+# reload and no popover-open, so the 2→3 tile growth below can only come from
+# the data.changed pulse.
+[[steps.ui_actions]]
+verb = "fill"
+testid = "chat-input-textarea"
+value = "/search_profile_intake"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "chat-send"
+
+# After the ui_actions open the run stream, grow the data (bind a 3rd dealer)
+# WITHOUT a reload, then emit the pulse onto the open run channel.
+[steps.data_arriving]
+grow_fixture_state = "data_arriving_grown"
+kinds = ["dealers"]
+
+# The profile card still renders (the active profile from the fixture).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-profile-card"
+expect = "visible"
+
+# The PROOF: exactly THREE dealer tiles after the pulse — scored with NO reload
+# between the grow+pulse and this assert. Exact match excludes the
+# "canvas-dealer-tiles" section wrapper.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-dealer-tile"
+expect = "count"
+count = 3
+match = "exact"

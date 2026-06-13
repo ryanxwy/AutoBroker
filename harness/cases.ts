@@ -171,6 +171,16 @@ const RawStepSchema = z.object({
   /** kind="ui" steps: the ordered DOM verbs the runner replays against the live
    *  browser before scoring this step's dom_state anchors. */
   ui_actions: z.array(RawUiActionSchema).optional(),
+  /** kind="ui" REALTIME-REACTIVITY proof: after the ui_actions open a run
+   *  stream in the rail, the runner grows the named fixture's data WITHOUT a
+   *  reload, then emits a data.changed pulse onto the open run channel. The
+   *  dashboard must auto-refresh the stale view (the dom_state anchors are
+   *  scored AFTER the pulse, with NO reload between the change and the assert).
+   *  Names the fixture state to install for the grown world + the data kinds the
+   *  pulse carries. */
+  data_arriving: z
+    .object({ grow_fixture_state: z.string().min(1), kinds: z.array(z.string().min(1)).min(1) })
+    .optional(),
   skill: z.string().optional(),
   purpose: z.string().optional(),
   gate_policy: z.enum(["approve_safe", "deny_all"]).optional(),
@@ -287,6 +297,11 @@ export interface CaseStep {
   fixtureState: string | null;
   /** kind="ui" steps: the ordered DOM verbs replayed before scoring, or null. */
   uiActions: CaseUiAction[] | null;
+  /** kind="ui" realtime-reactivity proof: grow the data + emit a data.changed
+   *  pulse onto the open run channel AFTER the ui_actions, then score the
+   *  dom_state anchors against the auto-refreshed view (no reload). Null when
+   *  the step does not exercise the pulse. */
+  dataArriving: { growFixtureState: string; kinds: string[] } | null;
   purpose: string | null;
   gatePolicy: "approve_safe" | "deny_all";
   /** UI-lane start surface (explicit, or derived from narrative.input_mode). */
@@ -496,6 +511,10 @@ export function toCase(raw: TomlTable): Case {
             ...(a.value !== undefined ? { value: a.value } : {}),
           }))
         : null,
+    dataArriving:
+      s.data_arriving !== undefined
+        ? { growFixtureState: s.data_arriving.grow_fixture_state, kinds: s.data_arriving.kinds }
+        : null,
     purpose: s.purpose ?? null,
     gatePolicy: s.gate_policy ?? "approve_safe",
     launch: s.launch ?? (parsed.narrative.input_mode === "freeform" ? "chat_freeform" : "chat_slash"),
@@ -565,6 +584,12 @@ export function toCase(raw: TomlTable): Case {
       if (!step.anchors.some((a) => a.kind === "dom_state")) {
         throw new Error(`step "${step.id}": kind="ui" must declare at least one dom_state anchor`);
       }
+    }
+    // data_arriving is the realtime-reactivity proof — it grows data + emits a
+    // pulse onto an open run channel, which only the runless ui-step drive path
+    // wires; on a kind="skill" step it would score against nothing.
+    if (step.dataArriving !== null && step.kind !== "ui") {
+      throw new Error(`step "${step.id}": data_arriving is a kind="ui" proof (found kind="${step.kind}")`);
     }
     // Duplicate fixture_state within one case is ambiguous (which world wins?).
     if (step.fixtureState !== null) {

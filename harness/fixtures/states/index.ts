@@ -42,6 +42,7 @@ import type { Scenario } from "../stubs.js";
 
 import { activeSearch } from "./activeSearch.js";
 import { closedProfile } from "./closedProfile.js";
+import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { emptyHome } from "./emptyHome.js";
 import { multiActive } from "./multiActive.js";
 
@@ -64,6 +65,8 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [activeSearch.id]: activeSearch,
   [multiActive.id]: multiActive,
   [closedProfile.id]: closedProfile,
+  [dataArriving.id]: dataArriving,
+  [dataArrivingGrown.id]: dataArrivingGrown,
 };
 
 /** Resolve a fixture state by id, failing LOUD on an unknown id. */

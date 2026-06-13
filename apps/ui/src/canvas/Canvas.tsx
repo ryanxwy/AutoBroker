@@ -17,8 +17,15 @@
 
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
+import { useDataRefetch } from "../api/useDataChanged.js";
 import type { DealerList, DealerRow, ProfileList } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
+
+/** The data kinds the Canvas's two read views render — stable module-level
+ *  literals so useDataRefetch re-registers only when the refetch identity (not
+ *  the array identity) changes. */
+const PROFILE_KINDS = ["profiles"] as const;
+const DEALER_KINDS = ["dealers"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -209,6 +216,12 @@ export function Canvas({ client, onStartIntake, runId = null }: CanvasProps): JS
     [activeId],
     activeId !== null,
   );
+
+  // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
+  // exactly these views in place — no manual reload. The active-profile list
+  // tracks "profiles"; the dealer tiles track "dealers".
+  useDataRefetch(PROFILE_KINDS, profiles.refetch);
+  useDataRefetch(DEALER_KINDS, dealers.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">

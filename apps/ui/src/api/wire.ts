@@ -52,6 +52,9 @@ export const EVENT_KINDS = [
   "browser.action",
   "browser.error",
   "browser.closed",
+  // data.changed — the non-terminal "a write landed" pulse driving
+  // fresh-by-default auto-refresh (payload {profile_id, kinds:string[]}).
+  "data.changed",
   "done",
   "error",
   "aborted",

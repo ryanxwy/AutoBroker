@@ -242,6 +242,32 @@ export class UiDriver {
     await this.page.click(tid("chat-send"));
   }
 
+  /** The run id of the CURRENTLY shown /runs/:id route, or null (not on a run
+   *  view). Used by the realtime-reactivity proof to address the open run
+   *  stream the rail is subscribed to. */
+  currentRunId(): string | null {
+    return runIdFromPath(new URL(this.page.url()).pathname);
+  }
+
+  /** Wait until exactly `count` widgets match the (exact or prefix) testid — the
+   *  realtime-reactivity settle: after a data.changed pulse the view refetches
+   *  asynchronously (GET → state → re-render), so the proof waits for the grown
+   *  count to LAND before scoring the dom_state anchor. Throws on timeout (the
+   *  pulse did not refresh the view — a real failure). */
+  async waitForTestidCount(
+    testid: string,
+    count: number,
+    match: "exact" | "prefix" = "exact",
+    timeoutMs = DEFAULT_TIMEOUT,
+  ): Promise<void> {
+    const sel = match === "prefix" ? `[data-testid^="${testid}"]` : tid(testid);
+    await this.page.waitForFunction(
+      // String-form: runs in the page; the harness tsconfig has no DOM lib.
+      `document.querySelectorAll('${sel.replace(/'/g, "\\'")}').length === ${count}`,
+      { timeout: timeoutMs },
+    );
+  }
+
   /** Wait for the SPA to navigate to a run view and return its run id. Pass the
    *  previous run id so a step launched FROM an old run view waits for the NEW
    *  route, not the one already showing. */

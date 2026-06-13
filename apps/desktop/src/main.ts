@@ -175,6 +175,12 @@ if (!app.requestSingleInstanceLock()) {
     hook.secondInstanceSeen = true;
     if (mainWindow !== null) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      // Showing/focusing the window delivers the standard page-level `focus` +
+      // `visibilitychange:visible` events to the renderer; the SPA's
+      // fresh-on-refocus listeners (apps/ui useRefocusRefetch) refetch the read
+      // views from there — no native refetch nudge, no preload/IPC needed. The
+      // window stays open for the app's life (window-all-closed → quit), so
+      // dock re-activation focuses this same window and fires the same events.
       mainWindow.focus();
     }
   });

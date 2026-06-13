@@ -36,6 +36,7 @@ import { Chat, useChat } from "@ai-sdk/react";
 
 import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
+import { invalidate, useRefocusRefetch } from "./api/useDataChanged.js";
 import type { IntakeScopeNotice, Mode, SkillManifest, SkillList, StartAck } from "./api/wire.js";
 import { Canvas } from "./canvas/Canvas.js";
 import {
@@ -104,8 +105,28 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // messages — the zone-4 trail + open count + latest screenshot).
   const [browserView, setBrowserView] = useState<BrowserView>(EMPTY_BROWSER_VIEW);
   onDataRef.current = (part): void => {
-    if (part.type === "data-browser") setBrowserView((v) => reduceBrowserView(v, part.data));
+    if (part.type === "data-browser") {
+      setBrowserView((v) => reduceBrowserView(v, part.data));
+      return;
+    }
+    // A data.changed pulse (carried as a data-frame {kind, payload}) →
+    // refetch the views that render the named kinds. Additive to the transient
+    // browser routing above; every other data-frame is projected by
+    // messageModel from message.parts (this handler never owns those).
+    if (part.type === "data-frame") {
+      const data = part.data as { kind?: unknown; payload?: unknown } | null;
+      if (data !== null && typeof data === "object" && data.kind === "data.changed") {
+        const kinds = (data.payload as { kinds?: unknown } | null)?.kinds;
+        if (Array.isArray(kinds)) {
+          invalidate(kinds.filter((k): k is string => typeof k === "string"));
+        }
+      }
+    }
   };
+
+  // Fresh-on-refocus: refetch every registered read view when the window
+  // re-activates (installed once, App never unmounts).
+  useRefocusRefetch();
 
   const knownSkills = skills.kind === "ok" ? skills.data.map((s) => s.name) : [INTAKE_SKILL];
 

@@ -791,6 +791,33 @@ async function applyFixtureState(apiBase: string, fixtureState: string): Promise
   }
 }
 
+/** Apply a fixture's seed WITHOUT reloading the browser (the
+ *  realtime-reactivity proof grows data while the SPA stays put, so only the
+ *  data.changed pulse — not a reload — can refresh the view). Same host route
+ *  as applyFixtureState; the caller never reloads after. */
+async function applyFixtureSeedNoReload(apiBase: string, fixtureState: string): Promise<void> {
+  await applyFixtureState(apiBase, fixtureState);
+}
+
+/** Emit a data.changed pulse onto an OPEN run channel via the host's test route
+ *  (the deterministic SSE→refetch trigger — mirrors the product emit-before-done
+ *  without running a real skill). Fails LOUD on a non-200 (a closed/unknown run
+ *  surfaces as the host's 400). */
+async function emitDataChanged(
+  apiBase: string,
+  runId: string,
+  kinds: string[],
+): Promise<void> {
+  const res = await fetch(`${apiBase}/__e2e/emit-data-changed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: runId, kinds }),
+  });
+  if (!res.ok) {
+    throw new Error(`emit-data-changed (run ${runId}) failed: HTTP ${res.status} ${await res.text()}`);
+  }
+}
+
 /** Newest mtime (ms) under a directory tree (UI dist staleness probe). */
 function newestMtimeUnder(dir: string): number {
   let newest = 0;
@@ -1067,6 +1094,44 @@ async function driveUiOnlyStep(args: {
     } else {
       await driver.reloadBrowser(stepMaxMs);
     }
+  }
+
+  // ---- realtime-reactivity proof (data_arriving) -------------------------
+  // The ui_actions just opened a run stream in the rail (the rail subscribes
+  // to /stream-v2). Grow the data WITHOUT reloading the SPA, then emit a
+  // data.changed pulse onto that OPEN run channel. The dashboard's SSE→refetch
+  // path must refresh the stale view IN PLACE — the dom_state anchors below are
+  // scored AFTER the pulse with NO reload between the change and the assert, so
+  // a passing count anchor can only have come from the pulse-driven refetch.
+  if (step.dataArriving !== null) {
+    // The ui_actions started a run; wait for the SPA to land on its /runs/:id
+    // route (the rail subscribes to that run's /stream-v2 — the channel the
+    // pulse rides). A run that never opened a route is a setup bug → fail loud.
+    const openRunId = await driver.waitForRunRoute(prevRunId, stepMaxMs).catch(() => null);
+    if (openRunId === null) {
+      fail(`step "${step.id}": data_arriving needs an OPEN run stream (no /runs/:id route shown after ui_actions)`);
+    }
+    // Grow the seeded world (the new rows the pulse will surface), SPA untouched.
+    await applyFixtureSeedNoReload(host.apiBase, step.dataArriving.growFixtureState);
+    // The pulse on the open channel → the SPA refetches the named kinds.
+    await emitDataChanged(host.apiBase, openRunId, step.dataArriving.kinds);
+    // The refetch lands asynchronously (GET → state → re-render). Settle on the
+    // step's count anchor BEFORE scoring, so the count assert reads the grown
+    // (pulse-refreshed) view, not the pre-pulse snapshot. The wait throwing
+    // would mean the pulse never refreshed the view — a real RED.
+    const countAnchor = step.anchors.find(
+      (a): a is Extract<(typeof step.anchors)[number], { kind: "dom_state" }> =>
+        a.kind === "dom_state" && a.expect === "count" && a.count !== undefined,
+    );
+    if (countAnchor !== undefined) {
+      await driver.waitForTestidCount(
+        countAnchor.testid,
+        countAnchor.count!,
+        countAnchor.match ?? "exact",
+        stepMaxMs,
+      );
+    }
+    await driver.screenshot("data-changed-emitted");
   }
 
   // Score the dom_state anchors against the live page (recordDomState pushes a

@@ -373,6 +373,90 @@ describe("terminal text frame — resolution provenance copy", () => {
   });
 });
 
+describe("data.changed pulse — fresh-by-default auto-refresh", () => {
+  it("a successful run emits exactly one data.changed{profile_id, kinds} BEFORE done (not discarded)", async () => {
+    const pubsub = new RunPubSub();
+    // geosearch success carries searchProfileId — the pulse reads it for scope.
+    const svc = new SkillRunService(
+      fakeMastra([
+        {
+          status: "success",
+          result: { summary: "Registered 3 new dealer candidate(s).", searchProfileId: "prof-7" },
+        },
+      ]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_geosearch",
+      input: { search_profile_id: "prof-7" },
+    });
+
+    const kinds = pubsub.snapshot(runId).map((e) => e.kind);
+    // Ordering: ... text → data.changed → done (the pulse is NOT discarded by
+    // the single-terminal invariant because it lands BEFORE done).
+    expect(kinds).toEqual(["init", "text", "data.changed", "done"]);
+    const pulse = pubsub.snapshot(runId).find((e) => e.kind === "data.changed")!;
+    expect(pulse.payload).toEqual({ profile_id: "prof-7", kinds: ["dealers"] });
+    // Exactly one pulse.
+    expect(pubsub.snapshot(runId).filter((e) => e.kind === "data.changed")).toHaveLength(1);
+  });
+
+  it("the affectedKinds mapping is keyed on the skill (intake → profiles+sessions)", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(fakeMastra([SUSPEND_COLLECT, SUCCESS_CREATED]), pubsub);
+    const { runId } = await svc.start({
+      skill: "search_profile_intake",
+      input: { input_mode: "slash", freeform_text: null, seed_fields: null },
+    });
+    await svc.formDecision(runId, {
+      decision_id: svc.pendingOf(runId)!.decisionId,
+      decision: { action: "accept", content: validContent() },
+    });
+    const pulse = pubsub.snapshot(runId).find((e) => e.kind === "data.changed")!;
+    expect(pulse.payload["kinds"]).toEqual(["profiles", "sessions"]);
+  });
+
+  it("a DECLINED run emits NO data.changed (only the aborted terminal)", async () => {
+    const { svc, pubsub, runId, decisionId } = await startedToCollect([
+      SUSPEND_COLLECT,
+      SUCCESS_DECLINED,
+    ]);
+    await svc.formDecision(runId, { decision_id: decisionId, decision: { action: "decline" } });
+    const kinds = pubsub.snapshot(runId).map((e) => e.kind);
+    expect(kinds).not.toContain("data.changed");
+    expect(kinds[kinds.length - 1]).toBe("aborted");
+  });
+
+  it("a FAILED run emits NO data.changed (only the error terminal)", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([{ status: "failed", error: new Error("boom") }]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_geosearch",
+      input: { search_profile_id: null },
+    });
+    const kinds = pubsub.snapshot(runId).map((e) => e.kind);
+    expect(kinds).not.toContain("data.changed");
+    expect(kinds[kinds.length - 1]).toBe("error");
+  });
+
+  it("a profile-less success pulses with profile_id null (refetches unscoped)", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([{ status: "success", result: { summary: "done" } }]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_geosearch",
+      input: { search_profile_id: null },
+    });
+    const pulse = pubsub.snapshot(runId).find((e) => e.kind === "data.changed")!;
+    expect(pulse.payload["profile_id"]).toBeNull();
+  });
+});
+
 describe("formDecision — decline terminal projection", () => {
   it("decline → aborted wire frame + the run reads declined in status summary", async () => {
     const { svc, pubsub, runId, decisionId } = await startedToCollect([

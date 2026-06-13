@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App.js";
 import { ApiClient } from "./api/client.js";
+import { resetDataRefetchForTests } from "./api/useDataChanged.js";
 import { render, change, click } from "./test/render.js";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -121,6 +122,7 @@ beforeEach(() => {
   window.history.pushState({}, "", "/");
 });
 afterEach(() => {
+  resetDataRefetchForTests();
   vi.restoreAllMocks();
 });
 
@@ -531,6 +533,69 @@ describe("App — zone-4 browser trail + live screenshot (transient)", () => {
     expect(r.get("assistant-turn").getAttribute("data-status")).toBe("done");
     expect(r.query("turn-browser-trail")).toBeNull();
     expect(r.query("turn-browser-screenshot")).toBeNull();
+    r.unmount();
+  });
+});
+
+describe("App — data.changed pulse auto-refreshes a stale view (no reload)", () => {
+  it("a data.changed{kinds:['dealers']} part refetches the dealer tiles in place", async () => {
+    // The active profile makes the Canvas render its dealer projection; the
+    // dealer endpoint GROWS from 1 → 2 rows on the SECOND call, so a refresh is
+    // observable. Count the dealer GETs to prove the pulse triggered a refetch.
+    const profile = { search_profile_id: "prof-1", make: "Hyundai", model: "Tucson Hybrid", year: 2026 };
+    let dealerGets = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const json = (body: unknown, status = 200): Response =>
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+      if (url.includes("/stream-v2")) return new MockStream(url).response;
+      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x" });
+      if (url.endsWith("/api/skills"))
+        return json([{ name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, retries: 1 }]);
+      if (url.includes("/dealers")) {
+        dealerGets += 1;
+        const rows =
+          dealerGets >= 2
+            ? [{ dealer_id: "d1", name: "A" }, { dealer_id: "d2", name: "B" }]
+            : [{ dealer_id: "d1", name: "A" }];
+        return json(rows);
+      }
+      if (url.includes("/api/profiles")) return json([profile]);
+      if (url.includes("/api/sessions")) return json({ id: "s1", title: null, created_at: "x", last_activity_at: "x", pinned_profile_id: null, scope_notice: null, last_run_id: null, archived: false });
+      if (url.endsWith("/api/skill-runs") && init?.method === "POST")
+        return json({ run_id: "run-dc", session_id: "s1", scope_notice: null }, 201);
+      return json({ error: { code: "nf", message: "x" } }, 404);
+    }) as typeof fetch;
+
+    const client = new ApiClient({ fetchImpl });
+    const r = render(<App client={client} />);
+    await flush();
+
+    // One dealer tile from the initial mount fetch.
+    expect(r.all("canvas-dealer-tile")).toHaveLength(1);
+    const dealerGetsAfterMount = dealerGets;
+
+    // Start a run so the rail opens a stream the pulse can ride. With an active
+    // profile the Canvas shows the profile card (not the empty-state CTA), so
+    // launch intake via the chat-rail slash.
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/search_profile_intake");
+    click(r.get("chat-send"));
+    await flush();
+    const stream = MockStream.instances[0]!;
+    stream.emit({ type: "start", messageId: "run-dc" });
+
+    // The data.changed pulse (a persisted data-frame) → onData → invalidate
+    // (['dealers']) → the Canvas dealer view refetches IN PLACE (no reload).
+    stream.emit({
+      type: "data-frame",
+      id: "frame-1",
+      data: { kind: "data.changed", payload: { profile_id: "prof-1", kinds: ["dealers"] } },
+    });
+    await flush();
+
+    // The refetch fired (dealer GET count grew) and the grown row rendered.
+    expect(dealerGets).toBeGreaterThan(dealerGetsAfterMount);
+    expect(r.all("canvas-dealer-tile")).toHaveLength(2);
     r.unmount();
   });
 });
