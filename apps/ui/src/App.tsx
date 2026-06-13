@@ -37,7 +37,14 @@ import { Chat, useChat } from "@ai-sdk/react";
 import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
 import { invalidate, useRefocusRefetch } from "./api/useDataChanged.js";
-import type { IntakeScopeNotice, Mode, SkillManifest, SkillList, StartAck } from "./api/wire.js";
+import type {
+  IntakeScopeNotice,
+  KeyPresenceResponse,
+  Mode,
+  SkillManifest,
+  SkillList,
+  StartAck,
+} from "./api/wire.js";
 import { Canvas } from "./canvas/Canvas.js";
 import {
   EMPTY_BROWSER_VIEW,
@@ -58,6 +65,7 @@ import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
 import { ChatRail } from "./rail/ChatRail.js";
 import { NotFound } from "./routes/NotFound.js";
 import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
+import { Settings } from "./routes/Settings.js";
 import { navigate, useRoute } from "./router.js";
 import { TopBar } from "./shell/TopBar.js";
 import { useLayout } from "./store/layout.js";
@@ -72,7 +80,27 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const route = useRoute();
   const mode = useAsync<Mode>(() => client.getMode(), []);
   const skills = useAsync<SkillList>(() => client.listSkills(), []);
+  // Key presence — the SINGLE source for both the Settings panel AND the
+  // first-run gate. deepseekReady drives whether skills can launch; saving the
+  // key in Settings calls keyPresence.refetch() → the gate clears with no reload.
+  const keyPresence = useAsync<KeyPresenceResponse>(() => client.getKeyPresence(), []);
+  const deepseekReady = keyPresence.kind === "ok" ? keyPresence.data.deepseek.present : true;
   const layoutMode = useLayout((s) => s.mode);
+
+  // First-run gate: on a fresh install (no DeepSeek key) land the owner on
+  // Settings once, framing setup. Only redirect from the home route (a direct
+  // deep link or an in-progress run is left alone), and only once the presence
+  // read has resolved (never on the optimistic loading default).
+  const redirectedRef = useRef(false);
+  useEffect(() => {
+    if (keyPresence.kind !== "ok") return;
+    if (keyPresence.data.deepseek.present) return;
+    if (redirectedRef.current) return;
+    if (route.name === "home") {
+      redirectedRef.current = true;
+      navigate("/settings");
+    }
+  }, [keyPresence, route]);
 
   // ---- the single chat (never recreated, never unmounted) -------------------
   // onData fires from deep inside the stream processor; route it through a ref
@@ -384,6 +412,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         activeRunId={activeRunId}
         mode={mode}
         pinnedProfileId={pinnedProfileId}
+        deepseekReady={deepseekReady}
         onStartIntake={startIntakeFresh}
         onRunSkill={onRunSkill}
         onPin={onPin}
@@ -408,11 +437,21 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               {launchError}
             </p>
           )}
-          {route.name === "home" && <Canvas client={client} onStartIntake={startIntakeFresh} />}
+          {route.name === "home" && (
+            <Canvas client={client} onStartIntake={startIntakeFresh} deepseekReady={deepseekReady} />
+          )}
           {route.name === "run" && (
-            <Canvas client={client} onStartIntake={startIntakeFresh} runId={route.runId} />
+            <Canvas
+              client={client}
+              onStartIntake={startIntakeFresh}
+              runId={route.runId}
+              deepseekReady={deepseekReady}
+            />
           )}
           {route.name === "profile" && <ProfileWorkspace client={client} profileId={route.profileId} />}
+          {route.name === "settings" && (
+            <Settings client={client} presence={keyPresence} onChanged={keyPresence.refetch} />
+          )}
           {route.name === "not_found" && <NotFound path={route.path} />}
         </main>
 

@@ -45,6 +45,7 @@ import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { emptyHome } from "./emptyHome.js";
+import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { multiActive } from "./multiActive.js";
 
 /** One named deterministic world the functional lane can install. */
@@ -69,6 +70,8 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [closedOnly.id]: closedOnly,
   [dataArriving.id]: dataArriving,
   [dataArrivingGrown.id]: dataArrivingGrown,
+  [keysUnset.id]: keysUnset,
+  [keysUnsetReclear.id]: keysUnsetReclear,
 };
 
 /** Resolve a fixture state by id, failing LOUD on an unknown id. */

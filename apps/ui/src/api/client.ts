@@ -32,9 +32,12 @@ import {
   DealerListSchema,
   ErrorEnvelopeSchema,
   FormDecisionAckSchema,
+  KeyPresenceResponseSchema,
+  KeyProbeResultSchema,
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
+  SaveKeyAckSchema,
   SessionListSchema,
   SessionResponseSchema,
   SkillListSchema,
@@ -44,11 +47,14 @@ import {
   type DealerList,
   type FormDecisionAck,
   type FormDecisionBody,
+  type KeyPresenceResponse,
+  type KeyProbeResult,
   type Mode,
   type PatchProfileBody,
   type PatchSessionBody,
   type ProfileList,
   type ProfileRow,
+  type SecretKeyId,
   type SessionList,
   type SessionResponse,
   type SkillList,
@@ -266,6 +272,52 @@ export class ApiClient {
   async getMode(): Promise<Mode> {
     const res = await this.fetchImpl(this.url("/api/mode"));
     return decode(res, ModeSchema);
+  }
+
+  // ---- settings / keys (the four managed API keys; presence-only reads) -----
+
+  /** GET /api/settings/keys → presence-only map + the Gmail slot (routes.ts:599).
+   *  A key VALUE is never returned — only whether each id is configured. */
+  async getKeyPresence(): Promise<KeyPresenceResponse> {
+    const res = await this.fetchImpl(this.url("/api/settings/keys"));
+    return decode(res, KeyPresenceResponseSchema);
+  }
+
+  /** POST /api/settings/keys → { ok:true } (routes.ts:606). Stores the key + sets
+   *  the live env var so the NEXT model/geocode call sees it (no restart). */
+  async saveKey(id: SecretKeyId, value: string): Promise<void> {
+    const res = await this.fetchImpl(this.url("/api/settings/keys"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, value }),
+    });
+    await decode(res, SaveKeyAckSchema);
+  }
+
+  /** DELETE /api/settings/keys/:id → 204 (routes.ts:613). Resolves void on
+   *  success; an unknown id → 400 unknown_key. */
+  async clearKey(id: SecretKeyId): Promise<void> {
+    const res = await this.fetchImpl(this.url(`/api/settings/keys/${encodeURIComponent(id)}`), {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      throw apiErrorFrom(res.status, parseJson(await res.text()));
+    }
+  }
+
+  /** POST /api/settings/keys/:id/test → the probe verdict (routes.ts:624). The
+   *  body carries the CANDIDATE value so a key can be tested BEFORE Save. A
+   *  failed probe is a normal 200 { ok:false, detail } — not an HTTP error. */
+  async testKey(id: SecretKeyId, value: string): Promise<KeyProbeResult> {
+    const res = await this.fetchImpl(
+      this.url(`/api/settings/keys/${encodeURIComponent(id)}/test`),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value }),
+      },
+    );
+    return decode(res, KeyProbeResultSchema);
   }
 
   // ---- sessions (chat-rail = Mastra Memory threads) -------------------------

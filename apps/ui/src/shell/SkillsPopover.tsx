@@ -47,12 +47,19 @@ export function groupSkillsByReadiness(
   return { ready, blocked };
 }
 
+/** The first-run lock pointer: with no DeepSeek key NOTHING can launch (even
+ *  intake needs the model), so the whole list is disabled with this hint. */
+export const DEEPSEEK_LOCK_TIP = "Add your DeepSeek key in Settings first.";
+
 export interface SkillsPopoverProps {
   skills: SkillManifest[];
   /** The session's TRUE pinned profile id (hydrated), or null when unpinned. */
   pin: string | null;
   /** Whether at least one ACTIVE profile exists (popover-open refetch). */
   hasActiveProfile: boolean;
+  /** Whether the required DeepSeek key is configured. When false, EVERY skill is
+   *  locked (no model = nothing runs) with the Settings pointer. */
+  deepseekReady: boolean;
   onRun: (skill: SkillManifest) => void;
 }
 
@@ -90,7 +97,27 @@ function SkillRows({
   );
 }
 
-export function SkillsPopoverList({ skills, pin, hasActiveProfile, onRun }: SkillsPopoverProps): JSX.Element {
+export function SkillsPopoverList({
+  skills,
+  pin,
+  hasActiveProfile,
+  deepseekReady,
+  onRun,
+}: SkillsPopoverProps): JSX.Element {
+  // First-run gate wins over the readiness grouping: with no DeepSeek key no
+  // skill (intake included) can run, so the whole list is disabled and points
+  // the owner to Settings — the gate must render before any launchable row.
+  if (!deepseekReady) {
+    return (
+      <div data-testid="skills-list">
+        <p className="muted" data-testid="skills-locked-notice">
+          {DEEPSEEK_LOCK_TIP}
+        </p>
+        <SkillRows skills={skills} disabled tip={DEEPSEEK_LOCK_TIP} onRun={onRun} />
+      </div>
+    );
+  }
+
   const groups = groupSkillsByReadiness(skills, { pin, hasActiveProfile });
   return (
     <div data-testid="skills-list">

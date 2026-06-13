@@ -17,11 +17,13 @@ export type Route =
   | { name: "home" }
   | { name: "run"; runId: string }
   | { name: "profile"; profileId: string }
+  | { name: "settings" }
   | { name: "not_found"; path: string };
 
 /** Parse a pathname into a typed Route. Order: most-specific first. */
 export function matchRoute(pathname: string): Route {
   if (pathname === "/" || pathname === "") return { name: "home" };
+  if (pathname === "/settings" || pathname === "/settings/") return { name: "settings" };
   const run = /^\/runs\/([^/]+)\/?$/.exec(pathname);
   if (run) return { name: "run", runId: decodeURIComponent(run[1]!) };
   const profile = /^\/profiles\/([^/]+)\/?$/.exec(pathname);

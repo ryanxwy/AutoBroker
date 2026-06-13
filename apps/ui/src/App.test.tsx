@@ -79,6 +79,14 @@ function mockFetch(
       return new MockStream(url).response;
     }
     if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x" });
+    if (url.endsWith("/api/settings/keys"))
+      return json({
+        deepseek: { present: true },
+        anthropic: { present: false },
+        openai: { present: false },
+        google_places: { present: true },
+        gmail: { connected: false },
+      });
     if (url.endsWith("/api/skills"))
       return json([
         { name: "search_profile_intake", version: "1", summary: "Create a search", inputs: ["freeform"], outputs: "profile", sensitive: false, retries: 1 },
@@ -596,6 +604,69 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
     // The refetch fired (dealer GET count grew) and the grown row rendered.
     expect(dealerGets).toBeGreaterThan(dealerGetsAfterMount);
     expect(r.all("canvas-dealer-tile")).toHaveLength(2);
+    r.unmount();
+  });
+});
+
+describe("App — first-run gate (no DeepSeek key)", () => {
+  /** A mock fetch reporting DeepSeek ABSENT; otherwise the standard routes. */
+  function noDeepseekFetch(): typeof fetch {
+    return (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const json = (body: unknown, status = 200): Response =>
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x" });
+      if (url.endsWith("/api/settings/keys"))
+        return json({
+          deepseek: { present: false },
+          anthropic: { present: false },
+          openai: { present: false },
+          google_places: { present: false },
+          gmail: { connected: false },
+        });
+      if (url.endsWith("/api/skills"))
+        return json([
+          { name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, retries: 1 },
+        ]);
+      if (url.includes("/dealers")) return json([]);
+      if (url.includes("/api/profiles")) return json([]);
+      if (url.includes("/api/sessions")) return json([]);
+      return json({ error: { code: "nf", message: "x" } }, 404);
+    }) as typeof fetch;
+  }
+
+  it("with no DeepSeek key, App auto-navigates to /settings and the setup strip renders", async () => {
+    const client = new ApiClient({ fetchImpl: noDeepseekFetch() });
+    const r = render(<App client={client} />);
+    await flush(); // resolve mode/skills/profiles/keys → the gate effect fires.
+
+    expect(window.location.pathname).toBe("/settings");
+    expect(r.query("settings-page")).not.toBeNull();
+    expect(r.query("settings-setup-strip")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("the Skills popover is locked (every Run disabled + the Settings pointer) when DeepSeek is absent", async () => {
+    const client = new ApiClient({ fetchImpl: noDeepseekFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    click(r.get("topbar-skills"));
+    await flush();
+    expect(r.query("skills-locked-notice")).not.toBeNull();
+    expect((r.get("ledger-run-search_profile_intake") as HTMLButtonElement).disabled).toBe(true);
+    r.unmount();
+  });
+
+  it("the canvas Start CTA carries data-deepseek-ready=true when the key is present", async () => {
+    // The standard mockFetch reports DeepSeek present → the CTA is enabled.
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    const cta = r.get("canvas-start-search") as HTMLButtonElement;
+    expect(cta.getAttribute("data-deepseek-ready")).toBe("true");
+    expect(cta.disabled).toBe(false);
     r.unmount();
   });
 });

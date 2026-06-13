@@ -1,0 +1,178 @@
+# harness/cases/keys_setup.func.toml — FUNCTIONAL lane: the centralized Settings
+# → Keys panel + first-run gating, end-to-end (U-F).
+#
+# The fixture-mode host seeds a dummy DeepSeek key by default (so every OTHER
+# case clears the first-run gate); the keys_unset / keys_unset_reclear states
+# CLEAR all four managed keys from the isolated secretsStore + env, staging a
+# genuine fresh-install world. With no DeepSeek key the SPA reads presence, finds
+# it absent, auto-navigates to /settings (the setup framing), and locks skill
+# launch. The probe is STUBBED in the host (a deterministic pass) so the whole
+# loop runs with ZERO live LLM and ZERO live geocode.
+#
+# A kind="ui" step scores its dom_state anchors at the END of its ui_actions, and
+# needs a fixture_state to act on — so the proof is split into two fresh-install
+# steps:
+#   STEP 1 (panel + lock + test→pass): land on /settings → fill the DeepSeek key
+#     → Test connection (stubbed pass) → open the Skills popover. The final DOM
+#     coheres: the setup strip + the key rows + the Gmail shell render, the probe
+#     verdict reads "Connected", AND the Skills popover shows the locked pointer.
+#   STEP 2 (save → unlock, durable): a clean fresh-install start → fill → test →
+#     Save (a REAL secretsStore write, proven by the Saved-badge wait) → reload.
+#     The persisted key is re-read from the keys file, so the setup strip is gone,
+#     the DeepSeek row shows its configured (Clear) state, and the Skills popover
+#     is UNLOCKED (the pointer is gone) — the durable, race-free gate-clear proof.
+#
+# WHY THIS IS A REAL END-TO-END PROOF: the lock pointer + setup strip exist only
+# because DeepSeek is absent; they vanish only because Save wrote the key to the
+# secretsStore AND the presence read re-read it. The Test→pass verdict is the
+# stubbed probe (no network). The whole panel→client→route→secretsStore→
+# presence→gate loop runs offline against the fixture-isolated server.
+
+[meta]
+id = "keys_setup_func"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: fresh install — panel renders, skills LOCKED, test → PASS -------
+[[steps]]
+id = "keys_panel_locked"
+kind = "ui"
+fixture_state = "keys_unset"
+purpose = "Fresh install (no DeepSeek key): the SPA auto-lands on /settings with the setup strip + the four key rows + the Gmail shell; Test connection (a stubbed pass) reads Connected; and the Skills popover is locked behind the Settings pointer."
+
+# Open the Keys panel (idempotent with the auto-nav to /settings — deterministic).
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-settings"
+
+# Type a candidate DeepSeek key into the masked input.
+[[steps.ui_actions]]
+verb = "fill"
+testid = "key-input-deepseek"
+value = "sk-functional-candidate"
+
+# Test connection — the host stubbed the probe to a deterministic pass.
+[[steps.ui_actions]]
+verb = "click"
+testid = "key-test-deepseek"
+
+# WAIT for the verdict to render (the click-as-wait blocks on the result node).
+[[steps.ui_actions]]
+verb = "click"
+testid = "key-test-result-deepseek"
+
+# Open the Skills popover (coexists with the /settings page) to assert the lock.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-skills"
+
+# The first-run setup strip is visible (DeepSeek absent).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "settings-setup-strip"
+expect = "visible"
+
+# The four key rows render (data-driven from keyDefs).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "key-row-deepseek"
+expect = "visible"
+
+# The Gmail onboarding shell is present.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "gmail-card"
+expect = "visible"
+
+# The probe verdict rendered as a PASS — the "Connected" copy renders only in the
+# pass state (a fail reads "Failed"); the stubbed-pass proof.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "key-test-result-deepseek"
+expect = "text"
+value = "Connected"
+
+# Skills are LOCKED — the DeepSeek-key Settings pointer is visible in the popover.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "skills-locked-notice"
+expect = "visible"
+
+# ---- step 2: save → the gate clears durably (a real secretsStore write) -----
+[[steps]]
+id = "keys_save_unlock"
+kind = "ui"
+fixture_state = "keys_unset_reclear"
+purpose = "From a clean fresh-install start: fill the DeepSeek key, Test (stubbed pass), Save (a real secretsStore write proven by the Saved-badge wait), reload. The persisted key durably clears the gate: the setup strip is gone, the DeepSeek row shows the configured (Clear) state, and the Skills popover is unlocked."
+
+# Open the Keys panel.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-settings"
+
+# Type + test + save the DeepSeek key.
+[[steps.ui_actions]]
+verb = "fill"
+testid = "key-input-deepseek"
+value = "sk-functional-candidate"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "key-test-deepseek"
+
+# Save — a REAL POST /api/settings/keys write to the isolated secretsStore.
+[[steps.ui_actions]]
+verb = "click"
+testid = "key-save-deepseek"
+
+# WAIT on the in-app Saved badge: the click verb blocks on its selector, which
+# renders ONLY after the POST resolves 200 — so this verb is itself the
+# save-succeeded proof (a non-200 / no-fire times out RED here).
+[[steps.ui_actions]]
+verb = "click"
+testid = "key-saved-deepseek"
+
+# Reload re-reads the persisted keys file (a real browser reload of /settings) —
+# the gate state is now re-derived from the DURABLE key, not the in-memory
+# refetch, so the assertions below are race-free.
+[[steps.ui_actions]]
+verb = "reload"
+testid = "app-main"
+
+# Open the Skills popover on the unlocked world (coexists with /settings).
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-skills"
+
+# DURABLE gate-clear: the setup strip is gone after the reload — presence was
+# re-read from the persisted keys file (it was visible in step 1's fresh world).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "settings-setup-strip"
+expect = "absent"
+
+# The DeepSeek key is durably PRESENT — the Clear button renders only for a
+# configured key (the masked "•••• stored" row), proving the save persisted.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "key-clear-deepseek"
+expect = "visible"
+
+# Skills are UNLOCKED — the DeepSeek lock pointer is gone (it was visible in
+# step 1); the popover list renders the normal ready/blocked grouping.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "skills-locked-notice"
+expect = "absent"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "skills-list"
+expect = "visible"

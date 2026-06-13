@@ -48,7 +48,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildServer } from "@autobroker/server";
-import { openDb, resolveDataDir } from "@autobroker/tools";
+import { __setSecretsProbeForTests, openDb, resolveDataDir } from "@autobroker/tools";
 import {
   __setIntakeDepsForTests,
   resetMastraForTests,
@@ -203,10 +203,21 @@ async function main(): Promise<void> {
 
   if (FIXTURE_MODE) {
     // Arm the workflows test-only deps seam (it refuses outside a test runner)
-    // and give the DeepSeek registry a dummy key so construction never trips —
-    // no live call ever fires through the stubs.
+    // and give the DeepSeek registry a dummy key so construction never trips and
+    // the FIRST-RUN GATE stays satisfied for every case that does NOT opt into
+    // the no-keys world — no live call ever fires through the stubs. The
+    // keys_setup fixture state CLEARS this default to stage the fresh-install
+    // world it proves the save flow against.
     process.env.NODE_ENV = "test";
     process.env.DEEPSEEK_API_KEY ??= "fixture-dummy-not-used";
+    // STUB THE KEY PROBE: the "Test connection" verb must make ZERO real external
+    // calls in the functional lane. Inject a deterministic pass for every id (the
+    // candidate is never inspected) so the keys_setup case's Test → pass → Save
+    // flow is fully offline. The seam refuses outside a test runner (set above).
+    __setSecretsProbeForTests({
+      probeLlm: async (id) => ({ ok: true, detail: `${id} key accepted (stub)` }),
+      probeGeocode: async () => ({ ok: true, detail: "google_places key accepted (stub)" }),
+    });
   }
 
   const dataDir = resolveDataDir();

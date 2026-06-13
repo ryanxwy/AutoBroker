@@ -22,6 +22,7 @@ import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
 import type { DealerList, DealerRow, ProfileList } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
+import { Link } from "../router.js";
 import { ProfileEditPanel } from "./ProfileEditPanel.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 
@@ -37,6 +38,9 @@ export interface CanvasProps {
   onStartIntake: () => void;
   /** Present when rendered at /runs/:id — binds the workbench to that run. */
   runId?: string | null;
+  /** Whether the required DeepSeek key is configured. When false, the start CTA
+   *  is disabled and points to Settings (the first-run gate). */
+  deepseekReady?: boolean;
 }
 
 function str(row: DealerRow, key: string): string | null {
@@ -52,7 +56,13 @@ function num(row: DealerRow, key: string): number | null {
 // empty state — the start-here surface (headline + first steps + CTA)
 // ---------------------------------------------------------------------------
 
-function CanvasEmptyState({ onStartIntake }: { onStartIntake: () => void }): JSX.Element {
+function CanvasEmptyState({
+  onStartIntake,
+  deepseekReady,
+}: {
+  onStartIntake: () => void;
+  deepseekReady: boolean;
+}): JSX.Element {
   return (
     <section className="card canvas-empty" data-testid="canvas-empty">
       <h1>Find your next car the smart way</h1>
@@ -70,10 +80,17 @@ function CanvasEmptyState({ onStartIntake }: { onStartIntake: () => void }): JSX
         type="button"
         className="btn-primary"
         data-testid="canvas-start-search"
+        data-deepseek-ready={deepseekReady}
+        disabled={!deepseekReady}
         onClick={onStartIntake}
       >
         Start a new search
       </button>
+      {!deepseekReady && (
+        <p className="muted" data-testid="skills-locked-notice" style={{ marginTop: 10 }}>
+          Add your DeepSeek key in <Link to="/settings">Settings</Link> first.
+        </p>
+      )}
     </section>
   );
 }
@@ -283,7 +300,12 @@ function CanvasFeed({
 // the canvas
 // ---------------------------------------------------------------------------
 
-export function Canvas({ client, onStartIntake, runId = null }: CanvasProps): JSX.Element {
+export function Canvas({
+  client,
+  onStartIntake,
+  runId = null,
+  deepseekReady = true,
+}: CanvasProps): JSX.Element {
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   const active: ProfileSnapshot | null =
     profiles.kind === "ok" && profiles.data.length > 0 ? toSnapshot(profiles.data[0]!) : null;
@@ -312,7 +334,7 @@ export function Canvas({ client, onStartIntake, runId = null }: CanvasProps): JS
         // Mid-run (intake still collecting) the CTA would just duplicate the
         // form in the rail — show the quiet pending line instead.
         runId === null ? (
-          <CanvasEmptyState onStartIntake={onStartIntake} />
+          <CanvasEmptyState onStartIntake={onStartIntake} deepseekReady={deepseekReady} />
         ) : (
           <p className="muted" data-testid="canvas-pending">
             Your search takes shape here as the run progresses.

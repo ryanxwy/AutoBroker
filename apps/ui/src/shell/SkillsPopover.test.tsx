@@ -48,7 +48,13 @@ describe("SkillsPopoverList — rendered Run buttons", () => {
   it("0-active: intake Run is a real enabled <button>, the other is disabled; intake fires onRun", () => {
     const onRun = vi.fn();
     const r = render(
-      <SkillsPopoverList skills={[intake, other]} pin={null} hasActiveProfile={false} onRun={onRun} />,
+      <SkillsPopoverList
+        skills={[intake, other]}
+        pin={null}
+        hasActiveProfile={false}
+        deepseekReady
+        onRun={onRun}
+      />,
     );
     const intakeRun = r.get("ledger-run-search_profile_intake") as HTMLButtonElement;
     const otherRun = r.get("ledger-run-quote_audit") as HTMLButtonElement;
@@ -64,12 +70,32 @@ describe("SkillsPopoverList — rendered Run buttons", () => {
   it("with a pin: the non-intake Run enables and fires onRun", () => {
     const onRun = vi.fn();
     const r = render(
-      <SkillsPopoverList skills={[intake, other]} pin="p1" hasActiveProfile onRun={onRun} />,
+      <SkillsPopoverList skills={[intake, other]} pin="p1" hasActiveProfile deepseekReady onRun={onRun} />,
     );
     const otherRun = r.get("ledger-run-quote_audit") as HTMLButtonElement;
     expect(otherRun.disabled).toBe(false);
     click(otherRun);
     expect(onRun).toHaveBeenCalledWith(other);
+    r.unmount();
+  });
+
+  it("first-run gate (no DeepSeek key): EVERY skill is locked with the Settings pointer", () => {
+    const onRun = vi.fn();
+    const r = render(
+      <SkillsPopoverList
+        skills={[intake, other]}
+        pin="p1"
+        hasActiveProfile
+        deepseekReady={false}
+        onRun={onRun}
+      />,
+    );
+    // The locked notice renders and EVERY row (intake included) is disabled.
+    expect(r.query("skills-locked-notice")).not.toBeNull();
+    const intakeRun = r.get("ledger-run-search_profile_intake") as HTMLButtonElement;
+    const otherRun = r.get("ledger-run-quote_audit") as HTMLButtonElement;
+    expect(intakeRun.disabled).toBe(true);
+    expect(otherRun.disabled).toBe(true);
     r.unmount();
   });
 });

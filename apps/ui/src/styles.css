@@ -998,6 +998,78 @@ details.optional[open] summary { margin-bottom: 10px; }
 }
 [data-testid="slash-autocomplete"] button:hover:not(:disabled) { background: var(--paper); box-shadow: none; }
 
+/* ---- settings / keys ---------------------------------------------------------- */
+/* The top-bar Settings entry — a plain ledger plate matching the mode switch. */
+.topbar-settings {
+  font-family: var(--chrome);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 6px 11px;
+}
+.topbar-settings:hover:not(:disabled) { background: var(--panel); }
+
+.settings-page { max-width: 760px; }
+.settings-page h1 { font-size: 22px; margin-bottom: 14px; }
+.settings-page .scope-notice { margin-bottom: 16px; }
+.settings-page section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 18px 0 12px;
+}
+.settings-page section > h2::after { content: ""; flex: 1; height: 1px; background: var(--rule-soft); }
+
+/* a key row IS a card; the masked input + verbs sit in a flex row below the
+   label + description. */
+.key-row { margin-bottom: 13px; }
+.key-row-label { display: block; font-size: 14px; font-weight: 700; }
+.key-row-desc { margin: 3px 0 10px; max-width: 60ch; }
+.key-row-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.key-row-input {
+  flex: 1;
+  min-width: 220px;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 7px 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.key-row-input:focus {
+  outline: none;
+  border-color: var(--gate);
+  box-shadow: 0 0 0 2px rgba(232, 89, 12, 0.18);
+}
+.key-row-controls button { padding: 7px 12px; font-size: 11px; }
+.key-test-result { margin-top: 10px; }
+.key-test-result.gate-card { padding: 9px 12px; }
+.key-row-missing { margin: 9px 0 0; }
+
+.gmail-card .key-row-controls button:disabled { opacity: 0.45; }
+
+/* visually-hidden — keep requiredness in the accessible name without a glyph. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---- text utilities ---------------------------------------------------------- */
 .muted { color: var(--ink-soft); }
 p.muted, span.muted { font-size: 0.95em; }

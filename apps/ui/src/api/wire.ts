@@ -300,3 +300,41 @@ export const ModeSchema = z.object({
   data_dir: z.string(),
 });
 export type Mode = z.infer<typeof ModeSchema>;
+
+// ---------------------------------------------------------------------------
+// Settings / keys — the four user-supplied API keys + the Gmail slot.
+//   GET    /api/settings/keys              presence ONLY (never a value)
+//   POST   /api/settings/keys {id,value}   store a key  → { ok: true }
+//   DELETE /api/settings/keys/:id          clear a key  → 204
+//   POST   /api/settings/keys/:id/test {value}          → { ok, detail }
+// A failed probe is STILL a 200 carrying { ok:false, detail } — only a
+// malformed request (unknown id / missing value) is a non-2xx.
+// ---------------------------------------------------------------------------
+
+/** The four managed key ids (the stable wire ids the routes accept). */
+export const SECRET_KEY_IDS = ["deepseek", "anthropic", "openai", "google_places"] as const;
+export type SecretKeyId = (typeof SECRET_KEY_IDS)[number];
+
+/** GET /api/settings/keys — the per-id presence map + the Gmail connection slot.
+ *  Presence is boolean: a configured key is `present:true`, the value never
+ *  rides the wire. */
+export const KeyPresenceResponseSchema = z.object({
+  deepseek: z.object({ present: z.boolean() }),
+  anthropic: z.object({ present: z.boolean() }),
+  openai: z.object({ present: z.boolean() }),
+  google_places: z.object({ present: z.boolean() }),
+  gmail: z.object({ connected: z.boolean() }),
+});
+export type KeyPresenceResponse = z.infer<typeof KeyPresenceResponseSchema>;
+
+/** POST /api/settings/keys → { ok:true } on a stored key. */
+export const SaveKeyAckSchema = z.object({ ok: z.literal(true) });
+export type SaveKeyAck = z.infer<typeof SaveKeyAckSchema>;
+
+/** POST /api/settings/keys/:id/test → the probe verdict (ok + a readable
+ *  detail; a failed probe is ok:false, never the key itself). */
+export const KeyProbeResultSchema = z.object({
+  ok: z.boolean(),
+  detail: z.string(),
+});
+export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;

@@ -21,7 +21,7 @@ import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import type { Mode, ProfileList, SessionList, SkillList, SkillManifest, SkillRunSummary } from "../api/wire.js";
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
-import { Link } from "../router.js";
+import { Link, navigate } from "../router.js";
 import { useLayout } from "../store/layout.js";
 import { ClosedSearchesGroup } from "./ClosedSearchesGroup.js";
 import { Popover } from "./Popover.js";
@@ -75,6 +75,9 @@ export interface TopBarProps {
   mode: AsyncState<Mode>;
   /** The current session's TRUE pin (hydrated by App), or null. */
   pinnedProfileId: string | null;
+  /** Whether the required DeepSeek key is configured. When false, skill launch
+   *  is gated (the first-run setup state). */
+  deepseekReady: boolean;
   onStartIntake: () => void;
   onRunSkill: (skill: SkillManifest) => void;
   /** Pin the CURRENT session to a profile (creates a session when none). */
@@ -90,6 +93,7 @@ export function TopBar({
   activeRunId,
   mode,
   pinnedProfileId,
+  deepseekReady,
   onStartIntake,
   onRunSkill,
   onPin,
@@ -225,6 +229,7 @@ export function TopBar({
               skills={skills.data}
               pin={pinnedProfileId}
               hasActiveProfile={hasActiveProfile}
+              deepseekReady={deepseekReady}
               onRun={(skill) => {
                 close();
                 onRunSkill(skill);
@@ -262,6 +267,17 @@ export function TopBar({
           Chat
         </button>
       </div>
+
+      {/* Settings — a full surface (the Keys panel), not a dropdown: a plain
+          ledger button that routes to /settings. */}
+      <button
+        type="button"
+        className="topbar-settings"
+        data-testid="topbar-settings"
+        onClick={() => navigate("/settings")}
+      >
+        Settings
+      </button>
 
       <details className="diagnostics" data-testid="topbar-diagnostics">
         <summary>Diagnostics</summary>
