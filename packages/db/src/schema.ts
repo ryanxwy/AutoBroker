@@ -588,3 +588,64 @@ export const messageAttachments = sqliteTable("message_attachments", {
 	index("idx_message_attachments_message_id").on(table.messageId),
 ]);
 
+// ── Fake mailbox sandbox (TS-owned; no legacy/oracle equivalent) ─────────────
+// These four tables are the deterministic, local-only Gmail backend that the
+// FakeGmailAdapter reads and writes. They are a SEPARATE sandbox from the
+// PRODUCT email tables (threads / messages / message_attachments) and never
+// hold real-mailbox rows. The product extractor keeps using message_attachments
+// for real attachment provenance; the fake adapter stores its own bytes in
+// fake_mailbox_attachments keyed to fake_mailbox_messages.
+
+export const fakeMailboxThreads = sqliteTable("fake_mailbox_threads", {
+	threadId: text("thread_id").primaryKey().notNull(),
+	subject: text(),
+	searchProfileId: text("search_profile_id"),
+},
+(table) => [
+	index("idx_fake_mailbox_threads_profile").on(table.searchProfileId),
+]);
+
+export const fakeMailboxMessages = sqliteTable("fake_mailbox_messages", {
+	messageId: text("message_id").primaryKey().notNull(),
+	threadId: text("thread_id").notNull().references(() => fakeMailboxThreads.threadId),
+	// The base64url RFC-2822 raw — the byte-identical seam shared with a real send.
+	raw: text().notNull(),
+	to: text().notNull(),
+	from: text().notNull(),
+	subject: text(),
+	// Monotonic epoch-ms receive timestamp — the strictly-increasing ordering key
+	// the adapter's getCurrentHistoryId() and the sync watermark trust.
+	internalDateMs: integer("internal_date_ms").notNull(),
+	direction: text().notNull(),
+	// 1 when the (outbound) message is "delivered" into the sandbox, 0 otherwise.
+	isDelivered: integer("is_delivered").default(1).notNull(),
+	searchProfileId: text("search_profile_id"),
+},
+(table) => [
+	check("ck_fake_mailbox_messages_direction", sql`direction IN ('inbound', 'outbound')`),
+	check("ck_fake_mailbox_messages_is_delivered_bool", sql`is_delivered IN (0, 1)`),
+	index("idx_fake_mailbox_messages_thread").on(table.threadId),
+	index("idx_fake_mailbox_messages_internal_date").on(table.internalDateMs),
+	index("idx_fake_mailbox_messages_profile").on(table.searchProfileId),
+]);
+
+export const fakeMailboxAttachments = sqliteTable("fake_mailbox_attachments", {
+	attachmentId: text("attachment_id").primaryKey().notNull(),
+	messageId: text("message_id").notNull().references(() => fakeMailboxMessages.messageId),
+	filename: text().notNull(),
+	mimeType: text("mime_type").notNull(),
+	size: integer().notNull(),
+	// The attachment's decoded bytes as a base64 string (JSON-as-text, no BLOB):
+	// the fake side fetches these back through downloadAttachment().
+	dataBase64: text("data_base64").notNull(),
+},
+(table) => [
+	index("idx_fake_mailbox_attachments_message").on(table.messageId),
+]);
+
+export const sandboxState = sqliteTable("sandbox_state", {
+	key: text().primaryKey().notNull(),
+	value: text(),
+	updatedAt: numeric("updated_at").default(sql`(CURRENT_TIMESTAMP)`),
+});
+
