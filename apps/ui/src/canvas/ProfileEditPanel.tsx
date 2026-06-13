@@ -307,16 +307,15 @@ export function ProfileEditPanel({
     if (values !== null) firstFieldRef.current?.focus();
   }, [values]);
 
-  // The brief green "Saved" badge shows ~2s after a 200, THEN the read views
-  // refresh and the host exits. The invalidate (which flips the profile list
-  // back to loading → re-renders the read view) is deferred to this exit moment
-  // ON PURPOSE: doing it at save time would unmount this very panel before the
-  // badge could paint. So during the badge window the panel stays mounted; at
-  // the 2s mark the chips refresh and the host closes the panel together.
+  // On a 200 the read views refresh IMMEDIATELY (invalidate fires at save time,
+  // below). The shared profile fetch is stale-while-revalidate, so the refetch
+  // keeps the active profile on screen — this panel is NOT unmounted out from
+  // under itself, the chips just refresh in place. The brief green "Saved" badge
+  // then fades on its own ~2s timer (a pure confirmation, decoupled from the
+  // refresh); at that mark the host exits edit mode and the read view returns.
   useEffect(() => {
     if (saveState.kind !== "saved") return;
     const t = setTimeout(() => {
-      invalidate(["profiles"]);
       onSaved();
     }, 2000);
     return () => clearTimeout(t);
@@ -360,9 +359,11 @@ export function ProfileEditPanel({
     setSaveState({ kind: "saving" });
     try {
       await client.patchProfile(profileId, buildPatch(values));
-      // The write landed — flip to the success badge. The read-view refresh
-      // (invalidate) is deferred to the badge-window effect above so the badge
-      // is not unmounted out from under itself.
+      // The write landed — refresh the read views NOW (stale-while-revalidate
+      // keeps the profile mounted, so the chips update promptly without
+      // unmounting this panel) and flip to the success badge, which fades on its
+      // own timer.
+      invalidate(["profiles"]);
       setSaveState({ kind: "saved" });
     } catch (e: unknown) {
       if (e instanceof ApiError && e.status === 409 && e.code === "identity_locked") {

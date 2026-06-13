@@ -134,7 +134,7 @@ describe("ProfileEditPanel — render + edit + save", () => {
     r.unmount();
   });
 
-  it("a Save fires the PATCH with the JSON-serialized arrays, then invalidate + onSaved fire", async () => {
+  it("a Save fires the PATCH with the JSON-serialized arrays; invalidate fires immediately, onSaved at the fade", async () => {
     const patched: Array<Record<string, unknown>> = [];
     const onSaved = vi.fn();
     const invalidateSpy = vi.spyOn(dataChanged, "invalidate");
@@ -161,17 +161,18 @@ describe("ProfileEditPanel — render + edit + save", () => {
     expect("make" in patched[0]!).toBe(false);
     expect("year" in patched[0]!).toBe(false);
 
-    // The success badge shows immediately; the read-view refresh + exit are
-    // deferred to the ~2s mark (so the badge is not unmounted before it paints).
+    // The success badge shows immediately AND the read views refresh now
+    // (invalidate at save time — stale-while-revalidate keeps the profile
+    // mounted, so the badge is not unmounted out from under itself). Only the
+    // host exit (onSaved) waits for the ~2s badge fade.
     expect(r.query("profile-edit-saved")).not.toBeNull();
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith(["profiles"]);
     expect(onSaved).not.toHaveBeenCalled();
 
-    // At the 2s mark: the read views refresh (invalidate) AND the host exits.
+    // At the 2s mark the host exits edit mode.
     await act(async () => {
       vi.advanceTimersByTime(2100);
     });
-    expect(invalidateSpy).toHaveBeenCalledWith(["profiles"]);
     expect(onSaved).toHaveBeenCalledTimes(1);
     r.unmount();
   });
