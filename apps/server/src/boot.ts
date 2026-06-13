@@ -40,6 +40,7 @@ import {
   restartStaleRun,
   type BootRecoveryReport,
 } from "@autobroker/workflows";
+import { loadSecretsIntoEnv } from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
  *  import — the dependency wall forbids it in the app layer). */
@@ -74,6 +75,12 @@ export interface BootResult {
 export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> {
   // (1) Telemetry kill — belt before construction (honored since core 1.37.0).
   process.env.MASTRA_TELEMETRY_DISABLED ??= "1";
+
+  // (1b) Seed the user-supplied API keys into process.env from the persisted
+  // keys file BEFORE the registry / Mastra is constructed, so the first provider
+  // call and the first geocode see the stored keys (the providers + geocoder
+  // resolve their key from the env at call time). Missing file = no-op.
+  loadSecretsIntoEnv();
 
   // (2) Library-mode instance with the skill workflows registered. The registry
   // module import re-registers the step closures deterministically (runtimeGlue).

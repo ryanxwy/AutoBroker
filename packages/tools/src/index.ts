@@ -256,6 +256,26 @@ export {
   type ValidationResult,
 } from "./validators.js";
 
+// Settings — the centralized at-rest store + "test before save" probe for the
+// four user-supplied API keys (the only code that reads/writes the keys file or
+// mutates a provider env var). Routes delegate down into this surface.
+export {
+  loadSecretsIntoEnv,
+  getKeyPresence,
+  setKey,
+  clearKey,
+  testKey,
+  __setSecretsProbeForTests,
+  __resetSecretsProbeForTests,
+  UnknownSecretKeyError,
+  SECRET_KEY_IDS,
+  type SecretKeyId,
+  type KeyPresence,
+  type KeyPresenceMap,
+  type KeyProbeResult,
+  type SecretsProbeDeps,
+} from "./settings/index.js";
+
 // goplaces — the ONLY external API in intake (read-only Google Geocoding).
 export {
   resolveLocation,

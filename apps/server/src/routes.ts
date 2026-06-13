@@ -47,6 +47,11 @@ import {
   update as updateProfile,
   close as closeProfile,
   restore as restoreProfile,
+  getKeyPresence,
+  setKey,
+  clearKey,
+  testKey,
+  SECRET_KEY_IDS,
   IdentityLockedError,
   ActiveSlotConflict,
   ProfileBusyError,
@@ -153,6 +158,19 @@ export class RouteError extends Error {
     if (opts.extra !== undefined) this.extra = opts.extra;
   }
 }
+
+/** POST /api/settings/keys — store a key. `id` must be one of the four; `value`
+ *  is the secret (never echoed back). */
+const SaveKeyBodySchema = z.object({
+  id: z.enum(SECRET_KEY_IDS as unknown as [string, ...string[]]),
+  value: z.string().min(1),
+});
+
+/** POST /api/settings/keys/:id/test — body carries the CANDIDATE value to probe
+ *  (the id rides the path). */
+const TestKeyBodySchema = z.object({
+  value: z.string().min(1),
+});
 
 /** Dependencies the route module needs (the server wires these). */
 export interface RouteDeps {
@@ -569,6 +587,50 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const dataDir = resolveDataDir();
     const activeDb = process.env.AUTOBROKER_DB ?? `${dataDir}/autobroker.db`;
     return { active_db: activeDb, data_dir: dataDir };
+  });
+
+  // ========================================================================
+  // settings/keys — the four user-supplied API keys. The route layer NEVER
+  // reads/writes the keys file or holds a secret; it delegates to the tools
+  // secretsStore/probe. A key VALUE is never returned on any of these.
+  // ========================================================================
+
+  // ---- GET /api/settings/keys — presence only (never a value) --------------
+  app.get("/api/settings/keys", async () => {
+    // gmail is a placeholder (the OAuth connect wiring lands separately); report
+    // it not-connected so the UI can render the slot without a real signal yet.
+    return { ...getKeyPresence(), gmail: { connected: false } };
+  });
+
+  // ---- POST /api/settings/keys — store a key (live env mutation in tools) --
+  app.post("/api/settings/keys", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const body = parseBody(SaveKeyBodySchema, req.body);
+    setKey(body.id, body.value);
+    return { ok: true };
+  });
+
+  // ---- DELETE /api/settings/keys/:id — clear a key -------------------------
+  app.delete("/api/settings/keys/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    if (!(SECRET_KEY_IDS as readonly string[]).includes(id)) {
+      throw new RouteError("unknown_key", 400, `unknown secret key id '${id}'`);
+    }
+    clearKey(id);
+    reply.code(204);
+    return null;
+  });
+
+  // ---- POST /api/settings/keys/:id/test — probe a candidate before saving --
+  app.post("/api/settings/keys/:id/test", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    if (!(SECRET_KEY_IDS as readonly string[]).includes(id)) {
+      throw new RouteError("unknown_key", 400, `unknown secret key id '${id}'`);
+    }
+    const body = parseBody(TestKeyBodySchema, req.body);
+    // A failed probe is still a 200 carrying the result {ok:false, detail} — the
+    // probe RESULT is not an HTTP error; non-2xx is reserved for a malformed
+    // request (unknown id / missing value, handled above + by the schema).
+    return testKey(id, body.value);
   });
 
   // ========================================================================
