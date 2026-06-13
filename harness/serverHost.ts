@@ -17,6 +17,14 @@
  * POSTing a turn that would call DeepSeek). This host itself makes no live call; it
  * just refuses to inject stubs so the wiring is the real one.
  *
+ * FIXTURE MODE (AUTOBROKER_HARNESS_FIXTURE=1, set by the functional lane): boot
+ * with the DETERMINISTIC DI stubs injected (resolveLocation + harnessGenerate —
+ * NO live geocode, NO live LLM) and register three test-only routes OUTSIDE /api
+ * (mirroring apps/ui/e2e/serve.mjs): POST /__e2e/scenario (flip the stub
+ * scenario), POST /__e2e/apply-fixture (install a named FixtureState — its seed +
+ * scenario), GET /__e2e/audit (count audit_log rows). The live path is unchanged:
+ * when the flag is absent NONE of this runs (no stubs, no extra routes).
+ *
  * ISOLATION: AUTOBROKER_DATA_DIR is set by the INVOKING runner (under
  * ~/.autobroker-ts/harness-runs/<ts>/); this host honors it (never overrides to a
  * production path). AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS / MASTRA_TELEMETRY_DISABLED /
@@ -41,7 +49,18 @@ import { fileURLToPath } from "node:url";
 
 import { buildServer } from "@autobroker/server";
 import { openDb, resolveDataDir } from "@autobroker/tools";
-import { resetMastraForTests, resetRuntimeGlueForTests } from "@autobroker/workflows";
+import {
+  __setIntakeDepsForTests,
+  resetMastraForTests,
+  resetRuntimeGlueForTests,
+} from "@autobroker/workflows";
+
+import { harnessGenerateStub, resolveLocationStub, setScenario, type Scenario } from "./fixtures/stubs.js";
+import { getFixtureState } from "./fixtures/states/index.js";
+
+/** Fixture mode is on only when the functional lane sets the env flag. The live
+ *  + dry-run paths leave it unset, so they boot EXACTLY as before. */
+const FIXTURE_MODE = process.env["AUTOBROKER_HARNESS_FIXTURE"] === "1";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // harness/ → repo-root packages/db/drizzle/ (the committed migration set)
@@ -70,14 +89,98 @@ function bootstrapDb(): void {
   }
 }
 
+/** Register the test-only /__e2e/* routes (fixture mode only), OUTSIDE /api so
+ *  the product wall is untouched. The runner POSTs these to install a fixture
+ *  world + flip the stub scenario; the audit read lets a case prove a row landed
+ *  in the isolated product DB. */
+function registerFixtureRoutes(app: {
+  post: (path: string, handler: (req: { body?: unknown }, reply: { code: (n: number) => void }) => unknown) => void;
+  get: (path: string, handler: (req: { query?: unknown }, reply: { code: (n: number) => void }) => unknown) => void;
+}): void {
+  // Flip the stub scenario (geocode outcome + trim verdict).
+  app.post("/__e2e/scenario", async (req, reply) => {
+    setScenario((req.body ?? {}) as Partial<Scenario>);
+    reply.code(200);
+    return { ok: true };
+  });
+
+  // Install a named FixtureState: resolve it (fail-loud on unknown), flip the
+  // scenario, then run its seed against a FRESH openDb handle (the tools closure
+  // is the only DB owner — the seed writes through it, then we close).
+  app.post("/__e2e/apply-fixture", async (req, reply) => {
+    const body = (req.body ?? {}) as { state?: unknown };
+    const stateField = body.state;
+    // The runner may send the FixtureState object or a bare id string; resolve
+    // either to the registered state (the registry is the authority, never the
+    // wire — a wire-supplied seed would breach the harness's no-arbitrary-write).
+    const id =
+      typeof stateField === "string"
+        ? stateField
+        : typeof (stateField as { id?: unknown })?.id === "string"
+          ? (stateField as { id: string }).id
+          : undefined;
+    if (id === undefined) {
+      reply.code(400);
+      return { ok: false, error: "apply-fixture requires { state: <id|FixtureState> }" };
+    }
+    const state = getFixtureState(id);
+    setScenario(state.scenario);
+    const db = openDb();
+    try {
+      state.seed(db);
+    } finally {
+      db.$client.close();
+    }
+    reply.code(200);
+    return { ok: true, state: id };
+  });
+
+  // Count audit_log rows (optionally for one action) through the tools openDb
+  // closure — the product DB read channel a functional case uses to prove a row.
+  app.get("/__e2e/audit", async (req, reply) => {
+    const action = (req.query as { action?: unknown } | undefined)?.action;
+    const adb = openDb();
+    try {
+      const sql =
+        typeof action === "string" && action.length > 0
+          ? "SELECT COUNT(*) AS n FROM audit_log WHERE action = ?"
+          : "SELECT COUNT(*) AS n FROM audit_log";
+      const stmt = adb.$client.prepare(sql);
+      const row = (typeof action === "string" && action.length > 0 ? stmt.get(action) : stmt.get()) as {
+        n: number;
+      };
+      reply.code(200);
+      return { action: typeof action === "string" ? action : null, count: row.n };
+    } finally {
+      adb.$client.close();
+    }
+  });
+}
+
 async function main(): Promise<void> {
   // Telemetry belt before any Mastra construction (preflight already required "1").
   process.env.MASTRA_TELEMETRY_DISABLED ??= "1";
   // Never auto-approve — keep the decline path live (the runner asserted this too).
   delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
 
+  if (FIXTURE_MODE) {
+    // Arm the workflows test-only deps seam (it refuses outside a test runner)
+    // and give the DeepSeek registry a dummy key so construction never trips —
+    // no live call ever fires through the stubs.
+    process.env.NODE_ENV = "test";
+    process.env.DEEPSEEK_API_KEY ??= "fixture-dummy-not-used";
+  }
+
   const dataDir = resolveDataDir();
   bootstrapDb();
+
+  if (FIXTURE_MODE) {
+    // FIXTURE: inject the deterministic stubs (NO live geocode, NO live LLM).
+    __setIntakeDepsForTests({
+      harnessGenerate: harnessGenerateStub as never,
+      resolveLocation: resolveLocationStub as never,
+    });
+  }
 
   // LIVE: do NOT inject the DI stubs — real geocode + real DeepSeek. We still reset
   // the Mastra singleton + glue ownership so a fresh process starts clean. (The
@@ -87,6 +190,11 @@ async function main(): Promise<void> {
   resetRuntimeGlueForTests();
 
   const built = await buildServer({ quiet: true });
+
+  if (FIXTURE_MODE) {
+    // Test-only control + read routes, OUTSIDE /api (the product wall is untouched).
+    registerFixtureRoutes(built.app as never);
+  }
   const listenAddr = await built.app.listen({ host: "127.0.0.1", port: 0 });
   const addr = built.app.server.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : 0;

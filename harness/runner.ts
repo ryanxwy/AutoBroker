@@ -90,6 +90,11 @@ export interface RunnerOpts {
    *  then come from the case TOML's max_seconds, default 900). CLI overrides. */
   maxSeconds: number | null;
   dryRun: boolean;
+  /** Functional lane (--fixture): boot the host with the deterministic DI stubs
+   *  (AUTOBROKER_HARNESS_FIXTURE=1 — NO live LLM/geocode), force the UI lane, and
+   *  install each step's fixture_state via POST /__e2e/apply-fixture before
+   *  driving. A kind="ui" step with a fixture_state then needs no prior run. */
+  fixture: boolean;
 }
 
 function parseArgs(argv: string[]): RunnerOpts {
@@ -144,6 +149,7 @@ function parseArgs(argv: string[]): RunnerOpts {
     layer: flags.get("layer") ?? "L2",
     maxSeconds: flags.has("max-seconds") ? Number(flags.get("max-seconds")) : null,
     dryRun: bools.has("dry-run"),
+    fixture: bools.has("fixture"),
   };
 }
 
@@ -201,6 +207,9 @@ function startServerHost(opts: RunnerOpts): Promise<HostHandle> {
     MASTRA_TELEMETRY_DISABLED: "1",
   };
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;
+  // Functional lane: arm the host's fixture mode (deterministic DI stubs + the
+  // /__e2e/* routes). Absent in every other mode — the host boots live as before.
+  if (opts.fixture) env.AUTOBROKER_HARNESS_FIXTURE = "1";
 
   return new Promise<HostHandle>((resolveHost, reject) => {
     const child = spawn(process.execPath, ["--import", pathToFileURL(TSX_LOADER).href, SERVER_HOST], {
@@ -503,6 +512,10 @@ async function evaluateStep(args: {
   domChecks?: UiCheck[];
   /** A real-world unreachable-bit waiver (e.g. Maps yielded zero candidates). */
   waiver?: { kind: string; reason: string } | null;
+  /** A fixture-backed runless ui step (functional lane): there is no run, so S1
+   *  reflects the fixture-installed world (the deterministic setup IS the
+   *  ground truth), not a nonexistent run terminal. */
+  runlessFixture?: boolean;
 }): Promise<VerdictDoc> {
   const { apiBase, c, step, runId, detail, before, after, profileId, layer } = args;
   const ctx: EvalContext = {
@@ -522,10 +535,11 @@ async function evaluateStep(args: {
   }
 
   // S1/S2/S3 cross-check, encoded automatically:
-  //   S1 = SSE terminal text (Driver-observed).
+  //   S1 = SSE terminal text (Driver-observed), OR — for a fixture-backed
+  //        runless ui step — the deterministic fixture install (no run exists).
   //   S2 = re-pulled read API (Monitor-observed, refresh-confirmed).
   //   S3 = backend ground truth (read-only SQLite profile-scoped delta).
-  const s1Ok = detail.terminalStatus !== null;
+  const s1Ok = args.runlessFixture === true ? true : detail.terminalStatus !== null;
   let s2Ok = true;
   let s2Available = true;
   let s2Text = "n/a";
@@ -554,7 +568,10 @@ async function evaluateStep(args: {
 
   const confidence = computeConfidence({ s1Ok, s2Ok, s3Ok, s2Available });
   const crossCheck: CrossCheck = {
-    s1: `SSE terminal=${detail.terminalStatus}`,
+    s1:
+      args.runlessFixture === true
+        ? `fixture installed (${step.fixtureState ?? "?"}) — no run`
+        : `SSE terminal=${detail.terminalStatus}`,
     s2: s2Text,
     s3: `profile-scoped delta ${tableAnchor ? `(${String(tableAnchor.observed)})` : "n/a"}${tableWaived ? " — empty real-world result (waiver)" : ""}`,
     confidence,
@@ -635,8 +652,10 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
 
   // Lane dispatch: --lane overrides the case's [narrative] lane (default api).
   // The UI lane runs EVERY step of the case in one browser session (the
-  // non-tech-user journey); the API lane keeps its single-step contract.
-  const lane: "ui" | "api" = opts.lane ?? c.lane;
+  // non-tech-user journey); the API lane keeps its single-step contract. The
+  // functional lane (--fixture) is the UI lane against the STUBBED host (no
+  // live LLM/geocode) — fixture worlds install per step before driving.
+  const lane: "ui" | "api" = opts.fixture ? "ui" : opts.lane ?? c.lane;
   if (lane === "ui") return cmdUiCase(opts, c);
 
   if (c.seed !== null) {
@@ -742,6 +761,21 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
 // ---------------------------------------------------------------------------
 
 const INTAKE_SKILL = "search_profile_intake";
+
+/** Functional lane: install a step's fixture_state via the host's test-only
+ *  POST /__e2e/apply-fixture (the host resolves the id from its registry, runs
+ *  the seed, and flips the stub scenario) BEFORE the step drives. Fails LOUD on
+ *  a non-200 (a typo'd fixture id surfaces as the host's loud reject). */
+async function applyFixtureState(apiBase: string, fixtureState: string): Promise<void> {
+  const res = await fetch(`${apiBase}/__e2e/apply-fixture`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state: fixtureState }),
+  });
+  if (!res.ok) {
+    throw new Error(`apply-fixture "${fixtureState}" failed: HTTP ${res.status} ${await res.text()}`);
+  }
+}
 
 /** Newest mtime (ms) under a directory tree (UI dist staleness probe). */
 function newestMtimeUnder(dir: string): number {
@@ -962,12 +996,37 @@ function incentiveScrapeEmptyResultWaiver(
   };
 }
 
+/** An empty run-detail spine for a fixture-backed runless ui step (no run
+ *  exists). The dom_state checks carry the real assertions; this only keeps the
+ *  evaluateStep shape uniform. S1 is supplied separately (runlessFixture). */
+const EMPTY_RUN_DETAIL: RunDetail = {
+  runId: "",
+  terminalStatus: null,
+  driverKind: null,
+  events: [],
+  sawBrowserActivity: false,
+  sawApprovalGate: false,
+  gateBeforeProse: false,
+  sawMalformedToolCall: false,
+  usage: {
+    costUsd: null,
+    durationMs: null,
+    promptTokens: null,
+    completionTokens: null,
+    pricingSource: "unavailable",
+  },
+};
+
 /** Replay one pure-UI step (kind="ui"): drive the generic DOM verbs, score the
- *  dom_state anchors, then assemble the verdict off the PRIOR step's run detail
- *  (the live DOM reflects that run) + the recorded DOM checks. A pure-UI step
- *  has no run, so it never POSTs and never polls; its anchors are dom_state only
- *  (enforced at parse). A ui step as the journey's FIRST step has no prior run
- *  to read — fail loud rather than score against nothing. */
+ *  dom_state anchors, then assemble the verdict off the recorded DOM checks. A
+ *  pure-UI step has no run of its own, so it never POSTs and never polls; its
+ *  anchors are dom_state only (enforced at parse).
+ *
+ *  The verdict's S1/S2/S3 spine reads a run detail when one exists: in a journey
+ *  the PRIOR step's run (the live DOM reflects it); in the FUNCTIONAL lane a
+ *  step's fixture_state IS its setup, so a fixture-backed ui step needs no prior
+ *  run and synthesizes an empty detail. A ui step with NEITHER a prior run NOR a
+ *  fixture_state still fails loud (it would score against nothing). */
 async function driveUiOnlyStep(args: {
   driver: UiDriver;
   opts: RunnerOpts;
@@ -979,8 +1038,8 @@ async function driveUiOnlyStep(args: {
   scopeProfileId: string | null;
 }): Promise<VerdictDoc> {
   const { driver, opts, c, step, prevRunId, host, stepMaxMs, scopeProfileId } = args;
-  if (prevRunId === null) {
-    fail(`step "${step.id}": a kind="ui" step needs a prior run's DOM to act on (none yet)`);
+  if (prevRunId === null && step.fixtureState === null) {
+    fail(`step "${step.id}": a kind="ui" step needs a prior run's DOM, or a fixture_state setup, to act on (neither present)`);
   }
 
   // Replay the generic verbs in author order against the persistent page.
@@ -1003,20 +1062,25 @@ async function driveUiOnlyStep(args: {
     await driver.recordDomState(anchor.testid, anchor.expect, anchor.value, anchor.count, anchor.match);
   }
 
-  // The DOM reflects the prior step's run; read that detail so the verdict's
-  // S1/S2/S3 spine stays populated. The dom_state anchors passthrough in
-  // evalAnchor; the real assertions are in the recorded DOM checks.
-  const detail = await buildRunDetail(host.apiBase, prevRunId);
+  // The verdict's S1/S2/S3 spine reads the prior run's detail when one exists
+  // (the live DOM reflects it). A fixture-backed first step has no run — the
+  // fixture is its setup — so its detail is an empty spine (the real assertions
+  // live in the recorded dom_state checks).
+  const detail =
+    prevRunId !== null ? await buildRunDetail(host.apiBase, prevRunId) : EMPTY_RUN_DETAIL;
   // A runless ui step performs no DB write, so before/after are snapshotted
   // back-to-back (Δ=0 by construction). They exist only to keep the evidence
   // and evaluateStep shape uniform with the run-bearing steps, not to assert.
   const before = snapshotCounts(scopeProfileId);
   const after = snapshotCounts(scopeProfileId);
+  // The verdict's run_id is the prior run when one exists; a fixture-backed
+  // first step has no run, so it records a fixture sentinel instead.
+  const runlessFixture = prevRunId === null;
   const verdict = await evaluateStep({
     apiBase: host.apiBase,
     c,
     step,
-    runId: prevRunId,
+    runId: prevRunId ?? `fixture:${step.fixtureState ?? step.id}`,
     detail,
     before,
     after,
@@ -1024,11 +1088,12 @@ async function driveUiOnlyStep(args: {
     layer: opts.layer,
     lane: "ui",
     domChecks: [...driver.checks],
+    ...(runlessFixture ? { runlessFixture: true } : {}),
   });
   const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
     "verdict.json": verdict,
     "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, lane: "ui", kind: "ui", profileId: scopeProfileId },
-    "run.json": { priorRunId: prevRunId, uiActions: step.uiActions ?? [] },
+    "run.json": { priorRunId: prevRunId, fixtureState: step.fixtureState, uiActions: step.uiActions ?? [] },
     "db-before.json": before,
     "db-after.json": after,
   });
@@ -1106,6 +1171,19 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
       const cellDir = evidenceDirName(cellIdFor(c, step), step.id);
       driver.beginStep(join(opts.evidenceRoot, cellDir, "screenshots"));
+
+      // ---- functional lane: install this step's fixture world FIRST ----------
+      // The fixture seeds the isolated DB + flips the deterministic stubs BEFORE
+      // the step drives, so a fixture-backed kind="ui" step needs no prior run.
+      // A fixture_state outside the functional lane (live host) has no
+      // /__e2e/apply-fixture route — fail loud rather than silently skip setup.
+      if (step.fixtureState !== null) {
+        if (!opts.fixture) {
+          fail(`step "${step.id}" carries fixture_state — fixture worlds install on the functional lane only (--fixture)`);
+        }
+        await applyFixtureState(host.apiBase, step.fixtureState);
+        await driver.reloadBrowser(stepMaxMs); // re-read the freshly-installed world.
+      }
 
       // ---- pure-UI step (kind="ui"): a user does DOM actions, no run --------
       // No startRun, no poller, no POST: replay the generic verbs against the

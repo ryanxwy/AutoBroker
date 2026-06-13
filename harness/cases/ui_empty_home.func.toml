@@ -1,0 +1,67 @@
+# harness/cases/ui_empty_home.func.toml — the FUNCTIONAL-lane proof case.
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the
+# deterministic DI stubs (NO live LLM, NO live geocode) and the test-only
+# /__e2e/* routes. This case has ONE kind="ui" step that installs the
+# "empty_home" fixture world (the fresh-migrated DB is already empty, so its
+# seed is a no-op) and then asserts the empty-home UI: the start-here CTA
+# renders and ZERO search rows are present.
+#
+# A fixture-backed kind="ui" step needs no prior run — the fixture IS its setup
+# (the prior-run requirement is relaxed exactly for this). Functional anchors
+# are dom_state only (the stub yields no usage, so no cost_and_time; no live
+# driver semantics asserted here). This is the FIRST end-to-end exercise of the
+# kind="ui" runner branch.
+
+[meta]
+id = "ui_empty_home_func"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- the empty-home fixture step (kind="ui" — no run) -----------------------
+# Install the empty_home world, reload, then assert the live DOM: the start-here
+# CTA section + button are visible, and — after OPENING the Searches popover so
+# its row list actually mounts — exactly zero searches-row-<id> rows exist (a
+# genuine prefix-match absence proof; those rows render ONLY inside the open
+# popover, so the count must be taken with it open or it proves nothing).
+
+[[steps]]
+id = "empty_home"
+kind = "ui"
+fixture_state = "empty_home"
+purpose = "The empty-home start-here CTA renders; the opened Searches popover shows zero search rows (fixture world)."
+
+# Open the Searches popover so its row list mounts — only then is the zero
+# row-count below a real absence proof rather than a vacuous always-true read.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-empty"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-start-search"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-popover"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-"
+expect = "count"
+count = 0
+match = "prefix"

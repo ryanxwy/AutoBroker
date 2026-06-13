@@ -21,6 +21,7 @@
     "check:strings": "bash scripts/check-forbidden-strings.sh",
     "harness": "pnpm --filter @autobroker/harness run harness --",
     "harness:export": "pnpm --filter @autobroker/harness run export-daily --",
+    "ui:functional": "pnpm --filter @autobroker/ui run build && AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 MASTRA_TELEMETRY_DISABLED=1 DEEPSEEK_API_KEY=functional-dummy-not-used pnpm --filter @autobroker/harness run functional -- --case ui_empty_home.func.toml",
     "desktop:bundle": "pnpm --filter @autobroker/desktop run bundle",
     "desktop:start": "pnpm --filter @autobroker/desktop run start",
     "desktop:smoke": "pnpm --filter @autobroker/desktop run smoke"
