@@ -231,8 +231,7 @@ export class ApiClient {
   }
 
   /** DELETE /api/profiles/:id → 204 (soft-delete; status→'closed', the active
-   *  slot frees). A non-terminal run on the profile → 409 profile_busy; a
-   *  missing profile → 404 not_found. Resolves void on success. */
+   *  slot frees). A missing profile → 404 not_found. Resolves void on success. */
   async closeProfile(id: string): Promise<void> {
     const res = await this.fetchImpl(this.url(`/api/profiles/${encodeURIComponent(id)}`), {
       method: "DELETE",

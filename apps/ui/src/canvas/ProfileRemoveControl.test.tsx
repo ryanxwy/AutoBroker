@@ -3,9 +3,8 @@
  * ProfileRemoveControl.test — the soft-delete affordance at the profile card
  * foot, driven against an injected ApiClient (mock fetch). Proves: the open
  * button expands the inline gate-card confirm; "Keep it" closes it (no DELETE);
- * Remove fires the DELETE and invalidates ["profiles"] on success; a 409
- * profile_busy keeps the card open with the busy plate; a generic error keeps
- * the card open with the error line.
+ * Remove fires the DELETE and invalidates ["profiles"] on success; a generic
+ * error keeps the card open with the error line.
  */
 
 import { act } from "react";
@@ -21,18 +20,12 @@ import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 /** A mock fetch: DELETE /api/profiles/:id → the selected outcome. */
 function mockFetch(opts: {
   deleted?: string[];
-  outcome?: "ok" | "busy" | "error";
+  outcome?: "ok" | "error";
 }): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/api/profiles/") && init?.method === "DELETE") {
       opts.deleted?.push(url);
-      if (opts.outcome === "busy") {
-        return new Response(
-          JSON.stringify({ error: { code: "profile_busy", message: "a run is using it" } }),
-          { status: 409, headers: { "content-type": "application/json" } },
-        );
-      }
       if (opts.outcome === "error") {
         return new Response(
           JSON.stringify({ error: { code: "internal", message: "boom" } }),
@@ -103,20 +96,6 @@ describe("ProfileRemoveControl — confirm → remove → states", () => {
     expect(deleted).toHaveLength(1);
     expect(deleted[0]).toContain("/api/profiles/prof-1");
     expect(invalidateSpy).toHaveBeenCalledWith(["profiles"]);
-    r.unmount();
-  });
-
-  it("a 409 profile_busy keeps the card open with the busy failure plate", async () => {
-    const client = new ApiClient({ fetchImpl: mockFetch({ outcome: "busy" }) });
-    const r = render(<ProfileRemoveControl client={client} profileId="prof-1" />);
-
-    click(r.get("profile-remove-open"));
-    click(r.get("profile-remove-confirm-yes"));
-    await flush();
-
-    // The card is still open and now carries the busy message.
-    expect(r.query("profile-remove-confirm")).not.toBeNull();
-    expect(r.get("profile-remove-busy").textContent).toContain("a run is using it");
     r.unmount();
   });
 

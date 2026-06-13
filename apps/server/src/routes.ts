@@ -54,7 +54,6 @@ import {
   SECRET_KEY_IDS,
   IdentityLockedError,
   ActiveSlotConflict,
-  ProfileBusyError,
   type Db,
 } from "@autobroker/tools";
 import type { SearchProfile } from "@autobroker/core";
@@ -529,21 +528,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   // ---- DELETE /api/profiles/:id — SOFT-DELETE (status → 'closed') ----------
   // Delegates to the tools-layer close(), which writes the audited status flip
   // (action 'profile_close') and frees the active (account, brand) slot. The
-  // data is KEPT — restore brings it back. A non-terminal skill run targeting
-  // the profile fails CLOSED → 409 profile_busy (the in-flight guard).
+  // data is KEPT — restore brings it back.
   app.delete("/api/profiles/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
-    let closed: boolean;
-    try {
-      closed = withDb((db) => closeProfile(db, id, { actor: "dashboard" }));
-    } catch (err) {
-      if (err instanceof ProfileBusyError) {
-        throw new RouteError(err.code, 409, err.message, {
-          extra: { run_id: err.runId, profile_id: err.profileId },
-        });
-      }
-      throw err;
-    }
+    const closed = withDb((db) => closeProfile(db, id, { actor: "dashboard" }));
     if (!closed) {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }

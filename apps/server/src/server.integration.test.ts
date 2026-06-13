@@ -698,39 +698,6 @@ describe("DELETE /api/profiles/:id — soft-delete (status→'closed')", () => {
     expect(auditCount("profile_close")).toBe(0);
   });
 
-  it("the in-flight guard returns 409 profile_busy when a non-terminal run targets the profile", async () => {
-    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
-    const id = seedProfileRow();
-    // A non-terminal skill_runs row keyed to the profile blocks the close.
-    db.$client
-      .prepare(
-        "INSERT INTO skill_runs (run_id, skill_name, search_profile_id, started_at, status) " +
-          "VALUES ('run-live', 'dealer_geosearch', ?, 0, 'running')",
-      )
-      .run(id);
-
-    const del = await s.app.inject({ method: "DELETE", url: `/api/profiles/${id}` });
-    expect(del.statusCode).toBe(409);
-    expect(del.json<{ error: { code: string } }>().error.code).toBe("profile_busy");
-    // Zero write: still active, no close audit.
-    expect(statusOf(id)).toBe("active");
-    expect(auditCount("profile_close")).toBe(0);
-  });
-
-  it("a TERMINAL run on the profile does NOT block the close", async () => {
-    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
-    const id = seedProfileRow();
-    db.$client
-      .prepare(
-        "INSERT INTO skill_runs (run_id, skill_name, search_profile_id, started_at, status) " +
-          "VALUES ('run-done', 'dealer_geosearch', ?, 0, 'done')",
-      )
-      .run(id);
-
-    const del = await s.app.inject({ method: "DELETE", url: `/api/profiles/${id}` });
-    expect(del.statusCode).toBe(204);
-    expect(statusOf(id)).toBe("closed");
-  });
 });
 
 describe("POST /api/profiles/:id/restore — bring a closed profile back active", () => {

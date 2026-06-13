@@ -55,28 +55,6 @@ export class IdentityLockedError extends Error {
 export const IDENTITY_FIELDS = ["year", "make", "model", "trim", "location"] as const;
 
 /**
- * Close was attempted while a non-terminal skill run still targets this profile.
- * Closing mid-run would yank the slot out from under a live run, so the soft
- * delete fails CLOSED here — the user retries once the run finishes. The guard
- * reads the product skill_runs table (search_profile_id + a non-terminal
- * status). (→ HTTP 409.)
- */
-export class ProfileBusyError extends Error {
-  readonly code = "profile_busy" as const;
-  readonly profileId: string;
-  readonly runId: string;
-  constructor(args: { profileId: string; runId: string }) {
-    super(
-      `profile_busy: refusing to close profile ${args.profileId} — skill run ` +
-        `${args.runId} is still using it. Try again once its run finishes.`,
-    );
-    this.name = "ProfileBusyError";
-    this.profileId = args.profileId;
-    this.runId = args.runId;
-  }
-}
-
-/**
  * Coordinate-resolution invariant: persist received a profile with NULL
  * latitude/longitude. Coordinates MUST be resolved upstream (workflow
  * resolveLocation) before create — the service is the LAST WALL and rejects

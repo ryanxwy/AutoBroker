@@ -30,7 +30,6 @@ import {
   update,
   close,
   restore,
-  inFlightRunFor,
   listProfileRows,
   parseLocation,
   synthProfileId,
@@ -43,7 +42,6 @@ import {
   ActiveSlotConflict,
   CoordinatesNotResolvedError,
   IdentityLockedError,
-  ProfileBusyError,
 } from "./errors.js";
 import { assertNoBudget, BudgetLeakError } from "../validators.js";
 
@@ -312,18 +310,7 @@ describe("replace — atomic supersede→create→link→audit (FIX 1)", () => {
 });
 
 // ---------------------------------------------------------------------------
-/** Seed a skill_runs row targeting a profile with the given status (the
- *  in-flight guard's input — search_profile_id + status). */
-function seedSkillRun(runId: string, profileId: string, status: string): void {
-  db.$client
-    .prepare(
-      "INSERT INTO skill_runs (run_id, skill_name, search_profile_id, started_at, status) " +
-        "VALUES (?, 'dealer_geosearch', ?, 0, ?)",
-    )
-    .run(runId, profileId, status);
-}
-
-describe("close — soft-delete: audited status→'closed', slot frees, in-flight guard", () => {
+describe("close — soft-delete: audited status→'closed', slot frees", () => {
   it("status→'closed' + 1 audit('profile_close'); returns true; the active slot frees", () => {
     seedAccount("acc-1", "owner@example.com");
     const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
@@ -347,31 +334,6 @@ describe("close — soft-delete: audited status→'closed', slot frees, in-fligh
     seedAccount("acc-1", "owner@example.com");
     expect(close(db, "nope")).toBe(false);
     expect(countAudit("profile_close")).toBe(0);
-  });
-
-  it("in-flight guard: a non-terminal run on the profile → ProfileBusyError, zero write", () => {
-    seedAccount("acc-1", "owner@example.com");
-    const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
-    seedSkillRun("run-live", profile.id, "running");
-
-    expect(() => close(db, profile.id)).toThrow(ProfileBusyError);
-    // Zero write: still active, no close audit.
-    const row = db.$client
-      .prepare("SELECT status FROM search_profiles WHERE search_profile_id = ?")
-      .get(profile.id) as { status: string };
-    expect(row.status).toBe("active");
-    expect(countAudit("profile_close")).toBe(0);
-    // inFlightRunFor reports the blocking run id.
-    expect(inFlightRunFor(db, profile.id)).toBe("run-live");
-  });
-
-  it("a TERMINAL run on the profile does NOT block the close", () => {
-    seedAccount("acc-1", "owner@example.com");
-    const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
-    seedSkillRun("run-done", profile.id, "done");
-
-    expect(inFlightRunFor(db, profile.id)).toBeNull();
-    expect(close(db, profile.id)).toBe(true);
   });
 });
 

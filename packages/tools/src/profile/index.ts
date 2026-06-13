@@ -17,7 +17,6 @@ export {
   replace,
   close,
   restore,
-  inFlightRunFor,
   parseLocation,
   synthProfileId,
   readProfileRow,
@@ -53,5 +52,4 @@ export {
   MissingRequiredFieldError,
   NoActiveProfileError,
   MultipleActiveProfilesError,
-  ProfileBusyError,
 } from "./errors.js";

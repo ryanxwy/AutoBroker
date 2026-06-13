@@ -11,9 +11,8 @@
  * soft-delete: status→'closed', the active (account, brand) slot frees, an
  * audited row lands). On success the profile leaves the active list — the host's
  * shared profiles fetch is invalidated, so the Canvas re-reads and the active
- * profile disappears (the empty state takes over). A 409 profile_busy keeps the
- * card open with a failure plate ("a run is using it"); any other error shows a
- * generic error line and keeps the card open so the user can retry.
+ * profile disappears (the empty state takes over). Any error shows a generic
+ * error line and keeps the card open so the user can retry.
  *
  * a11y: opening the confirm moves focus to the gate-card; "Keep it" (and the
  * Escape key) return focus to the open button.
@@ -22,14 +21,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ApiClient } from "../api/client.js";
-import { ApiError } from "../api/client.js";
 import { invalidate } from "../api/useDataChanged.js";
 
 type RemoveState =
   | { kind: "idle" }
   | { kind: "confirm" }
   | { kind: "removing" }
-  | { kind: "busy" }
   | { kind: "error"; message: string };
 
 export interface ProfileRemoveControlProps {
@@ -46,7 +43,7 @@ export function ProfileRemoveControl({
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Focus the confirm card when it opens (the busy/error plates re-render the
+  // Focus the confirm card when it opens (the error plate re-renders the
   // same card, so this only fires on the idle→confirm transition).
   useEffect(() => {
     if (state.kind === "confirm") cardRef.current?.focus();
@@ -69,10 +66,6 @@ export function ProfileRemoveControl({
       invalidate(["profiles"]);
       // No success plate needed: the whole card unmounts with the profile.
     } catch (e: unknown) {
-      if (e instanceof ApiError && e.status === 409 && e.code === "profile_busy") {
-        setState({ kind: "busy" });
-        return;
-      }
       setState({
         kind: "error",
         message: e instanceof Error ? e.message : "remove failed",
@@ -97,7 +90,7 @@ export function ProfileRemoveControl({
   }
 
   const removing = state.kind === "removing";
-  const failure = state.kind === "busy" || state.kind === "error";
+  const failure = state.kind === "error";
 
   return (
     <div className="profile-remove">
@@ -119,11 +112,6 @@ export function ProfileRemoveControl({
           everything, use Reset.
         </p>
 
-        {state.kind === "busy" && (
-          <p className="danger-text" role="alert" data-testid="profile-remove-busy">
-            This search is busy — a run is using it. Try again once its run finishes.
-          </p>
-        )}
         {state.kind === "error" && (
           <p className="danger-text" role="alert" data-testid="profile-remove-error">
             Couldn’t remove this search: {state.message}
