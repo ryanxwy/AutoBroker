@@ -237,6 +237,44 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
 }
 .demo-banner strong { color: var(--run); font-weight: 700; }
 
+/* In-app toast — a small transient strip for a background notification shown
+   while the window is focused. Floats bottom-right; reuses the .scope-notice
+   token language (run wash + line), so it adds no new visual vocabulary. */
+.app-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 50;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 360px;
+  background: var(--run-wash);
+  border: 1px solid var(--run-line);
+  border-left: 3px solid var(--run);
+  border-radius: 6px;
+  padding: 10px 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.app-toast strong {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--run);
+}
+.app-toast span { font-family: var(--serif); font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+.app-toast button {
+  margin-left: auto;
+  align-self: flex-start;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.6;
+}
+.app-toast button:hover { opacity: 1; box-shadow: none; }
+
 /* ---- topbar popovers / mode switch / diagnostics ------------------------ */
 .popover-wrap { position: relative; }
 .popover-wrap > button {

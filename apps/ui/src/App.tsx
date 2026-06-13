@@ -67,6 +67,7 @@ import { NotFound } from "./routes/NotFound.js";
 import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { Settings } from "./routes/Settings.js";
 import { navigate, useRoute } from "./router.js";
+import { Toast } from "./shell/Toast.js";
 import { TopBar } from "./shell/TopBar.js";
 import { useLayout } from "./store/layout.js";
 
@@ -407,6 +408,9 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
 
   return (
     <div className="app-shell">
+      {/* In-app toast for a background notification delivered while the window
+          is focused (Electron shell only; inert in a plain browser). */}
+      <Toast />
       <TopBar
         client={client}
         activeRunId={activeRunId}

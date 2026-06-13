@@ -1,10 +1,12 @@
 /**
- * Electron shell smoke — 7 deterministic, zero-LLM assertions over the REAL
+ * Electron shell smoke — deterministic, zero-LLM assertions over the REAL
  * shell (headed `_electron.launch()`): the window serves the same SPA + API the
  * web form does, the fork lifecycle leaves no orphans, crash recovery and the
- * single-instance lock work, and the renderer has no Node reach. Business
- * behavior (skills, gates, workflows) is covered by the website-lane harness —
- * this suite only proves the shell didn't break the product around it.
+ * single-instance lock work, the renderer has no Node reach, and the
+ * long-running-background lifecycle (close-keepalive on darwin + dock-activate
+ * re-create) plus the notify focused→toast ladder behave. Business behavior
+ * (skills, gates, workflows) is covered by the website-lane harness — this
+ * suite only proves the shell didn't break the product around it.
  *
  * Isolation: every launch points AUTOBROKER_DATA_DIR at a per-run tmp dir, so
  * S1 also proves the bundle's fresh-data-dir migration bootstrap end to end.
@@ -372,6 +374,119 @@ describe("small-window layout integrity (S10)", () => {
         expect(box.x + box.width).toBeLessThanOrEqual(900 + 1);
         expect(box.y + box.height).toBeLessThanOrEqual(600 + 1);
       }
+    } finally {
+      await closeApp(app).catch(() => {});
+    }
+  });
+});
+
+// Long-running background (S11): on darwin closing the WINDOW does not quit the
+// app — the server child keeps running so the background schedule lives on, and
+// the dock click (`activate`) re-creates the window. (On non-darwin the app
+// would quit; this suite runs on darwin, the platform that ships the desktop
+// shell.)
+describe("background lifecycle (S11)", () => {
+  it("S11: closing the window keeps the app + server alive (darwin); activate re-creates the window", async () => {
+    const { app } = await launchApp();
+    try {
+      const pid = await serverPidOf(app);
+      expect(pidAlive(pid)).toBe(true);
+
+      // Close every window (fires window-all-closed). On darwin the app stays up.
+      await app.evaluate(({ BrowserWindow }) => {
+        for (const w of BrowserWindow.getAllWindows()) w.close();
+      });
+      await poll(
+        () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
+        (n) => n === 0,
+        "all windows closed",
+      );
+
+      // The app did NOT quit: the server fork is still alive and the main
+      // process still answers app.evaluate.
+      expect(pidAlive(pid)).toBe(true);
+      const stillUp = await app.evaluate(({ app: a }) => a.isReady());
+      expect(stillUp).toBe(true); // main process still responsive
+
+      // Dock re-activation re-creates the window on the same background server.
+      await app.evaluate(({ app: a }) => {
+        a.emit("activate");
+      });
+      await poll(
+        () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
+        (n) => n >= 1,
+        "window re-created on activate",
+      );
+      const newWindow = await app.firstWindow({ timeout: 30_000 });
+      await newWindow.waitForLoadState("domcontentloaded");
+      const apiOk = await newWindow.evaluate(async () => (await fetch("/api/skills")).status);
+      expect(apiOk).toBe(200); // re-created window points at the still-running fork
+      expect(pidAlive(pid)).toBe(true); // same server fork — never relaunched
+    } finally {
+      await closeApp(app).catch(() => {});
+    }
+  });
+});
+
+// notify() ladder (S12): native notifications are not scriptable headless, so
+// this proves (a) the renderer toast SURFACE end-to-end (the injected
+// autobroker:notify event renders the testid'd toast) and (b) the focused→toast
+// branch of main's notify() ladder posts to the renderer (lastNotifyChannel).
+describe("notify ladder — focused → in-app toast (S12)", () => {
+  it("S12a: an injected autobroker:notify event renders the app-toast surface", async () => {
+    const { app, page } = await launchApp();
+    try {
+      await page.waitForSelector('[data-testid="app-main"]', { timeout: 30_000 });
+      await page.evaluate(() => {
+        window.dispatchEvent(
+          new CustomEvent("autobroker:notify", {
+            detail: { title: "Background update", body: "An inbox poll finished.", deepLink: "/" },
+          }),
+        );
+      });
+      await page.waitForSelector('[data-testid="app-toast"]', { timeout: 10_000 });
+      const text = await page.evaluate(
+        () => document.querySelector('[data-testid="app-toast"]')?.textContent ?? "",
+      );
+      expect(text).toContain("Background update");
+      expect(text).toContain("An inbox poll finished.");
+    } finally {
+      await closeApp(app).catch(() => {});
+    }
+  });
+
+  it("S12b: notify() while the window is focused posts a toast to the renderer", async () => {
+    const { app, page } = await launchApp();
+    try {
+      await page.waitForSelector('[data-testid="app-main"]', { timeout: 30_000 });
+      // Force focus from the main process (a headless launch may not have OS
+      // focus), then drive main's notify() and assert the focused→toast branch.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.show();
+        w?.focus();
+        (
+          globalThis as unknown as { __desktopHook: { notify: (t: string, b: string) => void } }
+        ).__desktopHook.notify("Digest ready", "Your daily digest is ready.");
+      });
+      const channel = await poll(
+        () =>
+          app.evaluate(
+            () =>
+              (globalThis as unknown as Record<string, unknown>).__desktopHook as {
+                lastNotifyChannel: string | null;
+              },
+          ),
+        (h) => h.lastNotifyChannel !== null,
+        "notify chose a delivery channel",
+      );
+      // A focused window takes the toast branch (never a native notification).
+      expect((channel as { lastNotifyChannel: string }).lastNotifyChannel).toBe("toast");
+      await page.waitForSelector('[data-testid="app-toast"]', { timeout: 10_000 });
+      const text = await page.evaluate(
+        () => document.querySelector('[data-testid="app-toast"]')?.textContent ?? "",
+      );
+      expect(text).toContain("Digest ready");
     } finally {
       await closeApp(app).catch(() => {});
     }

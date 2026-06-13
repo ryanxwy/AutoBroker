@@ -230,6 +230,11 @@ export {
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
 
+// Scheduler watermark — the per-job last-success store in pipeline_state (the
+// durable catch-up watermark; the only product-DB access the background
+// scheduler is permitted, funnelled down here per the SQLite invariant).
+export { watermarkKey, readLastSuccess, writeLastSuccess } from "./scheduler/watermark.js";
+
 // Demo seed — the renderable sample world for the zero-config demo mode
 // (idempotent, writes whatever isolated handle it is given).
 export { seedDemoData } from "./demo/seedDemo.js";
