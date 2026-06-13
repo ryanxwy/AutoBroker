@@ -625,6 +625,17 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
 /* Edit-preferences trigger — a quiet ledger-plate button on the prefs row */
 .profile-card .profile-edit-open { font-size: 11px; padding: 5px 11px; }
 
+/* card foot — the soft-delete control, set off by a ledger rule */
+.profile-card-foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+}
+/* low-emphasis remove trigger; the inline confirm uses the shared gate-card */
+.profile-remove .profile-remove-open { font-size: 11px; padding: 5px 11px; }
+.profile-remove .gate-card { margin-top: 4px; animation: popIn 0.16s ease both; }
+.profile-remove .gate-card > p.muted { margin: 0 0 4px; }
+
 /* the brief "Saved" badge — racing-green wash, fades with the host exit */
 .saved-badge {
   font-family: var(--mono);

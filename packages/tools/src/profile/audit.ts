@@ -25,6 +25,11 @@ export const AUDIT_ACTIONS = {
   intakeVerificationFailed: "intake_verification_failed",
   intakeVerificationForced: "intake_verification_forced",
   profileReplace: "profile_replace",
+  /** Soft-delete: the profile moved to status='closed' (recoverable; frees the
+   *  active (account, brand) slot). */
+  profileClose: "profile_close",
+  /** Restore: a closed profile returned to status='active'. */
+  profileRestore: "profile_restore",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

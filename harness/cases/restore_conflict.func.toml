@@ -1,0 +1,63 @@
+# harness/cases/restore_conflict.func.toml — FUNCTIONAL lane: RESTORE blocked by
+# an active-slot conflict (U-B).
+#
+# Installs the closed_profile fixture (one status='active' Hyundai + one
+# status='closed' Hyundai — SAME brand). Because an active Hyundai already holds
+# the active (account, brand) slot, restoring the closed Hyundai must FAIL with a
+# 409 active_slot_conflict. The case opens the Searches popover and clicks the
+# closed row's Restore verb:
+#   Restore fires a REAL POST /api/profiles/:id/restore — the tools restore()
+#   throws ActiveSlotConflict → the route maps it to 409 (no LLM, deterministic).
+#   The Closed group renders the inline conflict line reading the conflicting
+#   brand off the error envelope; the closed row STAYS (the restore did not land).
+#
+# WHY THIS IS A REAL CONFLICT PROOF: the conflict line appears only when the POST
+# returned 409 active_slot_conflict, and the closed row persists only because the
+# restore rolled back — both prove the slot guard fired against the live DB.
+
+[meta]
+id = "restore_conflict_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "restore_conflict"
+kind = "ui"
+fixture_state = "closed_profile"
+purpose = "An active Hyundai holds the slot; restoring the closed Hyundai (a real POST) returns 409 active_slot_conflict — the Closed group shows the inline conflict line and the closed row stays."
+
+# Open the Searches popover so the Closed group + Restore verb mount.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+# Attempt the restore — a real POST that the slot guard rejects with 409.
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-restore-closed-inactive-1"
+
+# The inline conflict line renders, reading the conflicting brand (Hyundai).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "profile-restore-conflict-closed-inactive-1"
+expect = "text"
+value = "active Hyundai search"
+
+# The closed row STAYS (the restore did not land — slot still taken).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-closed-row-closed-inactive-1"
+expect = "visible"
+
+# The active Hyundai is untouched (still the one active row).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-closed-active-1"
+expect = "visible"

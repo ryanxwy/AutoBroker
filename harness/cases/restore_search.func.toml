@@ -1,0 +1,74 @@
+# harness/cases/restore_search.func.toml — FUNCTIONAL lane: RESTORE a closed
+# search end-to-end (U-B).
+#
+# Installs the closed_only fixture (ONE status='closed' Hyundai search, NO active
+# search — so the active (account, brand) slot is FREE and the restore succeeds).
+# The Canvas starts on its empty state (no active profile). The case opens the
+# Searches popover, finds the closed row under the Closed group, and clicks its
+# Restore verb:
+#   Restore fires a REAL POST /api/profiles/:id/restore against the stubbed server
+#   — the tools restore(): status→'active', an audited row lands (no LLM, fully
+#   deterministic). After a reload the restored search is ACTIVE: it surfaces as a
+#   normal active searches-row- entry and the Canvas projects its profile card.
+#
+# WHY THIS IS A REAL RESTORE PROOF: the search was closed+hidden from the active
+# list before; after the POST + reload it is an active row AND the canvas card
+# renders. Both can only hold if the POST wrote status='active' and the
+# active-list filter re-surfaced it — the whole U-B restore loop ran.
+
+[meta]
+id = "restore_search_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "restore_search"
+kind = "ui"
+fixture_state = "closed_only"
+purpose = "Open the Searches popover's Closed group, click Restore on the closed search (a real POST/restore write); after a reload the search is active — a normal active row and a Canvas profile card."
+
+# Open the Searches popover so the Closed group + Restore verb mount.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+# Restore the closed search — a real POST write-through (status→'active').
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-restore-closed-only-1"
+
+# Reload: re-read the now-'active' world so the active-list filter surfaces it
+# (the durable proof, independent of the in-place auto-refresh).
+[[steps.ui_actions]]
+verb = "reload"
+testid = "app-main"
+
+# Re-open the popover to score the active row anchor below.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+# The restored search is now an ACTIVE row in the Searches popover.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-closed-only-1"
+expect = "visible"
+
+# …and it is no longer in the Closed group (the closed list dropped it).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-closed-row-closed-only-1"
+expect = "absent"
+
+# The Canvas projects the restored profile's card (active again).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-profile-card"
+expect = "visible"

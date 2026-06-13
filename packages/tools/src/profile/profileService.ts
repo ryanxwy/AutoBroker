@@ -44,6 +44,7 @@ import {
   IdentityLockedError,
   IDENTITY_FIELDS,
   MissingRequiredFieldError,
+  ProfileBusyError,
 } from "./errors.js";
 import { resolveActiveProfile, type ResolveResult } from "./resolver.js";
 
@@ -384,14 +385,17 @@ export function readProfileRow(db: Db, id: string): Record<string, unknown> | nu
 
 /**
  * List profile rows (snake_case views), newest-first by ROWID (matching the
- * resolver's ROWID DESC ordering). Only status === 'active' meaningfully
- * filters (status='active' OR NULL = implicit-active, matching the resolver);
- * any other value returns all rows.
+ * resolver's ROWID DESC ordering). 'active' filters status='active' OR NULL
+ * (implicit-active, matching the resolver); 'closed' filters status='closed'
+ * (the soft-deleted set the Closed-searches group restores from); any other
+ * value returns all rows.
  */
 export function listProfileRows(db: Db, status: string | undefined): Record<string, unknown>[] {
   let sql = "SELECT * FROM search_profiles";
   if (status === "active") {
     sql += " WHERE status = 'active' OR status IS NULL";
+  } else if (status === "closed") {
+    sql += " WHERE status = 'closed'";
   }
   sql += " ORDER BY rowid DESC";
   return db.$client.prepare(sql).all() as Record<string, unknown>[];
@@ -474,22 +478,87 @@ export function update(
   return rowToProfile(row);
 }
 
+/** The skill_runs.status values that are NOT terminal — a run in one of these
+ *  is still using its target profile, so a close must fail closed. (Terminal:
+ *  done/error/declined/aborted.) */
+const NON_TERMINAL_RUN_STATUSES = ["pending", "running", "awaiting_approval"] as const;
+
+const SELECT_IN_FLIGHT_RUN =
+  "SELECT run_id FROM skill_runs " +
+  `WHERE search_profile_id = ? AND status IN (${NON_TERMINAL_RUN_STATUSES.map(() => "?").join(", ")}) ` +
+  "LIMIT 1";
+
 /**
- * Close a profile (status → 'closed'). Frees the active (account, brand) slot.
+ * In-flight guard for close: a non-terminal skill run still targeting this
+ * profile (skill_runs.search_profile_id + a non-terminal status) blocks the
+ * soft delete. Returns the blocking run id, or null when the profile is free to
+ * close. Fail-CLOSED: a present non-terminal row stops the close.
  */
-export function close(db: Db, id: string): void {
-  db.$client.prepare(SET_STATUS).run("closed", id);
+export function inFlightRunFor(db: Db, profileId: string): string | null {
+  const row = db.$client
+    .prepare(SELECT_IN_FLIGHT_RUN)
+    .get(profileId, ...NON_TERMINAL_RUN_STATUSES) as { run_id: string } | undefined;
+  return row?.run_id ?? null;
 }
 
 /**
- * Restore a closed/superseded profile to 'active'. If the (account, brand) slot
- * is taken → ActiveSlotConflict.
+ * Soft-delete a profile (status → 'closed'). Frees the active (account, brand)
+ * slot and writes a 'profile_close' audit row in the SAME transaction as the
+ * status flip. The data is kept — restore() returns it to active.
+ *
+ * Returns false when no such profile row exists (the route maps that to 404);
+ * true on a successful close. Fails CLOSED with ProfileBusyError when a
+ * non-terminal skill run still targets the profile (the in-flight guard).
  */
-export function restore(db: Db, id: string): SearchProfile {
+export function close(db: Db, id: string, opts: { actor?: string; reason?: string } = {}): boolean {
+  const existing = db.$client.prepare(SELECT_BY_ID).get(id) as SearchProfileRow | undefined;
+  if (existing === undefined) return false;
+
+  const busyRunId = inFlightRunFor(db, id);
+  if (busyRunId !== null) {
+    throw new ProfileBusyError({ profileId: id, runId: busyRunId });
+  }
+
+  const txn = db.$client.transaction(() => {
+    db.$client.prepare(SET_STATUS).run("closed", id);
+    writeAuditLog(db, {
+      action: AUDIT_ACTIONS.profileClose,
+      actor: opts.actor ?? null,
+      targetTable: "search_profiles",
+      targetId: id,
+      searchProfileId: id,
+      reason: opts.reason ?? null,
+      oldValue: typeof existing.status === "string" ? existing.status : null,
+      newValue: "closed",
+    });
+  });
+  txn();
+  return true;
+}
+
+/**
+ * Restore a closed/superseded profile to 'active', writing a 'profile_restore'
+ * audit row in the SAME transaction. If the (account, brand) slot is taken →
+ * ActiveSlotConflict (the UI offers replace/remove-the-other).
+ */
+export function restore(db: Db, id: string, opts: { actor?: string; reason?: string } = {}): SearchProfile {
   const row = db.$client.prepare(SELECT_BY_ID).get(id) as SearchProfileRow | undefined;
   if (row === undefined) throw new Error(`restore: profile ${id} not found`);
-  try {
+  const txn = db.$client.transaction(() => {
     db.$client.prepare(SET_STATUS).run("active", id);
+    writeAuditLog(db, {
+      action: AUDIT_ACTIONS.profileRestore,
+      actor: opts.actor ?? null,
+      targetTable: "search_profiles",
+      targetId: id,
+      searchProfileId: id,
+      reason: opts.reason ?? null,
+      oldValue: typeof row.status === "string" ? row.status : null,
+      newValue: "active",
+    });
+  });
+  try {
+    txn();
   } catch (err) {
     if (isUniqueConstraint(err)) {
       const slot = db.$client

@@ -14,6 +14,8 @@
  *   GET  /api/profiles                       listProfiles
  *   GET  /api/profiles/:id                   getProfile
  *   PATCH /api/profiles/:id                  patchProfile (preference write-through)
+ *   DELETE /api/profiles/:id                 closeProfile (soft-delete → 'closed')
+ *   POST /api/profiles/:id/restore           restoreProfile ('closed' → 'active')
  *   GET  /api/skills                         listSkills
  *   GET  /api/mode                           getMode
  *   POST /api/sessions                       createSession
@@ -193,8 +195,10 @@ export class ApiClient {
     return decode(res, FormDecisionAckSchema);
   }
 
-  /** GET /api/profiles?status=… → snake_case rows, newest-first (routes.ts:262). */
-  async listProfiles(status?: "active" | "deleted" | "all"): Promise<ProfileList> {
+  /** GET /api/profiles?status=… → snake_case rows, newest-first (routes.ts:262).
+   *  "active" = status='active' OR NULL; "closed" = the soft-deleted set the
+   *  Closed-searches group restores from; "all" = every row. */
+  async listProfiles(status?: "active" | "closed" | "all"): Promise<ProfileList> {
     const q = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
     const res = await this.fetchImpl(this.url(`/api/profiles${q}`));
     return decode(res, ProfileListSchema);
@@ -217,6 +221,29 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    return decode(res, ProfileRowSchema);
+  }
+
+  /** DELETE /api/profiles/:id → 204 (soft-delete; status→'closed', the active
+   *  slot frees). A non-terminal run on the profile → 409 profile_busy; a
+   *  missing profile → 404 not_found. Resolves void on success. */
+  async closeProfile(id: string): Promise<void> {
+    const res = await this.fetchImpl(this.url(`/api/profiles/${encodeURIComponent(id)}`), {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      throw apiErrorFrom(res.status, parseJson(await res.text()));
+    }
+  }
+
+  /** POST /api/profiles/:id/restore → the now-active snake_case row. A taken
+   *  active (account, brand) slot → 409 active_slot_conflict (envelope carries
+   *  the conflicting brand); a missing profile → 404 not_found. */
+  async restoreProfile(id: string): Promise<ProfileRow> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/restore`),
+      { method: "POST" },
+    );
     return decode(res, ProfileRowSchema);
   }
 

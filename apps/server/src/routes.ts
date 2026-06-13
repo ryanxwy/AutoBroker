@@ -27,10 +27,12 @@
  * Dependency wall: app layer. Imports core (schemas), tools (DB reads via getDb +
  * resolveDataDir + the resolver) — NEVER @mastra, NEVER drizzle/better-sqlite3
  * directly (getDb is the tools closure). Profile reads go through the tools
- * read views; profile CREATION stays inside the workflow's persist step, and the
- * only route-level write is PATCH /api/profiles/:id, which delegates to the
- * tools-layer preference update() (identity fields are rejected there — confirm
- * freezes identity).
+ * read views; profile CREATION stays inside the workflow's persist step. The
+ * route-level writes are PATCH /api/profiles/:id (preference update — identity
+ * fields rejected there), DELETE /api/profiles/:id (soft-delete via the tools
+ * close(): audited status→'closed', frees the active slot, in-flight guard), and
+ * POST /api/profiles/:id/restore (audited status→'active', the active (account,
+ * brand) slot must be free).
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -43,7 +45,11 @@ import {
   listProfileRows,
   listProfileDealerRows,
   update as updateProfile,
+  close as closeProfile,
+  restore as restoreProfile,
   IdentityLockedError,
+  ActiveSlotConflict,
+  ProfileBusyError,
   type Db,
 } from "@autobroker/tools";
 import type { SearchProfile } from "@autobroker/core";
@@ -499,6 +505,56 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       throw err;
     }
     // Respond with the snake_case row view, same shape as GET /api/profiles/:id.
+    return withDb((db) => readProfileRow(db, id));
+  });
+
+  // ---- DELETE /api/profiles/:id — SOFT-DELETE (status → 'closed') ----------
+  // Delegates to the tools-layer close(), which writes the audited status flip
+  // (action 'profile_close') and frees the active (account, brand) slot. The
+  // data is KEPT — restore brings it back. A non-terminal skill run targeting
+  // the profile fails CLOSED → 409 profile_busy (the in-flight guard).
+  app.delete("/api/profiles/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    let closed: boolean;
+    try {
+      closed = withDb((db) => closeProfile(db, id, { actor: "dashboard" }));
+    } catch (err) {
+      if (err instanceof ProfileBusyError) {
+        throw new RouteError(err.code, 409, err.message, {
+          extra: { run_id: err.runId, profile_id: err.profileId },
+        });
+      }
+      throw err;
+    }
+    if (!closed) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    reply.code(204);
+    return null;
+  });
+
+  // ---- POST /api/profiles/:id/restore — bring a closed profile back active --
+  // Delegates to the tools-layer restore() (audited, action 'profile_restore').
+  // The active (account, brand) slot must be free; a taken slot maps to 409
+  // active_slot_conflict carrying the conflicting brand/account so the UI can
+  // say "you already have an active <brand> search".
+  app.post("/api/profiles/:id/restore", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const existing = withDb((db) => readProfileRow(db, id));
+    if (existing === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    try {
+      withDb((db) => restoreProfile(db, id, { actor: "dashboard" }));
+    } catch (err) {
+      if (err instanceof ActiveSlotConflict) {
+        throw new RouteError(err.code, 409, err.message, {
+          extra: { brand: err.brand, account: err.account, existing_profile_id: err.existingProfileId },
+        });
+      }
+      throw err;
+    }
+    // Respond with the now-active snake_case row view.
     return withDb((db) => readProfileRow(db, id));
   });
 

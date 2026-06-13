@@ -23,6 +23,7 @@ import type { Mode, ProfileList, SessionList, SkillList, SkillManifest, SkillRun
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { useLayout } from "../store/layout.js";
+import { ClosedSearchesGroup } from "./ClosedSearchesGroup.js";
 import { Popover } from "./Popover.js";
 import { SkillsPopoverList } from "./SkillsPopover.js";
 
@@ -199,6 +200,10 @@ export function TopBar({
                 ))}
               </>
             )}
+
+            {/* Closed searches — the soft-deleted set, each row restorable. The
+                group fetches its own list + hides when empty (like Sessions). */}
+            <ClosedSearchesGroup client={client} />
           </div>
         )}
       </Popover>

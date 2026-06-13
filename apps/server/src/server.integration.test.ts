@@ -657,3 +657,119 @@ describe("PATCH /api/profiles/:id — preference write-through", () => {
     expect(bad.statusCode).toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DELETE /api/profiles/:id (soft-delete) + POST /api/profiles/:id/restore
+// ---------------------------------------------------------------------------
+
+/** Create a SECOND active profile sharing the brand of an existing one — used to
+ *  occupy the (account, brand) active slot so a restore conflicts. The two share
+ *  the same make (brand) but differ in model so their synth ids differ; the
+ *  first must be closed before the second can be created (the slot). */
+function statusOf(id: string): string | null {
+  const r = db.$client
+    .prepare("SELECT status FROM search_profiles WHERE search_profile_id = ?")
+    .get(id) as { status: string | null } | undefined;
+  return r?.status ?? null;
+}
+
+describe("DELETE /api/profiles/:id — soft-delete (status→'closed')", () => {
+  it("closes the profile, writes the profile_close audit, and frees the active slot", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+
+    const del = await s.app.inject({ method: "DELETE", url: `/api/profiles/${id}` });
+    expect(del.statusCode).toBe(204);
+    expect(statusOf(id)).toBe("closed");
+    expect(auditCount("profile_close")).toBe(1);
+
+    // It drops out of the active list and into the closed list.
+    const active = await s.app.inject({ method: "GET", url: "/api/profiles?status=active" });
+    expect(active.json<unknown[]>()).toHaveLength(0);
+    const closed = await s.app.inject({ method: "GET", url: "/api/profiles?status=closed" });
+    const closedRows = closed.json<Array<Record<string, unknown>>>();
+    expect(closedRows.map((r) => r["search_profile_id"])).toEqual([id]);
+  });
+
+  it("404 for a missing profile (no audit)", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const del = await s.app.inject({ method: "DELETE", url: "/api/profiles/nope" });
+    expect(del.statusCode).toBe(404);
+    expect(auditCount("profile_close")).toBe(0);
+  });
+
+  it("the in-flight guard returns 409 profile_busy when a non-terminal run targets the profile", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    // A non-terminal skill_runs row keyed to the profile blocks the close.
+    db.$client
+      .prepare(
+        "INSERT INTO skill_runs (run_id, skill_name, search_profile_id, started_at, status) " +
+          "VALUES ('run-live', 'dealer_geosearch', ?, 0, 'running')",
+      )
+      .run(id);
+
+    const del = await s.app.inject({ method: "DELETE", url: `/api/profiles/${id}` });
+    expect(del.statusCode).toBe(409);
+    expect(del.json<{ error: { code: string } }>().error.code).toBe("profile_busy");
+    // Zero write: still active, no close audit.
+    expect(statusOf(id)).toBe("active");
+    expect(auditCount("profile_close")).toBe(0);
+  });
+
+  it("a TERMINAL run on the profile does NOT block the close", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    db.$client
+      .prepare(
+        "INSERT INTO skill_runs (run_id, skill_name, search_profile_id, started_at, status) " +
+          "VALUES ('run-done', 'dealer_geosearch', ?, 0, 'done')",
+      )
+      .run(id);
+
+    const del = await s.app.inject({ method: "DELETE", url: `/api/profiles/${id}` });
+    expect(del.statusCode).toBe(204);
+    expect(statusOf(id)).toBe("closed");
+  });
+});
+
+describe("POST /api/profiles/:id/restore — bring a closed profile back active", () => {
+  it("restores a closed profile to active and writes the profile_restore audit", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    await s.app.inject({ method: "DELETE", url: `/api/profiles/${id}` });
+    expect(statusOf(id)).toBe("closed");
+
+    const restore = await s.app.inject({ method: "POST", url: `/api/profiles/${id}/restore` });
+    expect(restore.statusCode).toBe(200);
+    expect(restore.json<{ status: string }>().status).toBe("active");
+    expect(statusOf(id)).toBe("active");
+    expect(auditCount("profile_restore")).toBe(1);
+  });
+
+  it("404 for a missing profile", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const restore = await s.app.inject({ method: "POST", url: "/api/profiles/nope/restore" });
+    expect(restore.statusCode).toBe(404);
+  });
+
+  it("409 active_slot_conflict (carrying the brand) when the slot is already taken", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    // Seed → close a Hyundai, then create a NEW active Hyundai (takes the slot).
+    const closedId = seedProfileRow();
+    await s.app.inject({ method: "DELETE", url: `/api/profiles/${closedId}` });
+    // A second Hyundai with a different model → a distinct synth id, active slot.
+    createProfile(db, validFields({ model: "Santa Fe" }) as unknown as SearchProfileIntakeInput, {
+      coordinates: { latitude: 33.6695, longitude: -117.7669 },
+    });
+
+    const restore = await s.app.inject({ method: "POST", url: `/api/profiles/${closedId}/restore` });
+    expect(restore.statusCode).toBe(409);
+    const env = restore.json<{ error: { code: string; brand?: string } }>().error;
+    expect(env.code).toBe("active_slot_conflict");
+    expect(env.brand).toBe("Hyundai");
+    // The closed row stayed closed (rollback) and no restore audit landed.
+    expect(statusOf(closedId)).toBe("closed");
+    expect(auditCount("profile_restore")).toBe(0);
+  });
+});

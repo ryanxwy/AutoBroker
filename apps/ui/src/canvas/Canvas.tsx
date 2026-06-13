@@ -23,6 +23,7 @@ import { useDataRefetch } from "../api/useDataChanged.js";
 import type { DealerList, DealerRow, ProfileList } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { ProfileEditPanel } from "./ProfileEditPanel.js";
+import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 
 /** The data kinds the Canvas's two read views render — stable module-level
  *  literals so useDataRefetch re-registers only when the refetch identity (not
@@ -177,6 +178,14 @@ function ProfileCard({
               Edit preferences
             </button>
           )}
+        </div>
+      )}
+
+      {/* Card foot — the soft-delete control, separated from the preferences by
+          a ledger rule. Only in the read view (never while editing). */}
+      {!editing && snapshot.id !== null && (
+        <div className="profile-card-foot">
+          <ProfileRemoveControl client={client} profileId={snapshot.id} />
         </div>
       )}
     </section>

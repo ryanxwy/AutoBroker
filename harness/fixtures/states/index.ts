@@ -41,6 +41,7 @@ import type { Db } from "@autobroker/tools";
 import type { Scenario } from "../stubs.js";
 
 import { activeSearch } from "./activeSearch.js";
+import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { emptyHome } from "./emptyHome.js";
@@ -65,6 +66,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [activeSearch.id]: activeSearch,
   [multiActive.id]: multiActive,
   [closedProfile.id]: closedProfile,
+  [closedOnly.id]: closedOnly,
   [dataArriving.id]: dataArriving,
   [dataArrivingGrown.id]: dataArrivingGrown,
 };

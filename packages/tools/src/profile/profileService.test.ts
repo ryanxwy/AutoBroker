@@ -28,6 +28,10 @@ import {
   replace,
   validate,
   update,
+  close,
+  restore,
+  inFlightRunFor,
+  listProfileRows,
   parseLocation,
   synthProfileId,
   type ResolvedCoordinates,
@@ -39,6 +43,7 @@ import {
   ActiveSlotConflict,
   CoordinatesNotResolvedError,
   IdentityLockedError,
+  ProfileBusyError,
 } from "./errors.js";
 import { assertNoBudget, BudgetLeakError } from "../validators.js";
 
@@ -132,7 +137,7 @@ afterAll(() => {
 
 beforeEach(() => {
   db.$client.exec(
-    "DELETE FROM audit_log; DELETE FROM lead_submissions; DELETE FROM search_profiles; DELETE FROM dealers; DELETE FROM accounts;",
+    "DELETE FROM audit_log; DELETE FROM lead_submissions; DELETE FROM skill_runs; DELETE FROM search_profiles; DELETE FROM dealers; DELETE FROM accounts;",
   );
 });
 
@@ -303,6 +308,120 @@ describe("replace — atomic supersede→create→link→audit (FIX 1)", () => {
     expect(countProfiles()).toBe(1);
     expect(countAudit("profile_replace")).toBe(0);
     expect(countAudit("search_profile_intake")).toBe(1); // only the original create's audit
+  });
+});
+
+// ---------------------------------------------------------------------------
+/** Seed a skill_runs row targeting a profile with the given status (the
+ *  in-flight guard's input — search_profile_id + status). */
+function seedSkillRun(runId: string, profileId: string, status: string): void {
+  db.$client
+    .prepare(
+      "INSERT INTO skill_runs (run_id, skill_name, search_profile_id, started_at, status) " +
+        "VALUES (?, 'dealer_geosearch', ?, 0, ?)",
+    )
+    .run(runId, profileId, status);
+}
+
+describe("close — soft-delete: audited status→'closed', slot frees, in-flight guard", () => {
+  it("status→'closed' + 1 audit('profile_close'); returns true; the active slot frees", () => {
+    seedAccount("acc-1", "owner@example.com");
+    const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
+
+    const ok = close(db, profile.id, { actor: "dashboard" });
+    expect(ok).toBe(true);
+
+    const row = db.$client
+      .prepare("SELECT status FROM search_profiles WHERE search_profile_id = ?")
+      .get(profile.id) as { status: string };
+    expect(row.status).toBe("closed");
+    expect(countAudit("profile_close")).toBe(1);
+
+    // The slot freed: a NEW active Toyota profile can be created without conflict.
+    expect(() =>
+      create(db, baseInput({ make: "Toyota", model: "Camry" }), { coordinates: COORDS }),
+    ).not.toThrow();
+  });
+
+  it("returns false (no write, no audit) for a missing profile", () => {
+    seedAccount("acc-1", "owner@example.com");
+    expect(close(db, "nope")).toBe(false);
+    expect(countAudit("profile_close")).toBe(0);
+  });
+
+  it("in-flight guard: a non-terminal run on the profile → ProfileBusyError, zero write", () => {
+    seedAccount("acc-1", "owner@example.com");
+    const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
+    seedSkillRun("run-live", profile.id, "running");
+
+    expect(() => close(db, profile.id)).toThrow(ProfileBusyError);
+    // Zero write: still active, no close audit.
+    const row = db.$client
+      .prepare("SELECT status FROM search_profiles WHERE search_profile_id = ?")
+      .get(profile.id) as { status: string };
+    expect(row.status).toBe("active");
+    expect(countAudit("profile_close")).toBe(0);
+    // inFlightRunFor reports the blocking run id.
+    expect(inFlightRunFor(db, profile.id)).toBe("run-live");
+  });
+
+  it("a TERMINAL run on the profile does NOT block the close", () => {
+    seedAccount("acc-1", "owner@example.com");
+    const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
+    seedSkillRun("run-done", profile.id, "done");
+
+    expect(inFlightRunFor(db, profile.id)).toBeNull();
+    expect(close(db, profile.id)).toBe(true);
+  });
+});
+
+describe("restore — audited status→'active'; active-slot conflict when taken", () => {
+  it("a closed profile restores to 'active' + 1 audit('profile_restore')", () => {
+    seedAccount("acc-1", "owner@example.com");
+    const { profile } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
+    close(db, profile.id);
+
+    const restored = restore(db, profile.id, { actor: "dashboard" });
+    expect(restored.status).toBe("active");
+    expect(countAudit("profile_restore")).toBe(1);
+  });
+
+  it("ActiveSlotConflict when an active row already holds the (account, brand) slot", () => {
+    seedAccount("acc-1", "owner@example.com");
+    // Create + close a Toyota, then create a NEW active Toyota (takes the slot).
+    const { profile: closed } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
+    close(db, closed.id);
+    create(db, baseInput({ make: "Toyota", model: "Camry" }), { coordinates: COORDS });
+
+    let err: unknown;
+    try {
+      restore(db, closed.id);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ActiveSlotConflict);
+    expect((err as ActiveSlotConflict).brand).toBe("Toyota");
+    // The restore rolled back: the row stays closed, no restore audit landed.
+    const row = db.$client
+      .prepare("SELECT status FROM search_profiles WHERE search_profile_id = ?")
+      .get(closed.id) as { status: string };
+    expect(row.status).toBe("closed");
+    expect(countAudit("profile_restore")).toBe(0);
+  });
+});
+
+describe("listProfileRows — the 'closed' filter", () => {
+  it("'closed' returns only status='closed' rows; 'active' excludes them", () => {
+    seedAccount("acc-1", "owner@example.com");
+    const { profile: a } = create(db, baseInput({ make: "Toyota", model: "RAV4" }), { coordinates: COORDS });
+    const { profile: b } = create(db, baseInput({ make: "Honda", model: "CR-V" }), { coordinates: COORDS });
+    close(db, b.id);
+
+    const activeRows = listProfileRows(db, "active");
+    expect(activeRows.map((r) => r["search_profile_id"])).toEqual([a.id]);
+
+    const closedRows = listProfileRows(db, "closed");
+    expect(closedRows.map((r) => r["search_profile_id"])).toEqual([b.id]);
   });
 });
 

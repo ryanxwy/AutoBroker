@@ -34,6 +34,9 @@ export interface ProfileSnapshot {
   searchRadiusMiles: number | null;
   financingPreference: string | null;
   phonePolicy: string | null;
+  /** Lifecycle status ('active' | 'closed' | 'superseded' | null) — the
+   *  Closed-searches group reads this; the active list is filtered server-side. */
+  status: string | null;
   dealerCount: number | null;
   threadCount: number | null;
   bestOtd: number | null;
@@ -53,6 +56,7 @@ export function toSnapshot(row: ProfileRow): ProfileSnapshot {
     searchRadiusMiles: num(row, "search_radius_miles"),
     financingPreference: str(row, "financing_preference"),
     phonePolicy: str(row, "phone_policy"),
+    status: str(row, "status"),
     dealerCount: num(row, "dealer_count"),
     threadCount: num(row, "thread_count"),
     bestOtd: num(row, "best_otd"),

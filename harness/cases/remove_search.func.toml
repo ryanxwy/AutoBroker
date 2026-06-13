@@ -1,0 +1,89 @@
+# harness/cases/remove_search.func.toml — FUNCTIONAL lane: SOFT-DELETE a search
+# end-to-end (U-B).
+#
+# Installs the active_search fixture (one active Hyundai Tucson Hybrid profile +
+# two bound dealers), then drives the Canvas profile card's REMOVE flow exactly
+# as a user would:
+#   open the remove confirm (the card-foot "Remove this search") → confirm Remove.
+# Remove fires a REAL DELETE /api/profiles/:id against the stubbed server — the
+# tools close() soft-delete: status→'closed', the active (account, brand) slot
+# frees, an audited row lands (no LLM, fully deterministic). A reload then
+# re-reads the now-'closed' world: the active list is empty, so the Canvas shows
+# its empty state and the profile card is GONE. Opening the Searches popover
+# proves the removed search MOVED — it now appears under the Closed group as a
+# restorable row (searches-closed-row-<id>), not as an active searches-row-.
+#
+# WHY THIS IS A REAL REMOVE PROOF: the profile was active+visible before; after
+# the DELETE + reload it is absent from the active canvas AND present in the
+# Closed group. Both can only hold if the DELETE wrote status='closed' AND the
+# active-list filter dropped it while the closed-list filter surfaced it — i.e.
+# the whole U-B soft-delete loop (confirm → DELETE → close() → DB → re-read) ran.
+
+[meta]
+id = "remove_search_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "remove_search"
+kind = "ui"
+fixture_state = "active_search"
+purpose = "Open the profile remove confirm, click Remove (a real DELETE/soft-delete write); after a reload the active canvas is empty and the removed search appears under the Searches popover's Closed group as a restorable row."
+
+# Open the inline remove confirm (the card-foot "Remove this search").
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-remove-open"
+
+# Commit the soft-delete — a real DELETE write-through (status→'closed').
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-remove-confirm-yes"
+
+# Reload: re-read the now-'closed' world so the active-list filter drops the row
+# (the durable proof, independent of the in-place auto-refresh).
+[[steps.ui_actions]]
+verb = "reload"
+testid = "app-main"
+
+# Open the Searches popover so the Closed group + its row mount before scoring.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+# The active profile card is GONE from the canvas (the empty state takes over).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-profile-card"
+expect = "absent"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-empty"
+expect = "visible"
+
+# The removed search MOVED into the Closed group as a restorable row.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-closed-group"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-closed-row-active-tucson-1"
+expect = "visible"
+
+# It is NO LONGER an active searches-row- entry (the active list dropped it).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-"
+expect = "count"
+count = 0
+match = "prefix"
