@@ -426,6 +426,16 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         </div>
       )}
 
+      {/* Demo mode — a persistent, non-dismissable strip whenever the server
+          reports the isolated sample-world DB. Informational (not an alert):
+          nothing here touches real data. */}
+      {mode.kind === "ok" && mode.data.demo && (
+        <div className="demo-banner" data-testid="demo-banner" role="status">
+          <strong>DEMO DATA</strong> · You&rsquo;re viewing sample data in an isolated database.
+          Nothing here is real.
+        </div>
+      )}
+
       {/* System-layer gate surface — ABOVE the workbench/rail split, so a
           banner-tracked gate precedes app-main and all prose in document order. */}
       <GateBannerHost awaiting={activeAwaiting} decision={decision} />

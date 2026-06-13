@@ -581,12 +581,18 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return SKILL_MANIFEST;
   });
 
-  // ---- GET /api/mode — harness preflight {active_db, data_dir} -------------
+  // ---- GET /api/mode — harness preflight {active_db, data_dir, demo} -------
   app.get("/api/mode", async () => {
     // The active product DB path = AUTOBROKER_DB override or <dataDir>/autobroker.db.
     const dataDir = resolveDataDir();
     const activeDb = process.env.AUTOBROKER_DB ?? `${dataDir}/autobroker.db`;
-    return { active_db: activeDb, data_dir: dataDir };
+    // demo = the zero-config sample-world mode. True when the launcher armed the
+    // demo seed, OR the resolved data dir is an isolated demo path (a belt for a
+    // demo dir entered any other way). The UI renders the persistent demo banner
+    // off this flag.
+    const demo =
+      process.env.AUTOBROKER_DEMO_SEED === "1" || /(^|\/)demo\/?$/.test(dataDir);
+    return { active_db: activeDb, data_dir: dataDir, demo };
   });
 
   // ========================================================================

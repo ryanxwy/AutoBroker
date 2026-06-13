@@ -292,12 +292,15 @@ export const SkillListSchema = z.array(SkillManifestSchema);
 export type SkillList = z.infer<typeof SkillListSchema>;
 
 // ---------------------------------------------------------------------------
-// Mode — GET /api/mode. routes.ts:283-288 → { active_db, data_dir }.
+// Mode — GET /api/mode → { active_db, data_dir, demo }. `demo` is true in the
+// zero-config sample-world mode (the isolated demo DB) and drives the
+// persistent demo banner.
 // ---------------------------------------------------------------------------
 
 export const ModeSchema = z.object({
   active_db: z.string(),
   data_dir: z.string(),
+  demo: z.boolean(),
 });
 export type Mode = z.infer<typeof ModeSchema>;
 

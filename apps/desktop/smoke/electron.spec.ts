@@ -33,13 +33,17 @@ const desktopDir = resolve(here, "..");
 const electronBin = createRequire(import.meta.url)("electron") as string;
 
 const dataDir = mkdtempSync(join(tmpdir(), "autobroker-desktop-smoke-"));
+// A SEPARATE isolated dir for the demo-mode launch (S8) — proving demo never
+// reuses the normal smoke data dir, and certainly never the real ~/.autobroker-ts.
+const demoDataDir = mkdtempSync(join(tmpdir(), "autobroker-desktop-demo-"));
 
-/** process.env minus undefined values, plus the isolated data dir. */
-function launchEnv(): Record<string, string> {
+/** process.env minus undefined values, plus the isolated data dir. `extra`
+ *  overlays demo-mode (or any) env for a single launch. */
+function launchEnv(extra: Record<string, string> = {}): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
   env.AUTOBROKER_DATA_DIR = dataDir;
-  return env;
+  return { ...env, ...extra };
 }
 
 function pidAlive(pid: number): boolean {
@@ -77,8 +81,12 @@ async function serverPidOf(app: ElectronApplication): Promise<number> {
   return pid as number;
 }
 
-async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await _electron.launch({ executablePath: electronBin, args: [desktopDir], env: launchEnv() });
+async function launchApp(extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page }> {
+  const app = await _electron.launch({
+    executablePath: electronBin,
+    args: [desktopDir],
+    env: launchEnv(extraEnv),
+  });
   const page = await app.firstWindow({ timeout: 60_000 });
   await page.waitForLoadState("domcontentloaded");
   return { app, page };
@@ -94,6 +102,7 @@ async function closeApp(app: ElectronApplication): Promise<void> {
 
 afterAll(() => {
   rmSync(dataDir, { recursive: true, force: true });
+  rmSync(demoDataDir, { recursive: true, force: true });
 });
 
 describe("shared window (S1, S2, S6, S7)", () => {
@@ -267,6 +276,102 @@ describe("single instance (S5)", () => {
       );
       expect(seen).toBe(true);
       expect(pidAlive(pid)).toBe(true); // first instance + its fork unharmed
+    } finally {
+      await closeApp(app).catch(() => {});
+    }
+  });
+});
+
+// Demo mode (S8, S9): one launch armed with AUTOBROKER_DEMO_SEED=1 against a
+// SEPARATE tmp demo dir. The seed runs in boot; the SPA reads /api/mode.demo.
+describe("demo mode (S8, S9)", () => {
+  let app: ElectronApplication;
+  let page: Page;
+
+  beforeAll(async () => {
+    ({ app, page } = await launchApp({ AUTOBROKER_DEMO_SEED: "1", AUTOBROKER_DATA_DIR: demoDataDir }));
+  });
+  afterAll(async () => {
+    await closeApp(app);
+  });
+
+  it("S8: demo is invocable AND isolated — seeded profiles + demo dir, never the real one", async () => {
+    // The boot seed wrote the sample world into THIS demo dir; the active list
+    // now carries ≥2 profiles (the two distinct-brand actives).
+    const profiles = await page.evaluate(
+      async () => (await fetch("/api/profiles?status=active")).json() as Promise<unknown[]>,
+    );
+    expect(Array.isArray(profiles)).toBe(true);
+    expect(profiles.length).toBeGreaterThanOrEqual(2);
+
+    // /api/mode reports demo:true AND the isolated demo dir — proving the run
+    // never touched the normal smoke dir, let alone the real ~/.autobroker-ts.
+    const mode = await page.evaluate(
+      async () => (await fetch("/api/mode")).json() as Promise<{ demo: boolean; data_dir: string }>,
+    );
+    expect(mode.demo).toBe(true);
+    expect(mode.data_dir).toBe(demoDataDir);
+    expect(mode.data_dir).not.toBe(dataDir);
+    expect(mode.data_dir).not.toContain("/.autobroker-ts/autobroker.db");
+  });
+
+  it("S9: the demo banner is present in demo mode", async () => {
+    await page.waitForSelector('[data-testid="demo-banner"]', { timeout: 30_000 });
+    const text = await page.evaluate(
+      () => document.querySelector('[data-testid="demo-banner"]')?.textContent ?? "",
+    );
+    expect(text).toContain("DEMO DATA");
+  });
+});
+
+describe("demo banner absent in a normal launch (S9)", () => {
+  it("S9: a non-demo launch renders the SPA shell with NO demo banner", async () => {
+    const { app, page } = await launchApp();
+    try {
+      await page.waitForSelector('[data-testid="app-main"]', { timeout: 30_000 });
+      const mode = await page.evaluate(async () => (await fetch("/api/mode")).json() as Promise<{ demo: boolean }>);
+      expect(mode.demo).toBe(false);
+      expect(await page.locator('[data-testid="demo-banner"]').count()).toBe(0);
+    } finally {
+      await closeApp(app).catch(() => {});
+    }
+  });
+});
+
+// Layout integrity at the smallest supported window (S10): the chrome must not
+// clip at 900×600. Plain non-demo launch; deterministic, no LLM.
+describe("small-window layout integrity (S10)", () => {
+  it("S10: at 900×600 app-main + the composer are visible and the topbar isn't clipped", async () => {
+    const { app, page } = await launchApp();
+    try {
+      await page.setViewportSize({ width: 900, height: 600 });
+      await page.waitForSelector('[data-testid="app-main"]', { timeout: 30_000 });
+
+      // The main region + the chat composer render and are visible.
+      expect(await page.locator('[data-testid="app-main"]').isVisible()).toBe(true);
+      expect(await page.locator('[data-testid="chat-input-textarea"]').isVisible()).toBe(true);
+
+      // The topbar settings + mode-switch controls sit fully within the 900-wide
+      // viewport (right edge not clipped past the window).
+      for (const testid of ["topbar-settings", "topbar-mode-canvas", "topbar-mode-conversation"]) {
+        const loc = page.locator(`[data-testid="${testid}"]`);
+        if ((await loc.count()) === 0) continue; // tolerate a renamed/absent control
+        const box = await loc.first().boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(900 + 1); // sub-pixel slack
+      }
+
+      // If a gate banner is present its approve/deny controls are in-viewport.
+      for (const testid of ["approval-approve", "approval-deny"]) {
+        const loc = page.locator(`[data-testid="${testid}"]`);
+        if ((await loc.count()) === 0) continue;
+        const box = await loc.first().boundingBox();
+        if (box === null) continue;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(900 + 1);
+        expect(box.y + box.height).toBeLessThanOrEqual(600 + 1);
+      }
     } finally {
       await closeApp(app).catch(() => {});
     }

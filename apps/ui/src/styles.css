@@ -225,6 +225,18 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   font-weight: 600;
 }
 
+/* Demo-mode strip — the informational (run) wash, not the stop/alert red.
+   Reuses the same tokens as .scope-notice so it carries no new visual language. */
+.demo-banner {
+  background: var(--run-wash);
+  color: var(--ink);
+  border-bottom: 1px solid var(--run-line);
+  border-left: 3px solid var(--run);
+  padding: 9px 18px;
+  font-size: 13px;
+}
+.demo-banner strong { color: var(--run); font-weight: 700; }
+
 /* ---- topbar popovers / mode switch / diagnostics ------------------------ */
 .popover-wrap { position: relative; }
 .popover-wrap > button {

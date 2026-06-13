@@ -65,6 +65,7 @@ function mockFetch(
     sessions?: Array<Record<string, unknown>>;
     deadRuns?: string[];
     runStatus?: Record<string, Record<string, unknown>>;
+    demo?: boolean;
   } = {},
 ): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -78,7 +79,7 @@ function mockFetch(
       }
       return new MockStream(url).response;
     }
-    if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x" });
+    if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x", demo: opts.demo ?? false });
     if (url.endsWith("/api/settings/keys"))
       return json({
         deepseek: { present: true },
@@ -557,7 +558,7 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
       const json = (body: unknown, status = 200): Response =>
         new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
       if (url.includes("/stream-v2")) return new MockStream(url).response;
-      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x" });
+      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false });
       if (url.endsWith("/api/skills"))
         return json([{ name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, retries: 1 }]);
       if (url.includes("/dealers")) {
@@ -615,7 +616,7 @@ describe("App — first-run gate (no DeepSeek key)", () => {
       const url = typeof input === "string" ? input : input.toString();
       const json = (body: unknown, status = 200): Response =>
         new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x" });
+      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false });
       if (url.endsWith("/api/settings/keys"))
         return json({
           deepseek: { present: false },
@@ -698,6 +699,28 @@ describe("App — declined terminal renders the cancelled line", () => {
     expect(r.get("assistant-turn").getAttribute("data-status")).toBe("declined");
     expect(r.query("turn-declined")).not.toBeNull();
     expect(r.query("intake-form")).toBeNull();
+    r.unmount();
+  });
+});
+
+describe("App — demo banner (mode.demo)", () => {
+  it("renders the persistent demo strip when /api/mode reports demo:true", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch({ demo: true }) });
+    const r = render(<App client={client} />);
+    await flush();
+    const banner = r.get("demo-banner");
+    expect(banner.textContent).toContain("DEMO DATA");
+    // System strip: precedes app-main in document order (above the workbench).
+    const main = r.get("app-main");
+    expect(banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    r.unmount();
+  });
+
+  it("is absent in a normal (non-demo) launch", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch({ demo: false }) });
+    const r = render(<App client={client} />);
+    await flush();
+    expect(r.query("demo-banner")).toBeNull();
     r.unmount();
   });
 });

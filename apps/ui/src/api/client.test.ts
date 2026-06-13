@@ -56,10 +56,11 @@ const SKILLS_FIXTURE = [
   },
 ];
 
-/** GET /api/mode → { active_db, data_dir } (routes.ts:287). */
+/** GET /api/mode → { active_db, data_dir, demo } (routes.ts:287). */
 const MODE_FIXTURE = {
   active_db: "/tmp/autobroker-xyz/autobroker.db",
   data_dir: "/tmp/autobroker-xyz",
+  demo: false,
 };
 
 /** GET /api/skill-runs/:id → status summary (intakeRuns.ts:569-575). The

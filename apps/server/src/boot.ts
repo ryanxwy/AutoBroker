@@ -40,7 +40,7 @@ import {
   restartStaleRun,
   type BootRecoveryReport,
 } from "@autobroker/workflows";
-import { loadSecretsIntoEnv } from "@autobroker/tools";
+import { loadSecretsIntoEnv, getDb, seedDemoData } from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
  *  import — the dependency wall forbids it in the app layer). */
@@ -81,6 +81,19 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // call and the first geocode see the stored keys (the providers + geocoder
   // resolve their key from the env at call time). Missing file = no-op.
   loadSecretsIntoEnv();
+
+  // (1c) Demo mode (zero-config sample world): write the renderable demo data
+  // into the (already-isolated) demo DB before the first request, so the
+  // dashboard populates with no key/Gmail/network. Idempotent (seeds only an
+  // empty DB) and tools-owned (boot delegates the write down into the tools
+  // layer, never opening the product DB directly for a write — the shared
+  // long-lived getDb handle is handed straight to the tools seed, so the
+  // server reuses one connection rather than leaking an unclosed one). Off
+  // entirely unless the launcher armed AUTOBROKER_DEMO_SEED=1 against the
+  // isolated demo data dir.
+  if (process.env.AUTOBROKER_DEMO_SEED === "1") {
+    seedDemoData(getDb());
+  }
 
   // (2) Library-mode instance with the skill workflows registered. The registry
   // module import re-registers the step closures deterministically (runtimeGlue).

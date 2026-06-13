@@ -230,6 +230,10 @@ export {
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
 
+// Demo seed — the renderable sample world for the zero-config demo mode
+// (idempotent, writes whatever isolated handle it is given).
+export { seedDemoData } from "./demo/seedDemo.js";
+
 // test_run_records ledger writer — the ONE write path (NULL-not-$0 enforced).
 export {
   writeTestRunRecord,

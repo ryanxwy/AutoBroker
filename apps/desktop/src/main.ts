@@ -52,9 +52,57 @@ interface DesktopHook {
 const hook: DesktopHook = { serverPid: null, port: null, forkEnvSafety: {}, secondInstanceSeen: false };
 (globalThis as Record<string, unknown>).__desktopHook = hook;
 
+/** The real product data dir the launcher would boot against (honors an outer
+ *  override, then the .env file, then the parity-period default — the SAME
+ *  resolution startServer uses). Tilde-expanded; Node does not expand "~". */
+function realDataDir(): string {
+  const dotEnv = parseDotEnv(join(repoRoot, ".env"));
+  const dir = process.env.AUTOBROKER_DATA_DIR ?? dotEnv.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts");
+  return dir === "~" || dir.startsWith("~/") ? join(homedir(), dir.slice(1)) : dir;
+}
+
+/** True when the persisted keys file carries a non-empty deepseek entry
+ *  (<dataDir>/settings/keys.json). A missing / unreadable / malformed file is
+ *  "no key" — fail safe toward offering the demo. The launcher reads only this
+ *  presence bit; it never holds the secret. */
+function hasDeepseekKey(dataDir: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(join(dataDir, "settings", "keys.json"), "utf8")) as Record<string, unknown>;
+    return typeof parsed.deepseek === "string" && parsed.deepseek.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** A FRESH install has no key configured AND no product DB yet (the server has
+ *  never booted in the real dir, so there are no profiles). The launcher cannot
+ *  open SQLite (the system-ABI build is not loaded into the main process — the
+ *  bundle has its own Electron-ABI copy), so the absence of autobroker.db is the
+ *  truthful zero-dep equivalent of "no profiles".
+ *
+ *  The demo offer is the PRODUCTION double-click path only: an explicit
+ *  AUTOBROKER_DATA_DIR / AUTOBROKER_DB override (dev, harness, the smoke suite,
+ *  or an already-armed demo launch) is a deliberate boot target and never
+ *  prompts. */
+function isFreshInstall(dataDir: string): boolean {
+  if (process.env.AUTOBROKER_DATA_DIR !== undefined) return false; // explicit target
+  if (process.env.AUTOBROKER_DB !== undefined) return false;
+  if (process.env.AUTOBROKER_DEMO_SEED === "1") return false; // already a demo launch
+  if (hasDeepseekKey(dataDir)) return false;
+  return !existsSync(join(dataDir, "autobroker.db"));
+}
+
+/** The isolated demo data dir — NEVER the real ~/.autobroker-ts. */
+function demoDataDir(): string {
+  return join(homedir(), ".autobroker-ts", "demo");
+}
+
 let serverProc: UtilityProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let shuttingDown = false;
+/** Set by the first-run dialog: when true, startServer forks the demo world
+ *  into the isolated demo dir. Env-only handoff (no IPC, no preload). */
+let demoMode = false;
 
 /** Fork the bundled server; resolve with the actual bound port once the
  *  listening JSON line ({"server":"listening",...,"port":N}) appears. */
@@ -64,11 +112,15 @@ function startServer(): Promise<number> {
     ...dotEnv,
     ...(process.env as Record<string, string>), // an already-set var beats the .env file
     PORT: "0",
-    AUTOBROKER_DATA_DIR:
-      process.env.AUTOBROKER_DATA_DIR ?? dotEnv.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts"),
+    // Demo mode forks into the ISOLATED demo dir + arms the seed; normal boot
+    // uses the real data dir. The demo dir is never the real ~/.autobroker-ts.
+    AUTOBROKER_DATA_DIR: demoMode
+      ? demoDataDir()
+      : process.env.AUTOBROKER_DATA_DIR ?? dotEnv.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts"),
     AUTOBROKER_UI_DIST: join(bundleDir, "ui-dist"),
     AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: "1",
     MASTRA_TELEMETRY_DISABLED: "1",
+    ...(demoMode ? { AUTOBROKER_DEMO_SEED: "1" } : {}),
   };
   hook.forkEnvSafety = {
     PORT: env.PORT!,
@@ -76,6 +128,7 @@ function startServer(): Promise<number> {
     AUTOBROKER_UI_DIST: env.AUTOBROKER_UI_DIST!,
     AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS!,
     MASTRA_TELEMETRY_DISABLED: env.MASTRA_TELEMETRY_DISABLED!,
+    ...(env.AUTOBROKER_DEMO_SEED !== undefined ? { AUTOBROKER_DEMO_SEED: env.AUTOBROKER_DEMO_SEED } : {}),
   };
 
   return new Promise<number>((resolvePort, reject) => {
@@ -146,6 +199,28 @@ async function onServerExit(code: number): Promise<void> {
   }
 }
 
+/**
+ * First-run gate (env-only, no IPC): on a FRESH install (no DeepSeek key + no
+ * product DB) offer the demo. "Try demo data" arms demoMode → startServer forks
+ * the demo seed into the ISOLATED demo dir; "Set up keys" boots normally (the
+ * SPA's own first-run gate then routes to /settings). Already-configured
+ * installs never see this dialog. Honored only when the launcher is interactive
+ * (skipped when AUTOBROKER_DEMO_SEED is already set, e.g. the smoke S8 launch).
+ */
+async function maybeOfferDemo(): Promise<void> {
+  if (!isFreshInstall(realDataDir())) return;
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    title: "AutoBroker",
+    message: "No API key found",
+    detail: "Try AutoBroker with sample demo data, or set up your keys first?",
+    buttons: ["Try demo data", "Set up keys"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  demoMode = response === 0;
+}
+
 async function run(): Promise<void> {
   // Optional runtime dock icon — `electron .` otherwise shows Electron's
   // default. The artwork is a machine-local artifact (generated next to the
@@ -154,6 +229,7 @@ async function run(): Promise<void> {
     const dockIcon = nativeImage.createFromPath(join(homedir(), ".autobroker-ts", "desktop-launcher", "icon.png"));
     if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
   }
+  await maybeOfferDemo();
   const port = await startServer();
   mainWindow = new BrowserWindow({
     width: 1440,
