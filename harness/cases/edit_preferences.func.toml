@@ -1,0 +1,81 @@
+# harness/cases/edit_preferences.func.toml — FUNCTIONAL lane: in-dashboard
+# PREFERENCE EDITING end-to-end (U-A).
+#
+# Installs the active_search fixture (one active Hyundai Tucson Hybrid profile
+# with search_radius_miles=50 + two bound dealers), then drives the Canvas
+# profile card through the edit flow exactly as a user would:
+#   open the edit panel → change the search radius to 175 → Save.
+# Save fires a REAL PATCH /api/profiles/:id against the stubbed server, a true
+# DB write (no LLM, fully deterministic). The driver then WAITS on the in-app
+# "Saved" badge (profile-edit-saved) — that wait is itself the success proof:
+# it appears only after the PATCH resolves 200, so a failed/never-fired write
+# times the wait out into a loud RED. A reload re-reads the now-persisted row,
+# and the dom_state anchor asserts the read-view preference chip reflects the
+# NEW 175-mile radius (175 != the seeded 50 — a real Δ, not a vacuous read).
+#
+# WHY THIS IS A REAL EDIT PROOF: the seeded radius is 50; the chip after the
+# round-trip reads "175 mi radius". That value can only be there if the PATCH
+# wrote the column AND the read projection re-read it — i.e. the whole U-A loop
+# (form → client serialize → route → tools update() → DB → re-read → chip) ran.
+
+[meta]
+id = "edit_preferences_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "edit_preferences"
+kind = "ui"
+fixture_state = "active_search"
+purpose = "Open the profile edit panel, change the search radius to 175, Save (a real PATCH/DB write); the in-app Saved badge confirms, and after a reload the read-view preference chip reflects the persisted new radius."
+
+# Open the edit panel (the read-view "Edit preferences" button).
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-edit-open"
+
+# Change the radius to a value distinct from the seeded 50.
+[[steps.ui_actions]]
+verb = "fill"
+testid = "profile-edit-field-radius"
+value = "175"
+
+# Commit the edit — a real PATCH write-through.
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-edit-save"
+
+# WAIT on the in-app success badge: clicking it blocks on its selector, which
+# only renders after the PATCH resolves 200 — so this verb is the save-succeeded
+# proof (a non-200 / no-fire would time out RED here).
+[[steps.ui_actions]]
+verb = "click"
+testid = "profile-edit-saved"
+
+# Reload: re-read the persisted profile so the read-view preference chip
+# re-renders from the DB (the durable proof, independent of the in-app fade).
+# The reload verb acts on the whole page; `testid` is unused for it (the schema
+# requires the field — app-main is a harmless, always-present anchor).
+[[steps.ui_actions]]
+verb = "reload"
+testid = "app-main"
+
+# The persisted new radius surfaces in the read-view preference chip.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "profile-pref-radius"
+expect = "text"
+value = "175 mi radius"
+
+# The profile card is back in its read view (the edit panel closed).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-profile-card"
+expect = "visible"

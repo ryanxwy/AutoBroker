@@ -15,11 +15,14 @@
  * binds the route to the run (stable run-view-id testid).
  */
 
+import { useRef, useState } from "react";
+
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
 import type { DealerList, DealerRow, ProfileList } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
+import { ProfileEditPanel } from "./ProfileEditPanel.js";
 
 /** The data kinds the Canvas's two read views render — stable module-level
  *  literals so useDataRefetch re-registers only when the refetch identity (not
@@ -78,7 +81,20 @@ function CanvasEmptyState({ onStartIntake }: { onStartIntake: () => void }): JSX
 // profile card — frozen identity chips + preference chips (read-only)
 // ---------------------------------------------------------------------------
 
-function ProfileCard({ snapshot }: { snapshot: ProfileSnapshot }): JSX.Element {
+function ProfileCard({
+  client,
+  snapshot,
+  onSaved,
+}: {
+  client: ApiClient;
+  snapshot: ProfileSnapshot;
+  /** Invoked after a successful preference save — the host refetches the list
+   *  (the snapshot the read view renders comes from the refreshed profiles). */
+  onSaved: () => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+
   const identity = [
     snapshot.year !== null ? String(snapshot.year) : null,
     snapshot.make,
@@ -87,30 +103,82 @@ function ProfileCard({ snapshot }: { snapshot: ProfileSnapshot }): JSX.Element {
     formatLocation(snapshot.location),
   ].filter((c): c is string => c !== null && c !== "");
 
+  // Cancel/save both return focus to the Edit-preferences button (a11y).
+  const exitEdit = (): void => {
+    setEditing(false);
+    // Focus returns after the read view re-renders.
+    requestAnimationFrame(() => editButtonRef.current?.focus());
+  };
+  const handleSaved = (): void => {
+    onSaved();
+    exitEdit();
+  };
+
   return (
     <section className="card profile-card" data-testid="canvas-profile-card">
       <h2 data-testid="canvas-vehicle">{vehicleLabel(snapshot) || "Active search"}</h2>
-      <div className="chip-row">
+
+      {/* Frozen identity — display-only chips. In edit mode they dim + carry the
+          explicit lock affordance; they are NEVER inputs. */}
+      <div className="chip-row" data-testid="profile-identity-frozen">
         <span className="chip-row-label">Identity</span>
         {identity.map((chip) => (
-          <span className="mini-chip locked" key={chip}>
+          <span
+            className="mini-chip locked"
+            key={chip}
+            {...(editing
+              ? {
+                  "aria-disabled": true,
+                  title:
+                    "identity is frozen — use Replace (delete + recreate) to change the vehicle",
+                }
+              : {})}
+          >
+            {editing && <span aria-hidden="true">🔒</span>}
             {chip}
           </span>
         ))}
         <span className="muted chip-note">frozen at confirm — to change, replace the search</span>
       </div>
-      <div className="chip-row">
-        <span className="chip-row-label">Preferences</span>
-        {snapshot.searchRadiusMiles !== null && (
-          <span className="mini-chip">{snapshot.searchRadiusMiles} mi radius</span>
-        )}
-        {snapshot.financingPreference !== null && (
-          <span className="mini-chip">financing · {snapshot.financingPreference}</span>
-        )}
-        {snapshot.phonePolicy !== "real" && <span className="mini-chip">fake-phone</span>}
-        {/* budget is a lock affordance ONLY — never a number, anywhere. */}
-        <span className="mini-chip budget-lock">budget · internal-only</span>
-      </div>
+
+      {editing ? (
+        snapshot.id !== null ? (
+          <ProfileEditPanel
+            client={client}
+            profileId={snapshot.id}
+            onSaved={handleSaved}
+            onCancel={exitEdit}
+          />
+        ) : null
+      ) : (
+        <div className="chip-row">
+          <span className="chip-row-label">Preferences</span>
+          {snapshot.searchRadiusMiles !== null && (
+            <span className="mini-chip" data-testid="profile-pref-radius">
+              {snapshot.searchRadiusMiles} mi radius
+            </span>
+          )}
+          {snapshot.financingPreference !== null && (
+            <span className="mini-chip">financing · {snapshot.financingPreference}</span>
+          )}
+          {snapshot.phonePolicy !== "real" && <span className="mini-chip">fake-phone</span>}
+          {/* budget is a lock affordance ONLY — never a number, anywhere. */}
+          <span className="mini-chip budget-lock">budget · internal-only</span>
+          <span style={{ flex: 1 }} />
+          {snapshot.id !== null && (
+            <button
+              ref={editButtonRef}
+              type="button"
+              className="profile-edit-open"
+              data-testid="profile-edit-open"
+              aria-expanded={editing}
+              onClick={() => setEditing(true)}
+            >
+              Edit preferences
+            </button>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -244,7 +312,7 @@ export function Canvas({ client, onStartIntake, runId = null }: CanvasProps): JS
       )}
       {active !== null && (
         <>
-          <ProfileCard snapshot={active} />
+          <ProfileCard client={client} snapshot={active} onSaved={profiles.refetch} />
           <DealerTiles dealers={dealers} />
           <CanvasFeed
             snapshot={active}

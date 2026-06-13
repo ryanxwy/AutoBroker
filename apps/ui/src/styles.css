@@ -592,8 +592,50 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   color: var(--ink-soft);
 }
 .mini-chip.locked { color: var(--ink-mute); background: var(--paper); }
+.mini-chip[aria-disabled="true"] { opacity: 0.55; }
 /* budget = a lock affordance only, never a number anywhere */
 .mini-chip.budget-lock { color: var(--ink-mute); background: var(--paper); border-style: dashed; }
+
+/* the ✕ remove control inside an editable chip — quiet until hovered */
+.mini-chip .chip-remove {
+  border: 0;
+  background: transparent;
+  padding: 0 0 0 2px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-mute);
+  transition: color 0.12s;
+}
+.mini-chip .chip-remove:hover:not(:disabled) { color: var(--stop); box-shadow: none; }
+
+/* preference edit panel — the chip-row swaps to this in edit mode, no jump */
+.profile-edit-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+  animation: popIn 0.16s ease both;
+}
+.profile-edit-panel .form-grid { gap: 13px; }
+.profile-edit-panel .chip-add { display: flex; gap: 7px; margin-top: 7px; }
+.profile-edit-panel .chip-add input { flex: 1; }
+.profile-edit-panel .chip-add button { padding: 7px 12px; }
+.profile-edit-panel .gate-card.failure { margin-bottom: 12px; }
+
+/* Edit-preferences trigger — a quiet ledger-plate button on the prefs row */
+.profile-card .profile-edit-open { font-size: 11px; padding: 5px 11px; }
+
+/* the brief "Saved" badge — racing-green wash, fades with the host exit */
+.saved-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--go);
+  background: var(--go-wash);
+  border: 1px solid var(--go-line);
+  border-radius: 3px;
+  padding: 3px 9px;
+}
 
 .tile-grid {
   display: grid;

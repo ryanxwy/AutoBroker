@@ -13,6 +13,7 @@
  *   POST /api/skill-runs/:id/form-decision   formDecision
  *   GET  /api/profiles                       listProfiles
  *   GET  /api/profiles/:id                   getProfile
+ *   PATCH /api/profiles/:id                  patchProfile (preference write-through)
  *   GET  /api/skills                         listSkills
  *   GET  /api/mode                           getMode
  *   POST /api/sessions                       createSession
@@ -42,6 +43,7 @@ import {
   type FormDecisionAck,
   type FormDecisionBody,
   type Mode,
+  type PatchProfileBody,
   type PatchSessionBody,
   type ProfileList,
   type ProfileRow,
@@ -201,6 +203,20 @@ export class ApiClient {
   /** GET /api/profiles/:id → one snake_case row, or ApiError 404 (routes.ts:268). */
   async getProfile(id: string): Promise<ProfileRow> {
     const res = await this.fetchImpl(this.url(`/api/profiles/${encodeURIComponent(id)}`));
+    return decode(res, ProfileRowSchema);
+  }
+
+  /** PATCH /api/profiles/:id → the updated snake_case row (routes.ts:484). Only
+   *  the PREFERENCE fields are writable; an identity field maps to 409
+   *  identity_locked, a bad value (e.g. radius outside 1–500) to 400
+   *  content_invalid with a JSON-pointer `field`. The four color/trim/feature
+   *  columns are JSON-encoded STRINGS — the caller serializes string[]→JSON. */
+  async patchProfile(id: string, body: PatchProfileBody): Promise<ProfileRow> {
+    const res = await this.fetchImpl(this.url(`/api/profiles/${encodeURIComponent(id)}`), {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
     return decode(res, ProfileRowSchema);
   }
 

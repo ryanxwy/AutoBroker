@@ -242,6 +242,23 @@ export type ProfileRow = z.infer<typeof ProfileRowSchema>;
 export const ProfileListSchema = z.array(ProfileRowSchema);
 export type ProfileList = z.infer<typeof ProfileListSchema>;
 
+/** PATCH /api/profiles/:id body (camelCase; routes.ts PatchProfileBodySchema).
+ *  ONLY the editable preference fields — identity is frozen at confirm and is
+ *  never sent (the server 409s it). The four color/trim/feature columns are
+ *  JSON-encoded STRINGS (string[] serialized to a JSON string by the caller). */
+export interface PatchProfileBody {
+  budgetMax?: number | null;
+  searchRadiusMiles?: number | null;
+  followUpEmail?: string | null;
+  followUpPhone?: string | null;
+  financingPreference?: string | null;
+  tradeInDescription?: string | null;
+  preferredExteriorColorsJson?: string | null;
+  preferredInteriorColorsJson?: string | null;
+  acceptableTrimsJson?: string | null;
+  featurePreferencesJson?: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Dealers — GET /api/profiles/:id/dealers: snake_case rows off the dealers
 // table joined through profile_dealers (candidate_status/bound_at carry the
