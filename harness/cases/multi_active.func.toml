@@ -1,0 +1,54 @@
+# harness/cases/multi_active.func.toml — FUNCTIONAL lane: the "which one?"
+# disambiguation world.
+#
+# Installs the multi_active fixture (two active profiles on distinct brands —
+# Hyundai Tucson Hybrid + Toyota RAV4), then OPENS the Searches popover and
+# asserts it lists BOTH active searches (>=2 searches-row-<id> rows). This is the
+# moment a profile-scoped skill with no pin must ask which search to act on.
+#
+# WHY THIS ANCHOR IS MEANINGFUL: the count=2 prefix-match on searches-row- is a
+# real cardinality proof that both active profiles surface (the popover rows
+# mount ONLY when the panel is open, so the count is taken with it open). The
+# canvas-empty absence anchor proves the workbench left its empty state (it has
+# active searches), distinguishing this from the empty_home world.
+
+[meta]
+id = "multi_active_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "multi_active"
+kind = "ui"
+fixture_state = "multi_active"
+purpose = "The Searches popover lists both active searches (the 2+-active disambiguation moment); the workbench is no longer in its empty state."
+
+# Open the Searches popover so its row list mounts — only then is the row count
+# below a real assertion rather than a vacuous read of an unmounted list.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-popover"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-"
+expect = "count"
+count = 2
+match = "prefix"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-empty"
+expect = "absent"

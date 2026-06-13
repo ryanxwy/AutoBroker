@@ -1,0 +1,61 @@
+# harness/cases/closed_profile.func.toml — FUNCTIONAL lane: the closed/inactive
+# world.
+#
+# Installs the closed_profile fixture (one status='active' search + one
+# status='closed' search, both Hyundai — the closed row no longer holds the
+# active slot). "Closed" is the search_profiles.status='closed' value the close()
+# service writes; the active-list read filters status='active' OR NULL, so a
+# closed row is hidden. This case OPENS the Searches popover and proves the
+# closed search is hidden while the active one shows.
+#
+# WHY THESE ANCHORS ARE MEANINGFUL: the active row's exact testid being VISIBLE
+# proves the active search surfaces; the closed row's exact testid being ABSENT
+# proves status='closed' is filtered out of the active list (the load-bearing
+# assertion); the count=1 on searches-row- pins the total so a regression that
+# leaked the closed row would fail. The exact ids match the fixture seed's
+# deterministic ids.
+
+[meta]
+id = "closed_profile_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "closed_profile"
+kind = "ui"
+fixture_state = "closed_profile"
+purpose = "The Searches popover shows the active search and HIDES the closed one (status='closed' frees the slot and drops out of the active list)."
+
+# Open the Searches popover so its row list mounts before the row anchors below.
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-popover"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-closed-active-1"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-closed-inactive-1"
+expect = "absent"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-"
+expect = "count"
+count = 1
+match = "prefix"

@@ -1,0 +1,79 @@
+# harness/cases/active_search.func.toml — FUNCTIONAL lane: the "search with
+# results" world.
+#
+# Installs the active_search fixture (one active Hyundai Tucson Hybrid profile +
+# two bound dealers), then asserts the Canvas main pane projects it: the profile
+# card with the vehicle label, the dealer-tiles section, and exactly two dealer
+# tiles (one per bound dealer). Finally it OPENS the Searches popover and asserts
+# the one active search row mounts.
+#
+# WHY THESE ANCHORS ARE MEANINGFUL: the profile card + vehicle text prove the
+# active-profile projection reads the seeded row; the count=2 dealer-tile anchor
+# is a real cardinality proof against the two seeded profile_dealers bindings
+# (not a vacuous always-true read); the searches-row count=1 proves the active
+# list surfaces the seeded profile.
+#
+# inventory_listings / manufacturer_incentives are NOT asserted: the current
+# Canvas renders neither, so a seed for them would assert nothing (deferred).
+
+[meta]
+id = "active_search_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "active_search"
+kind = "ui"
+fixture_state = "active_search"
+purpose = "The Canvas projects the active search: profile card + vehicle label + two dealer tiles; the Searches popover lists the one active search."
+
+# Wait for the dealer tiles to load (the tile is a plain, non-navigating div, so
+# clicking the first one is a safe wait for it to mount), then open the Searches
+# popover so its row list mounts before the row-count anchor below.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-dealer-tile"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-profile-card"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-vehicle"
+expect = "text"
+value = "Hyundai Tucson Hybrid"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-dealer-tiles"
+expect = "visible"
+
+# Exact match (NOT prefix): every tile shares the identical testid
+# "canvas-dealer-tile", and an exact selector excludes the "canvas-dealer-tiles"
+# section wrapper (a different exact value a prefix would wrongly also match).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-dealer-tile"
+expect = "count"
+count = 2
+match = "exact"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-row-"
+expect = "count"
+count = 1
+match = "prefix"
