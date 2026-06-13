@@ -14,6 +14,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 pnpm typecheck
+# The root `tsc --build` follows project references and skips the harness
+# package; gate the harness's own type-soundness explicitly.
+pnpm --filter @autobroker/harness run typecheck
 pnpm lint:deps
 pnpm check:strings
 pnpm db:check

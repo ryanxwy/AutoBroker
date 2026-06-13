@@ -407,7 +407,21 @@ async function driveResumeScript(apiBase: string, runId: string, resumes: CaseRe
     if (resume === undefined) resume = resumes[cursor];
     if (resume === undefined) {
       // No script entry for this suspend → fail-closed by declining (never hang).
-      resume = { on: pendingKind(pending.step), action: "decline", content: null };
+      // The non-action fields carry their canonical empty (null); this driver
+      // path only reads action + content.
+      resume = {
+        on: pendingKind(pending.step),
+        action: "decline",
+        content: null,
+        contentFrom: null,
+        rows: null,
+        defaultDecision: null,
+      };
+    }
+    // Every branch above assigned a resume; narrow loudly rather than proceed
+    // on an unexpected empty shape.
+    if (resume === undefined) {
+      throw new Error(`driveResumeScript: no resume resolved for suspend "${suspendKind}"`);
     }
     cursor = Math.min(cursor + 1, resumes.length);
 
