@@ -128,10 +128,33 @@ export function AssistantTurn({
       {/* ZONE 4 — CURRENT ACTIVITY: the in-flight tool line plus, on the
           active turn, the LIVE browser trail (transient — host + verb per
           moment, error moments visibly distinct, a concurrent-open count for
-          the parallel-browser scans, and the latest live screenshot). */}
-      {(turn.currentActivity !== null || (browser !== null && browser.entries.length > 0)) && (
+          the parallel-browser scans, and the latest live screenshot). The
+          cold-path install bar renders here too, before any browser opens. */}
+      {(turn.currentActivity !== null ||
+        (browser !== null && (browser.entries.length > 0 || browser.acquire !== null))) && (
         <div className="zone-activity" data-testid="turn-zone-activity">
           {turn.currentActivity !== null && <div>{turn.currentActivity}</div>}
+          {browser !== null && browser.acquire !== null && (
+            <div className="browser-acquire" data-testid="turn-browser-acquire">
+              <div className="muted">Installing browser… {browser.acquire.message}</div>
+              <div
+                className="browser-acquire-bar"
+                data-testid="turn-browser-acquire-bar"
+                data-indeterminate={browser.acquire.progress === null ? "true" : "false"}
+              >
+                <div
+                  className="browser-acquire-bar-fill"
+                  style={
+                    browser.acquire.progress === null
+                      ? undefined
+                      : {
+                          width: `${Math.round(Math.max(0, Math.min(1, browser.acquire.progress)) * 100)}%`,
+                        }
+                  }
+                />
+              </div>
+            </div>
+          )}
           {browser !== null && browser.entries.length > 0 && (
             <div className="browser-trail" data-testid="turn-browser-trail">
               {browser.openCount > 0 && (

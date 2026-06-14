@@ -79,6 +79,30 @@ describe("browserView — screenshots (live-only thumbnail)", () => {
   });
 });
 
+describe("browserView — cold-path install progress", () => {
+  it("sets acquire from a browser.acquire.progress frame and clears it on browser.opened", () => {
+    let view = fold([
+      { kind: "browser.acquire.progress", payload: { message: "Downloading…", progress: 0.42 } },
+    ]);
+    expect(view.acquire).toEqual({ message: "Downloading…", progress: 0.42 });
+
+    // A progressless frame → indeterminate (null progress).
+    view = reduceBrowserView(view, {
+      kind: "browser.acquire.progress",
+      payload: { message: "Installing browser…" },
+    });
+    expect(view.acquire).toEqual({ message: "Installing browser…", progress: null });
+
+    // The browser opening means the install finished — clear the bar.
+    view = reduceBrowserView(view, {
+      kind: "browser.opened",
+      payload: { url: "https://dealer.example/" },
+    });
+    expect(view.acquire).toBeNull();
+    expect(view.openCount).toBe(1);
+  });
+});
+
 describe("browserView — defensive no-ops", () => {
   it("unknown kinds and malformed data leave the view unchanged", () => {
     const view = fold([

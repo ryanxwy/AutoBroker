@@ -26,9 +26,18 @@ export interface BrowserView {
   openCount: number;
   /** The latest live screenshot (base64 jpeg), or null. */
   screenshot: string | null;
+  /** Cold-path browser-install progress ("Installing browser…"), or null when
+   *  no install is in flight. `progress` is a 0..1 fraction when known, null for
+   *  an indeterminate bar. Cleared once the browser opens (install finished). */
+  acquire: { message: string; progress: number | null } | null;
 }
 
-export const EMPTY_BROWSER_VIEW: BrowserView = { entries: [], openCount: 0, screenshot: null };
+export const EMPTY_BROWSER_VIEW: BrowserView = {
+  entries: [],
+  openCount: 0,
+  screenshot: null,
+  acquire: null,
+};
 
 /** Trail length bound — the zone is a glanceable arm, not a log viewer. */
 export const BROWSER_TRAIL_LIMIT = 6;
@@ -77,8 +86,18 @@ export function reduceBrowserView(view: BrowserView, data: unknown): BrowserView
       return {
         ...view,
         openCount: view.openCount + 1,
+        // The install (if any) finished — drop the "Installing browser…" line so
+        // the normal activity trail takes over.
+        acquire: null,
         entries: pushBounded(view.entries, { kind: "opened", label }),
       };
+    }
+    case "browser.acquire.progress": {
+      const message =
+        typeof payload["message"] === "string" ? (payload["message"] as string) : "Installing browser…";
+      const rawProgress = payload["progress"];
+      const progress = typeof rawProgress === "number" ? rawProgress : null;
+      return { ...view, acquire: { message, progress } };
     }
     case "browser.action": {
       const type = typeof payload["type"] === "string" ? (payload["type"] as string) : "working";

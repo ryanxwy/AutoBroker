@@ -2,8 +2,9 @@
  * browserEvents — adapter from the tools-layer BrowserEmitter callback surface
  * onto the per-run SSE pubsub. Each emitter callback becomes one frame of the
  * closed EVENT_KINDS set (browser.opened / browser.action / browser.error /
- * browser.closed) on the run's channel, riding the standard {ts,kind,payload}
- * envelope that runPubSub stamps and validates.
+ * browser.closed, plus browser.acquire.progress on the cold install path) on the
+ * run's channel, riding the standard {ts,kind,payload} envelope that runPubSub
+ * stamps and validates.
  *
  * Resilience: emitter callbacks fire from deep inside browser navigation code,
  * so they must never throw back into it — events for a run with no channel yet
@@ -28,7 +29,8 @@ type BrowserEventKind =
   | "browser.opened"
   | "browser.action"
   | "browser.error"
-  | "browser.closed";
+  | "browser.closed"
+  | "browser.acquire.progress";
 
 /** Build a BrowserEmitter that publishes the four browser.* kinds onto the
  *  given run's SSE channel. */
@@ -71,6 +73,15 @@ export function browserEmitterFor(pubsub: RunPubSub, runId: string): BrowserEmit
     },
     closed(): void {
       append("browser.closed", {});
+    },
+    acquireProgress(message: string, progress?: number): void {
+      // LOGGED (not transient): the install can take 10–30s, so a subscriber
+      // that connects mid-install must replay the in-flight progress. Carries no
+      // base64 screenshot, so the logged-frame screenshot rule does not apply.
+      append(
+        "browser.acquire.progress",
+        progress === undefined ? { message } : { message, progress },
+      );
     },
   };
 }

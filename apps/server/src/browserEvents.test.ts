@@ -117,6 +117,33 @@ describe("browserEvents — BrowserEmitter → browser.* SSE frames", () => {
     expect(ps.snapshot("r2b").map((e) => e.kind)).toEqual(["init", "browser.action", "done"]);
   });
 
+  it("acquireProgress appends ONE logged browser.acquire.progress frame (replayable, not a transient screenshot)", () => {
+    const ps = new RunPubSub();
+    ps.attachInit("racq", "dealer_geosearch");
+    const emitter = browserEmitterFor(ps, "racq");
+
+    emitter.acquireProgress!("Downloading…", 0.42);
+    emitter.acquireProgress!("Installing browser…");
+    ps.append("racq", { kind: "done", payload: {} });
+
+    // Both frames are LOGGED (present in the snapshot the reconnect backlog
+    // reads) — a mid-install reconnect replays the progress, unlike a screenshot
+    // transient which never enters the log.
+    const logged = ps.snapshot("racq");
+    expect(logged.map((e) => e.kind)).toEqual([
+      "init",
+      "browser.acquire.progress",
+      "browser.acquire.progress",
+      "done",
+    ]);
+    // With progress → {message, progress}; without → {message} only.
+    expect(logged[1]!.payload).toEqual({ message: "Downloading…", progress: 0.42 });
+    expect(logged[2]!.payload).toEqual({ message: "Installing browser…" });
+    for (const ev of logged) {
+      expect(EVENT_KINDS).toContain(ev.kind);
+    }
+  });
+
   it("drops events for a run with no channel instead of throwing", () => {
     const ps = new RunPubSub();
     const emitter = browserEmitterFor(ps, "ghost");

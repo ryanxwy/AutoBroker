@@ -840,6 +840,30 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   margin-right: 8px;
   animation: pulse 1.6s ease-in-out infinite;
 }
+/* browser-acquire — the cold-path "installing browser" bar (graphite-blue
+   running fill on a soft-rule track), shown before any browser opens. */
+.browser-acquire { margin-top: 6px; }
+.browser-acquire .muted { font-size: 10px; }
+.browser-acquire-bar {
+  height: 3px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--rule-soft);
+  overflow: hidden;
+}
+.browser-acquire-bar-fill {
+  height: 100%;
+  width: 40%;
+  background: var(--run);
+}
+.browser-acquire-bar[data-indeterminate="true"] .browser-acquire-bar-fill {
+  animation: browserAcquireSlide 1.2s ease-in-out infinite;
+}
+@keyframes browserAcquireSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 .browser-trail { margin-top: 6px; }
 .browser-trail .muted { font-size: 10px; }
 .browser-trail-entries { list-style: none; margin: 4px 0 0; padding: 0; }
