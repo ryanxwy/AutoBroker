@@ -19,7 +19,7 @@ import type { ApiClient } from "../api/client.js";
 import { gateTrack } from "../gate/gateTrack.js";
 import { IntakeForm, type DecisionAction } from "../intake/IntakeForm.js";
 import type { BrowserView } from "../chat/browserView.js";
-import { geosearchStopCode, type AssistantTurnView } from "../chat/messageModel.js";
+import { profileStopCode, type AssistantTurnView } from "../chat/messageModel.js";
 import { StopCard } from "./StopCard.js";
 
 export interface AssistantTurnProps {
@@ -65,9 +65,12 @@ export function AssistantTurn({
     turn.awaitingUser !== null &&
     turn.status === "awaiting_approval" &&
     gateTrack(typeof rawGateKind === "string" ? rawGateKind : null) === "rail";
-  // Typed profile-resolution STOP (error name + code allowlist) → the card with
-  // the answerable affordance (intake CTA / pick-by-vehicle picker).
-  const stopCode = geosearchStopCode(turn);
+  // Typed profile/precondition STOP (error name + code allowlist) → the card
+  // with the answerable affordance (intake CTA / pick-by-vehicle picker /
+  // friendly pointer). no_lead_submitted renders as a calm pointer, so it
+  // SUPPRESSES the generic red error line (its message lives on the card).
+  const stopCode = profileStopCode(turn);
+  const friendlyStop = stopCode === "no_lead_submitted";
 
   return (
     <div className="turn assistant" data-testid="assistant-turn" data-status={turn.status}>
@@ -96,7 +99,7 @@ export function AssistantTurn({
         </div>
       )}
 
-      {turn.status === "error" && (
+      {turn.status === "error" && !friendlyStop && (
         <div className="zone-text danger-text" data-testid="turn-error">
           {turn.error ?? "Something went wrong."}
         </div>
@@ -106,6 +109,7 @@ export function AssistantTurn({
         <StopCard
           code={stopCode}
           client={client}
+          message={turn.error}
           onStartIntake={onStartIntake}
           onPickProfile={onPickStopProfile}
         />

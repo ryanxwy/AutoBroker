@@ -207,8 +207,9 @@ function fromFormDecisionError(err: FormDecisionError): RouteError {
  *  name/summary/inputs/outputs come from @autobroker/skills; sensitive means
  *  external/destructive mutation (irreversible | destructive) — local product-row
  *  writes behind their own confirmation (intake, the scan skills) are NOT
- *  sensitive; version/retries are this API's manifest metadata. The wire shape
- *  is unchanged. */
+ *  sensitive; profile_pin is the registry's pin posture driving the UI pre-launch
+ *  gate; version/retries are this API's manifest metadata. The wire shape carries
+ *  profile_pin in snake_case (the wire convention). */
 const SKILL_MANIFEST = IMPLEMENTED_SKILLS.map((s) => ({
   name: s.id,
   version: "m1-v1",
@@ -216,6 +217,7 @@ const SKILL_MANIFEST = IMPLEMENTED_SKILLS.map((s) => ({
   inputs: s.inputs,
   outputs: s.outputs,
   sensitive: s.riskClass === "irreversible" || s.riskClass === "destructive",
+  profile_pin: s.profilePin,
   retries: 0,
 }));
 

@@ -176,6 +176,58 @@ describe("AssistantTurn — typed STOP cards + resolution provenance", () => {
     r.unmount();
   });
 
+  it("a DealerInboxCheckStopError(pin_required) renders the picker; pick carries the INBOX skill id", async () => {
+    // FIX-3 regression: the re-launch must carry the ORIGINATING skill id
+    // (dealer_inbox_check), never a hardcoded geosearch. The rail wires
+    // onPickStopProfile(profileId) → onStopPick(turn.skill, profileId), so the
+    // skill id flows straight from this turn's projected `skill`.
+    const onPick = vi.fn();
+    const profiles = [
+      { search_profile_id: "prof-a", year: 2026, make: "Hyundai", model: "Tucson Hybrid", trim: "Limited" },
+    ];
+    const turn = turnState({
+      skill: "dealer_inbox_check",
+      status: "error",
+      error: "Pin a search before checking the inbox.",
+      errorName: "DealerInboxCheckStopError",
+      errorCode: "pin_required",
+    });
+    const r = render(
+      <AssistantTurn
+        turn={turn}
+        submitting={false}
+        onDecision={() => {}}
+        {...stopProps({ client: stubClient(profiles), onPickStopProfile: onPick })}
+      />,
+    );
+    await flush();
+    expect(r.get("stop-card").getAttribute("data-stop-code")).toBe("pin_required");
+    click(r.get("stop-pick-option"));
+    // The picker reports the profile id; the rail re-binds it to turn.skill.
+    expect(onPick).toHaveBeenCalledWith("prof-a");
+    r.unmount();
+  });
+
+  it("a DealerInboxCheckStopError(no_lead_submitted) renders the FRIENDLY pointer — no red error, no picker", () => {
+    const msg = "Submit a lead to a dealer first (run /dealer_web_lead_submit), then check the inbox.";
+    const turn = turnState({
+      skill: "dealer_inbox_check",
+      status: "error",
+      error: msg,
+      errorName: "DealerInboxCheckStopError",
+      errorCode: "no_lead_submitted",
+    });
+    const r = render(<AssistantTurn turn={turn} submitting={false} onDecision={() => {}} {...stopProps()} />);
+    // The generic red error line is SUPPRESSED (the message lives on the card).
+    expect(r.query("turn-error")).toBeNull();
+    const friendly = r.get("stop-no-lead-submitted");
+    expect(friendly.textContent).toBe(msg);
+    expect(r.get("stop-card").getAttribute("role")).toBe("status");
+    expect(r.query("stop-pick-list")).toBeNull();
+    expect(r.query("stop-intake-cta")).toBeNull();
+    r.unmount();
+  });
+
   it("a done turn with resolution renders the provenance meta tag", () => {
     const turn = turnState({
       status: "done",

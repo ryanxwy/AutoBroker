@@ -1,14 +1,19 @@
 /**
- * StopCard — the typed profile-resolution STOP rendering (the three-branch
- * contract made answerable in the UI). A geosearch run that stopped on profile
- * resolution renders one of two affordances under the verbatim STOP message:
+ * StopCard — the typed profile/precondition STOP rendering (the three-branch
+ * profile contract, plus inbox preconditions, made answerable in the UI). A run
+ * that stopped on a typed STOP renders one of three affordances:
  *
  *   - no_active_profile / profile_missing_fields → an intake CTA (the 0-active
- *     branch points at /search_profile_intake).
- *   - multiple_active_profiles → a PICKER: the candidates are NOT on the error
- *     frame, so the picker fetches GET /api/profiles?status=active LIVE when it
- *     renders; picking a vehicle RE-LAUNCHES the skill as a NEW run with
- *     search_profile_id in the start body (STOP is terminal — never a resume).
+ *     branch points at /search_profile_intake — there are no candidates to pick).
+ *   - multiple_active_profiles / pin_required → a PICKER: the candidates are NOT
+ *     on the error frame, so the picker fetches GET /api/profiles?status=active
+ *     LIVE when it renders; picking a vehicle RE-LAUNCHES the stopped skill as a
+ *     NEW run with search_profile_id in the start body (STOP is terminal — never
+ *     a resume). pin_required (a pin-required skill launched with no pin) reuses
+ *     the same picker — the only difference is the workflow STOP code.
+ *   - no_lead_submitted → a FRIENDLY informational pointer (the inbox
+ *     precondition: no lead has been submitted yet). No picker, no red error —
+ *     it renders the workflow's own message in a calm tone.
  *
  * Presentational beyond the one read fetch; the parent owns both launches.
  */
@@ -17,12 +22,15 @@ import { useEffect, useState } from "react";
 
 import type { ApiClient } from "../api/client.js";
 import type { ProfileList } from "../api/wire.js";
-import type { GeosearchStopCode } from "../chat/messageModel.js";
+import type { ProfileStopCode } from "../chat/messageModel.js";
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
 
 export interface StopCardProps {
-  code: GeosearchStopCode;
+  code: ProfileStopCode;
   client: ApiClient;
+  /** The workflow's verbatim STOP message — rendered in the friendly
+   *  no_lead_submitted arm (the picker/CTA arms point elsewhere). */
+  message?: string | null;
   /** Start a fresh intake (the 0-active / missing-fields CTA). */
   onStartIntake: () => void;
   /** Re-launch the stopped skill pinned to the picked profile (a NEW run). */
@@ -85,10 +93,28 @@ function ProfileStopPicker({
   );
 }
 
-export function StopCard({ code, client, onStartIntake, onPickProfile }: StopCardProps): JSX.Element {
+export function StopCard({
+  code,
+  client,
+  message = null,
+  onStartIntake,
+  onPickProfile,
+}: StopCardProps): JSX.Element {
+  // no_lead_submitted is a calm precondition pointer (role="status", not
+  // "alert") — it shows the workflow's own next-step message, no picker/CTA.
+  if (code === "no_lead_submitted") {
+    return (
+      <div className="card stop-card" data-testid="stop-card" data-stop-code={code} role="status">
+        <p className="muted" data-testid="stop-no-lead-submitted">
+          {message ?? "Submit a lead to a dealer first, then check the inbox."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="card stop-card" data-testid="stop-card" data-stop-code={code} role="alert">
-      {code === "multiple_active_profiles" ? (
+      {code === "multiple_active_profiles" || code === "pin_required" ? (
         <ProfileStopPicker client={client} onPick={onPickProfile} />
       ) : (
         <button

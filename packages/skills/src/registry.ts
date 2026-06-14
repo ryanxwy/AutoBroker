@@ -19,6 +19,20 @@ export type SkillRiskClass = "read_only" | "local_write" | "irreversible" | "des
 /** Implementation status. */
 export type SkillStatus = "implemented" | "planned";
 
+/**
+ * Profile-pin posture — how a skill resolves the profile it acts on, and what
+ * the pre-launch UI gate requires:
+ *   - "exempt"       — needs no profile (it CREATES one); always launchable.
+ *   - "pin_required" — must run against an explicitly PINNED search; the UI
+ *     gate blocks it until a pin is set, and (when its workflow enforces it) the
+ *     run STOPs pin-less rather than inferring. The mutating/destructive and the
+ *     status-consuming skills, where a wrong profile is costly or irreversible.
+ *   - "infer_ok"     — read-only / trivially re-runnable: a single active
+ *     profile may be inferred (the resolver's exactly-1 branch), so the gate
+ *     allows it with a pin OR an active profile.
+ */
+export type SkillProfilePin = "exempt" | "pin_required" | "infer_ok";
+
 /** A single skill's identity + manifest record. Lean fields only. */
 export interface SkillDef {
   /** Stable id, also the slash command without the leading slash. */
@@ -41,6 +55,9 @@ export interface SkillDef {
   inputs: string[];
   /** The skill's output (single noun). */
   outputs: string;
+  /** Profile-pin posture — drives the pre-launch UI gate (and, where wired, the
+   *  workflow's require-pin STOP). */
+  profilePin: SkillProfilePin;
 }
 
 /** The intake skill id (skill #1, e2e-first). */
@@ -79,6 +96,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: INTAKE_SKILL_ID,
     inputs: ["input_mode", "freeform_text", "seed_fields"],
     outputs: "search_profile",
+    profilePin: "exempt",
   },
   {
     id: "quote_audit",
@@ -91,6 +109,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["profile_id", "quote_id"],
     outputs: "audit_summary",
+    profilePin: "infer_ok",
   },
   {
     id: "quote_compare",
@@ -103,6 +122,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["quotes"],
     outputs: "comparison",
+    profilePin: "infer_ok",
   },
   {
     id: "inventory_compare",
@@ -115,6 +135,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["listings", "profile_id"],
     outputs: "comparison",
+    profilePin: "infer_ok",
   },
 
   // ---- Phase 2 · browser service + scans (browser read + local db.write) ----
@@ -129,6 +150,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: GEOSEARCH_SKILL_ID,
     inputs: ["search_profile_id"],
     outputs: "dealers",
+    profilePin: "infer_ok",
   },
   {
     id: INVENTORY_SITE_SCAN_SKILL_ID,
@@ -141,6 +163,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: INVENTORY_SITE_SCAN_SKILL_ID,
     inputs: ["search_profile_id", "dealer_ids", "approved_by", "max_targets"],
     outputs: "listings",
+    profilePin: "infer_ok",
   },
   {
     id: INVENTORY_LINK_SCAN_SKILL_ID,
@@ -153,6 +176,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: INVENTORY_LINK_SCAN_SKILL_ID,
     inputs: ["search_profile_id"],
     outputs: "listings",
+    profilePin: "infer_ok",
   },
   {
     id: INCENTIVE_SCRAPE_SKILL_ID,
@@ -166,6 +190,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: INCENTIVE_SCRAPE_SKILL_ID,
     inputs: ["search_profile_id"],
     outputs: "incentives",
+    profilePin: "infer_ok",
   },
 
   // ---- Phase 3 · email service + LLM extract (Gmail read + fake-mailbox/local db.write) ----
@@ -180,6 +205,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: INBOX_CHECK_SKILL_ID,
     inputs: ["search_profile_id"],
     outputs: "messages",
+    profilePin: "pin_required",
   },
   {
     id: "dealer_reply_extract",
@@ -192,6 +218,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["message_id"],
     outputs: "dealer_quote",
+    profilePin: "infer_ok",
   },
   {
     id: HYGIENE_SKILL_ID,
@@ -204,6 +231,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: HYGIENE_SKILL_ID,
     inputs: ["search_profile_id"],
     outputs: "hygiene_report",
+    profilePin: "pin_required",
   },
 
   // ---- Phase 4 · orchestration / report (compose + destructive-local) ----
@@ -218,6 +246,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["profile_id"],
     outputs: "pipeline_report",
+    profilePin: "pin_required",
   },
   {
     id: "daily_digest",
@@ -230,6 +259,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["profile_id"],
     outputs: "digest",
+    profilePin: "pin_required",
   },
   {
     id: "pipeline_reset",
@@ -242,6 +272,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: [],
     outputs: "reset_report",
+    profilePin: "pin_required",
   },
 
   // ---- Phase 5 · irreversible mutations (fake-send throughout) ----
@@ -256,6 +287,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["dealer_id", "profile_id"],
     outputs: "lead_receipt",
+    profilePin: "pin_required",
   },
   {
     id: "negotiation_followup",
@@ -268,6 +300,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["thread_id"],
     outputs: "followup_receipt",
+    profilePin: "pin_required",
   },
   {
     id: "dealer_closeout_email",
@@ -280,6 +313,7 @@ export const SKILLS: readonly SkillDef[] = [
     workflowId: null,
     inputs: ["thread_id"],
     outputs: "closeout_receipt",
+    profilePin: "pin_required",
   },
 ];
 

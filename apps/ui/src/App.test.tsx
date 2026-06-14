@@ -90,8 +90,8 @@ function mockFetch(
       });
     if (url.endsWith("/api/skills"))
       return json([
-        { name: "search_profile_intake", version: "1", summary: "Create a search", inputs: ["freeform"], outputs: "profile", sensitive: false, retries: 1 },
-        { name: "dealer_geosearch", version: "1", summary: "Find dealers", inputs: ["search_profile_id"], outputs: "dealers", sensitive: false, retries: 1 },
+        { name: "search_profile_intake", version: "1", summary: "Create a search", inputs: ["freeform"], outputs: "profile", sensitive: false, profile_pin: "exempt", retries: 1 },
+        { name: "dealer_geosearch", version: "1", summary: "Find dealers", inputs: ["search_profile_id"], outputs: "dealers", sensitive: false, profile_pin: "infer_ok", retries: 1 },
       ]);
     if (url.includes("/dealers")) return json([]);
     if (url.includes("/api/profiles")) return json(opts.profiles ?? []);
@@ -560,7 +560,7 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
       if (url.includes("/stream-v2")) return new MockStream(url).response;
       if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false });
       if (url.endsWith("/api/skills"))
-        return json([{ name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, retries: 1 }]);
+        return json([{ name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, profile_pin: "exempt", retries: 1 }]);
       if (url.includes("/dealers")) {
         dealerGets += 1;
         const rows =
@@ -627,7 +627,7 @@ describe("App — first-run gate (no DeepSeek key)", () => {
         });
       if (url.endsWith("/api/skills"))
         return json([
-          { name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, retries: 1 },
+          { name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, profile_pin: "exempt", retries: 1 },
         ]);
       if (url.includes("/dealers")) return json([]);
       if (url.includes("/api/profiles")) return json([]);

@@ -500,9 +500,19 @@ describe("read-only routes", () => {
     const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
     const r = await s.app.inject({ method: "GET", url: "/api/skills" });
     expect(r.statusCode).toBe(200);
-    const names = r.json<Array<{ name: string }>>().map((m) => m.name);
+    const manifest = r.json<Array<{ name: string; profile_pin: string }>>();
+    const names = manifest.map((m) => m.name);
     expect(names[0]).toBe("search_profile_intake");
     expect(names).toContain("dealer_geosearch");
+    // profile_pin rides every manifest entry (the pre-launch pin gate). Intake is
+    // exempt; the inbox-check skill is pin_required.
+    const intake = manifest.find((m) => m.name === "search_profile_intake");
+    expect(intake?.profile_pin).toBe("exempt");
+    const inbox = manifest.find((m) => m.name === "dealer_inbox_check");
+    expect(inbox?.profile_pin).toBe("pin_required");
+    for (const m of manifest) {
+      expect(["exempt", "pin_required", "infer_ok"]).toContain(m.profile_pin);
+    }
   });
 
   it("GET /api/mode → {active_db, data_dir} pointed at the tmp data dir", async () => {

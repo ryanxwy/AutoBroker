@@ -309,6 +309,10 @@ export const SkillManifestSchema = z.object({
   inputs: z.array(z.string()),
   outputs: z.string(),
   sensitive: z.boolean(),
+  // The registry's pin posture (snake_case on the wire) — drives the pre-launch
+  // readiness gate: exempt (always launchable), pin_required (needs a true pin),
+  // infer_ok (a pin OR an active profile suffices).
+  profile_pin: z.enum(["exempt", "pin_required", "infer_ok"]),
   retries: z.number(),
 });
 export type SkillManifest = z.infer<typeof SkillManifestSchema>;

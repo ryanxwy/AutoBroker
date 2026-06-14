@@ -546,6 +546,22 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   border-style: dashed;
   color: var(--ink-mute);
 }
+/* inbox review — quoted/replied classification pill + approved fill */
+.batch-row [data-testid^="inbox-class-"] {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
+.batch-row button[data-testid^="inbox-approve-"][aria-pressed="true"] {
+  background: var(--go);
+  border-color: var(--go);
+  color: #fff;
+}
 .gate-card details.muted summary { cursor: pointer; font-family: var(--mono); font-size: 10.5px; padding: 6px 0; }
 .gate-card details.muted ul { margin: 4px 0; padding-left: 18px; font-family: var(--mono); font-size: 10.5px; }
 

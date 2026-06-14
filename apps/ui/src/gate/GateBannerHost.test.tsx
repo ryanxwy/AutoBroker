@@ -107,6 +107,89 @@ describe("GateBannerHost — the batch_review decision surface", () => {
   });
 });
 
+const INBOX_SPEC = {
+  question: "Ingest these dealer replies?",
+  targets: [
+    { dealer_id: "d-1", name: "Tustin Hyundai", thread_ids: ["t-1"], classification: "quoted", snippet: "OTD price…" },
+    { dealer_id: "d-2", name: "Anaheim Hyundai", thread_ids: ["t-2", "t-3"], classification: "replied", snippet: "Checking…" },
+  ],
+  unrouted: [{ thread_id: "u-1", sender_email: "noreply@lead.example", snippet: "A buyer…" }],
+  total_targets: 2,
+};
+
+const HYGIENE_SPEC = {
+  stage: "orphans",
+  question: "Clean up these stale records?",
+  targets: [{ id: "h-1", name: "Ghost Thread", reason: "no_messages" }],
+  total: 1,
+};
+
+describe("GateBannerHost — the inbox decision surface + three-reader disambiguation", () => {
+  it("an inbox batch_review renders the InboxReviewCard (not the inventory card, not the placeholder)", () => {
+    const decision = controller();
+    const r = render(
+      <GateBannerHost awaiting={awaiting("batch_review", INBOX_SPEC)} decision={decision} />,
+    );
+    expect(r.query("gate-banner-pending")).toBeNull();
+    expect(r.query("batch-review-card")).toBeNull();
+    expect(r.query("inbox-review-card")).not.toBeNull();
+
+    click(r.get("inbox-select-all"));
+    click(r.get("inbox-submit"));
+    expect(decision.decide).toHaveBeenCalledWith("accept", { approved_dealer_ids: ["d-1", "d-2"] });
+    r.unmount();
+  });
+
+  it("the inbox card's Decline posts the decline action (terminal)", () => {
+    const decision = controller();
+    const r = render(
+      <GateBannerHost awaiting={awaiting("batch_review", INBOX_SPEC)} decision={decision} />,
+    );
+    click(r.get("inbox-decline"));
+    expect(decision.decide).toHaveBeenCalledWith("decline");
+    r.unmount();
+  });
+
+  it("an inventory batch_review still routes to the BatchReviewCard (no inbox misroute)", () => {
+    const r = render(
+      <GateBannerHost awaiting={awaiting("batch_review", BATCH_SPEC)} decision={controller()} />,
+    );
+    expect(r.query("inbox-review-card")).toBeNull();
+    expect(r.query("batch-review-card")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("a hygiene batch_review routes to the HygieneReviewCard (no inbox misroute)", () => {
+    const r = render(
+      <GateBannerHost awaiting={awaiting("batch_review", HYGIENE_SPEC)} decision={controller()} />,
+    );
+    expect(r.query("inbox-review-card")).toBeNull();
+    expect(r.query("hygiene-review-card")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("a malformed inbox-shaped payload falls back to the never-hidden pending placeholder", () => {
+    const r = render(
+      <GateBannerHost
+        awaiting={awaiting("batch_review", { unrouted: "not-an-array", total_targets: 1 })}
+        decision={controller()}
+      />,
+    );
+    expect(r.query("inbox-review-card")).toBeNull();
+    expect(r.query("gate-banner-pending")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("an inbox decision error surfaces alongside the inbox card", () => {
+    const decision = { submitting: false, decisionError: "content_invalid: bad ids", decide: vi.fn() };
+    const r = render(
+      <GateBannerHost awaiting={awaiting("batch_review", INBOX_SPEC)} decision={decision} />,
+    );
+    expect(r.get("inbox-decision-error").textContent).toContain("content_invalid");
+    r.unmount();
+  });
+});
+
 const APPROVAL_SPEC = {
   summary: "First encounter with a new incentive source: scrape https://www.hyundaiusa.com/us/en/offers ?",
   sensitive: true,

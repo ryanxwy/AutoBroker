@@ -24,4 +24,5 @@ export type {
   SkillPhase,
   SkillRiskClass,
   SkillStatus,
+  SkillProfilePin,
 } from "./registry.js";

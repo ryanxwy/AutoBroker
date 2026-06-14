@@ -53,6 +53,7 @@ const SKILLS_FIXTURE = [
     inputs: ["input_mode", "freeform_text", "seed_fields"],
     outputs: "search_profile",
     sensitive: false,
+    profile_pin: "exempt",
     retries: 0,
   },
 ];

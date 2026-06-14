@@ -237,28 +237,45 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
 // typed STOP classification (the profile-guard error cards)
 // ---------------------------------------------------------------------------
 
-/** The geosearch profile-resolution STOP codes — a client-side restatement of
- *  the workflow's GeosearchStopCode union (the wire owns it; UI never imports
- *  the workflows package). */
-export const GEOSEARCH_STOP_CODES = [
+/** The profile/precondition STOP codes — a client-side restatement of the
+ *  workflows' STOP-code unions (the wire owns it; UI never imports the workflows
+ *  package). Cross-skill: any profile-guarded skill STOPs with one of these.
+ *  `pin_required` is the explicit-pin STOP (a pin_required skill run with no pin
+ *  supplied): like multiple_active_profiles it renders the pick-by-vehicle
+ *  picker, whose selection re-launches the skill pinned. `no_lead_submitted` is
+ *  an inbox precondition STOP (no lead has been submitted to any dealer yet) —
+ *  classified so it renders a FRIENDLY pointer card, never the picker. */
+export const PROFILE_STOP_CODES = [
   "no_active_profile",
   "multiple_active_profiles",
   "profile_missing_fields",
+  "pin_required",
+  "no_lead_submitted",
 ] as const;
-export type GeosearchStopCode = (typeof GEOSEARCH_STOP_CODES)[number];
+export type ProfileStopCode = (typeof PROFILE_STOP_CODES)[number];
+
+/** The error NAMES that carry a typed profile/precondition STOP. Extensible:
+ *  every skill whose workflow STOPs through this contract registers its error
+ *  name here. The name gates dispatch (the code alone is NOT discriminating —
+ *  native errors like SqliteError also carry a `code`). */
+const PROFILE_STOP_ERROR_NAMES: ReadonlySet<string> = new Set([
+  "DealerGeosearchStopError",
+  "DealerInboxCheckStopError",
+]);
 
 /**
- * Classify a failed turn as a typed geosearch STOP. Dispatch keys on the error
- * NAME plus the stop-code allowlist — the code alone is NOT discriminating
- * (native errors like SqliteError also carry a `code`). Returns null for every
- * non-STOP failure (the generic error line renders instead).
+ * Classify a failed turn as a typed profile/precondition STOP. Dispatch keys on
+ * the error NAME (one of the registered stop-error names) PLUS the stop-code
+ * allowlist — the code alone is NOT discriminating (native errors like
+ * SqliteError also carry a `code`). Returns null for every non-STOP failure
+ * (the generic error line renders instead).
  */
-export function geosearchStopCode(turn: AssistantTurnView): GeosearchStopCode | null {
+export function profileStopCode(turn: AssistantTurnView): ProfileStopCode | null {
   if (turn.status !== "error") return null;
-  if (turn.errorName !== "DealerGeosearchStopError") return null;
+  if (turn.errorName === null || !PROFILE_STOP_ERROR_NAMES.has(turn.errorName)) return null;
   const code = turn.errorCode;
-  return code !== null && (GEOSEARCH_STOP_CODES as readonly string[]).includes(code)
-    ? (code as GeosearchStopCode)
+  return code !== null && (PROFILE_STOP_CODES as readonly string[]).includes(code)
+    ? (code as ProfileStopCode)
     : null;
 }
 

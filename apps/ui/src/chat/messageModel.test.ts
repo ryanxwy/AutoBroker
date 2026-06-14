@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  geosearchStopCode,
+  profileStopCode,
   projectAssistantTurn,
   projectTurns,
   recoveredTurnMessage,
@@ -119,19 +119,61 @@ describe("projectAssistantTurn — three-zone projection", () => {
     expect(turn.error).toBe("Multiple active search profiles found (A | B).");
     expect(turn.errorName).toBe("DealerGeosearchStopError");
     expect(turn.errorCode).toBe("multiple_active_profiles");
-    expect(geosearchStopCode(turn)).toBe("multiple_active_profiles");
+    expect(profileStopCode(turn)).toBe("multiple_active_profiles");
 
     // Code alone is NOT discriminating: a native error with a matching code
     // must never dispatch a STOP card.
     const sqlite = projectAssistantTurn(
       assistant([frame("error", { reason: "db locked", name: "SqliteError", code: "no_active_profile" })]),
     );
-    expect(geosearchStopCode(sqlite)).toBeNull();
+    expect(profileStopCode(sqlite)).toBeNull();
     // Name without an allowlisted code → null too.
     const oddCode = projectAssistantTurn(
       assistant([frame("error", { reason: "x", name: "DealerGeosearchStopError", code: "something_else" })]),
     );
-    expect(geosearchStopCode(oddCode)).toBeNull();
+    expect(profileStopCode(oddCode)).toBeNull();
+  });
+
+  it("a DealerInboxCheckStopError classifies cross-skill (pin_required + no_lead_submitted)", () => {
+    const pin = projectAssistantTurn(
+      assistant([
+        frame("init", { skill: "dealer_inbox_check", driver_kind: "deepseek_apikey" }),
+        frame("error", {
+          reason: "Pin a search before checking the inbox.",
+          name: "DealerInboxCheckStopError",
+          code: "pin_required",
+        }),
+      ]),
+    );
+    expect(pin.skill).toBe("dealer_inbox_check");
+    expect(profileStopCode(pin)).toBe("pin_required");
+
+    // no_lead_submitted IS classified (a real inbox precondition stop) — the
+    // StopCard renders it as the friendly arm, not the picker (asserted there).
+    const noLead = projectAssistantTurn(
+      assistant([
+        frame("init", { skill: "dealer_inbox_check" }),
+        frame("error", {
+          reason:
+            "Submit a lead to a dealer first (run /dealer_web_lead_submit), then check the inbox.",
+          name: "DealerInboxCheckStopError",
+          code: "no_lead_submitted",
+        }),
+      ]),
+    );
+    expect(profileStopCode(noLead)).toBe("no_lead_submitted");
+
+    // The inbox name still respects the code allowlist: an unknown code → null.
+    const oddInbox = projectAssistantTurn(
+      assistant([frame("error", { reason: "x", name: "DealerInboxCheckStopError", code: "nope" })]),
+    );
+    expect(profileStopCode(oddInbox)).toBeNull();
+
+    // A non-stop error (no registered name) → null.
+    const plain = projectAssistantTurn(
+      assistant([frame("error", { reason: "boom" })]),
+    );
+    expect(profileStopCode(plain)).toBeNull();
   });
 
   it("a text data-frame's metadata sets the resolution provenance", () => {

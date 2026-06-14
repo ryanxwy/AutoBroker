@@ -26,22 +26,57 @@ export interface SkillReadinessGroups {
   blocked: SkillManifest[];
 }
 
-const INTAKE_SKILL = "search_profile_intake";
-
-/** The blocked-group hint (shown on the disabled Run controls). */
+/** The 0-active blocked-group hint (an infer_ok skill blocked because no search
+ *  exists yet). */
 export const PIN_TIP = "Create a search first (run /search_profile_intake).";
 
-/** Group skills by run-readiness: intake always ready; others need the
- *  session's true pin or at least one active profile (0-active blocks). */
+/** The pin-required blocked hint (a pin_required skill blocked because no search
+ *  is pinned, even though an active one exists). */
+export const PIN_REQUIRED_TIP = "Pin a search first (Searches list → Pin).";
+
+/** Whether a skill's pin posture is SATISFIED by the current session state —
+ *  the ADDITIONAL gate layered over the DeepSeek-key lock:
+ *    - exempt       → always (it creates the profile).
+ *    - pin_required → only with a TRUE session pin.
+ *    - infer_ok     → a pin OR at least one active profile (today's behavior).
+ */
+function pinPostureSatisfied(
+  skill: SkillManifest,
+  state: { pin: string | null; hasActiveProfile: boolean },
+): boolean {
+  switch (skill.profile_pin) {
+    case "exempt":
+      return true;
+    case "pin_required":
+      return state.pin !== null;
+    case "infer_ok":
+      return state.pin !== null || state.hasActiveProfile;
+  }
+}
+
+/** The blocked-row hint for a skill whose pin posture is NOT satisfied: a
+ *  pin_required skill blocked WITH an active search wants "pin a search"; any
+ *  skill blocked because no search exists yet wants "create a search". */
+export function blockedTipFor(
+  skill: SkillManifest,
+  state: { pin: string | null; hasActiveProfile: boolean },
+): string {
+  if (skill.profile_pin === "pin_required" && state.hasActiveProfile) return PIN_REQUIRED_TIP;
+  return PIN_TIP;
+}
+
+/** Group skills by run-readiness: each skill is Ready only when its pin posture
+ *  is satisfied (exempt always; pin_required needs a true pin; infer_ok needs a
+ *  pin or an active profile). This is an ADDITIONAL gate over the DeepSeek-key
+ *  lock applied in the rendering. */
 export function groupSkillsByReadiness(
   skills: SkillManifest[],
   state: { pin: string | null; hasActiveProfile: boolean },
 ): SkillReadinessGroups {
   const ready: SkillManifest[] = [];
   const blocked: SkillManifest[] = [];
-  const launchable = state.pin !== null || state.hasActiveProfile;
   for (const skill of skills) {
-    if (skill.name === INTAKE_SKILL || launchable) ready.push(skill);
+    if (pinPostureSatisfied(skill, state)) ready.push(skill);
     else blocked.push(skill);
   }
   return { ready, blocked };
@@ -67,11 +102,15 @@ function SkillRows({
   skills,
   disabled,
   tip,
+  tipFor,
   onRun,
 }: {
   skills: SkillManifest[];
   disabled: boolean;
+  /** A static tip applied to every row (the locked-list / ready cases). */
   tip?: string;
+  /** A per-skill tip (the blocked group, where the reason varies by posture). */
+  tipFor?: (skill: SkillManifest) => string;
   onRun: (skill: SkillManifest) => void;
 }): JSX.Element {
   return (
@@ -86,7 +125,7 @@ function SkillRows({
             className="btn-primary"
             data-testid={`ledger-run-${skill.name}`}
             disabled={disabled}
-            title={tip}
+            title={tipFor ? tipFor(skill) : tip}
             onClick={() => onRun(skill)}
           >
             Run
@@ -118,7 +157,17 @@ export function SkillsPopoverList({
     );
   }
 
-  const groups = groupSkillsByReadiness(skills, { pin, hasActiveProfile });
+  const state = { pin, hasActiveProfile };
+  const groups = groupSkillsByReadiness(skills, state);
+  // The blocked group mixes two reasons (no search vs no pin); the group header
+  // shows the pin-required hint when ANY blocked skill is pin-required with an
+  // active search, else the create-a-search hint. Each row still carries its
+  // own precise tip.
+  const groupHint = groups.blocked.some(
+    (s) => s.profile_pin === "pin_required" && hasActiveProfile,
+  )
+    ? PIN_REQUIRED_TIP
+    : PIN_TIP;
   return (
     <div data-testid="skills-list">
       <h3 className="skills-group-title">Ready</h3>
@@ -126,8 +175,13 @@ export function SkillsPopoverList({
       {groups.blocked.length > 0 && (
         <>
           <h3 className="skills-group-title">Needs an active search</h3>
-          <p className="muted">{PIN_TIP}</p>
-          <SkillRows skills={groups.blocked} disabled tip={PIN_TIP} onRun={onRun} />
+          <p className="muted">{groupHint}</p>
+          <SkillRows
+            skills={groups.blocked}
+            disabled
+            tipFor={(s) => blockedTipFor(s, state)}
+            onRun={onRun}
+          />
         </>
       )}
     </div>

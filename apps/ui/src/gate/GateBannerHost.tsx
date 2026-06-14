@@ -27,6 +27,7 @@ import { BatchReviewCard, readBatchReviewSpec } from "./BatchReviewCard.js";
 import { gateTrack } from "./gateTrack.js";
 import { HygieneReviewCard } from "./HygieneReviewCard.js";
 import { readHygieneStageSpec } from "./hygieneStage.js";
+import { InboxReviewCard, readInboxReviewSpec } from "./InboxReviewCard.js";
 
 export function GateBannerHost({
   awaiting,
@@ -48,8 +49,17 @@ export function GateBannerHost({
     showBanner && kind === "batch_review" && awaiting.specInline !== null
       ? readHygieneStageSpec(awaiting.specInline)
       : null;
-  const batchSpec =
+  // The inbox-check batch_review (dealer reply groups + `unrouted`, no
+  // `website`/`total_in_radius`) is its own surface. Disambiguated by shape:
+  // readInboxReviewSpec returns null on the hygiene + inventory payloads (and
+  // vice-versa), so the three readers never misroute each other. Tried before
+  // the inventory readBatchReviewSpec; both post through the SAME channel.
+  const inboxSpec =
     hygieneSpec === null && showBanner && kind === "batch_review" && awaiting.specInline !== null
+      ? readInboxReviewSpec(awaiting.specInline)
+      : null;
+  const batchSpec =
+    hygieneSpec === null && inboxSpec === null && showBanner && kind === "batch_review" && awaiting.specInline !== null
       ? readBatchReviewSpec(awaiting.specInline)
       : null;
   // The approval kind needs only a human-readable summary off the payload;
@@ -72,6 +82,20 @@ export function GateBannerHost({
           />
           {decision.decisionError !== null && (
             <p className="danger-text" role="alert" data-testid="hygiene-decision-error">
+              {decision.decisionError}
+            </p>
+          )}
+        </>
+      ) : inboxSpec !== null ? (
+        <>
+          <InboxReviewCard
+            spec={inboxSpec}
+            submitting={decision.submitting}
+            onApprove={(ids) => decision.decide("accept", { approved_dealer_ids: ids })}
+            onDecline={() => decision.decide("decline")}
+          />
+          {decision.decisionError !== null && (
+            <p className="danger-text" role="alert" data-testid="inbox-decision-error">
               {decision.decisionError}
             </p>
           )}
