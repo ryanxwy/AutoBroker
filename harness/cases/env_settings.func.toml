@@ -1,0 +1,123 @@
+# harness/cases/env_settings.func.toml — FUNCTIONAL lane: the Settings →
+# Environment panel, end-to-end (the centralized operational-env surface).
+#
+# A non-tech user opens Settings and sees the Environment card: the editable
+# rows (gmail_backend as a select, chrome_headless as a "Show browser window"
+# toggle) and the read-only rows (the L1 mutation fuse as a guarded pill, the
+# data-dir path). They flip the browser-window toggle and it saves.
+#
+# WHY THIS IS A REAL END-TO-END PROOF (beyond the RTL component tests):
+#   - The panel mounts from a LIVE getEnvConfig() round-trip — the descriptor
+#     rows render only because GET /api/settings/env → the envConfigStore →
+#     the panel actually connected in a real browser.
+#   - The toggle click drives a REAL PUT /api/settings/env to the isolated
+#     server; the Saved badge renders ONLY after that PUT resolves 200, so the
+#     click-as-wait on env-saved-chrome_headless is itself the save-succeeded
+#     proof (a non-200 / no-fire times out RED).
+#   - SAFETY ANCHOR: the L1 fuse row renders, but it has NO toggle and NO select
+#     (asserted absent) — the fuse is structurally non-disarmable from the UI,
+#     proven against the live DOM, not just the unit reducer.
+#
+# The select-driven gmail->real confirm flow is NOT exercised here: the
+# functional lane has no selectOption verb (click/fill/press/reload only); that
+# branch is locked by the EnvPanel RTL tests.
+
+[meta]
+id = "env_settings_func"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "env_panel_renders_and_saves"
+kind = "ui"
+fixture_state = "empty_home"
+purpose = "Settings → Environment panel renders the curated env vars from a live getEnvConfig(); the editable gmail_backend (select) + chrome_headless (toggle) rows and the read-only fuse pill + data-dir path all mount; flipping the browser-window toggle drives a real PUT proven by the Saved badge; and the fuse row carries no editable control."
+
+# Open Settings (DeepSeek key is seeded in fixture mode, so the SPA is not gated
+# and /settings shows normally).
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-settings"
+
+# Flip "Show browser window" — the click verb waits for the toggle to mount
+# (so this also waits for the live getEnvConfig() panel), then triggers the real
+# PUT /api/settings/env (chrome_headless -> "0").
+[[steps.ui_actions]]
+verb = "click"
+testid = "env-toggle-chrome_headless"
+
+# WAIT on the Saved badge: it renders ONLY after the PUT resolves 200, so this
+# click-as-wait is the save-succeeded proof.
+[[steps.ui_actions]]
+verb = "click"
+testid = "env-saved-chrome_headless"
+
+# The Environment panel mounted.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "settings-env"
+expect = "visible"
+
+# The editable gmail_backend row + its keyword + its select control render.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-row-gmail_backend"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-keyword-gmail_backend"
+expect = "text"
+value = "AUTOBROKER_GMAIL_BACKEND"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-select-gmail_backend"
+expect = "visible"
+
+# The editable chrome_headless row + its toggle render.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-row-chrome_headless"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-toggle-chrome_headless"
+expect = "visible"
+
+# The keyword carries an accessible tooltip affordance (the InfoHint button).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "info-hint-gmail_backend"
+expect = "visible"
+
+# The read-only L1 fuse row renders...
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-row-block_external_mutations"
+expect = "visible"
+
+# ...but it is structurally NON-DISARMABLE from the UI: no toggle, no select.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-toggle-block_external_mutations"
+expect = "absent"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-select-block_external_mutations"
+expect = "absent"
+
+# The read-only data-dir path renders (straight from the env response value).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-path-data_dir"
+expect = "visible"
