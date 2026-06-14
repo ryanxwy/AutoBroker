@@ -24,7 +24,6 @@
  *                             rows seed fine but nothing renders them.
  *   - incentives_present    — likewise no manufacturer_incentives surface in the
  *                             dashboard; seeding asserts nothing.
- *   - replies_arrived       — needs the inbox UI + fake_mailbox (E0).
  *   - gmail_not_connected   — needs the Gmail connection surface (E0).
  *   - approval_pending      — a suspended workflow is runtime state, not a row
  *                             seed; there is no static-DB way to install one.
@@ -48,6 +47,7 @@ import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { multiActive } from "./multiActive.js";
+import { repliesArrived } from "./repliesArrived.js";
 
 /** One named deterministic world the functional lane can install. */
 export interface FixtureState {
@@ -74,6 +74,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [digestReady.id]: digestReady,
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
+  [repliesArrived.id]: repliesArrived,
 };
 
 /** Resolve a fixture state by id, failing LOUD on an unknown id. */

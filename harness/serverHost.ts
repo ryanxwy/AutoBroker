@@ -210,6 +210,10 @@ async function main(): Promise<void> {
     // world it proves the save flow against.
     process.env.NODE_ENV = "test";
     process.env.DEEPSEEK_API_KEY ??= "fixture-dummy-not-used";
+    // Pin the Gmail backend to the local fake mailbox: the functional lane never
+    // touches a real inbox, and this satisfies both the adapter factory default
+    // and the fake-mailbox-send-only preflight in fixture mode.
+    process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
     // STUB THE KEY PROBE: the "Test connection" verb must make ZERO real external
     // calls in the functional lane. Inject a deterministic pass for every id (the
     // candidate is never inspected) so the keys_setup case's Test → pass → Save

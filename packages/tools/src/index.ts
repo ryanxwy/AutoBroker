@@ -35,6 +35,85 @@ export {
   type SendResult,
 } from "./gmail.js";
 
+// Gmail adapter contract — the interface + canonical domain types every backend
+// and every consumer (send seam, sync, extractor, health probe) speaks.
+export type {
+  GmailAdapter,
+  Message,
+  MessageDirection,
+  Thread,
+  ThreadRef,
+  AttachmentRef,
+  AttachmentData,
+  HistoryRecord,
+  HistoryPage,
+  HealthResult,
+} from "./gmail/types.js";
+
+// Concrete adapters — the factory selects one, but the symbols are exported for
+// tests and direct construction. (FakeGmailAdapter's ctor opens the shared DB,
+// so construct it only at call time, never at module scope.)
+export {
+  RealGmailAdapter,
+  createRealGmailAdapter,
+  type GmailApiClient,
+} from "./gmail/adapter.js";
+export { FakeGmailAdapter } from "./gmail/fakeAdapter.js";
+
+// Sync engine — the per-mailbox watermark store + window predicate + the
+// incremental history sync (the email-pull skill drives syncMailbox).
+export {
+  syncMailbox,
+  computeWindow,
+  historyWatermarkKey,
+  readHistoryWatermark,
+  writeHistoryWatermark,
+  type SyncResult,
+  type SyncOptions,
+  type SyncFallbackSpan,
+} from "./gmail/sync.js";
+
+// MIME walk — the inbound payload-tree reader (the parsed-body shape the
+// per-message extractor reuses).
+export { walkParts, readPartHeader, type ParsedBody } from "./gmail/mime.js";
+
+// Attachment text extraction — the classify + extract path (pdfjs text layer,
+// OCR for images) and its injection seams + typed fallback spans.
+export {
+  extractAttachmentText,
+  classifyAttachment,
+  type AttachmentClass,
+  type AttachmentTextResult,
+  type AttachmentFallbackSpan,
+  type ExtractOptions,
+  type PdfTextExtractor,
+  type ImageOcrRunner,
+} from "./gmail/attachmentText.js";
+export {
+  runImageOcr,
+  type OcrResult,
+  type OcrFallbackSpan,
+  type OcrRunner,
+  type OcrOptions,
+} from "./gmail/ocr.js";
+
+// Gmail OAuth — the loopback consent flow + token/client store helpers (the
+// connect route and the reconsent CLI delegate down here; no consumer re-rolls
+// the flow).
+export {
+  runConsentFlow,
+  loadAuthorizedClient,
+  loadTokenRecord,
+  loadClient,
+  persistTokenRecord,
+  gmailDataDir,
+  tokenPath,
+  clientPath,
+  GMAIL_SCOPES,
+  type TokenRecord,
+  type InstalledClient,
+} from "./gmail/auth.js";
+
 // Browser service (Playwright-native, ephemeral context per run; the ONE
 // mutating face routes through the gate, read faces are ungated).
 export {
@@ -200,6 +279,17 @@ export {
   type PendingSourceRow,
   type SeedInventorySourceOptions,
 } from "./inventory/sources.js";
+
+// Fake-mailbox corpus seeder — the inbound deterministic row builder (the
+// adapter only writes outbound, so this stages the dealer-reply corpus the read
+// paths + sync consume). Tools owns the DB write; the harness fixture calls down.
+export {
+  seedFakeMailbox,
+  type FakeMailboxSeedThread,
+  type FakeMailboxSeedMessage,
+  type FakeMailboxSeedAttachment,
+  type SeedFakeMailboxResult,
+} from "./gmail/fakeSeed.js";
 
 // incentive_scrape deterministic core — the code-level host rejection table,
 // the 7-day cache gate, the cash whitelist, program-identity merge +
