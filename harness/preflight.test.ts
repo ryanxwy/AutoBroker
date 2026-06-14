@@ -4,7 +4,7 @@
  * uses an injected fetch. (Each violation maps to its exit-1 path.)
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -192,7 +192,9 @@ describe("gate ⑧ fake-mailbox send-only", () => {
   }
 
   beforeEach(() => {
-    // mkdtemp under the parity dir so gate ② (data-dir isolation) passes.
+    // mkdtemp under the parity dir so gate ② (data-dir isolation) passes. The
+    // parity dir may not exist yet on a fresh runner, so ensure it first.
+    mkdirSync(join(homedir(), ".autobroker-ts"), { recursive: true });
     sandboxDir = mkdtempSync(join(homedir(), ".autobroker-ts", "preflight-test-"));
     process.env.AUTOBROKER_DATA_DIR = sandboxDir;
     withTableDb = join(sandboxDir, "autobroker.db");
