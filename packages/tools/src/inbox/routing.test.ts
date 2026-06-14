@@ -115,3 +115,65 @@ describe("routeThread — the ladder", () => {
     ).toEqual({ unrouted: "unknown_sender" });
   });
 });
+
+describe("routeThread — rung 2.5 dealer-domain host match", () => {
+  beforeEach(() => {
+    // Give the bound dealers websites: dealer A (profile A) and dealer B
+    // (profile B). dealer_contacts already has sam@dealer-a / pat@dealer-b, so a
+    // host match must apply to a NEW address not on file.
+    db.$client.prepare("UPDATE dealers SET website = ? WHERE dealer_id = ?").run(
+      "https://www.dealer-a.com/",
+      DEALER_A,
+    );
+    db.$client.prepare("UPDATE dealers SET website = ? WHERE dealer_id = ?").run(
+      "https://dealer-b.com",
+      DEALER_B,
+    );
+  });
+
+  it("routes a NEW salesperson address whose host matches a bound dealer's website", () => {
+    // newhire@dealer-a.com is NOT a dealer_contacts row (so rung 2 misses), but
+    // its host stem "dealer-a" matches dealer A's website.
+    expect(
+      routeThread(db, {
+        threadId: "t-newhire",
+        senderEmail: "newhire@dealer-a.com",
+        profileId: PROFILE_A,
+      }),
+    ).toEqual({ dealerId: DEALER_A, reason: "dealer_domain" });
+  });
+
+  it("does not route a sender whose host matches NO bound dealer", () => {
+    expect(
+      routeThread(db, {
+        threadId: "t-nohost",
+        senderEmail: "someone@unrelated-dealer.com",
+        profileId: PROFILE_A,
+      }),
+    ).toEqual({ unrouted: "unknown_sender" });
+  });
+
+  it("does not leak across profiles — a host bound to a DIFFERENT profile does not match", () => {
+    // dealer-b.com is dealer B's website, bound to profile B only. A reply from
+    // that host routed under profile A must NOT match (cross-profile guard).
+    expect(
+      routeThread(db, {
+        threadId: "t-leak",
+        senderEmail: "newhire@dealer-b.com",
+        profileId: PROFILE_A,
+      }),
+    ).toEqual({ unrouted: "unknown_sender" });
+  });
+
+  it("the exact known-contact rung still wins over the host rung (rung order)", () => {
+    // sam@dealer-a.com is BOTH an exact contact and a host match — rung 2 fires
+    // first, so the reason is known_contact, not dealer_domain.
+    expect(
+      routeThread(db, {
+        threadId: "t-both",
+        senderEmail: "sam@dealer-a.com",
+        profileId: PROFILE_A,
+      }),
+    ).toEqual({ dealerId: DEALER_A, reason: "known_contact" });
+  });
+});

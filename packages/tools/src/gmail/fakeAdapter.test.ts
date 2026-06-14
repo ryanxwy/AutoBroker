@@ -241,6 +241,70 @@ describe("FakeGmailAdapter read paths", () => {
     expect(all.length).toBe(3);
   });
 
+  it("parses field operators and ` OR ` clauses (the discovery query grammar)", async () => {
+    const adapter = new FakeGmailAdapter(db);
+    // A row whose FROM contains "elantra" but whose subject does not, and a row
+    // whose SUBJECT contains "elantra" but whose from does not — to prove the
+    // field operators are scoped to the right field.
+    seedInbound({
+      messageId: "mFrom",
+      threadId: "tFrom",
+      to: "buyer@x.test",
+      from: "elantra-sales@dealer-one.test",
+      subject: "your inquiry",
+      body: "x",
+      internalDateMs: 1000,
+    });
+    seedInbound({
+      messageId: "mSubj",
+      threadId: "tSubj",
+      to: "buyer@x.test",
+      from: "sales@dealer-two.test",
+      subject: "Re: 2026 Elantra quote",
+      body: "x",
+      internalDateMs: 2000,
+    });
+
+    // from:<term> matches ONLY the from field — tFrom, not tSubj.
+    const fromOnly = await adapter.search("from:elantra");
+    expect(fromOnly.map((t) => t.threadId)).toEqual(["tFrom"]);
+
+    // subject:<term> matches ONLY the subject field — tSubj, not tFrom.
+    const subjOnly = await adapter.search("subject:elantra");
+    expect(subjOnly.map((t) => t.threadId)).toEqual(["tSubj"]);
+
+    // ` OR ` is a union over clauses — both threads.
+    const union = await adapter.search("from:dealer-one OR from:dealer-two");
+    expect(union.map((t) => t.threadId).sort()).toEqual(["tFrom", "tSubj"]);
+
+    // A bare clause still substring-matches across subject+from+to.
+    const bare = await adapter.search("elantra");
+    expect(bare.map((t) => t.threadId).sort()).toEqual(["tFrom", "tSubj"]);
+
+    // newer_than:<window> is still honored alongside an operator clause: the
+    // 10-day-old row below is dropped while the fresh from-match survives.
+    seedInbound({
+      messageId: "mOldFrom",
+      threadId: "tOldFrom",
+      to: "buyer@x.test",
+      from: "elantra-old@dealer-one.test",
+      subject: "stale",
+      body: "x",
+      internalDateMs: Date.now() - 10 * 86_400_000,
+    });
+    seedInbound({
+      messageId: "mFreshFrom",
+      threadId: "tFreshFrom",
+      to: "buyer@x.test",
+      from: "elantra-new@dealer-one.test",
+      subject: "fresh",
+      body: "x",
+      internalDateMs: Date.now() - 60_000,
+    });
+    const recent = await adapter.search("from:dealer-one newer_than:2d");
+    expect(recent.map((t) => t.threadId)).toEqual(["tFreshFrom"]);
+  });
+
   it("downloadAttachment returns the decoded bytes", async () => {
     const adapter = new FakeGmailAdapter(db);
     seedInbound({

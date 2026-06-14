@@ -12,6 +12,8 @@
 
 import type { Db } from "@autobroker/db";
 
+import { hostStem } from "./discovery.js";
+
 /**
  * The threads bound to one profile, joined to the dealer for its display name,
  * newest-touched first. snake_case rows for the HTTP view. Read-only.
@@ -69,6 +71,61 @@ export function listProfileContactEmails(db: Db, profileId: string): string[] {
     )
     .all(profileId) as Array<{ email: string }>;
   return rows.map((r) => r.email);
+}
+
+/**
+ * The registrable host stems of THIS profile's bound dealers' websites — the
+ * dealer-domain allow-set the routing ladder's host rung matches a sender
+ * against. A dealer with no/unparseable website contributes nothing; the list
+ * is deduped stable (first-seen order). Read-only, profile-scoped.
+ */
+export function listProfileDealerDomains(db: Db, profileId: string): string[] {
+  const rows = db.$client
+    .prepare(
+      "SELECT d.website AS website " +
+        "FROM dealers d " +
+        "JOIN profile_dealers pd ON pd.dealer_id = d.dealer_id " +
+        "WHERE pd.search_profile_id = ? AND d.website IS NOT NULL",
+    )
+    .all(profileId) as Array<{ website: string | null }>;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const raw = r.website;
+    if (raw === null || raw.trim() === "") continue;
+    const stem = hostStem(raw);
+    if (stem === null || stem === "") continue;
+    if (seen.has(stem)) continue;
+    seen.add(stem);
+    out.push(stem);
+  }
+  return out;
+}
+
+/**
+ * The earliest successful lead-submit timestamp (epoch ms) for one profile — the
+ * window anchor the first inbox sweep uses instead of a blind default (the sweep
+ * only looks for replies AFTER any dealer was contacted). Reads MIN over the
+ * `submitted` rows; returns null when none exist (no lead yet → the caller
+ * STOPs rather than sweeping pre-outreach noise). The column carries the submit
+ * timestamp as an ISO string per the codebase convention, so the raw is parsed
+ * with `Date.parse`; a numeric (epoch-ms) value is returned directly. null/
+ * empty/non-finite → null. Read-only, profile-scoped.
+ */
+export function readFirstLeadSubmitAtMs(db: Db, profileId: string): number | null {
+  const row = db.$client
+    .prepare(
+      "SELECT MIN(submitted_at) AS first_at " +
+        "FROM lead_submissions " +
+        "WHERE search_profile_id = ? AND outcome = 'submitted' AND submitted_at IS NOT NULL",
+    )
+    .get(profileId) as { first_at: string | number | null };
+  const raw = row.first_at;
+  if (raw === null) return null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (raw.trim() === "") return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 /**

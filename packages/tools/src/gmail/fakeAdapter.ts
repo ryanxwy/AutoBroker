@@ -145,9 +145,11 @@ export class FakeGmailAdapter implements GmailAdapter {
 
   /**
    * Find threads whose any message matches the query. The fake supports a
-   * pragmatic subset: a substring match over subject/from/to (case-insensitive),
-   * plus the `newer_than:Nd|Nh` window the sync resync path passes. An empty
-   * query returns every thread. Read-only, no gate.
+   * pragmatic subset: the `from:`/`to:`/`subject:` field operators, ` OR `-
+   * batched clauses (any clause matching wins), and an otherwise case-insensitive
+   * substring match over subject/from/to, plus the `newer_than:Nd|Nh` window the
+   * discovery passes carry. An empty query returns every thread. Read-only, no
+   * gate.
    */
   search(query: string, maxResults = 100): Promise<ThreadRef[]> {
     const rows = this.db.$client
@@ -309,8 +311,33 @@ function stripNewerThan(query: string): string {
   return query.replace(NEWER_THAN_RE, "");
 }
 
-/** Case-insensitive substring match over the addressable header fields. */
+/**
+ * Match one OR-clause against a row. A clause prefixed `from:`/`to:`/`subject:`
+ * is a case-insensitive substring match against ONLY that header field; a bare
+ * clause matches across subject+from+to. The query strings the discovery builder
+ * emits use exactly this subset (a model name, a `from:<email>`, a dealer token),
+ * so the live Gmail grammar and this fake resolve the same strings. Pure.
+ */
+function clauseMatches(row: MessageRow, clause: string): boolean {
+  const subject = (row.subject ?? "").toLowerCase();
+  const from = row.from.toLowerCase();
+  const to = row.to.toLowerCase();
+  if (clause.startsWith("from:")) return from.includes(clause.slice("from:".length));
+  if (clause.startsWith("to:")) return to.includes(clause.slice("to:".length));
+  if (clause.startsWith("subject:")) return subject.includes(clause.slice("subject:".length));
+  return `${subject} ${from} ${to}`.includes(clause);
+}
+
+/**
+ * The thread matches the term if ANY ` OR `-separated clause matches (OR
+ * semantics). `term` is already lowercased + `newer_than:`-stripped at the call
+ * site, so the ` OR ` separators arrive as ` or `; empty clauses are skipped.
+ */
 function rowMatchesTerm(row: MessageRow, term: string): boolean {
-  const haystack = `${row.subject ?? ""} ${row.from} ${row.to}`.toLowerCase();
-  return haystack.includes(term);
+  const clauses = term
+    .split(" or ")
+    .map((c) => c.trim())
+    .filter((c) => c !== "");
+  if (clauses.length === 0) return true;
+  return clauses.some((c) => clauseMatches(row, c));
 }

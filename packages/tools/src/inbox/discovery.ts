@@ -49,7 +49,7 @@ const DEALER_TOKEN_MIN_LEN = 3;
 /** Lowercased registrable host stem of a website (the second-level label), or
  *  null when the URL does not parse. e.g. "https://www.bob-smith-hyundai.com/x"
  *  → "bob-smith-hyundai". Pure. */
-function hostStem(website: string): string | null {
+export function hostStem(website: string): string | null {
   let host: string;
   try {
     const u = new URL(website);

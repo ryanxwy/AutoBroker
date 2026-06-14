@@ -302,6 +302,7 @@ export {
   dealerTokens,
   dedupeThreadHits,
   classifyThread,
+  hostStem,
   CONTACT_BATCH_SIZE,
   DEALER_TOKEN_BATCH_SIZE,
   type BuildInboxQueriesArgs,
@@ -335,6 +336,8 @@ export {
   listProfileThreadRows,
   listProfileMessageRows,
   listProfileContactEmails,
+  listProfileDealerDomains,
+  readFirstLeadSubmitAtMs,
   listSuppressedGmailThreadIds,
   listIngestedGmailMessageIds,
 } from "./inbox/reads.js";
