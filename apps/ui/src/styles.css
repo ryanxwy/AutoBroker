@@ -1131,6 +1131,76 @@ details.optional[open] summary { margin-bottom: 10px; }
 
 .gmail-card .key-row-controls button:disabled { opacity: 0.45; }
 
+/* ---- settings / environment -------------------------------------------------- */
+/* The env-var keyword line (mono) under the label, with the ⓘ hint beside it. */
+.env-keyword {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.env-keyword code { font-family: var(--mono); background: none; border: 0; padding: 0; color: var(--ink-mute); }
+.env-select {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 6px 9px;
+}
+.env-path {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 4px 8px;
+  word-break: break-all;
+}
+.env-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
+/* the inline enum confirm rides the shared gate-card; give it room below the row */
+.env-confirm { flex-basis: 100%; margin-top: 10px; animation: popIn 0.16s ease both; }
+
+/* the ⓘ hint — a tab-reachable trigger + a CSS-revealed bubble (hover/focus) */
+.info-hint-wrap { position: relative; display: inline-flex; }
+.info-hint {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-mute);
+  cursor: help;
+}
+.info-hint-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 80;
+  width: max-content;
+  max-width: 280px;
+  opacity: 0;
+  visibility: hidden;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+  padding: 8px 11px;
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  transition: opacity 0.12s;
+}
+.info-hint-wrap:hover .info-hint-bubble,
+.info-hint-wrap:focus-within .info-hint-bubble { opacity: 1; visibility: visible; }
+.info-hint-wrap[data-dismissed="true"] .info-hint-bubble { opacity: 0; visibility: hidden; }
+
 /* visually-hidden — keep requiredness in the accessible name without a glyph. */
 .visually-hidden {
   position: absolute;

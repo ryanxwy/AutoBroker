@@ -13,7 +13,8 @@
 
 import type { ApiClient } from "../api/client.js";
 import type { AsyncState } from "../api/useApi.js";
-import type { KeyPresenceResponse } from "../api/wire.js";
+import type { EnvConfigResponse, KeyPresenceResponse } from "../api/wire.js";
+import { EnvPanel } from "../settings/EnvPanel.js";
 import { GmailCard } from "../settings/GmailCard.js";
 import { KeyRow } from "../settings/KeyRow.js";
 import { KEY_DEFS } from "../settings/keyDefs.js";
@@ -24,9 +25,13 @@ export interface SettingsProps {
   presence: AsyncState<KeyPresenceResponse>;
   /** Refetch presence after a save/clear (App re-reads → the gate re-evaluates). */
   onChanged: () => void;
+  /** The env config read App owns (drives the Environment panel). */
+  env: AsyncState<EnvConfigResponse>;
+  /** Refetch the env config after a setting write lands. */
+  onEnvChanged: () => void;
 }
 
-export function Settings({ client, presence, onChanged }: SettingsProps): JSX.Element {
+export function Settings({ client, presence, onChanged, env, onEnvChanged }: SettingsProps): JSX.Element {
   const deepseekReady = presence.kind === "ok" && presence.data.deepseek.present;
 
   return (
@@ -71,6 +76,8 @@ export function Settings({ client, presence, onChanged }: SettingsProps): JSX.El
             <h2>Connections</h2>
             <GmailCard connected={presence.data.gmail.connected} />
           </section>
+
+          <EnvPanel client={client} env={env} onChanged={onEnvChanged} />
         </>
       )}
     </div>

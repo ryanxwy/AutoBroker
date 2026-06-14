@@ -38,6 +38,7 @@ import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
 import { invalidate, useRefocusRefetch } from "./api/useDataChanged.js";
 import type {
+  EnvConfigResponse,
   IntakeScopeNotice,
   KeyPresenceResponse,
   Mode,
@@ -86,6 +87,9 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // key in Settings calls keyPresence.refetch() → the gate clears with no reload.
   const keyPresence = useAsync<KeyPresenceResponse>(() => client.getKeyPresence(), []);
   const deepseekReady = keyPresence.kind === "ok" ? keyPresence.data.deepseek.present : true;
+  // The curated operational env vars — owned here (like presence) so the
+  // Environment panel reflects a live value after a write with no reload.
+  const env = useAsync<EnvConfigResponse>(() => client.getEnvConfig(), []);
   const layoutMode = useLayout((s) => s.mode);
 
   // First-run gate: on a fresh install (no DeepSeek key) land the owner on
@@ -464,7 +468,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           )}
           {route.name === "profile" && <ProfileWorkspace client={client} profileId={route.profileId} />}
           {route.name === "settings" && (
-            <Settings client={client} presence={keyPresence} onChanged={keyPresence.refetch} />
+            <Settings
+              client={client}
+              presence={keyPresence}
+              onChanged={keyPresence.refetch}
+              env={env}
+              onEnvChanged={env.refetch}
+            />
           )}
           {route.name === "not_found" && <NotFound path={route.path} />}
         </main>

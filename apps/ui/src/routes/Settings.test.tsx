@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiClient } from "../api/client.js";
 import type { AsyncState } from "../api/useApi.js";
-import type { KeyPresenceResponse } from "../api/wire.js";
+import type { EnvConfigResponse, KeyPresenceResponse } from "../api/wire.js";
 import { render } from "../test/render.js";
 import { Settings } from "./Settings.js";
 
@@ -32,9 +32,23 @@ function presence(deepseek: boolean): AsyncState<KeyPresenceResponse> & { refetc
   };
 }
 
+/** A resolved (empty) env read — the Environment panel needs it, but these tests
+ *  assert the keys panel only, so an empty curated set keeps it inert. */
+function env(): AsyncState<EnvConfigResponse> & { refetch: () => void; refreshing: boolean } {
+  return { kind: "ok", data: { vars: [] }, refetch: () => {}, refreshing: false };
+}
+
 describe("Settings — keys panel", () => {
   it("renders all four key rows + the Gmail card", () => {
-    const r = render(<Settings client={client} presence={presence(false)} onChanged={() => {}} />);
+    const r = render(
+      <Settings
+        client={client}
+        presence={presence(false)}
+        onChanged={() => {}}
+        env={env()}
+        onEnvChanged={() => {}}
+      />,
+    );
     expect(r.query("settings-page")).not.toBeNull();
     expect(r.query("key-row-deepseek")).not.toBeNull();
     expect(r.query("key-row-google_places")).not.toBeNull();
@@ -45,13 +59,29 @@ describe("Settings — keys panel", () => {
   });
 
   it("shows the first-run setup strip when DeepSeek is absent", () => {
-    const r = render(<Settings client={client} presence={presence(false)} onChanged={() => {}} />);
+    const r = render(
+      <Settings
+        client={client}
+        presence={presence(false)}
+        onChanged={() => {}}
+        env={env()}
+        onEnvChanged={() => {}}
+      />,
+    );
     expect(r.query("settings-setup-strip")).not.toBeNull();
     r.unmount();
   });
 
   it("hides the setup strip once DeepSeek is present", () => {
-    const r = render(<Settings client={client} presence={presence(true)} onChanged={() => {}} />);
+    const r = render(
+      <Settings
+        client={client}
+        presence={presence(true)}
+        onChanged={() => {}}
+        env={env()}
+        onEnvChanged={() => {}}
+      />,
+    );
     expect(r.query("settings-setup-strip")).toBeNull();
     r.unmount();
   });

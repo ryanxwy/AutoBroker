@@ -1,0 +1,219 @@
+/**
+ * EnvRow — one curated environment variable, rendered as a ledger-plate card row
+ * matching the API-key rows above it. The control shape is chosen entirely from
+ * the server descriptor's `classification` (the panel never hardcodes which row
+ * is which) — editable-enum → <select>, editable-bool → toggle, read-only-status
+ * → a status pill (NEVER a control), read-only-path → a mono <code>.
+ *
+ * Each row shows the env-var keyword itself in monospace with an InfoHint beside
+ * it (hover/focus tooltip), the human label, and a one-line description from the
+ * descriptor tooltip.
+ *
+ * GATE-BEFORE-CONTROL (enum → "real"): switching the email-mode select to the
+ * sensitive value does NOT commit. It parks a `pending` value and renders an
+ * inline confirm on the shared gate-card plate; only "Use real Gmail" calls the
+ * setter, "Keep sample inbox" cancels with NO call and the select snaps back.
+ * The safe direction (real → fake) commits immediately.
+ *
+ * BOOL ENCODING: the value crosses the wire as the STRING "1"/"0" ("1" =
+ * headless = window hidden). The human label is "Show the browser", so the
+ * checkbox is checked when the window IS shown — checked = (value === "0") — and
+ * onChange sends "0" when checked, "1" when unchecked.
+ *
+ * Dependency wall: app/ui layer. react + the wire type + the presentational
+ * extras only.
+ */
+
+import { useState } from "react";
+
+import type { EnvVarState } from "../api/wire.js";
+import {
+  GMAIL_BACKEND_CONFIRM,
+  GMAIL_BACKEND_CONFIRM_VALUE,
+  GMAIL_BACKEND_OPTION_LABELS,
+  SHOW_BROWSER_LABELS,
+} from "./envDefs.js";
+import { InfoHint } from "./InfoHint.js";
+
+export interface EnvRowProps {
+  /** The curated row + its current effective value (straight off getEnvConfig). */
+  state: EnvVarState;
+  /** Set this editable var (enum value or the bool "1"/"0"). Absent semantics:
+   *  read-only rows never call it. A rejected write surfaces via `busyError`. */
+  onSet: (id: string, value: string) => void;
+  /** A write error to surface under the row. */
+  busyError?: string | null;
+  /** A brief "Saved" confirmation badge after a successful write. */
+  saved?: boolean;
+}
+
+export function EnvRow({ state, onSet, busyError, saved }: EnvRowProps): JSX.Element {
+  const { id, envVar, classification, allowedValues, label, tooltip, value } = state;
+  // The keyword shown in mono — db_path has no backing env var, so fall back to
+  // the descriptor label spelled as a keyword would not help; show "(active_db)".
+  const keyword = envVar.length > 0 ? envVar : "(active_db)";
+
+  return (
+    <section
+      className="card key-row env-row"
+      data-testid={`env-row-${id}`}
+      aria-labelledby={`env-label-${id}`}
+    >
+      <span id={`env-label-${id}`} className="key-row-label">
+        {label}
+      </span>
+      <div className="env-keyword">
+        <code data-testid={`env-keyword-${id}`}>{keyword}</code>
+        <InfoHint text={tooltip} label={`What does ${label} do?`} idSuffix={id} />
+      </div>
+
+      <div className="key-row-controls">
+        {classification === "editable-enum" && (
+          <EnumControl id={id} value={value} allowedValues={allowedValues ?? []} onSet={onSet} />
+        )}
+        {classification === "editable-bool" && (
+          <BoolControl id={id} value={value} onSet={onSet} />
+        )}
+        {classification === "read-only-status" && <StatusBadge id={id} value={value} />}
+        {classification === "read-only-path" && (
+          <code className="env-path" data-testid={`env-path-${id}`}>
+            {value}
+          </code>
+        )}
+        {saved === true && (
+          <span className="saved-badge" data-testid={`env-saved-${id}`}>
+            Saved
+          </span>
+        )}
+      </div>
+
+      {busyError !== null && busyError !== undefined && (
+        <p className="danger-text" role="alert" data-testid={`env-error-${id}`}>
+          {busyError}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The email-mode enum: a native <select> with friendly option labels, plus the
+ *  gate-before-control confirm when switching to the sensitive value. */
+function EnumControl({
+  id,
+  value,
+  allowedValues,
+  onSet,
+}: {
+  id: string;
+  value: string;
+  allowedValues: readonly string[];
+  onSet: (id: string, value: string) => void;
+}): JSX.Element {
+  const [pending, setPending] = useState<string | null>(null);
+
+  const onSelect = (next: string): void => {
+    if (next === value) return;
+    if (next === GMAIL_BACKEND_CONFIRM_VALUE) {
+      // Sensitive direction → confirm before committing (no call yet).
+      setPending(next);
+      return;
+    }
+    // Safe direction → commit immediately.
+    onSet(id, next);
+  };
+
+  return (
+    <>
+      <select
+        className="env-select"
+        data-testid={`env-select-${id}`}
+        // While a confirm is pending the select reflects the would-be value so
+        // the dropdown reads "My real Gmail"; cancelling snaps it back.
+        value={pending ?? value}
+        onChange={(e) => onSelect(e.target.value)}
+      >
+        {allowedValues.map((opt) => (
+          <option key={opt} value={opt}>
+            {GMAIL_BACKEND_OPTION_LABELS[opt] ?? opt}
+          </option>
+        ))}
+      </select>
+
+      {pending !== null && (
+        <div
+          className="gate-card sensitive env-confirm"
+          role="alertdialog"
+          aria-labelledby={`env-confirm-title-${id}`}
+          data-testid={`env-confirm-${id}`}
+        >
+          <strong id={`env-confirm-title-${id}`}>{GMAIL_BACKEND_CONFIRM.title}</strong>
+          <p className="muted">{GMAIL_BACKEND_CONFIRM.body}</p>
+          <div className="gate-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              data-testid={`env-confirm-yes-${id}`}
+              onClick={() => {
+                const next = pending;
+                setPending(null);
+                onSet(id, next);
+              }}
+            >
+              {GMAIL_BACKEND_CONFIRM.confirmLabel}
+            </button>
+            <button
+              type="button"
+              data-testid={`env-confirm-no-${id}`}
+              onClick={() => setPending(null)}
+            >
+              {GMAIL_BACKEND_CONFIRM.cancelLabel}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The show-the-browser bool toggle. value is the STRING "1"/"0" ("1" =
+ *  headless = hidden); checked = window shown = (value === "0"). */
+function BoolControl({
+  id,
+  value,
+  onSet,
+}: {
+  id: string;
+  value: string;
+  onSet: (id: string, value: string) => void;
+}): JSX.Element {
+  const showWindow = value === "0";
+  return (
+    <label className="env-toggle" data-testid={`env-toggle-${id}`}>
+      <input
+        type="checkbox"
+        checked={showWindow}
+        // checked → show the window → headless off → "0"; unchecked → "1".
+        onChange={(e) => onSet(id, e.target.checked ? "0" : "1")}
+      />
+      <span>{showWindow ? SHOW_BROWSER_LABELS.on : SHOW_BROWSER_LABELS.off}</span>
+    </label>
+  );
+}
+
+/** A read-only status pill — NEVER a control. The safety fuse reads
+ *  "armed"/"disarmed" (orange "guarded" when armed); demo reads "on"/"off". */
+function StatusBadge({ id, value }: { id: string; value: string }): JSX.Element {
+  // "armed" is the protective state → render it in the safety-orange "guarded"
+  // treatment (the awaiting-approval status token); anything else is quiet.
+  const guarded = value === "armed";
+  return (
+    <span
+      className="session-pill"
+      data-status={guarded ? "awaiting_approval" : undefined}
+      data-testid={id === "block_external_mutations" ? "env-badge-block_external" : `env-badge-${id}`}
+    >
+      {guarded ? "● " : ""}
+      {value}
+    </span>
+  );
+}
