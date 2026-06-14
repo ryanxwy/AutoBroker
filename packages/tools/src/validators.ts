@@ -66,7 +66,7 @@ export class BudgetLeakError extends Error {
  * out-the-door price …") carries none of these and is NOT flagged.
  */
 const AMOUNT = String.raw`\$?\s?\d[\d,]*(?:\.\d+)?\s?k?`;
-const BUDGET_PHRASE_PATTERNS: readonly RegExp[] = [
+export const BUDGET_PHRASE_PATTERNS: readonly RegExp[] = [
   // "my budget is 35000", "budget max: $35,000", "budget of 35k"
   new RegExp(String.raw`\bbudget\b[^.\n]{0,40}?${AMOUNT}`, "i"),
   // "max(imum) (i can|spend) 35000", "max price 35k"

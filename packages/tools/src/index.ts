@@ -25,7 +25,12 @@ export {
   GmailTool,
   buildRaw,
   redactBudget,
+  createGmailAdapter,
+  GmailBackendRefusedError,
+  __setGmailAdapterForTests,
+  __resetGmailAdapterForTests,
   type SendMode,
+  type GmailBackend,
   type OutboundEmail,
   type SendResult,
 } from "./gmail.js";

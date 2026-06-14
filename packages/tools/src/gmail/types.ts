@@ -22,6 +22,18 @@
 // Canonical domain types — the adapter's parsed return shapes
 // ---------------------------------------------------------------------------
 
+/**
+ * Which backend an adapter IS — `fake` (local sandbox DB) or `real` (live
+ * @googleapis/gmail). Defined here, beside the interface, so the adapter can
+ * self-declare its `kind` without a circular import; the send seam re-exports it
+ * as both `GmailBackend` (factory selector) and `SendMode` (result discriminator),
+ * which are the same union by construction. This is the single source of truth —
+ * the discriminator is read off the adapter that ACTUALLY ran, never re-derived
+ * from the env, so the result can never mislabel a real send as fake (or vice
+ * versa) when an adapter is injected.
+ */
+export type GmailBackend = "fake" | "real";
+
 /** Inbound vs outbound, from the mailbox owner's point of view. */
 export type MessageDirection = "inbound" | "outbound";
 
@@ -135,6 +147,14 @@ export interface HealthResult {
  *   - the Settings card / preflight needs `health`.
  */
 export interface GmailAdapter {
+  /**
+   * Which backend this adapter IS. The send seam stamps this onto every
+   * SendResult.mode so the result reflects the adapter that ACTUALLY ran — not a
+   * re-read of the env, which can disagree with an injected adapter. The most
+   * safety-critical field on the most safety-critical result must not lie.
+   */
+  readonly kind: GmailBackend;
+
   /** Find threads matching a Gmail search query. Read-only, no gate. */
   search(query: string, maxResults?: number): Promise<ThreadRef[]>;
 

@@ -31,6 +31,7 @@ import type {
   AttachmentData,
   AttachmentRef,
   GmailAdapter,
+  GmailBackend,
   HealthResult,
   HistoryPage,
   HistoryRecord,
@@ -131,6 +132,9 @@ function rowToMessage(db: Db, row: MessageRow): Message {
 }
 
 export class FakeGmailAdapter implements GmailAdapter {
+  /** This backend is the local sandbox — every send it performs is a fake. */
+  readonly kind: GmailBackend = "fake";
+
   private readonly db: Db;
 
   constructor(db: Db = getDb()) {

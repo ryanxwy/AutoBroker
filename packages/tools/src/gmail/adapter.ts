@@ -31,6 +31,7 @@ import type {
   AttachmentData,
   AttachmentRef,
   GmailAdapter,
+  GmailBackend,
   HealthResult,
   HistoryPage,
   HistoryRecord,
@@ -133,6 +134,9 @@ function mapMessage(wire: gmail_v1.Schema$Message): Message {
 }
 
 export class RealGmailAdapter implements GmailAdapter {
+  /** This backend is the live mailbox — a send it performs leaves the process. */
+  readonly kind: GmailBackend = "real";
+
   private service: GmailApiClient | undefined;
   private readonly serviceFactory: (() => GmailApiClient) | undefined;
 

@@ -27,6 +27,7 @@ import type {
   AttachmentData,
   AttachmentRef,
   GmailAdapter,
+  GmailBackend,
   HealthResult,
   HistoryPage,
   Message,
@@ -90,6 +91,7 @@ interface StubScript {
 }
 
 class StubAdapter implements GmailAdapter {
+  readonly kind: GmailBackend = "fake";
   searchCalls: string[] = [];
   historyCalls: string[] = [];
 
