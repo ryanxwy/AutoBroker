@@ -9,13 +9,22 @@
  * autobroker.db (the committed migrations applied). NO real Gmail, NO LLM, no
  * network.
  *
- * Acceptance (the 6 cases):
- *   1. approve → inbound messages written `pending`, watermark advanced;
- *   2. decline → ZERO writes, watermark NOT advanced, outcome "declined";
- *   3. zero threads → no_replies success;
- *   4. none profile → STOP;
- *   5. ambiguous → STOP;
- *   6. re-run dedup no-op.
+ * Acceptance under the EXPLICIT-PIN + LEAD-ANCHOR contract:
+ *   - pin-less + 1 active → pin_required STOP (NOT a run);
+ *   - pin-less + 0 active → no_active_profile STOP;
+ *   - pin-less + 2+ active → pin_required STOP (candidate vehicles listed);
+ *   - valid pin → runs, resolution "pinned";
+ *   - stale/closed pin → pin_required STOP;
+ *   - first run + lead submitted N days ago → window anchored to the submit
+ *     (≈ (N+1)d), NOT a blind "2d";
+ *   - first run + NO lead submitted → no_lead_submitted STOP, zero writes;
+ *   - subsequent run with a watermark → window from the watermark (lead floor
+ *     ignored);
+ *   - dealer-domain routing: a new sender at a known dealer's host → routed;
+ *     a sender at no bound dealer's host → unrouted with sender_email;
+ *   - approve → inbound messages written `pending`, watermark advanced;
+ *   - decline → ZERO writes, watermark NOT advanced;
+ *   - re-run dedup no-op.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
  * mastra.db + autobroker.db both live there; NEVER ~/.autobroker*.
@@ -55,6 +64,7 @@ let originalDbOverride: string | undefined;
 const PROFILE_ID = "prof-inbox-1";
 const DEALER_A = "dealer-a";
 const DEALER_B = "dealer-b";
+const DAY_MS = 86_400_000;
 
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
@@ -106,14 +116,25 @@ function seedProfile(over: { id?: string; make?: string; model?: string; brand?:
     );
 }
 
+/** Soft-delete a profile (the stale-pin path: a pinned id that is no longer
+ *  active resolves to non-pinned). */
+function closeProfile(id: string): void {
+  db.$client.prepare("UPDATE search_profiles SET status = 'closed' WHERE search_profile_id = ?").run(id);
+}
+
 function seedDealerWithContact(over: {
   dealerId: string;
   name: string;
   email: string;
+  website?: string;
   profileId?: string;
 }): void {
   const c = db.$client;
-  c.prepare("INSERT INTO dealers (dealer_id, name, country) VALUES (?, ?, 'US')").run(over.dealerId, over.name);
+  c.prepare("INSERT INTO dealers (dealer_id, name, country, website) VALUES (?, ?, 'US', ?)").run(
+    over.dealerId,
+    over.name,
+    over.website ?? null,
+  );
   c.prepare("INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'candidate')").run(
     over.profileId ?? PROFILE_ID,
     over.dealerId,
@@ -121,6 +142,49 @@ function seedDealerWithContact(over: {
   c.prepare(
     "INSERT INTO dealer_contacts (contact_id, dealer_id, normalized_email, display_name) VALUES (?, ?, ?, ?)",
   ).run(`seed-${over.dealerId}`, over.dealerId, over.email.toLowerCase(), over.name);
+}
+
+/** A dealer bound to the profile with a WEBSITE but NO contact row — the
+ *  dealer-domain (rung 2.5) routing case (no exact contact to match on). */
+function seedDealerWithWebsiteOnly(over: {
+  dealerId: string;
+  name: string;
+  website: string;
+  profileId?: string;
+}): void {
+  const c = db.$client;
+  c.prepare("INSERT INTO dealers (dealer_id, name, country, website) VALUES (?, ?, 'US', ?)").run(
+    over.dealerId,
+    over.name,
+    over.website,
+  );
+  c.prepare("INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'candidate')").run(
+    over.profileId ?? PROFILE_ID,
+    over.dealerId,
+  );
+}
+
+/** A successful lead-submission row (the inbox anchor floor). `submitted_at` is
+ *  an ISO string (the codebase convention; the reader Date.parse-es it). The XOR
+ *  check requires submission_channel='web_form' for a 'submitted' outcome. */
+function seedLeadSubmission(over: {
+  dealerId: string;
+  submittedAtMs: number;
+  profileId?: string;
+  submissionId?: string;
+}): void {
+  db.$client
+    .prepare(
+      "INSERT INTO lead_submissions (submission_id, dealer_id, search_profile_id, " +
+        "submitted_at, outcome, submission_channel) " +
+        "VALUES (?, ?, ?, ?, 'submitted', 'web_form')",
+    )
+    .run(
+      over.submissionId ?? `lead-${over.dealerId}`,
+      over.dealerId,
+      over.profileId ?? PROFILE_ID,
+      new Date(over.submittedAtMs).toISOString(),
+    );
 }
 
 function count(table: string): number {
@@ -133,6 +197,16 @@ function watermark(profileId: string): string | null {
     .prepare("SELECT value FROM pipeline_state WHERE key = ?")
     .get(`inbox.last_check_at.${profileId}`) as { value: string | null } | undefined;
   return row?.value ?? null;
+}
+
+/** Write the per-profile inbox watermark directly (the "subsequent run" setup). */
+function setWatermark(profileId: string, iso: string): void {
+  db.$client
+    .prepare(
+      "INSERT INTO pipeline_state (key, value) VALUES (?, ?) " +
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .run(`inbox.last_check_at.${profileId}`, iso);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +226,10 @@ interface StubThread {
   messages: StubMessage[];
 }
 
-function makeAdapter(threads: StubThread[]): GmailAdapter {
+/** A spy adapter that records the query strings each search ran (the window
+ *  assertions inspect `searchQueries`). */
+function makeAdapter(threads: StubThread[]): GmailAdapter & { searchQueries: string[] } {
+  const searchQueries: string[] = [];
   const hydrate = (t: StubThread): Thread => ({
     threadId: t.threadId,
     messages: t.messages.map((m) => ({
@@ -170,11 +247,14 @@ function makeAdapter(threads: StubThread[]): GmailAdapter {
   });
   return {
     kind: "fake",
+    searchQueries,
     // Every search returns every thread (the workflow dedupes first-pass-wins).
-    search: (_query: string, _max?: number): Promise<ThreadRef[]> =>
-      Promise.resolve(
+    search: (query: string, _max?: number): Promise<ThreadRef[]> => {
+      searchQueries.push(query);
+      return Promise.resolve(
         threads.map((t) => ({ threadId: t.threadId, messageIds: t.messages.map((m) => m.messageId) })),
-      ),
+      );
+    },
     getThread: (threadId: string): Promise<Thread> => {
       const t = threads.find((x) => x.threadId === threadId);
       return Promise.resolve(t === undefined ? { threadId, messages: [] } : hydrate(t));
@@ -220,6 +300,20 @@ function twoReplyThreads(): StubThread[] {
   ];
 }
 
+/** The latest day-fraction of the relative window any search ran, parsed back to
+ *  a number of days (e.g. "31d" → 31, "5h" → 5/24). Asserts the anchor floor. */
+function windowDaysOf(queries: string[]): number {
+  let maxDays = 0;
+  for (const q of queries) {
+    const m = /newer_than:(\d+)([hd])/.exec(q);
+    if (m === null) continue;
+    const n = Number(m[1]);
+    const days = m[2] === "d" ? n : n / 24;
+    if (days > maxDays) maxDays = days;
+  }
+  return maxDays;
+}
+
 // ---------------------------------------------------------------------------
 // run/resume drivers
 // ---------------------------------------------------------------------------
@@ -256,7 +350,200 @@ function errorMessageOf(result: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// case 1 — approve writes pending messages + advances the watermark
+// case — explicit-pin REQUIRED (the resolve step never infers)
+// ---------------------------------------------------------------------------
+
+describe("dealer_inbox_check — explicit pin required", () => {
+  it("STOPs with pin_required (NOT a run) on a pin-less input with exactly 1 active profile", async () => {
+    seedProfile(); // single active
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter(twoReplyThreads()) });
+    const { result } = await startRun("inbox-pinless-1", null);
+    expect(result.status).toBe("failed");
+    const msg = errorMessageOf(result);
+    expect(msg).toContain("Pin a search first");
+    expect(msg).toContain("Tucson"); // the candidate vehicle label
+    expect(count("messages")).toBe(0);
+  });
+
+  it("STOPs with no_active_profile on a pin-less input with 0 active profiles", async () => {
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([]) });
+    const { result } = await startRun("inbox-none-1", null);
+    expect(result.status).toBe("failed");
+    expect(errorMessageOf(result)).toContain("No active search profile");
+  });
+
+  it("STOPs with pin_required on a pin-less input with 2+ active profiles (candidates listed)", async () => {
+    seedProfile({ id: "prof-x", make: "Hyundai", model: "Tucson", brand: "Hyundai" });
+    seedProfile({ id: "prof-y", make: "Toyota", model: "RAV4", brand: "Toyota" });
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([]) });
+    const { result } = await startRun("inbox-ambig-1", null);
+    expect(result.status).toBe("failed");
+    const msg = errorMessageOf(result);
+    expect(msg).toContain("Pin a search first");
+    expect(msg).toContain("Tucson");
+    expect(msg).toContain("RAV4");
+  });
+
+  it("STOPs with pin_required when the supplied pin is no longer active (stale/closed)", async () => {
+    seedProfile(); // active, then closed below
+    closeProfile(PROFILE_ID);
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([]) });
+    const { result } = await startRun("inbox-stale-1", PROFILE_ID);
+    expect(result.status).toBe("failed");
+    expect(errorMessageOf(result)).toContain("no longer active");
+    expect(count("messages")).toBe(0);
+  });
+
+  it("runs with resolution 'pinned' when a valid pin is supplied", async () => {
+    seedProfile();
+    seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
+    __setDealerInboxCheckDepsForTests({
+      createAdapter: () => makeAdapter([twoReplyThreads()[0]!]),
+    });
+
+    const { run, result } = await startRun("inbox-pinned-1", PROFILE_ID);
+    expect(result.status).toBe("suspended");
+    const final = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [DEALER_A] },
+    });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as Record<string, unknown>;
+    expect(out["outcome"]).toBe("checked");
+    expect(out["resolution"]).toBe("pinned");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case — lead-submit anchoring + no-lead STOP
+// ---------------------------------------------------------------------------
+
+describe("dealer_inbox_check — window anchoring", () => {
+  it("anchors the first-run window to the earliest lead-submit (≈ (N+1)d), not a blind 2d", async () => {
+    seedProfile();
+    seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
+    // Lead submitted 30 days ago → window ≈ 31d (30d delta + 1h buffer, ceil-to-days).
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 30 * DAY_MS });
+    const adapter = makeAdapter([twoReplyThreads()[0]!]);
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => adapter });
+
+    const { run, result } = await startRun("inbox-anchor-1", PROFILE_ID);
+    expect(result.status).toBe("suspended");
+    // The window is anchored to the submit floor, NOT the blind 2d default.
+    const days = windowDaysOf(adapter.searchQueries);
+    expect(days).toBeGreaterThanOrEqual(30);
+    expect(days).toBeLessThanOrEqual(32);
+    // Drain the suspend so the run finishes cleanly.
+    await run.resume({ step: "batchReview", resumeData: { action: "decline" } });
+  });
+
+  it("STOPs with no_lead_submitted (zero writes) on the first run when no lead was submitted", async () => {
+    seedProfile();
+    seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
+    // No lead_submissions row at all.
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter(twoReplyThreads()) });
+
+    const { result } = await startRun("inbox-nolead-1", PROFILE_ID);
+    expect(result.status).toBe("failed");
+    expect(errorMessageOf(result)).toContain("Submit a lead");
+    expect(count("messages")).toBe(0);
+    expect(count("threads")).toBe(0);
+    expect(watermark(PROFILE_ID)).toBeNull();
+  });
+
+  it("uses the watermark (ignoring the lead floor) on a subsequent run", async () => {
+    seedProfile();
+    seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
+    // A far-back lead floor that would force a ~100d window if it were used...
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 100 * DAY_MS });
+    // ...but a recent watermark (2 days ago) must win → a small window (~3d).
+    setWatermark(PROFILE_ID, new Date(Date.now() - 2 * DAY_MS).toISOString());
+    const adapter = makeAdapter([twoReplyThreads()[0]!]);
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => adapter });
+
+    const { run, result } = await startRun("inbox-watermark-1", PROFILE_ID);
+    expect(result.status).toBe("suspended");
+    const days = windowDaysOf(adapter.searchQueries);
+    expect(days).toBeLessThanOrEqual(4); // ~3d from the watermark, NOT ~100d
+    await run.resume({ step: "batchReview", resumeData: { action: "decline" } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case — dealer-domain routing (rung 2.5) end to end
+// ---------------------------------------------------------------------------
+
+describe("dealer_inbox_check — dealer-domain routing", () => {
+  it("routes a reply from a NEW sender whose host matches a bound dealer's website", async () => {
+    seedProfile();
+    // Dealer bound with a WEBSITE but NO contact row → only the host rung can fire.
+    seedDealerWithWebsiteOnly({
+      dealerId: DEALER_A,
+      name: "Tucson Hyundai",
+      website: "https://www.tucson-hyundai.com",
+    });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
+    const newRepThread: StubThread = {
+      threadId: "g-thread-newrep",
+      messages: [
+        {
+          messageId: "g-msg-newrep",
+          from: "New Rep <newrep@tucson-hyundai.com>", // unknown mailbox, known host
+          to: "buyer@example.com",
+          subject: "Re: 2026 Tucson",
+          bodyText: "Hi, following up on your Tucson inquiry.",
+          internalDateMs: 1_711_900_000_000,
+        },
+      ],
+    };
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([newRepThread]) });
+
+    const { result } = await startRun("inbox-domain-routed-1", PROFILE_ID);
+    expect(result.status).toBe("suspended");
+    const payload = suspendPayloadOf(result);
+    // Routed → it is a target, not unrouted.
+    expect((payload["targets"] as unknown[]).length).toBe(1);
+    expect((payload["unrouted"] as unknown[]).length).toBe(0);
+    expect((payload["targets"] as Array<{ dealer_id: string }>)[0]?.dealer_id).toBe(DEALER_A);
+  });
+
+  it("leaves a reply unrouted (with sender_email) when no bound dealer's host matches", async () => {
+    seedProfile();
+    seedDealerWithWebsiteOnly({
+      dealerId: DEALER_A,
+      name: "Tucson Hyundai",
+      website: "https://www.tucson-hyundai.com",
+    });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
+    const strangerThread: StubThread = {
+      threadId: "g-thread-stranger",
+      messages: [
+        {
+          messageId: "g-msg-stranger",
+          from: "Someone <someone@unrelated-host.com>", // no bound dealer's host
+          to: "buyer@example.com",
+          subject: "Re: 2026 Tucson",
+          bodyText: "Are you still looking for a Tucson?",
+          internalDateMs: 1_711_900_000_000,
+        },
+      ],
+    };
+    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([strangerThread]) });
+
+    const { result } = await startRun("inbox-domain-unrouted-1", PROFILE_ID);
+    expect(result.status).toBe("suspended");
+    const payload = suspendPayloadOf(result);
+    expect((payload["targets"] as unknown[]).length).toBe(0);
+    const unrouted = payload["unrouted"] as Array<{ thread_id: string; sender_email: string }>;
+    expect(unrouted.length).toBe(1);
+    expect(unrouted[0]?.sender_email).toBe("someone@unrelated-host.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case — approve writes pending messages + advances the watermark
 // ---------------------------------------------------------------------------
 
 describe("dealer_inbox_check — approve", () => {
@@ -264,9 +551,10 @@ describe("dealer_inbox_check — approve", () => {
     seedProfile();
     seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
     seedDealerWithContact({ dealerId: DEALER_B, name: "Dealer B", email: "pat@dealer-b.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
     __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter(twoReplyThreads()) });
 
-    const { run, result } = await startRun("inbox-approve-1");
+    const { run, result } = await startRun("inbox-approve-1", PROFILE_ID);
     expect(result.status).toBe("suspended");
     const payload = suspendPayloadOf(result);
     expect(payload["kind"]).toBe("batch_review");
@@ -299,9 +587,10 @@ describe("dealer_inbox_check — approve", () => {
     seedProfile();
     seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
     seedDealerWithContact({ dealerId: DEALER_B, name: "Dealer B", email: "pat@dealer-b.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
     __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter(twoReplyThreads()) });
 
-    const { run, result } = await startRun("inbox-subset-1");
+    const { run, result } = await startRun("inbox-subset-1", PROFILE_ID);
     expect(result.status).toBe("suspended");
     const final = await run.resume({
       step: "batchReview",
@@ -313,7 +602,7 @@ describe("dealer_inbox_check — approve", () => {
 });
 
 // ---------------------------------------------------------------------------
-// case 2 — decline → ZERO writes, watermark NOT advanced, outcome "declined"
+// case — decline → ZERO writes, watermark NOT advanced, outcome "declined"
 // ---------------------------------------------------------------------------
 
 describe("dealer_inbox_check — decline", () => {
@@ -321,9 +610,10 @@ describe("dealer_inbox_check — decline", () => {
     seedProfile();
     seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
     seedDealerWithContact({ dealerId: DEALER_B, name: "Dealer B", email: "pat@dealer-b.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
     __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter(twoReplyThreads()) });
 
-    const { run, result } = await startRun("inbox-decline-1");
+    const { run, result } = await startRun("inbox-decline-1", PROFILE_ID);
     expect(result.status).toBe("suspended");
     const final = await run.resume({ step: "batchReview", resumeData: { action: "decline" } });
     expect(final.status).toBe("success");
@@ -339,16 +629,17 @@ describe("dealer_inbox_check — decline", () => {
 });
 
 // ---------------------------------------------------------------------------
-// case 3 — zero discovered threads → no_replies success
+// case — zero discovered threads → no_replies success
 // ---------------------------------------------------------------------------
 
 describe("dealer_inbox_check — no replies", () => {
   it("returns no_replies (a valid success) when the sweep finds nothing", async () => {
     seedProfile();
     seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
     __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([]) });
 
-    const { result } = await startRun("inbox-empty-1");
+    const { result } = await startRun("inbox-empty-1", PROFILE_ID);
     // Empty corpus → batchReview passes through (no suspend) → confirm.
     expect(result.status).toBe("success");
     if (result.status !== "success") return;
@@ -359,29 +650,7 @@ describe("dealer_inbox_check — no replies", () => {
 });
 
 // ---------------------------------------------------------------------------
-// case 4 / 5 — the resolver STOPs
-// ---------------------------------------------------------------------------
-
-describe("dealer_inbox_check — resolver STOPs", () => {
-  it("STOPs with no_active_profile when there is no active profile", async () => {
-    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([]) });
-    const { result } = await startRun("inbox-none-1");
-    expect(result.status).toBe("failed");
-    expect(errorMessageOf(result)).toContain("No active search profile");
-  });
-
-  it("STOPs with multiple_active_profiles when 2+ active profiles exist", async () => {
-    seedProfile({ id: "prof-x", make: "Hyundai", brand: "Hyundai" });
-    seedProfile({ id: "prof-y", make: "Toyota", brand: "Toyota" });
-    __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter([]) });
-    const { result } = await startRun("inbox-ambig-1"); // null pin → ambiguous
-    expect(result.status).toBe("failed");
-    expect(errorMessageOf(result)).toContain("Multiple active search profiles");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// case 6 — re-run dedup no-op
+// case — re-run dedup no-op
 // ---------------------------------------------------------------------------
 
 describe("dealer_inbox_check — re-run dedup", () => {
@@ -389,9 +658,10 @@ describe("dealer_inbox_check — re-run dedup", () => {
     seedProfile();
     seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
     seedDealerWithContact({ dealerId: DEALER_B, name: "Dealer B", email: "pat@dealer-b.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
     __setDealerInboxCheckDepsForTests({ createAdapter: () => makeAdapter(twoReplyThreads()) });
 
-    const first = await startRun("inbox-rerun-1");
+    const first = await startRun("inbox-rerun-1", PROFILE_ID);
     await first.run.resume({
       step: "batchReview",
       resumeData: { action: "approve", approved_dealer_ids: [DEALER_A, DEALER_B] },
@@ -400,7 +670,7 @@ describe("dealer_inbox_check — re-run dedup", () => {
 
     // Second sweep: the same backend messages are now already ingested → the
     // discovery dedup-vs-ingested filters every thread → no_replies, zero new.
-    const second = await startRun("inbox-rerun-2");
+    const second = await startRun("inbox-rerun-2", PROFILE_ID);
     expect(second.result.status).toBe("success");
     if (second.result.status !== "success") return;
     expect((second.result.result as { outcome: string }).outcome).toBe("no_replies");

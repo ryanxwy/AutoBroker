@@ -5,11 +5,13 @@
  * file and its tests import them), kept out of the shared core layer like the
  * other skills' contracts; core owns only ROW shapes.
  *
- * PROFILE RESOLUTION — the single-profile three-branch ASK (invariant #6): one
- * pinned id wins; exactly one active → inferred_newest (logged); zero active →
- * typed STOP pointing at intake; 2+ active → typed STOP asking by vehicle. The
- * `resolution` provenance is `pinned | inferred_newest`, never silently "the
- * newest".
+ * PROFILE RESOLUTION — EXPLICIT-PIN REQUIRED for this skill. Unlike the read-only
+ * scans, dealer_inbox_check refuses to act on an inferred profile: a pin-less
+ * input STOPs and asks the user to pin a search (even with exactly one active
+ * profile — picking the single newest active is the thin edge of "silently pick
+ * newest" this skill must not do). The only accepted provenance is `pinned`; a
+ * supplied pin that is no longer active STOPs too. Zero active → STOP pointing at
+ * intake.
  *
  * ONE suspend point: the batch_review card BEFORE any write. It rides the app's
  * banner-track batch_review kind; decline = terminal, ZERO DB writes. Resume
@@ -53,7 +55,7 @@ export type DealerInboxCheckInput = z.infer<typeof DealerInboxCheckInputSchema>;
 export const DealerInboxCheckOutputSchema = z.discriminatedUnion("outcome", [
   z.object({
     outcome: z.literal("checked"),
-    resolution: z.enum(["pinned", "inferred_newest"]),
+    resolution: z.enum(["pinned"]),
     /** The relative Gmail window the sweep used (e.g. "2d"). */
     window: z.string(),
     queries_run: z.number().int(),
@@ -74,10 +76,13 @@ export const DealerInboxCheckOutputSchema = z.discriminatedUnion("outcome", [
 export type DealerInboxCheckOutput = z.infer<typeof DealerInboxCheckOutputSchema>;
 
 // ---------------------------------------------------------------------------
-// typed STOP (the 3-branch resolver's two STOP codes)
+// typed STOP codes (pin-required skill: explicit pin, or a lead must exist first)
 // ---------------------------------------------------------------------------
 
-export type DealerInboxCheckStopCode = "no_active_profile" | "multiple_active_profiles";
+export type DealerInboxCheckStopCode =
+  | "no_active_profile"
+  | "pin_required"
+  | "no_lead_submitted";
 
 /** Typed STOP from the resolve step. The message is the user-facing wording —
  *  the server surfaces it verbatim on the run's error frame. */
@@ -116,6 +121,7 @@ export const InboxReviewSuspendSchema = z
     unrouted: z.array(
       z.object({
         thread_id: z.string(),
+        sender_email: z.string(),
         snippet: z.string(),
       }),
     ),

@@ -47,8 +47,8 @@ describe("DealerInboxCheckOutputSchema", () => {
 
 describe("DealerInboxCheckStopError", () => {
   it("carries the typed code", () => {
-    const e = new DealerInboxCheckStopError("multiple_active_profiles", "pick one");
-    expect(e.code).toBe("multiple_active_profiles");
+    const e = new DealerInboxCheckStopError("pin_required", "pick one");
+    expect(e.code).toBe("pin_required");
     expect(e.name).toBe("DealerInboxCheckStopError");
     expect(e.message).toBe("pick one");
   });
@@ -67,7 +67,7 @@ describe("InboxReviewSuspendSchema (.strict())", () => {
         snippet: "Sale price 33,995…",
       },
     ],
-    unrouted: [{ thread_id: "t9", snippet: "unknown sender…" }],
+    unrouted: [{ thread_id: "t9", sender_email: "someone@unknown-host.com", snippet: "unknown sender…" }],
     total_targets: 1,
   };
 

@@ -59,7 +59,9 @@ import {
   listIngestedGmailMessageIds as listIngestedGmailMessageIdsImpl,
   listProfileContactEmails as listProfileContactEmailsImpl,
   listProfileDealerRows as listProfileDealerRowsImpl,
+  listProfileRows as listProfileRowsImpl,
   listSuppressedGmailThreadIds as listSuppressedGmailThreadIdsImpl,
+  readFirstLeadSubmitAtMs as readFirstLeadSubmitAtMsImpl,
   readLastInboxCheckAt as readLastInboxCheckAtImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   routeThread as routeThreadImpl,
@@ -131,6 +133,9 @@ export function setDealerInboxCheckEmitterFactory(
  */
 export interface DealerInboxCheckWorkflowDeps {
   resolveProfile: typeof resolveActiveProfileImpl;
+  /** Read the ACTIVE profile rows (newest-first) for the pin-required STOP — the
+   *  candidate list the user pins from. */
+  listActiveProfiles: (db: ReturnType<typeof getDb>) => Record<string, unknown>[];
   /** Mint the Gmail adapter the sweep reads (default fake; tests inject a stub). */
   createAdapter: () => GmailAdapter;
   syncMailbox: typeof syncMailboxImpl;
@@ -139,6 +144,7 @@ export interface DealerInboxCheckWorkflowDeps {
   listProfileContactEmails: typeof listProfileContactEmailsImpl;
   listSuppressedGmailThreadIds: typeof listSuppressedGmailThreadIdsImpl;
   listIngestedGmailMessageIds: typeof listIngestedGmailMessageIdsImpl;
+  readFirstLeadSubmitAtMs: typeof readFirstLeadSubmitAtMsImpl;
   readLastInboxCheckAt: typeof readLastInboxCheckAtImpl;
   writeLastInboxCheckAt: typeof writeLastInboxCheckAtImpl;
   applyInboxBatch: typeof applyInboxBatchImpl;
@@ -147,6 +153,7 @@ export interface DealerInboxCheckWorkflowDeps {
 
 const realDeps: DealerInboxCheckWorkflowDeps = {
   resolveProfile: resolveActiveProfileImpl,
+  listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
   createAdapter: () => createGmailAdapter(),
   syncMailbox: syncMailboxImpl,
   computeWindow: computeWindowImpl,
@@ -154,6 +161,7 @@ const realDeps: DealerInboxCheckWorkflowDeps = {
   listProfileContactEmails: listProfileContactEmailsImpl,
   listSuppressedGmailThreadIds: listSuppressedGmailThreadIdsImpl,
   listIngestedGmailMessageIds: listIngestedGmailMessageIdsImpl,
+  readFirstLeadSubmitAtMs: readFirstLeadSubmitAtMsImpl,
   readLastInboxCheckAt: readLastInboxCheckAtImpl,
   writeLastInboxCheckAt: writeLastInboxCheckAtImpl,
   applyInboxBatch: applyInboxBatchImpl,
@@ -229,11 +237,15 @@ const MatchedDealerGroupSchema = z.object({
   ),
 });
 
-const UnroutedThreadSchema = z.object({ thread_id: z.string(), snippet: z.string() });
+const UnroutedThreadSchema = z.object({
+  thread_id: z.string(),
+  sender_email: z.string(),
+  snippet: z.string(),
+});
 
 const InboxCheckStateSchema = z.object({
   searchProfileId: z.string(),
-  resolution: z.enum(["pinned", "inferred_newest"]),
+  resolution: z.enum(["pinned"]),
   make: z.string(),
   model: z.string(),
   year: z.number().int(),
@@ -260,7 +272,7 @@ const InboxCheckInputSchema = z.object({
 const InboxCheckOutputSchema = z.discriminatedUnion("outcome", [
   z.object({
     outcome: z.literal("checked"),
-    resolution: z.enum(["pinned", "inferred_newest"]),
+    resolution: z.enum(["pinned"]),
     window: z.string(),
     queries_run: z.number().int(),
     raw_hit_count: z.number().int(),
@@ -329,44 +341,64 @@ function emailOf(from: string): string {
   return from.trim();
 }
 
+/** Vehicle label from a loosely-typed active-profile row (the candidate-list
+ *  STOP wording). */
+function rowVehicleLabel(row: Record<string, unknown>): string {
+  return [row["year"], row["make"], row["model"], row["trim"]]
+    .filter((x) => x !== null && x !== undefined && x !== "")
+    .join(" ");
+}
+
 // ---------------------------------------------------------------------------
-// step 0 — resolveProfile (typed three-branch)
+// step 0 — resolveProfile (EXPLICIT-PIN REQUIRED)
 // ---------------------------------------------------------------------------
+//
+// This skill never acts on an inferred profile. A pin-less input STOPs: 0 active
+// → no_active_profile (point to intake); ≥1 active → pin_required (list the
+// candidate vehicles to pin from — even the single-active case, never silently
+// run it). A supplied pin must resolve to `pinned`; a stale/closed pin STOPs with
+// pin_required.
 
 const resolveProfileStep = createStep({
   id: "resolveProfile",
   inputSchema: InboxCheckInputSchema,
   outputSchema: InboxCheckStateSchema,
   execute: async ({ inputData }) => {
-    const resolved = withDb((db) =>
-      deps().resolveProfile(
-        db,
-        inputData.search_profile_id !== null ? { threadPin: inputData.search_profile_id } : {},
-      ),
-    );
-
-    if (resolved.kind === "none") {
+    // Pin-less → STOP (never infer the active profile for this skill).
+    if (inputData.search_profile_id === null) {
+      const active = withDb((db) => deps().listActiveProfiles(db));
+      if (active.length === 0) {
+        throw new DealerInboxCheckStopError(
+          "no_active_profile",
+          "No active search profile found — dealer_inbox_check needs one to know " +
+            "which dealers' replies to look for. Run /search_profile_intake to " +
+            "create a profile, then re-run /dealer_inbox_check.",
+        );
+      }
+      const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
       throw new DealerInboxCheckStopError(
-        "no_active_profile",
-        "No active search profile found — dealer_inbox_check needs one to know " +
-          "which dealers' replies to look for. Run /search_profile_intake to " +
-          "create a profile, then re-run /dealer_inbox_check.",
+        "pin_required",
+        `Pin a search first: ${labels}. dealer_inbox_check only checks replies ` +
+          "for a search you have explicitly pinned — pick one from the Searches " +
+          "list, then re-run /dealer_inbox_check.",
       );
     }
-    if (resolved.kind === "ambiguous") {
-      const labels = resolved.candidates.map((p) => vehicleLabel(p)).join(" | ");
+
+    // A supplied pin must still be active; a stale/closed/missing pin is rejected.
+    const threadPin = inputData.search_profile_id;
+    const resolved = withDb((db) => deps().resolveProfile(db, { threadPin }));
+    if (resolved.kind !== "pinned") {
       throw new DealerInboxCheckStopError(
-        "multiple_active_profiles",
-        `Multiple active search profiles found (${labels}). Tell me which search ` +
-          "to check replies for by re-running /dealer_inbox_check with that " +
-          "profile's search_profile_id.",
+        "pin_required",
+        "That pinned search is no longer active. Pick an active search from the " +
+          "Searches list and re-run /dealer_inbox_check.",
       );
     }
 
     const profile = resolved.profile;
     return {
       searchProfileId: profile.id,
-      resolution: resolved.kind,
+      resolution: "pinned" as const,
       make: profile.make,
       model: profile.model,
       year: profile.year,
@@ -399,10 +431,27 @@ const syncDiscoverStep = createStep({
     const state = asState(inputData);
     const emitter = inboxEmitterFactory(runId);
 
-    // Per-profile window (the per-search watermark feeds computeWindow).
+    // Per-profile window. The watermark is the floor once we have checked before;
+    // on the FIRST sweep (no watermark) the floor is the earliest successful
+    // lead-submit for this profile — we only look for replies AFTER any dealer was
+    // contacted, never a blind fixed lookback. No watermark AND no lead submitted
+    // → STOP (sweeping pre-outreach noise as if it were replies is dishonest).
     const lastCheck = withDb((db) => deps().readLastInboxCheckAt(db, state.searchProfileId));
-    const lastCheckMs = lastCheck === null ? null : Date.parse(lastCheck);
-    const window = deps().computeWindow(Number.isNaN(lastCheckMs) ? null : lastCheckMs, Date.now());
+    const lastCheckParsed = lastCheck === null ? null : Date.parse(lastCheck);
+    const lastCheckMs =
+      lastCheckParsed === null || Number.isNaN(lastCheckParsed) ? null : lastCheckParsed;
+    let anchorMs = lastCheckMs;
+    if (anchorMs === null) {
+      anchorMs = withDb((db) => deps().readFirstLeadSubmitAtMs(db, state.searchProfileId));
+    }
+    if (lastCheckMs === null && anchorMs === null) {
+      throw new DealerInboxCheckStopError(
+        "no_lead_submitted",
+        "Submit a lead to a dealer first (run /dealer_web_lead_submit), then " +
+          "check the inbox.",
+      );
+    }
+    const window = deps().computeWindow(anchorMs, Date.now());
 
     const adapter = deps().createAdapter();
 
@@ -488,7 +537,7 @@ const syncDiscoverStep = createStep({
       const snippet = snippetOf(newMessages.map((m) => m.bodyText).join(" "));
 
       if (dealerHit === null) {
-        unrouted.push({ thread_id: hit.threadId, snippet });
+        unrouted.push({ thread_id: hit.threadId, sender_email: senderEmail, snippet });
         continue;
       }
 
