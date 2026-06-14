@@ -4,14 +4,19 @@
  * uses an injected fetch. (Each violation maps to its exit-1 path.)
  */
 
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { openDb } from "@autobroker/db";
 
 import {
   assertBlockFuseArmed,
   assertDataDirIsolated,
+  assertFakeMailboxSendOnly,
   assertNoAutoApprove,
   assertProviderKeyPresent,
   assertServerActiveDbMatches,
@@ -29,6 +34,7 @@ const KEYS = [
   "AUTOBROKER_TEST_AUTO_APPROVE",
   "MASTRA_TELEMETRY_DISABLED",
   "DEEPSEEK_API_KEY",
+  "AUTOBROKER_GMAIL_BACKEND",
 ];
 
 beforeEach(() => {
@@ -40,6 +46,7 @@ beforeEach(() => {
   delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
   process.env.MASTRA_TELEMETRY_DISABLED = "1";
   process.env.DEEPSEEK_API_KEY = "test-key-not-printed";
+  delete process.env.AUTOBROKER_GMAIL_BACKEND; // unset → fake-send-only default
 });
 afterEach(() => {
   for (const k of KEYS) {
@@ -156,5 +163,75 @@ describe("gate ⑥ server active DB matches --db", () => {
     await expect(
       assertServerActiveDbMatches({ provider: "deepseek", db: PARITY_DB, apiBase: "http://127.0.0.1:9", fetchImpl: fakeFetch(PARITY_DB, false) }),
     ).rejects.toBeInstanceOf(PreflightError);
+  });
+});
+
+describe("gate ⑧ fake-mailbox send-only", () => {
+  // Gate ⑧ opens a real (read-only) DB handle, so it needs an isolated db that
+  // actually exists under the parity dir ~/.autobroker-ts (gate ② requires it).
+  // We build it in a uniquely-named throwaway subdir of ~/.autobroker-ts (the
+  // isolation sandbox — never the production ~/.autobroker tree) and remove it
+  // after; AUTOBROKER_DATA_DIR is restored by the outer afterEach.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const drizzleDir = join(here, "..", "packages", "db", "drizzle");
+  const migration0000 = readFileSync(join(drizzleDir, "0000_military_red_skull.sql"), "utf8");
+  const migration0001 = readFileSync(join(drizzleDir, "0001_redundant_ozymandias.sql"), "utf8");
+  const migration0002 = readFileSync(join(drizzleDir, "0002_pale_thunderball.sql"), "utf8");
+
+  let sandboxDir: string;
+  let withTableDb: string; // 0000+0001+0002 → fake_mailbox_messages present
+  let withoutTableDb: string; // 0000+0001 only → table missing
+
+  function applyMigrations(dbPath: string, sqls: string[]): void {
+    const db = openDb(dbPath);
+    try {
+      for (const sql of sqls) db.$client.exec(sql);
+    } finally {
+      db.$client.close();
+    }
+  }
+
+  beforeEach(() => {
+    // mkdtemp under the parity dir so gate ② (data-dir isolation) passes.
+    sandboxDir = mkdtempSync(join(homedir(), ".autobroker-ts", "preflight-test-"));
+    process.env.AUTOBROKER_DATA_DIR = sandboxDir;
+    withTableDb = join(sandboxDir, "autobroker.db");
+    withoutTableDb = join(sandboxDir, "no-fake-tables.db");
+    applyMigrations(withTableDb, [migration0000, migration0001, migration0002]);
+    applyMigrations(withoutTableDb, [migration0000, migration0001]);
+  });
+
+  afterEach(() => {
+    rmSync(sandboxDir, { recursive: true, force: true });
+  });
+
+  it("PASSES when all four conditions hold (backend unset, isolated db, fuse armed, table present)", () => {
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).not.toThrow();
+  });
+
+  it("PASSES when AUTOBROKER_GMAIL_BACKEND is exactly 'fake'", () => {
+    process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).not.toThrow();
+  });
+
+  it("REJECTS when AUTOBROKER_GMAIL_BACKEND is 'real'", () => {
+    process.env.AUTOBROKER_GMAIL_BACKEND = "real";
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(PreflightError);
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(/AUTOBROKER_GMAIL_BACKEND/);
+  });
+
+  it("REJECTS a non-isolated --db (production ~/.autobroker)", () => {
+    const prodDb = join(homedir(), ".autobroker", "autobroker.db");
+    expect(() => assertFakeMailboxSendOnly({ db: prodDb })).toThrow(PreflightError);
+  });
+
+  it("REJECTS when the L1 BLOCK fuse is disarmed", () => {
+    delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(PreflightError);
+  });
+
+  it("REJECTS when the fake_mailbox_messages table is missing (migration 0002 not applied)", () => {
+    expect(() => assertFakeMailboxSendOnly({ db: withoutTableDb })).toThrow(PreflightError);
+    expect(() => assertFakeMailboxSendOnly({ db: withoutTableDb })).toThrow(/fake_mailbox_messages/);
   });
 });

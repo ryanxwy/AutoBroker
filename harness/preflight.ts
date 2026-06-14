@@ -22,20 +22,33 @@
  *      frame and assert init.payload.driver_kind === the case expectation BEFORE
  *      any scoring. Lives in driverKind.ts (it needs a live run); this module owns
  *      gates ①–⑥, the env/DB envelope that fires with zero network.
+ *   ⑧ fake-mailbox send-only (email-pipeline skills only) — the run is in
+ *      fake-send-only mode: AUTOBROKER_GMAIL_BACKEND is unset-or-"fake" (NEVER
+ *      "real"), the --db is isolated (gate ①), the BLOCK fuse is armed (gate ②),
+ *      and the sandbox table fake_mailbox_messages exists (so a Fake send cannot
+ *      silently no-op against a DB missing migration 0002). Fail-closed; the only
+ *      gate that opens a (read-only) DB handle.
  *
  * This file touches NO network for gates ①–⑤ (pure env/path checks). Gate ⑥ makes
  * exactly one GET /api/mode call — the FIRST permitted network call, and only
  * after ①–⑤ pass. Reads .env values only to test presence; the actual secret is
  * never logged, returned, or thrown in a message.
  *
+ * Gate ⑧ (fake-mailbox send-only, for the email-pipeline skills) is the one gate
+ * that opens a DB handle: a read-only, local, zero-network check that migration
+ * 0002's sandbox table exists. It opens via @autobroker/db's openDb (the one
+ * permitted DB channel) and closes the handle in a finally — no INSERT/UPDATE.
+ *
  * Dependency wall: harness layer. Imports @autobroker/tools for resolveDataDir
- * (the same data-dir resolver the SUT uses) — NEVER better-sqlite3/drizzle/
- * playwright/@ai-sdk (dependency-cruiser-enforced). No DB handle is opened here.
+ * (the same data-dir resolver the SUT uses) and @autobroker/db's openDb (the one
+ * permitted DB channel for gate ⑧) — NEVER better-sqlite3/drizzle/playwright/
+ * @ai-sdk directly (dependency-cruiser-enforced).
  */
 
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
+import { openDb } from "@autobroker/db";
 import { resolveDataDir } from "@autobroker/tools";
 
 /** A fail-closed preflight violation. The runner catches it, prints the reason,
@@ -239,4 +252,62 @@ export function assertEnvEnvelope(opts: Pick<PreflightOpts, "provider" | "db">):
   assertNoAutoApprove(); // ③
   assertTelemetrySilent(); // ④
   assertProviderKeyPresent(opts.provider); // ⑤
+}
+
+/**
+ * Gate ⑧ — fake-mailbox send-only preflight for the email-pipeline skills. The
+ * whole run must be in fake-send-only mode before the first run starts, so no real
+ * Gmail send can be reached. FAIL-CLOSED: any of the four conditions missing throws
+ * a PreflightError. Synchronous; the table-existence check is a read-only local DB
+ * query (no network). Each branch names the exact condition that failed.
+ *
+ *   ① backend is fake — AUTOBROKER_GMAIL_BACKEND is unset-or-"fake"; "real" (or any
+ *      other non-empty value) is rejected.
+ *   ② data-dir isolated — reuses assertDataDirIsolated (the ~/.autobroker-ts-only
+ *      check), so the sandbox DB is never the production tree.
+ *   ③ L1 fuse armed — reuses assertBlockFuseArmed (the redundant outer ring).
+ *   ④ sandbox table present — fake_mailbox_messages exists (migration 0002), so a
+ *      Fake send cannot silently no-op against a DB missing the table.
+ */
+export function assertFakeMailboxSendOnly(opts: Pick<PreflightOpts, "db">): void {
+  // ① backend is fake (unset-or-"fake"); reject "real" and any other value.
+  const backend = process.env.AUTOBROKER_GMAIL_BACKEND;
+  if (backend !== undefined && backend !== "" && backend !== "fake") {
+    throw new PreflightError(
+      `AUTOBROKER_GMAIL_BACKEND="${backend}" — email-pipeline runs require fake-send-only ` +
+        `(unset or "fake"); refusing to run with a non-fake mailbox backend`,
+    );
+  }
+
+  // ② data-dir isolation (reuse gate ①).
+  assertDataDirIsolated(opts);
+
+  // ③ L1 BLOCK fuse armed (reuse gate ②).
+  assertBlockFuseArmed();
+
+  // ④ the sandbox table fake_mailbox_messages must exist (migration 0002). Open the
+  //    read handle through the one permitted DB channel and close it in a finally.
+  const db = openDb(opts.db);
+  try {
+    const row = db.$client
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='fake_mailbox_messages'")
+      .get() as { name?: unknown } | undefined;
+    if (row === undefined) {
+      throw new PreflightError(
+        `the fake_mailbox_messages table is missing from "${resolve(expandTilde(opts.db))}" ` +
+          `(migration 0002 not applied) — a fake send would silently no-op`,
+      );
+    }
+  } finally {
+    db.$client.close();
+  }
+}
+
+/** The email-pipeline preflight aggregate: the env envelope (gates ①–⑤) plus the
+ *  fake-mailbox send-only gate (⑧). The email-skill runner path asserts this before
+ *  any run so a real Gmail send can never be reached. Fail-closed, zero network
+ *  beyond the local read handle gate ⑧ opens. */
+export function assertEmailEnvelope(opts: Pick<PreflightOpts, "provider" | "db">): void {
+  assertEnvEnvelope(opts); // ①–⑤
+  assertFakeMailboxSendOnly(opts); // ⑧
 }
