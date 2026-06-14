@@ -52,6 +52,10 @@ export const EVENT_KINDS = [
   "browser.action",
   "browser.error",
   "browser.closed",
+  // browser.acquire.progress — additive install-on-demand progress pulse emitted
+  // while the browser engine is being acquired (the frame works regardless; this
+  // keeps the kind mirror honest with the server's emitter).
+  "browser.acquire.progress",
   // data.changed — the non-terminal "a write landed" pulse driving
   // fresh-by-default auto-refresh (payload {profile_id, kinds:string[]}).
   "data.changed",
@@ -341,3 +345,61 @@ export const KeyProbeResultSchema = z.object({
   detail: z.string(),
 });
 export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Settings / environment — the curated, UI-managed operational env vars + the
+// read-only status/path rows.
+//   GET /api/settings/env             → { vars: EnvVarState[] }  current values
+//   PUT /api/settings/env {id,value}  → { ok:true, vars: EnvVarState[] }
+// The server returns the WHOLE curated set as an array (one EnvVarState per
+// curated id), and the PUT echoes the refreshed set after a write. Only the two
+// editable ids are writable; the read-only rows are reported, never accepted on
+// PUT (the server rejects an attempt to set them). EnvVarState mirrors the store
+// descriptor + its effective `value` exactly — flat, all-required.
+// ---------------------------------------------------------------------------
+
+/** The two editable env ids the route accepts on PUT. */
+export const ENV_EDITABLE_IDS = ["gmail_backend", "chrome_headless"] as const;
+export type EnvEditableId = (typeof ENV_EDITABLE_IDS)[number];
+
+/** One curated env-var row with its current effective value — mirrors the store
+ *  EnvVarState (descriptor fields + the projected `value`). `allowedValues` is
+ *  the enum/bool list or null (path / free status rows); `default` is the
+ *  descriptor default or null. Flat + all-required per the wire convention. */
+export const EnvVarStateSchema = z.object({
+  id: z.string(),
+  envVar: z.string(),
+  classification: z.enum([
+    "editable-enum",
+    "editable-bool",
+    "read-only-status",
+    "read-only-path",
+  ]),
+  editable: z.boolean(),
+  allowedValues: z.array(z.string()).nullable(),
+  default: z.string().nullable(),
+  label: z.string(),
+  tooltip: z.string(),
+  value: z.string(),
+});
+export type EnvVarState = z.infer<typeof EnvVarStateSchema>;
+
+/** GET /api/settings/env → the whole curated set. */
+export const EnvConfigResponseSchema = z.object({
+  vars: z.array(EnvVarStateSchema),
+});
+export type EnvConfigResponse = z.infer<typeof EnvConfigResponseSchema>;
+
+/** PUT /api/settings/env → { ok:true } + the refreshed curated set. */
+export const SetEnvAckSchema = z.object({
+  ok: z.literal(true),
+  vars: z.array(EnvVarStateSchema),
+});
+export type SetEnvAck = z.infer<typeof SetEnvAckSchema>;
+
+/** PUT body — one editable id + its new string value (the enum value, or "1"/"0"
+ *  for the bool toggle; the server narrows + validates by id). */
+export interface SetEnvBody {
+  id: EnvEditableId;
+  value: string;
+}

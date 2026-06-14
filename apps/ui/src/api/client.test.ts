@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiClient, ApiError } from "./client.js";
+import { EVENT_KINDS, EnvConfigResponseSchema } from "./wire.js";
 
 /** Build a mock fetch that returns one canned Response for any URL. */
 function mockFetch(status: number, body: unknown): typeof fetch {
@@ -107,6 +108,41 @@ const PROFILE_ROW_FIXTURE = {
 /** The unified error envelope (server.ts:38-52). */
 const ERROR_ENVELOPE_FIXTURE = {
   error: { code: "decision_conflict", message: "decision already consumed", run_id: "run-1" },
+};
+
+/** GET /api/settings/env → { vars: EnvVarState[] } — one curated row per id, the
+ *  editable enum/bool + a read-only fuse status row carrying value "armed". */
+const ENV_CONFIG_FIXTURE = {
+  vars: [
+    {
+      id: "gmail_backend",
+      envVar: "AUTOBROKER_GMAIL_BACKEND",
+      classification: "editable-enum",
+      editable: true,
+      allowedValues: ["fake", "real"],
+      default: "fake",
+      label: "Email mode",
+      tooltip: "Email mode.",
+      value: "fake",
+    },
+    {
+      id: "block_external_mutations",
+      envVar: "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
+      classification: "read-only-status",
+      editable: false,
+      allowedValues: null,
+      default: null,
+      label: "Safety fuse",
+      tooltip: "Safety fuse.",
+      value: "armed",
+    },
+  ],
+};
+
+/** PUT /api/settings/env → { ok:true, vars } echo after a stored value. */
+const SET_ENV_ACK_FIXTURE = {
+  ok: true,
+  vars: [{ ...ENV_CONFIG_FIXTURE.vars[0], value: "real" }, ENV_CONFIG_FIXTURE.vars[1]],
 };
 
 describe("ApiClient decode — captured wire fixtures", () => {
@@ -265,5 +301,40 @@ describe("ApiClient error decode — error envelope → ApiError", () => {
     // skills array with a manifest missing required fields.
     const client = new ApiClient({ fetchImpl: mockFetch(200, [{ name: "x" }]) });
     await expect(client.listSkills()).rejects.toMatchObject({ code: "decode_error" });
+  });
+});
+
+describe("ApiClient — settings / environment", () => {
+  it("getEnvConfig decodes { vars: EnvVarState[] } incl. the armed fuse row", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch(200, ENV_CONFIG_FIXTURE) });
+    const cfg = await client.getEnvConfig();
+    expect(cfg.vars).toHaveLength(2);
+    expect(cfg.vars[0]!.id).toBe("gmail_backend");
+    expect(cfg.vars[0]!.allowedValues).toEqual(["fake", "real"]);
+    const fuse = cfg.vars.find((v) => v.id === "block_external_mutations");
+    expect(fuse?.editable).toBe(false);
+    expect(fuse?.value).toBe("armed");
+    expect(fuse?.allowedValues).toBeNull();
+  });
+
+  it("setEnvConfig issues a PUT with { id, value } and tolerates the { ok, vars } echo", async () => {
+    const { fetch, calls } = spyFetch(200, SET_ENV_ACK_FIXTURE);
+    const client = new ApiClient({ fetchImpl: fetch });
+    await client.setEnvConfig("gmail_backend", "real");
+    expect(calls[0]!.url).toBe("/api/settings/env");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
+      id: "gmail_backend",
+      value: "real",
+    });
+  });
+
+  it("EnvConfigResponseSchema rejects a row missing a required field", () => {
+    const bad = { vars: [{ ...ENV_CONFIG_FIXTURE.vars[0], value: undefined }] };
+    expect(EnvConfigResponseSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("EVENT_KINDS includes browser.acquire.progress", () => {
+    expect((EVENT_KINDS as readonly string[]).includes("browser.acquire.progress")).toBe(true);
   });
 });

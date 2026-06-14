@@ -22,6 +22,8 @@
  *   GET  /api/sessions[?pinned_profile_id]   listSessions
  *   GET  /api/sessions/:id                   getSession (pin + scope_notice in ONE fetch)
  *   PATCH /api/sessions/:id                  patchSession (pin null-vs-omitted)
+ *   GET  /api/settings/env                  getEnvConfig ({ vars: EnvVarState[] })
+ *   PUT  /api/settings/env {id,value}        setEnvConfig (set ONE editable var)
  *
  * Dependency wall: app/ui layer. Imports the wire schemas + zod only.
  */
@@ -30,6 +32,7 @@ import { z } from "zod";
 
 import {
   DealerListSchema,
+  EnvConfigResponseSchema,
   ErrorEnvelopeSchema,
   FormDecisionAckSchema,
   KeyPresenceResponseSchema,
@@ -40,11 +43,14 @@ import {
   SaveKeyAckSchema,
   SessionListSchema,
   SessionResponseSchema,
+  SetEnvAckSchema,
   SkillListSchema,
   SkillRunSummarySchema,
   StartAckSchema,
   type CreateSessionBody,
   type DealerList,
+  type EnvConfigResponse,
+  type EnvEditableId,
   type FormDecisionAck,
   type FormDecisionBody,
   type KeyPresenceResponse,
@@ -317,6 +323,28 @@ export class ApiClient {
       },
     );
     return decode(res, KeyProbeResultSchema);
+  }
+
+  // ---- settings / environment (curated env vars; read-write the 2 editable) --
+
+  /** GET /api/settings/env → the whole curated set { vars: EnvVarState[] } (the
+   *  editable values + the read-only status/path rows). */
+  async getEnvConfig(): Promise<EnvConfigResponse> {
+    const res = await this.fetchImpl(this.url("/api/settings/env"));
+    return decode(res, EnvConfigResponseSchema);
+  }
+
+  /** PUT /api/settings/env → { ok:true, vars } on a stored value. Sets ONE
+   *  editable var + the live env so the next run sees it (no restart), mirroring
+   *  saveKey. The read-only ids (block_external_mutations / paths) are rejected.
+   *  The refreshed `vars` echo is decoded (and discarded) — callers refetch. */
+  async setEnvConfig(id: EnvEditableId, value: string): Promise<void> {
+    const res = await this.fetchImpl(this.url("/api/settings/env"), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, value }),
+    });
+    await decode(res, SetEnvAckSchema);
   }
 
   // ---- sessions (chat-rail = Mastra Memory threads) -------------------------
