@@ -52,6 +52,11 @@ import {
   clearKey,
   testKey,
   SECRET_KEY_IDS,
+  getEnvConfig,
+  setEnvConfig,
+  InvalidEnvValueError,
+  NonEditableEnvVarError,
+  UnknownEnvVarError,
   IdentityLockedError,
   ActiveSlotConflict,
   type Db,
@@ -168,6 +173,16 @@ const SaveKeyBodySchema = z.object({
 /** POST /api/settings/keys/:id/test — body carries the CANDIDATE value to probe
  *  (the id rides the path). */
 const TestKeyBodySchema = z.object({
+  value: z.string().min(1),
+});
+
+/** PUT /api/settings/env — set ONE editable operational env var. The id enum IS
+ *  the route-layer allow-list: only the two editable ids are accepted, so the
+ *  read-only fuse / paths / demo-status ids fail the schema with a 400 before the
+ *  store is ever called (the L1 fuse var is structurally unreachable here). The
+ *  store re-checks editable + allowedValues as defense-in-depth. */
+const SetEnvBodySchema = z.object({
+  id: z.enum(["gmail_backend", "chrome_headless"]),
   value: z.string().min(1),
 });
 
@@ -625,6 +640,37 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // probe RESULT is not an HTTP error; non-2xx is reserved for a malformed
     // request (unknown id / missing value, handled above + by the schema).
     return testKey(id, body.value);
+  });
+
+  // ========================================================================
+  // settings/env — the curated NON-SECRET operational env vars. The route layer
+  // NEVER reads/writes the env file; it delegates to the tools envConfigStore.
+  // The L1 safety fuse (AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS) appears here ONLY as
+  // a read-only status row — no route, method, or body can write it (the PUT id
+  // enum rejects its id, and the store refuses any non-editable id).
+  // ========================================================================
+
+  // ---- GET /api/settings/env — curated vars with live values ---------------
+  app.get("/api/settings/env", async () => {
+    return { vars: getEnvConfig() };
+  });
+
+  // ---- PUT /api/settings/env — set one editable var (live env mutation) -----
+  app.put("/api/settings/env", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const body = parseBody(SetEnvBodySchema, req.body);
+    try {
+      setEnvConfig(body.id, body.value);
+    } catch (err) {
+      if (err instanceof InvalidEnvValueError) {
+        throw new RouteError("invalid_value", 400, err.message, { field: "/value" });
+      }
+      if (err instanceof NonEditableEnvVarError || err instanceof UnknownEnvVarError) {
+        throw new RouteError("unknown_env_var", 400, err.message, { field: "/id" });
+      }
+      throw err;
+    }
+    // Echo fresh state so the UI re-renders without a second GET.
+    return { ok: true, vars: getEnvConfig() };
   });
 
   // ========================================================================

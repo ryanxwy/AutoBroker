@@ -40,7 +40,7 @@ import {
   restartStaleRun,
   type BootRecoveryReport,
 } from "@autobroker/workflows";
-import { loadSecretsIntoEnv, getDb, seedDemoData } from "@autobroker/tools";
+import { loadSecretsIntoEnv, loadEnvConfigIntoEnv, getDb, seedDemoData } from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
  *  import — the dependency wall forbids it in the app layer). */
@@ -81,6 +81,13 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // call and the first geocode see the stored keys (the providers + geocoder
   // resolve their key from the env at call time). Missing file = no-op.
   loadSecretsIntoEnv();
+
+  // (1b') Seed the persisted operational env-config overrides (the editable
+  // GMAIL_BACKEND / CHROME_HEADLESS toggles) into process.env from the env file
+  // BEFORE the registry / Mastra / gmail factory is constructed, mirroring the
+  // secrets loader. A launch-supplied env var with no file override is left
+  // untouched; missing file = no-op.
+  loadEnvConfigIntoEnv();
 
   // (1c) Demo mode (zero-config sample world): write the renderable demo data
   // into the (already-isolated) demo DB before the first request, so the

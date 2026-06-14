@@ -387,6 +387,25 @@ export {
   type SecretsProbeDeps,
 } from "./settings/index.js";
 
+// Settings/env — the curated NON-SECRET operational env vars (the editable
+// GMAIL_BACKEND / CHROME_HEADLESS toggles + read-only fuse/path/status rows).
+// The boot loader seeds saved overrides into process.env; routes delegate down
+// here and never read/write the env file directly.
+export {
+  getEnvConfig,
+  setEnvConfig,
+  loadEnvConfigIntoEnv,
+  ENV_DESCRIPTORS,
+  EDITABLE_IDS,
+  UnknownEnvVarError,
+  NonEditableEnvVarError,
+  InvalidEnvValueError,
+  type EnvVarId,
+  type EnvVarClass,
+  type EnvVarDescriptor,
+  type EnvVarState,
+} from "./settings/index.js";
+
 // goplaces — the ONLY external API in intake (read-only Google Geocoding).
 export {
   resolveLocation,
