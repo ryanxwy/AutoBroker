@@ -291,6 +291,54 @@ export {
   type SeedFakeMailboxResult,
 } from "./gmail/fakeSeed.js";
 
+// dealer_inbox_check deterministic core — the pure 4-pass discovery query
+// builder + dealer-token sweep + first-pass-wins thread dedupe + the
+// deterministic quoted/replied classifier, the CRM-relay sender detector, the
+// profile-scoped routing ladder, the ONE atomic ingest-or-suppress write
+// (search_profile_id NON-NULL — the orphan-row fix), the per-profile sweep
+// watermark, and the profile-scoped threads/messages read projections.
+export {
+  buildInboxQueries,
+  dealerTokens,
+  dedupeThreadHits,
+  classifyThread,
+  CONTACT_BATCH_SIZE,
+  DEALER_TOKEN_BATCH_SIZE,
+  type BuildInboxQueriesArgs,
+  type ThreadHit,
+  type ThreadClassification,
+  type ClassifyMessage,
+} from "./inbox/discovery.js";
+export {
+  detectCrmPlatformSender,
+  CRM_PLATFORM_HOSTS,
+} from "./inbox/crm.js";
+export {
+  routeThread,
+  lookupDealerBySender,
+  type RouteResult,
+  type UnroutedReason,
+} from "./inbox/routing.js";
+export {
+  applyInboxBatch,
+  type ApplyInboxBatchArgs,
+  type ApplyInboxBatchResult,
+  type ThreadDecision,
+  type InboxMessageInput,
+} from "./inbox/applyBatch.js";
+export {
+  readLastInboxCheckAt,
+  writeLastInboxCheckAt,
+  lastInboxCheckKey,
+} from "./inbox/watermark.js";
+export {
+  listProfileThreadRows,
+  listProfileMessageRows,
+  listProfileContactEmails,
+  listSuppressedGmailThreadIds,
+  listIngestedGmailMessageIds,
+} from "./inbox/reads.js";
+
 // incentive_scrape deterministic core — the code-level host rejection table,
 // the 7-day cache gate, the cash whitelist, program-identity merge +
 // dual-source cross-verify, the {zip}/{model} template fill, the per-brand
