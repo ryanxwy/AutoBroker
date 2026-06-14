@@ -59,6 +59,8 @@ import {
 import { policy } from "@autobroker/model";
 import {
   GEOSEARCH_SKILL_ID,
+  HYGIENE_SKILL_ID,
+  INBOX_CHECK_SKILL_ID,
   INCENTIVE_SCRAPE_SKILL_ID,
   INTAKE_SKILL_ID,
   INVENTORY_LINK_SCAN_SKILL_ID,
@@ -68,6 +70,8 @@ import {
   beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
+  DEALER_HYGIENE_WORKFLOW_ID,
+  DEALER_INBOX_CHECK_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
@@ -77,6 +81,7 @@ import {
   AmbiguousLocationResumeSchema,
   MalformedRetryResumeSchema,
   BatchReviewResumeSchema,
+  HygieneResumeSchema,
   OemFirstEncounterResumeSchema,
   type createMastraInstance,
 } from "@autobroker/workflows";
@@ -683,6 +688,196 @@ export const incentiveScrapeDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// dealer_inbox_check — the sixth registered descriptor (email-pull skill with
+// ONE batch_review suspend over discovered dealer-reply groups BEFORE any
+// write). zero-LLM (the whole sweep is deterministic), so driver_kind is the
+// constant api-key label. The suspended step is "batchReview" and the approved
+// ids are DEALER ids — reuses the shared batchReviewResume seam (approve an
+// explicit dealer-id list ⊆ the retained suspend payload's shown targets, or
+// decline = terminal/zero writes). REJECT is deferred (the workflow passes
+// reject:[]), so the accept content stays the plain {approved_dealer_ids} shape.
+// ===========================================================================
+
+/** The inbox-check start body fields. Only `search_profile_id` matters to the
+ *  workflow — the sweep window derives from the per-profile watermark, never
+ *  from the start body; envelope fields ride the same body and are ignored. */
+const InboxCheckStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The inbox-check workflow inputData shape. */
+interface InboxCheckStartInput {
+  search_profile_id: string | null;
+}
+
+/** The dealer_inbox_check descriptor. */
+export const dealerInboxCheckDescriptor: RunDescriptor = {
+  skillId: INBOX_CHECK_SKILL_ID,
+  workflowId: DEALER_INBOX_CHECK_WORKFLOW_ID,
+
+  // Zero-LLM: the sweep (discovery/routing/classify/ingest) is fully
+  // deterministic, so the wire label is the constant api-key lane (no useCase
+  // routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): InboxCheckStartInput {
+    const parsed = InboxCheckStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume: batchReviewResumeFor("batchReview"),
+
+  // The workflow's confirm step templates the full deterministic summary — pass
+  // it through (declined/no_replies runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Dealer inbox check complete.";
+  },
+};
+
+// ===========================================================================
+// dealer_hygiene — the seventh registered descriptor (DESTRUCTIVE mailbox
+// cleanup with THREE strictly-ordered batch_review suspends 5a orphans → 5b
+// CRM threads → 5c CRM contacts). zero-LLM (detect/classify/commit are
+// deterministic), so driver_kind is the constant api-key label. ONE resume
+// vocabulary reused per stage (approve an explicit id list min 1 ⊆ the retained
+// stage payload's shown ids, or decline = terminal/zero writes for the WHOLE
+// run). The three suspended step ids are the only ones the resume answers.
+// ===========================================================================
+
+/** The hygiene start body fields. Only `search_profile_id` matters — it is
+ *  recorded as provenance but never filters the GLOBAL detection; envelope
+ *  fields ride the same body and are ignored. */
+const HygieneStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The hygiene workflow inputData shape. */
+interface HygieneStartInput {
+  search_profile_id: string | null;
+}
+
+/** The accept-content shape for a hygiene stage review (the wire is ALWAYS an
+ *  explicit id list — there is no approve-all member). */
+const HygieneAcceptContentSchema = z.object({
+  approved_ids: z.array(z.string()).min(1),
+});
+
+/** The three suspended step ids the hygiene resume answers (5a/5b/5c). */
+const HYGIENE_SUSPEND_STEPS = new Set(["suspend5a", "suspend5b", "suspend5c"]);
+
+/**
+ * The hygiene per-stage resume shaping. Parameterized like batchReviewResume
+ * but dispatching on the three suspended step ids and validating the approved
+ * ids against the RETAINED stage payload's `targets[].id`: a step outside
+ * {suspend5a, suspend5b, suspend5c} → 400 unsupported_action; decline/cancel →
+ * the stage's decline resume; accept → {approved_ids min 1} with EVERY id ⊆ the
+ * shown stage ids → else 400 content_invalid (claim rolls back, the suspend
+ * stays answerable). The same vocabulary is reused for all three stages.
+ */
+function hygieneResume(
+  step: string,
+  decision: FormDecisionBody["decision"],
+  suspendPayload: Record<string, unknown>,
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  if (!HYGIENE_SUSPEND_STEPS.has(step)) {
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  }
+  const { action, content } = decision;
+
+  if (action === "decline" || action === "cancel") {
+    return {
+      resumeData: HygieneResumeSchema.parse({ action: "decline" }),
+      ackBody: { action, content: null },
+    };
+  }
+
+  const parsed = HygieneAcceptContentSchema.safeParse(content ?? {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new FormDecisionError("content_invalid", 400, "form content invalid", {
+      ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+      extra: { issues: parsed.error.issues },
+    });
+  }
+
+  // ids ⊆ the targets the stage card actually showed (the retained suspend
+  // payload is the authority on what was reviewable in THIS stage).
+  const targetsRaw = suspendPayload["targets"];
+  const shownIds = new Set(
+    Array.isArray(targetsRaw)
+      ? targetsRaw
+          .map((t) => (t as { id?: unknown }).id)
+          .filter((id): id is string => typeof id === "string")
+      : [],
+  );
+  const unknown = parsed.data.approved_ids.filter((id) => !shownIds.has(id));
+  if (unknown.length > 0) {
+    throw new FormDecisionError(
+      "content_invalid",
+      400,
+      `approved_ids contains id(s) not in the reviewed targets: ${unknown.join(", ")}`,
+      { field: "/approved_ids" },
+    );
+  }
+
+  const resume = HygieneResumeSchema.parse({
+    action: "approve",
+    approved_ids: parsed.data.approved_ids,
+  });
+  return {
+    resumeData: resume,
+    ackBody: { action: "accept", content: { approved_ids: parsed.data.approved_ids } },
+  };
+}
+
+/** The dealer_hygiene descriptor. */
+export const dealerHygieneDescriptor: RunDescriptor = {
+  skillId: HYGIENE_SKILL_ID,
+  workflowId: DEALER_HYGIENE_WORKFLOW_ID,
+
+  // Zero-LLM: detect/classify/commit are fully deterministic, so the wire label
+  // is the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): HygieneStartInput {
+    const parsed = HygieneStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume: hygieneResume,
+
+  // The workflow's verify step templates the full deterministic summary — pass
+  // it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Dealer hygiene complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -693,6 +888,8 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   inventorySiteScanDescriptor,
   inventoryLinkScanDescriptor,
   incentiveScrapeDescriptor,
+  dealerInboxCheckDescriptor,
+  dealerHygieneDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -768,6 +965,10 @@ function affectedKinds(workflowId: string): string[] {
       return ["listings"];
     case INCENTIVE_SCRAPE_WORKFLOW_ID:
       return ["incentives"];
+    case DEALER_INBOX_CHECK_WORKFLOW_ID:
+      return ["threads", "messages", "contacts"];
+    case DEALER_HYGIENE_WORKFLOW_ID:
+      return ["threads", "contacts"];
     default:
       // A skill whose data family is not mapped yet — refetch broadly rather
       // than leave a view silently stale.

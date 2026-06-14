@@ -263,6 +263,63 @@ export {
   type OfferLadderSession,
 } from "./incentiveScrape.js";
 
+// The dealer_inbox_check skill workflow (skill #6 — the email-pull skill: 6 flat
+// steps, ONE batch_review suspend over discovered dealer-reply groups before any
+// write, zero-LLM). Test-only deps seam + the app-set per-run sync emitter
+// factory are exported alongside the contracts the server descriptor builds on.
+export {
+  dealerInboxCheckWorkflow,
+  DEALER_INBOX_CHECK_WORKFLOW_ID,
+  setDealerInboxCheckEmitterFactory,
+  __setDealerInboxCheckDepsForTests,
+  __resetDealerInboxCheckDepsForTests,
+  type DealerInboxCheckWorkflowDeps,
+  type InboxEmitter,
+} from "./dealerInboxCheck.js";
+
+// The dealer_inbox_check skill contracts (typed input/output, the batch_review
+// suspend payload, the typed STOP vocabulary). Skill-local, single-use (see the
+// header rationale in the contracts file). The resume reuses the shared
+// BatchReviewResumeSchema already exported above.
+export {
+  DealerInboxCheckInputSchema,
+  DealerInboxCheckOutputSchema,
+  DealerInboxCheckStopError,
+  InboxReviewSuspendSchema,
+  type DealerInboxCheckInput,
+  type DealerInboxCheckOutput,
+  type DealerInboxCheckStopCode,
+  type InboxReviewSuspend,
+} from "./dealerInboxCheckContracts.js";
+
+// The dealer_hygiene skill workflow (DESTRUCTIVE — three strictly-ordered
+// batch_review suspends 5a/5b/5c with a deferred single-transaction commit;
+// decline at any stage = zero writes for the whole run; zero-LLM). Test-only
+// deps seam exported alongside the contracts the server descriptor builds on.
+export {
+  dealerHygieneWorkflow,
+  DEALER_HYGIENE_WORKFLOW_ID,
+  __setDealerHygieneDepsForTests,
+  __resetDealerHygieneDepsForTests,
+  type DealerHygieneWorkflowDeps,
+} from "./dealerHygiene.js";
+
+// The dealer_hygiene skill contracts (typed input/output, the ONE stage-
+// discriminated batch_review suspend payload, the ONE resume vocabulary reused
+// per stage). Skill-local, single-use (see the header rationale).
+export {
+  DealerHygieneInputSchema,
+  DealerHygieneOutputSchema,
+  HygieneStageReviewSchema,
+  HygieneResumeSchema,
+  HYGIENE_STAGES,
+  type DealerHygieneInput,
+  type DealerHygieneOutput,
+  type HygieneStage,
+  type HygieneStageReview,
+  type HygieneResume,
+} from "./dealerHygieneContracts.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

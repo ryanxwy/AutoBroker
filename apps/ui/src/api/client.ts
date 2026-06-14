@@ -47,8 +47,10 @@ import {
   SkillListSchema,
   SkillRunSummarySchema,
   StartAckSchema,
+  ThreadListSchema,
   type CreateSessionBody,
   type DealerList,
+  type ThreadList,
   type EnvConfigResponse,
   type EnvEditableId,
   type FormDecisionAck,
@@ -265,6 +267,16 @@ export class ApiClient {
       this.url(`/api/profiles/${encodeURIComponent(id)}/dealers`),
     );
     return decode(res, DealerListSchema);
+  }
+
+  /** GET /api/profiles/:id/threads → the dealer-reply thread rows bound to one
+   *  profile, newest-touched first (read-only projection; 404 for a missing
+   *  profile). The Threads canvas section renders these. */
+  async listProfileThreads(id: string): Promise<ThreadList> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/threads`),
+    );
+    return decode(res, ThreadListSchema);
   }
 
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */

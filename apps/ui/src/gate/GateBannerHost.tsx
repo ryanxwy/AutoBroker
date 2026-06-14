@@ -25,6 +25,8 @@ import type { DecisionController } from "../chat/useDecision.js";
 import { ApprovalPrompt } from "./ApprovalPrompt.js";
 import { BatchReviewCard, readBatchReviewSpec } from "./BatchReviewCard.js";
 import { gateTrack } from "./gateTrack.js";
+import { HygieneReviewCard } from "./HygieneReviewCard.js";
+import { readHygieneStageSpec } from "./hygieneStage.js";
 
 export function GateBannerHost({
   awaiting,
@@ -38,8 +40,16 @@ export function GateBannerHost({
   const rawKind = awaiting?.specInline?.["kind"];
   const kind = typeof rawKind === "string" ? rawKind : null;
   const showBanner = awaiting !== null && gateTrack(kind) === "banner";
-  const batchSpec =
+  // A batch_review carrying a hygiene `stage` is the DESTRUCTIVE per-stage
+  // cleanup review (its own surface); a stage-less batch_review is the scan
+  // review. Disambiguate by the presence of `stage` (defensive parse) — both
+  // post through the SAME form-decision channel.
+  const hygieneSpec =
     showBanner && kind === "batch_review" && awaiting.specInline !== null
+      ? readHygieneStageSpec(awaiting.specInline)
+      : null;
+  const batchSpec =
+    hygieneSpec === null && showBanner && kind === "batch_review" && awaiting.specInline !== null
       ? readBatchReviewSpec(awaiting.specInline)
       : null;
   // The approval kind needs only a human-readable summary off the payload;
@@ -52,7 +62,21 @@ export function GateBannerHost({
 
   return (
     <section className="gate-banner" data-testid="gate-banner" aria-label="Pending approval">
-      {batchSpec !== null ? (
+      {hygieneSpec !== null ? (
+        <>
+          <HygieneReviewCard
+            spec={hygieneSpec}
+            submitting={decision.submitting}
+            onApprove={(ids) => decision.decide("accept", { approved_ids: ids })}
+            onDecline={() => decision.decide("decline")}
+          />
+          {decision.decisionError !== null && (
+            <p className="danger-text" role="alert" data-testid="hygiene-decision-error">
+              {decision.decisionError}
+            </p>
+          )}
+        </>
+      ) : batchSpec !== null ? (
         <>
           <BatchReviewCard
             spec={batchSpec}

@@ -44,6 +44,8 @@ import {
   readProfileRow,
   listProfileRows,
   listProfileDealerRows,
+  listProfileThreadRows,
+  listProfileMessageRows,
   update as updateProfile,
   close as closeProfile,
   restore as restoreProfile,
@@ -514,6 +516,28 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }
     return withDb((db) => listProfileDealerRows(db, id));
+  });
+
+  // ---- GET /api/profiles/:id/threads — read-only dealer-reply projection ---
+  // The Threads canvas section reads this; delegates DOWN into the tools-layer
+  // closure (routes never open the product DB directly — the SQLite invariant).
+  app.get("/api/profiles/:id/threads", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const profile = withDb((db) => readProfileRow(db, id));
+    if (profile === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    return withDb((db) => listProfileThreadRows(db, id));
+  });
+
+  // ---- GET /api/profiles/:id/messages — read-only ingested-message projection
+  app.get("/api/profiles/:id/messages", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const profile = withDb((db) => readProfileRow(db, id));
+    if (profile === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    return withDb((db) => listProfileMessageRows(db, id));
   });
 
   // ---- PATCH /api/profiles/:id — preference write-through ------------------

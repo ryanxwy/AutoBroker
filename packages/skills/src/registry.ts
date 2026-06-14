@@ -59,6 +59,12 @@ export const INVENTORY_LINK_SCAN_SKILL_ID = "inventory_link_scan" as const;
 /** The incentive scrape skill id (skill #5, OEM first-encounter approval). */
 export const INCENTIVE_SCRAPE_SKILL_ID = "incentive_scrape" as const;
 
+/** The dealer inbox check skill id (skill #6, email-pull + one batch_review). */
+export const INBOX_CHECK_SKILL_ID = "dealer_inbox_check" as const;
+
+/** The dealer hygiene skill id (destructive; three staged batch-review confirms). */
+export const HYGIENE_SKILL_ID = "dealer_hygiene" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -164,15 +170,15 @@ export const SKILLS: readonly SkillDef[] = [
 
   // ---- Phase 3 · email service + LLM extract (Gmail read + fake-mailbox/local db.write) ----
   {
-    id: "dealer_inbox_check",
+    id: INBOX_CHECK_SKILL_ID,
     slash: "/dealer_inbox_check",
     title: "Dealer inbox check",
     summary: "Read dealer replies from the mailbox and surface new messages.",
     phase: 3,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["profile_id"],
+    status: "implemented",
+    workflowId: INBOX_CHECK_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "messages",
   },
   {
@@ -188,15 +194,15 @@ export const SKILLS: readonly SkillDef[] = [
     outputs: "dealer_quote",
   },
   {
-    id: "dealer_hygiene",
+    id: HYGIENE_SKILL_ID,
     slash: "/dealer_hygiene",
     title: "Dealer hygiene",
     summary: "Classify CRM threads, suppress noisy senders, and delete orphan thread records (three staged batch-review confirms).",
     phase: 3,
     riskClass: "destructive",
-    status: "planned",
-    workflowId: null,
-    inputs: ["profile_id"],
+    status: "implemented",
+    workflowId: HYGIENE_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "hygiene_report",
   },
 

@@ -20,17 +20,21 @@ import { useRef, useState } from "react";
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
-import type { DealerList, DealerRow, ProfileList } from "../api/wire.js";
+import type { DealerList, DealerRow, ProfileList, ThreadList } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { ProfileEditPanel } from "./ProfileEditPanel.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
+import { ThreadsSection } from "./ThreadsSection.js";
 
-/** The data kinds the Canvas's two read views render — stable module-level
- *  literals so useDataRefetch re-registers only when the refetch identity (not
- *  the array identity) changes. */
+/** The data kinds the Canvas's read views render — stable module-level literals
+ *  so useDataRefetch re-registers only when the refetch identity (not the array
+ *  identity) changes. */
 const PROFILE_KINDS = ["profiles"] as const;
 const DEALER_KINDS = ["dealers"] as const;
+/** The dealer-reply Threads section refetches on a threads/messages pulse (the
+ *  inbox-pull skill writes both families). */
+const THREAD_KINDS = ["threads", "messages"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -315,12 +319,19 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const threads = useAsync<ThreadList>(
+    () => client.listProfileThreads(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
-  // tracks "profiles"; the dealer tiles track "dealers".
+  // tracks "profiles"; the dealer tiles track "dealers"; the Threads section
+  // tracks "threads"/"messages" (the inbox-pull skill's data families).
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
   useDataRefetch(DEALER_KINDS, dealers.refetch);
+  useDataRefetch(THREAD_KINDS, threads.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -345,6 +356,10 @@ export function Canvas({
         <>
           <ProfileCard client={client} snapshot={active} onSaved={profiles.refetch} />
           <DealerTiles dealers={dealers} />
+          <ThreadsSection
+            threads={threads}
+            dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}
+          />
           <CanvasFeed
             snapshot={active}
             dealerCount={dealers.kind === "ok" ? dealers.data.length : null}

@@ -277,6 +277,27 @@ export const DealerListSchema = z.array(DealerRowSchema);
 export type DealerList = z.infer<typeof DealerListSchema>;
 
 // ---------------------------------------------------------------------------
+// Threads — GET /api/profiles/:id/threads: snake_case rows off the threads
+// table joined to dealers for the display name, newest-touched first. The
+// Threads canvas section reads the named columns it knows (dealer name, subject,
+// state, updated_at); a passthrough record keeps extra server fields tolerated.
+// ---------------------------------------------------------------------------
+
+export const ThreadRowSchema = z
+  .object({
+    thread_id: z.string(),
+    dealer_name: z.string().nullable(),
+    subject: z.string().nullable(),
+    state: z.string().nullable(),
+    updated_at: z.string().nullable(),
+  })
+  .passthrough();
+export type ThreadRow = z.infer<typeof ThreadRowSchema>;
+
+export const ThreadListSchema = z.array(ThreadRowSchema);
+export type ThreadList = z.infer<typeof ThreadListSchema>;
+
+// ---------------------------------------------------------------------------
 // Skills manifest — GET /api/skills. routes.ts:78-86 (SKILL_MANIFEST), returned
 // as a single-element array (routes.ts:279).
 // ---------------------------------------------------------------------------
