@@ -177,8 +177,9 @@ mark the commit body `[fake-send]` until Phase 5 acceptance is GREEN.
   (hand-curated HTML canonical, no build toolchain; Markdown/helper files are
   secondary where present); **this** repo is source-of-truth (runnable TS). The
   plan repo never writes into this repo, and this repo never holds long-form
-  plan prose — keep only short ADR stubs under `design-docs/` here; the
-  long-range phase order and harness standard live in the plan repo.
+  plan prose NOR design docs — **all design docs / ADRs live in the plan repo**
+  (`AutoBroker-dev-plan/ts-rebuild/architecture/`); the long-range phase order
+  and harness standard live there too.
 - The plan repo's `tools/new-day.sh` reads this repo's git log (bucketing by the
   `phaseN/<skill>:` prefix and the touched monorepo layer) plus the
   `test_run_records` harness export to fill its daily HTML report. Keep commit
