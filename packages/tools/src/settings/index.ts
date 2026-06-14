@@ -23,3 +23,18 @@ export {
   type KeyProbeResult,
   type SecretsProbeDeps,
 } from "./keyProbe.js";
+
+export {
+  getEnvConfig,
+  setEnvConfig,
+  loadEnvConfigIntoEnv,
+  ENV_DESCRIPTORS,
+  EDITABLE_IDS,
+  UnknownEnvVarError,
+  NonEditableEnvVarError,
+  InvalidEnvValueError,
+  type EnvVarId,
+  type EnvVarClass,
+  type EnvVarDescriptor,
+  type EnvVarState,
+} from "./envConfigStore.js";
