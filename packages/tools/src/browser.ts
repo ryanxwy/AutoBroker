@@ -28,9 +28,11 @@
  * before the click. Read faces are ungated.
  */
 
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page, Response } from "playwright";
 import { classifyBlockSignature } from "./blockSignature.js";
@@ -51,6 +53,16 @@ export interface BrowserEmitter {
   action(type: string, target: string, screenshotB64?: string): void;
   error(message: string, screenshotB64?: string): void;
   closed(): void;
+  /**
+   * On-demand browser-acquire progress. Fired only on the cold path where the
+   * Playwright browser binary is absent and is being installed before the first
+   * launch (see `ensureBrowserAcquired`). OPTIONAL so existing emitter
+   * implementations stay valid without change — the acquire path calls it via
+   * optional-chaining, and the app layer adapts it onto the
+   * `browser.acquire.progress` SSE kind when present. `progress` is a 0..1
+   * fraction when known, omitted when the installer only streams log lines.
+   */
+  acquireProgress?(message: string, progress?: number): void;
 }
 
 /** No-op emitter for callers that don't stream (unit paths, scripts). */
@@ -59,6 +71,7 @@ export const NULL_EMITTER: BrowserEmitter = {
   action: () => undefined,
   error: () => undefined,
   closed: () => undefined,
+  acquireProgress: () => undefined,
 };
 
 /**
@@ -319,6 +332,163 @@ function defaultTracesDir(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Browser acquire — install the Playwright browser ON DEMAND.
+//
+// The packaged desktop app does NOT bundle the ~150MB Chromium binary (it would
+// blow the .app size budget and force code-signing of a third-party binary).
+// Instead the binary is fetched on first use into the standard ms-playwright
+// cache, which lives OUTSIDE the app bundle (no codesign, survives app updates).
+// The first browser launch ensures the binary is acquired: present → fast no-op;
+// absent → `playwright install chromium` with progress voiced on the emitter so
+// the UI can show a download bar, then launch proceeds normally.
+//
+// The presence check and the installer are injected (real defaults below) so the
+// unit tests never touch the filesystem or spawn a real download.
+// ---------------------------------------------------------------------------
+
+/** Streamed progress callback the installer feeds (one call per noteworthy line
+ *  / step). `progress` is a 0..1 fraction when the installer reports one. */
+export type AcquireProgress = (message: string, progress?: number) => void;
+
+/** Injectable acquire seam: is the browser binary present, and how to install
+ *  it. Real implementations resolve/launch Playwright's own CLI; tests stub both
+ *  so no real download or filesystem touch happens. */
+export interface BrowserAcquireDeps {
+  /** True when the launchable Chromium binary already exists on disk. */
+  isPresent(): boolean;
+  /** Download the Chromium binary, reporting progress as it goes. Resolves once
+   *  the binary is installed; rejects if the install fails (e.g. no network). */
+  install(onProgress: AcquireProgress): Promise<void>;
+}
+
+/** Whether Playwright's expected Chromium executable actually exists on disk.
+ *  `chromium.executablePath()` returns the EXPECTED cache path even when the
+ *  binary was never downloaded, so existence must be checked separately. */
+function realBrowserPresent(): boolean {
+  try {
+    return existsSync(chromium.executablePath());
+  } catch {
+    // executablePath() can throw if the registry can't resolve a path at all;
+    // treat that as "absent" so the install path runs.
+    return false;
+  }
+}
+
+/** Run `playwright install chromium` via Playwright's own CLI, streaming its
+ *  stdout/stderr lines to `onProgress`. Lands the binary in the ms-playwright
+ *  cache outside any app bundle. Rejects on a non-zero exit (e.g. no network),
+ *  so the caller can surface the failure rather than launch into a missing
+ *  binary. */
+function realBrowserInstall(onProgress: AcquireProgress): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Resolve Playwright's bundled CLI entry so we run the SAME version that
+    // owns the cache (no global `playwright` binary dependency). The CLI file is
+    // not exposed via the package `exports` map, so derive it from the package
+    // root + its `bin.playwright` entry (package.json IS exported).
+    let cliPath: string;
+    try {
+      const req = createRequire(import.meta.url);
+      const pkgJsonPath = req.resolve("playwright/package.json");
+      const pkg = req("playwright/package.json") as { bin?: Record<string, string> };
+      const cliRel = pkg.bin?.["playwright"] ?? "cli.js";
+      cliPath = join(dirname(pkgJsonPath), cliRel);
+    } catch (err) {
+      reject(
+        new Error(
+          "cannot locate the Playwright CLI to install the browser on demand: " +
+            (err instanceof Error ? err.message : String(err)),
+        ),
+      );
+      return;
+    }
+
+    onProgress("Downloading browser…");
+    const child = spawn(process.execPath, [cliPath, "install", "chromium"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const onLine = (chunk: Buffer): void => {
+      const text = chunk.toString("utf8").trim();
+      if (text === "") return;
+      // Playwright prints a percentage during the download (e.g. "|  42% of …");
+      // surface it as a fraction when present so the UI can render a bar.
+      const pctMatch = text.match(/(\d{1,3})%/);
+      const progress = pctMatch ? Math.min(100, Number(pctMatch[1])) / 100 : undefined;
+      onProgress(text, progress);
+    };
+    child.stdout?.on("data", onLine);
+    child.stderr?.on("data", onLine);
+
+    child.on("error", (err) => {
+      reject(
+        new Error(
+          `browser install failed to start (no network or missing toolchain): ${err.message}`,
+        ),
+      );
+    });
+    child.on("close", (code) => {
+      if (code === 0) {
+        onProgress("Browser ready.", 1);
+        resolve();
+      } else {
+        reject(new Error(`browser install exited with code ${code ?? "null"}`));
+      }
+    });
+  });
+}
+
+const realAcquireDeps: BrowserAcquireDeps = {
+  isPresent: realBrowserPresent,
+  install: realBrowserInstall,
+};
+
+let injectedAcquireDeps: BrowserAcquireDeps | undefined;
+
+function acquireDeps(): BrowserAcquireDeps {
+  return injectedAcquireDeps ?? realAcquireDeps;
+}
+
+/**
+ * TEST-ONLY seam. Refused outside a test runner — a production caller must never
+ * redirect the real presence check / installer. Pass a partial; unspecified
+ * members keep their real implementation.
+ */
+export function __setBrowserAcquireDepsForTests(partial: Partial<BrowserAcquireDeps>): void {
+  if (process.env["VITEST"] === undefined && process.env["NODE_ENV"] !== "test") {
+    throw new Error(
+      "__setBrowserAcquireDepsForTests is a test-only seam (refused outside a test runner)",
+    );
+  }
+  injectedAcquireDeps = { ...realAcquireDeps, ...partial };
+}
+
+/** Restore the real acquire wiring between test cases. */
+export function __resetBrowserAcquireDepsForTests(): void {
+  injectedAcquireDeps = undefined;
+}
+
+/**
+ * Ensure the Playwright browser binary is acquired before a launch. Idempotent:
+ *   - present → return immediately (the install path is NEVER invoked, so a
+ *     normal launch on a provisioned machine pays nothing — the built browser
+ *     skills behave exactly as before);
+ *   - absent → run the on-demand install, voicing each progress step on the
+ *     emitter's `acquireProgress` (when the emitter provides one) so the UI can
+ *     adapt it onto the `browser.acquire.progress` SSE kind, then return.
+ * An install failure rejects so the launch is not attempted into a missing
+ * binary (the caller surfaces the error rather than hanging on a launch).
+ */
+export async function ensureBrowserAcquired(
+  emitter: BrowserEmitter = NULL_EMITTER,
+  deps: BrowserAcquireDeps = acquireDeps(),
+): Promise<void> {
+  if (deps.isPresent()) return; // fast path — already provisioned
+  await deps.install((message, progress) => {
+    emitter.acquireProgress?.(message, progress);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // withBrowserContext — the lifecycle owner.
 // ---------------------------------------------------------------------------
 
@@ -348,6 +518,12 @@ export async function withBrowserContext<T>(
   let tempProfileDir: string | null = null;
 
   try {
+    // Ensure the browser binary exists before launching. Present → instant
+    // no-op (launch behavior unchanged); absent → install-on-demand with
+    // progress voiced on the emitter, then launch into the freshly-cached
+    // binary. Both engines below need the same binary, so this guards both.
+    await ensureBrowserAcquired(emitter);
+
     if (headless) {
       // Product engine: ephemeral browser + incognito-style context. No profile
       // directory exists on disk; nothing persists between sessions.

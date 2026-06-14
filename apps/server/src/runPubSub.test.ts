@@ -197,6 +197,28 @@ describe("runPubSub — data.changed is a valid NON-terminal kind", () => {
   });
 });
 
+describe("runPubSub — browser.acquire.progress is a valid NON-terminal kind", () => {
+  it("append('browser.acquire.progress') returns ok and does NOT terminate the run", () => {
+    const ps = new RunPubSub();
+    ps.attachInit("r1", "dealer_geosearch");
+    // The install-progress pulse appends cleanly on the cold browser-acquire
+    // path and leaves the run live, so the skill's real work can still land.
+    expect(
+      ps.append("r1", {
+        kind: "browser.acquire.progress",
+        payload: { message: "Downloading browser…", progress: 0.42 },
+      }),
+    ).toBe(true);
+    expect(ps.isTerminal("r1")).toBe(false);
+    expect(ps.append("r1", { kind: "done", payload: {} })).toBe(true);
+    expect(ps.snapshot("r1").map((e) => e.kind)).toEqual([
+      "init",
+      "browser.acquire.progress",
+      "done",
+    ]);
+  });
+});
+
 describe("runPubSub — unknown kind rejection (no drift)", () => {
   it("append with an unknown kind throws", () => {
     const ps = new RunPubSub();

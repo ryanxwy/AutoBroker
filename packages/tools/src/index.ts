@@ -42,6 +42,13 @@ export {
   rowsComplete,
   openedOnce,
   NULL_EMITTER,
+  // Browser-acquire (install the Playwright browser on demand before the first
+  // launch; present → no-op fast path). Seam exported for test injection.
+  ensureBrowserAcquired,
+  __setBrowserAcquireDepsForTests,
+  __resetBrowserAcquireDepsForTests,
+  type BrowserAcquireDeps,
+  type AcquireProgress,
   SNAPSHOT_CAP_CHARS,
   POLITENESS_JITTER_MS,
   BrowserIsolationError,

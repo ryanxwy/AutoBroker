@@ -65,6 +65,12 @@ export const EVENT_KINDS = [
   "browser.action",
   "browser.error",
   "browser.closed",
+  // browser.acquire.progress — a NON-terminal pulse fired only on the cold path
+  // where the Playwright browser binary is absent and is being installed before
+  // the first launch. Payload { message:string, progress?:number } (progress is
+  // a 0..1 fraction when known) drives an install bar in the UI. NOT in
+  // TERMINAL_EVENT_KINDS.
+  "browser.acquire.progress",
   // data.changed — a NON-terminal "a write landed" pulse the UI uses for
   // fresh-by-default auto-refresh: payload {profile_id, kinds:string[]} names
   // the data families a just-completed skill touched (e.g. ["dealers"]). It
