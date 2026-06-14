@@ -339,6 +339,42 @@ export {
   listIngestedGmailMessageIds,
 } from "./inbox/reads.js";
 
+// dealer_hygiene deterministic core — the three GLOBAL detection queries +
+// idempotent suppression pre-filter, the KEEP-biased intent classifier, the
+// staged soft-delete writers with throwing typed guards (the orphan hard-delete
+// red-line honored), and the single all-or-nothing commit (a guard throw rolls
+// back the whole run). Zero-LLM, zero side effects beyond the local product DB.
+export {
+  findOrphanThreads,
+  findCrmOnlyThreads,
+  findCrmPlatformContacts,
+  listSuppressions,
+  type HygieneScopeTrace,
+  type OrphanThreadCandidate,
+  type CrmThreadCandidate,
+  type CrmContactCandidate,
+} from "./hygiene/detect.js";
+export {
+  SUPPRESSIBLE_INTENTS,
+  VALUE_INTENTS,
+  isSuppressibleIntent,
+  isValueIntent,
+} from "./hygiene/classify.js";
+export {
+  deleteOrphanThread,
+  suppressThread,
+  suppressContact,
+  demoteCrmContact,
+  HygieneRejectedError,
+} from "./hygiene/writes.js";
+export {
+  commitHygiene,
+  HygieneAssertionError,
+  type StagedOrphan,
+  type CommitHygieneArgs,
+  type CommitHygieneResult,
+} from "./hygiene/verify.js";
+
 // incentive_scrape deterministic core — the code-level host rejection table,
 // the 7-day cache gate, the cash whitelist, program-identity merge +
 // dual-source cross-verify, the {zip}/{model} template fill, the per-brand
