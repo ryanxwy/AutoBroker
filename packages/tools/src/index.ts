@@ -393,6 +393,7 @@ export {
 } from "./dealerComm/messageTemplates.js";
 export {
   classifySubmitOutcome,
+  hasCaptcha,
   retryStrategy,
   normalizeFormFieldName,
   requiredFieldSet,

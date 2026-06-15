@@ -129,6 +129,7 @@ export function GateBannerHost({
             submitting={decision.submitting}
             onApprove={(ids) => decision.decide("accept", { approved_dealer_ids: ids })}
             onDecline={() => decision.decide("decline")}
+            onSkipAll={() => decision.decide("accept", { skip_all: true })}
           />
           {decision.decisionError !== null && (
             <p className="danger-text" role="alert" data-testid="batch-decision-error">

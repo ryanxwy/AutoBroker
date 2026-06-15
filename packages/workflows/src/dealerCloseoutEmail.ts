@@ -421,6 +421,9 @@ const batchReviewStep = createStep({
         skipped: [],
         total_targets: state.targets.length,
         total_in_radius: state.targets.length,
+        // Closeout-only: surface the "Skip all & reset" action on the review card.
+        // Empty approve-intersection → the skip_all_reset hand-off (NOT a throw).
+        allow_skip_all: true,
       })) as never;
     }
 
@@ -533,7 +536,12 @@ const confirmStep = createStep({
         outcome: "skip_all_reset" as const,
         search_profile_id: state.searchProfileId,
         reset_requested: true as const,
-        summary: "Skipped all closeouts; pipeline reset requested.",
+        // Terminal prose passed through verbatim by the descriptor's summaryText.
+        // CTA points the user at the destructive reset skill — we never auto-invoke
+        // it (that would fire a full-DB wipe off a closeout decision; the user runs it).
+        summary:
+          "Skipped all closeouts; pipeline reset requested. " +
+          "Run /pipeline_reset to wipe and recreate this search.",
       };
     }
 

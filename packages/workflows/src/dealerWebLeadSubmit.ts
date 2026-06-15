@@ -73,6 +73,7 @@ import {
   contactPathFor,
   ExternalMutationsBlockedError,
   getDb,
+  hasCaptcha,
   listProfileDealerRows as listProfileDealerRowsImpl,
   listProfileRows as listProfileRowsImpl,
   NULL_EMITTER,
@@ -155,6 +156,11 @@ export interface ScoutOutcome {
   /** A contact email discovered on the page → the email-fallback target +
    *  the dealers.contact_email upsert value. null when none found. */
   contactEmail: string | null;
+  /** A captcha / human-verification widget was found on the contact form. Such a
+   *  form can never be auto-submitted → the dealer is routed to email fallback
+   *  with reason "captcha_fallback" (the captcha is NEVER submitted or retried).
+   *  Always pairs with form:null (a captcha page is not a usable form). */
+  captcha: boolean;
 }
 
 /** The scout boundary input — the US-gated dealer set + the run identity. */
@@ -216,6 +222,7 @@ export async function scoutOneWithSession(deps: {
     fieldMap: null,
     formSnapshot: null,
     contactEmail: null,
+    captcha: false,
   };
 
   let harvestedEmail: string | null = null;
@@ -235,6 +242,16 @@ export async function scoutOneWithSession(deps: {
       const domPlatform = platformOf(snapshot);
       if (harvestedEmail === null) harvestedEmail = harvestContactEmail(snapshot);
       if (FORM_SHAPE_RE.test(snapshot)) {
+        // A captcha-gated contact form is unreachable by auto-submit (retrying a
+        // captcha never helps) → route to email fallback, never a form submit.
+        // Detected at SCOUT time on the read snapshot, BEFORE the fuse-gated
+        // submit (under BLOCK=1 the fuse throws before any post-submit page
+        // exists, so a captcha can only be caught here). Carry the harvested
+        // email so the fallback still has a target.
+        if (hasCaptcha(snapshot)) {
+          emitter.action("scout_captcha_form", `${dealer.name} ${probeUrl}`);
+          return { ...base, form: null, captcha: true, contactEmail: harvestedEmail };
+        }
         // A usable lead form on this path: the platform comes from the DOM (falls
         // back to the URL fingerprint when the DOM is ambiguous). The submit
         // selector is filled by the parity map / LLM field-map step downstream.
@@ -287,6 +304,7 @@ async function scoutFormsImpl(args: ScoutFormsArgs): Promise<ScoutOutcome[]> {
         fieldMap: null,
         formSnapshot: null,
         contactEmail: null,
+        captcha: false,
       });
     }
   }
@@ -571,6 +589,10 @@ const EligibleDealerSchema = z.object({
   form_snapshot: z.string().nullable(),
   /** The email-fallback target (a discovered or seeded contact email), or null. */
   contact_email: z.string().nullable(),
+  /** A captcha-gated contact form was found → route to email fallback with
+   *  reason "captcha_fallback" (the captcha is NEVER submitted). Pairs with
+   *  form_url:null. */
+  captcha: z.boolean(),
 });
 type EligibleDealer = z.infer<typeof EligibleDealerSchema>;
 
@@ -920,6 +942,7 @@ const scoutStep = createStep({
             : null),
         form_snapshot: o.formSnapshot,
         contact_email: hasEmail ? o.contactEmail!.trim() : null,
+        captcha: o.captcha,
       });
     }
 
@@ -1132,7 +1155,11 @@ const submitStep = createStep({
         if (dealer.contact_email === null) {
           decided.push({ ...base, channel: "failed", fail_reason: "form_not_found" });
         } else {
-          decided.push({ ...base, channel: "needs_fallback", email_fallback_reason: "no_form" });
+          decided.push({
+            ...base,
+            channel: "needs_fallback",
+            email_fallback_reason: dealer.captcha ? "captcha_fallback" : "no_form",
+          });
         }
         continue;
       }

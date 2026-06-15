@@ -1,0 +1,96 @@
+# dealer_closeout_email.skip_all.func.toml — the X3 SKIP-ALL → reset hand-off,
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1,
+# NO live LLM/browser — X3 is zero-LLM). At the batch_review card the user clicks
+# "Skip all & reset" (NOT Decline, NOT approve): the workflow records the typed
+# skip_all_reset outcome (a SUCCESS) and stops with ZERO sends / ZERO close /
+# ZERO suppress — the pipeline_reset hand-off. Δ0 everywhere; terminal `done`.
+#
+#   step 1  install closeout_ready + pin the active search (pin_required).
+#   step 2  "/dealer_closeout_email" → the batch_review card renders the two
+#           addressable dealers; the driver clicks the REAL "Skip all & reset"
+#           button → terminal `done`; messages + thread_suppression + threads +
+#           search_profiles all Δ=0 EXACT; keystone clean; no malformed tool call.
+
+[meta]
+id = "dealer_closeout_email_skip_all"
+archetype = "A"
+skills = ["dealer_closeout_email"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "closeout_ready"
+purpose = "Seed the ready-to-close-out world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the batch card → SKIP ALL & RESET (terminal done, zero writes) --
+
+[[steps]]
+id = "closeout_skip_all"
+skill = "dealer_closeout_email"
+purpose = "Click the REAL Skip-all button — typed skip_all_reset SUCCESS, zero send/close/suppress (the reset hand-off)."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "accept"
+
+[steps.resume.content]
+skip_all = true
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]           # skip_all_reset is a SUCCESS workflow completion (NOT a failure).
+
+[[steps.anchors]]
+kind = "approval_gate"      # the batch card rendered; the skip-all button answered it.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # messages Δ=0 EXACT (no send).
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # thread_suppression Δ=0 EXACT (skip-all writes nothing).
+table = "thread_suppression"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # threads Δ=0 EXACT (no close UPDATE, no inserts).
+table = "threads"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # search_profiles Δ=0 EXACT (step 5 passes through on
+table = "search_profiles"   # skip_all — the profile never flips to closed).
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # zero sent rows → keystone clean.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

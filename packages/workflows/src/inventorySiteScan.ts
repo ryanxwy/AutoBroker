@@ -534,6 +534,11 @@ export const BatchReviewSuspendSchema = z.object({
   ),
   total_targets: z.number().int(),
   total_in_radius: z.number().int(),
+  // Opt-in: render a "Skip all & reset" action on the review card (the closeout
+  // skip-all → pipeline_reset hand-off). OPTIONAL → absent on every other
+  // emitter, so no other batch_review payload changes and the button never
+  // renders there. Backward-compatible (no other suspend gains a field).
+  allow_skip_all: z.boolean().optional(),
 });
 export type BatchReviewSuspend = z.infer<typeof BatchReviewSuspendSchema>;
 

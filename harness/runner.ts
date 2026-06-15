@@ -1041,6 +1041,14 @@ async function driveResumeScriptDom(
       // reader asserts the <8KB spec_inline bound on both the accept and the
       // decline path (failing the step loudly on a breach).
       const { targets } = await batch.readSuspend();
+      // SKIP ALL — the closeout reset hand-off (terminal, zero writes). Click the
+      // dedicated button; no row decisions, no submit. Recognized by the accept
+      // content marker {skip_all:true} (must be checked BEFORE the decline/row logic).
+      if (resume.action === "accept" && resume.content?.["skip_all"] === true) {
+        await driver.screenshot("batch-card-skip-all");
+        await driver.clickBatchSkipAll(maxMs);
+        continue;
+      }
       if (resume.action !== "accept") {
         // Decline twin: terminal, zero writes — no row decisions needed.
         await driver.screenshot("batch-card-decline");

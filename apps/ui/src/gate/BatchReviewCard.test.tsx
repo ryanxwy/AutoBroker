@@ -22,13 +22,20 @@ const SPEC: BatchReviewSpec = {
   skipped: [{ dealer_id: "d-skip", name: "No-Site Motors", reason: "no_website" }],
   totalTargets: 3,
   totalInRadius: 3,
+  allowSkipAll: false,
 };
 
-function mount(spec: BatchReviewSpec = SPEC, submitting = false) {
+function mount(spec: BatchReviewSpec = SPEC, submitting = false, onSkipAll?: () => void) {
   const onApprove = vi.fn();
   const onDecline = vi.fn();
   const r = render(
-    <BatchReviewCard spec={spec} submitting={submitting} onApprove={onApprove} onDecline={onDecline} />,
+    <BatchReviewCard
+      spec={spec}
+      submitting={submitting}
+      onApprove={onApprove}
+      onDecline={onDecline}
+      {...(onSkipAll ? { onSkipAll } : {})}
+    />,
   );
   return { r, onApprove, onDecline };
 }
@@ -135,6 +142,36 @@ describe("BatchReviewCard — decline + skipped section + header", () => {
   });
 });
 
+describe("BatchReviewCard — skip-all (closeout-only opt-in)", () => {
+  it("renders NO skip-all button on a normal payload (allowSkipAll false)", () => {
+    const { r } = mount(); // SPEC has allowSkipAll:false
+    expect(r.query("batch-skip-all")).toBeNull();
+    r.unmount();
+  });
+
+  it("renders the skip-all button when allowSkipAll is set, always enabled, and fires onSkipAll", () => {
+    const onSkipAll = vi.fn();
+    const { r } = mount({ ...SPEC, allowSkipAll: true }, false, onSkipAll);
+    const btn = r.get("batch-skip-all") as HTMLButtonElement;
+    expect(btn.disabled).toBe(false); // its own terminal verb, independent of rows
+    click(btn);
+    expect(onSkipAll).toHaveBeenCalledTimes(1);
+    r.unmount();
+  });
+
+  it("does NOT render the button when allowSkipAll is set but no onSkipAll handler is passed", () => {
+    const { r } = mount({ ...SPEC, allowSkipAll: true }); // no handler
+    expect(r.query("batch-skip-all")).toBeNull();
+    r.unmount();
+  });
+
+  it("submitting disables the skip-all button", () => {
+    const { r } = mount({ ...SPEC, allowSkipAll: true }, true, vi.fn());
+    expect((r.get("batch-skip-all") as HTMLButtonElement).disabled).toBe(true);
+    r.unmount();
+  });
+});
+
 describe("readBatchReviewSpec — defensive wire parse", () => {
   it("parses the committed spec_inline shape", () => {
     const spec = readBatchReviewSpec({
@@ -149,6 +186,20 @@ describe("readBatchReviewSpec — defensive wire parse", () => {
     expect(spec!.targets[0]!.dealer_id).toBe("a");
     expect(spec!.skipped[0]!.reason).toBe("non_us");
     expect(spec!.totalInRadius).toBe(2);
+    expect(spec!.allowSkipAll).toBe(false); // absent flag ⇒ false (no skip-all button)
+  });
+
+  it("reads allow_skip_all:true off the closeout payload", () => {
+    const spec = readBatchReviewSpec({
+      kind: "batch_review",
+      question: "Close out these dealers?",
+      targets: [{ dealer_id: "a", name: "A", website: "" }],
+      skipped: [],
+      total_targets: 1,
+      total_in_radius: 1,
+      allow_skip_all: true,
+    });
+    expect(spec!.allowSkipAll).toBe(true);
   });
 
   it("returns null on a malformed payload (the host falls back to the pending placeholder)", () => {

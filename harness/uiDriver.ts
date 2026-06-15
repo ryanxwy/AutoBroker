@@ -24,7 +24,7 @@
  * turn-error / stop-card[data-stop-code] / stop-intake-cta / stop-pick-option /
  * turn-resolution[data-resolution] / batch-review-card / batch-row-<id> /
  * batch-approve-<id> / batch-skip-<id> / batch-select-all / batch-counter /
- * batch-submit / batch-decline / inbox-review-card / inbox-row-<dealerId> /
+ * batch-submit / batch-decline / batch-skip-all / inbox-review-card / inbox-row-<dealerId> /
  * inbox-approve-<dealerId> / inbox-skip-<dealerId> / inbox-select-all /
  * inbox-counter / inbox-submit / inbox-decline / hygiene-review-card /
  * hygiene-stage[data-stage] / hygiene-row-<id> / hygiene-approve-<id> /
@@ -558,6 +558,15 @@ export class UiDriver {
   async clickBatchDecline(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
     await this.page.waitForSelector(tid("batch-decline"), { timeout: timeoutMs });
     await this.page.click(tid("batch-decline"));
+  }
+
+  /** Click the closeout "Skip all & reset" button (the skip_all_reset hand-off —
+   *  terminal, ZERO writes; emits accept{skip_all:true} → the workflow's
+   *  empty-intersection branch). Renders only on the closeout payload
+   *  (spec.allowSkipAll), so this verb is closeout-scoped. */
+  async clickBatchSkipAll(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("batch-skip-all"), { timeout: timeoutMs });
+    await this.page.click(tid("batch-skip-all"));
   }
 
   // ---- inbox_review verbs (the dealer_inbox_check decision card) ------------

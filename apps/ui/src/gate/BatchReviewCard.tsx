@@ -30,6 +30,9 @@ export interface BatchReviewSpec {
   skipped: Array<{ dealer_id: string; name: string; reason: string }>;
   totalTargets: number;
   totalInRadius: number;
+  /** Opt-in (closeout-only): render a "Skip all & reset" action. Absent/false on
+   *  every other batch_review payload → that button never renders there. */
+  allowSkipAll: boolean;
 }
 
 /** Defensively read a batch_review spec_inline off the wire. Returns null on a
@@ -59,12 +62,15 @@ export function readBatchReviewSpec(spec: Record<string, unknown>): BatchReviewS
   const totalTargets = spec["total_targets"];
   const totalInRadius = spec["total_in_radius"];
   if (typeof totalTargets !== "number" || typeof totalInRadius !== "number") return null;
+  // Optional opt-in flag; absent ⇒ false ⇒ no skip-all button (closeout-scoped).
+  const allowSkipAll = spec["allow_skip_all"] === true;
   return {
     question: typeof spec["question"] === "string" ? spec["question"] : "Scan these dealers' inventory now?",
     targets,
     skipped,
     totalTargets,
     totalInRadius,
+    allowSkipAll,
   };
 }
 
@@ -91,6 +97,7 @@ export function BatchReviewCard({
   submitting,
   onApprove,
   onDecline,
+  onSkipAll,
 }: {
   spec: BatchReviewSpec;
   submitting: boolean;
@@ -98,6 +105,10 @@ export function BatchReviewCard({
   onApprove: (approvedDealerIds: string[]) => void;
   /** action "decline" — terminal, zero writes. */
   onDecline: () => void;
+  /** action "accept" with {skip_all:true} — the closeout skip-all → reset
+   *  hand-off; terminal, zero writes. Closeout-only: the button renders only
+   *  when spec.allowSkipAll is set, so an absent handler ⇒ no button. */
+  onSkipAll?: () => void;
 }): JSX.Element {
   // Row decisions, keyed by dealer_id; an ABSENT key is the undecided default.
   const [decisions, setDecisions] = useState<Record<string, RowDecision>>({});
@@ -199,6 +210,19 @@ export function BatchReviewCard({
         >
           Decline
         </button>
+        {spec.allowSkipAll && onSkipAll && (
+          // A DISTINCT terminal intent: "send none AND hand off to reset" — its
+          // own verb (like Decline), always enabled, independent of row decisions.
+          <button
+            type="button"
+            className="btn-danger"
+            data-testid="batch-skip-all"
+            disabled={submitting}
+            onClick={onSkipAll}
+          >
+            Skip all &amp; reset
+          </button>
+        )}
       </div>
       {allDecided && approvedIds.length === 0 && (
         <p className="muted" data-testid="batch-zero-approved-hint">

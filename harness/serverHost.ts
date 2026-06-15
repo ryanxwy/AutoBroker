@@ -62,7 +62,10 @@ import {
   type SubmitVerdict,
 } from "@autobroker/workflows";
 
-import { LEAD_SUBMIT_NOFORM_DEALER } from "./fixtures/states/leadSubmitReady.js";
+import {
+  LEAD_SUBMIT_CAPTCHA_DEALER,
+  LEAD_SUBMIT_NOFORM_DEALER,
+} from "./fixtures/states/leadSubmitReady.js";
 
 import { harnessGenerateStub, resolveLocationStub, setScenario, type Scenario } from "./fixtures/stubs.js";
 import { getFixtureState } from "./fixtures/states/index.js";
@@ -247,7 +250,9 @@ async function main(): Promise<void> {
     // chain WITHOUT a real chromium. The scout boundary returns the seeded
     // dealers' deterministic form SHAPES (a known-platform web form for the
     // web-form dealer → NO LLM field-map; no form + a contact_email for the
-    // no-form dealer → the email fallback). The gated submit boundary returns
+    // no-form dealer → the email fallback; a captcha-gated form for the captcha
+    // dealer → the email fallback with reason "captcha_fallback", never
+    // submitting the captcha). The gated submit boundary returns
     // `fuse_blocked` for the web-form dealer (the BLOCK=1 fake-submit) and
     // `needs_fallback` for the no-form dealer (defensive — a no-form dealer never
     // reaches submitOne, but the stub mirrors that shape). recordSubmission +
@@ -268,6 +273,24 @@ async function main(): Promise<void> {
                 fieldMap: null,
                 formSnapshot: null,
                 contactEmail: "sales@tucsonkia.example.com",
+                captcha: false,
+              };
+            }
+            if (d.dealerId === LEAD_SUBMIT_CAPTCHA_DEALER) {
+              // A captcha-gated contact form: NO usable form (the captcha is never
+              // auto-submitted), but a harvested contact email → the email fallback
+              // with reason "captcha_fallback". This is the scout-time detection
+              // the X1 captcha follow-on wires up.
+              return {
+                dealerId: d.dealerId,
+                name: d.name,
+                website: d.website,
+                form: null,
+                platform: "custom",
+                fieldMap: null,
+                formSnapshot: null,
+                contactEmail: "sales@captcha-dealer.example.com",
+                captcha: true,
               };
             }
             // Default (the web-form dealer): a known DealerFire platform with a
@@ -284,6 +307,7 @@ async function main(): Promise<void> {
               ],
               formSnapshot: null,
               contactEmail: null,
+              captcha: false,
             };
           }),
         ),

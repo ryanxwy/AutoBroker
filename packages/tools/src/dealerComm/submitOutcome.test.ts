@@ -9,10 +9,25 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifySubmitOutcome,
+  hasCaptcha,
   normalizeFormFieldName,
   requiredFieldSet,
   retryStrategy,
 } from "./submitOutcome.js";
+
+describe("hasCaptcha", () => {
+  it("is true for each captcha marker (case-insensitive)", () => {
+    expect(hasCaptcha('<div class="g-recaptcha"></div>')).toBe(true);
+    expect(hasCaptcha('<div class="H-Captcha">')).toBe(true);
+    expect(hasCaptcha("Please Verify You Are Human")).toBe(true);
+  });
+
+  it("is false for a clean contact form with no captcha", () => {
+    expect(
+      hasCaptcha('<form><input name="email"/><textarea name="message"></textarea></form>'),
+    ).toBe(false);
+  });
+});
 
 describe("classifySubmitOutcome", () => {
   it("captcha wins regardless of status", () => {

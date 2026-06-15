@@ -1,21 +1,27 @@
 /**
  * leadSubmitReady — the world the X1 (dealer_web_lead_submit) keystone func
  * cases drive against. It is the moment after intake + geosearch where a search
- * is ready to submit leads: ONE active PINNABLE Tucson profile with two bound US
- * dealers, one of which exposes a known-platform web form and one of which has
- * NO web form but a contact_email (so the second routes to the email fallback).
+ * is ready to submit leads: ONE active PINNABLE Tucson profile with three bound
+ * US dealers — one exposes a known-platform web form, one has NO web form but a
+ * contact_email, and one has a captcha-gated form. The latter two route to the
+ * email fallback (the captcha dealer with reason "captcha_fallback", never
+ * submitting the captcha).
  *
  * WHAT THIS SEEDS:
  *   - 1 search_profiles row (status='active', account=acct-harness-1, brand=make)
  *     — PINNABLE through the Searches popover (the X1 pin-required launch threads
  *     the pin as search_profile_id).
- *   - 2 dealers (country='US', a usable website, AND contact_email set) +
- *     2 profile_dealers bindings (status='bound'):
+ *   - 3 dealers (country='US', a usable website, AND contact_email set) +
+ *     3 profile_dealers bindings (status='bound'):
  *       · dealer-jim-click  — a DealerFire-platform website (a KNOWN platform →
  *                             NO LLM field-map step) → the web-form submit path.
  *       · dealer-tucson-kia — NO web form path (its site fingerprints to no known
  *                             contact form) but a contact_email → the email
  *                             fallback path (the re-confirm suspend ②).
+ *       · dealer-captcha-1  — a captcha-gated contact form (the injected scout
+ *                             returns captcha:true) → the email fallback with
+ *                             reason "captcha_fallback" (the captcha is never
+ *                             submitted or retried).
  *   - 1 inventory_listings row (the single-store path's listing — present so the
  *     world is complete; the full-batch cases do not name a target_listing_id).
  *   - NO prior lead_submissions (so the first run is never a duplicate-skip).
@@ -40,6 +46,11 @@ export const LEAD_SUBMIT_WEBFORM_DEALER = "dealer-jim-click";
 
 /** The no-web-form dealer (email fallback via contact_email). */
 export const LEAD_SUBMIT_NOFORM_DEALER = "dealer-tucson-kia";
+
+/** The captcha-gated-form dealer (email fallback, reason "captcha_fallback" — the
+ *  captcha is NEVER submitted). The injected scout returns form:null + captcha:true
+ *  for this dealer; the contact_email is the fallback target. */
+export const LEAD_SUBMIT_CAPTCHA_DEALER = "dealer-captcha-1";
 
 /** The single-store listing id (the world's completeness — the full-batch cases
  *  do not reference it). */
@@ -104,6 +115,13 @@ export const leadSubmitReady: FixtureState = {
         website: "https://www.tucsonkia.example.com",
         contactEmail: "sales@tucsonkia.example.com",
         distance: 6.8,
+      },
+      {
+        id: LEAD_SUBMIT_CAPTCHA_DEALER,
+        name: "Captcha Motors",
+        website: "https://www.captcha-dealer.example.com",
+        contactEmail: "sales@captcha-dealer.example.com",
+        distance: 7.5,
       },
     ];
     const insertDealer = c.prepare(

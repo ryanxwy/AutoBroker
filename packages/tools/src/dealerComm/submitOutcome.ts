@@ -15,6 +15,20 @@ export type SubmitOutcome = "captcha" | "accepted" | "email_only" | "unknown";
 /** What to do after a submit attempt, given its outcome + attempt count. */
 export type RetryAction = "retry" | "stop" | "email_fallback";
 
+/** Captcha / human-verification markers, checked WITHOUT regard to HTTP status. */
+const CAPTCHA_MARKERS = ["g-recaptcha", "h-captcha", "verify you are human"];
+
+/**
+ * True iff a captcha widget / human-verification prompt is present in the HTML.
+ * Shared by the POST-submit classifier and the SCOUT-time form check: a captcha
+ * on a contact form means the form can never be auto-submitted, so the dealer is
+ * routed to email fallback and the captcha is NEVER submitted or retried. Pure.
+ */
+export function hasCaptcha(html: string): boolean {
+  const lowered = html.toLowerCase();
+  return CAPTCHA_MARKERS.some((m) => lowered.includes(m));
+}
+
 /**
  * Classify a submit response. Precedence is fixed (first match wins):
  *   1. captcha — a captcha widget / human-verification prompt is present,
@@ -27,11 +41,7 @@ export type RetryAction = "retry" | "stop" | "email_fallback";
 export function classifySubmitOutcome(html: string, status: number): SubmitOutcome {
   const lowered = html.toLowerCase();
 
-  if (
-    lowered.includes("g-recaptcha") ||
-    lowered.includes("h-captcha") ||
-    lowered.includes("verify you are human")
-  ) {
+  if (hasCaptcha(html)) {
     return "captcha";
   }
 
