@@ -610,3 +610,40 @@ export {
   migrate as migrateProductDb,
   productTableNames,
 } from "./pipelineReset/index.js";
+
+// quote_pipeline deterministic core (BUILD-AHEAD) — the child-independent
+// orchestrator tools the keystone composes once E2/D2/D3 land: re-derive the 4
+// applicable-step flags each run (non-durable, no checkpoint), the read-only
+// targeted-VIN validator, the null-VIN-raising OTD ask, the idempotent
+// targeted-VIN quote writer, the deterministic LLM-free disposition, and the one
+// generic audit_log completion row. No child workflow / LLM here.
+export {
+  detectPipelineState,
+  resolveTargetedListing,
+  TargetedListingNotFound,
+  NoInboundThread,
+  buildOtdInjection,
+  MissingVinError,
+  recordQuoteFromListing,
+  MessageNotFoundError,
+  MissingMessageIdError,
+  computeFinalState,
+  computeNextAction,
+  writePipelineCompletion,
+  PIPELINE_STEPS,
+  FINAL_STATES,
+  PIPELINE_COMPLETE_ACTION,
+  type DetectPipelineStateArgs,
+  type PipelineStateFlags,
+  type ResolveTargetedListingArgs,
+  type ResolveTargetedListingResult,
+  type TargetedListing,
+  type TargetedInboundThread,
+  type BuildOtdInjectionArgs,
+  type RecordQuoteFromListingArgs,
+  type RecordQuoteFromListingResult,
+  type PipelineStep,
+  type FinalState,
+  type WritePipelineCompletionArgs,
+  type WritePipelineCompletionResult,
+} from "./pipeline/index.js";
