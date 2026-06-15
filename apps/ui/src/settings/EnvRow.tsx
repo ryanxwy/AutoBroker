@@ -24,7 +24,7 @@
  * extras only.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { EnvVarState } from "../api/wire.js";
 import {
@@ -73,6 +73,9 @@ export function EnvRow({ state, onSet, busyError, saved }: EnvRowProps): JSX.Ele
         )}
         {classification === "editable-bool" && (
           <BoolControl id={id} value={value} onSet={onSet} />
+        )}
+        {classification === "editable-text" && (
+          <TextControl id={id} value={value} onSet={onSet} />
         )}
         {classification === "read-only-status" && <StatusBadge id={id} value={value} />}
         {classification === "read-only-path" && (
@@ -197,6 +200,56 @@ function BoolControl({
       />
       <span>{showWindow ? SHOW_BROWSER_LABELS.on : SHOW_BROWSER_LABELS.off}</span>
     </label>
+  );
+}
+
+/** A free-text editable var (the Gmail account). A small form: typing parks a
+ *  local draft and Save commits it (typing never fires a write). The draft resets
+ *  to the committed value after a successful save / external refetch. An empty or
+ *  unchanged draft disables Save; the server re-validates the address shape. */
+function TextControl({
+  id,
+  value,
+  onSet,
+}: {
+  id: string;
+  value: string;
+  onSet: (id: string, value: string) => void;
+}): JSX.Element {
+  const [draft, setDraft] = useState(value);
+  // Reflect the committed value when it changes (after a save lands / a refetch).
+  useEffect(() => setDraft(value), [value]);
+
+  const trimmed = draft.trim();
+  const dirty = trimmed.length > 0 && trimmed !== value;
+
+  return (
+    <form
+      className="env-text"
+      data-testid={`env-text-${id}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty) onSet(id, trimmed);
+      }}
+    >
+      <input
+        type="email"
+        className="env-input"
+        data-testid={`env-input-${id}`}
+        value={draft}
+        placeholder="you@example.com"
+        autoComplete="off"
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <button
+        type="submit"
+        className="btn-primary"
+        data-testid={`env-save-${id}`}
+        disabled={!dirty}
+      >
+        Save
+      </button>
+    </form>
   );
 }
 

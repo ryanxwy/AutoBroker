@@ -1,0 +1,90 @@
+# harness/cases/quote_compare.func.toml — FUNCTIONAL lane: the deterministic
+# quote-compare panel over the UNDECIDED world (both buckets populate; the cash
+# empty world is its own case, quote_compare_cash.func.toml, because each
+# functional case owns one server+DB and apply-fixture is additive).
+#
+# quote_compare is a ZERO-LLM, read-only, re-runnable skill: the
+# /api/profiles/:id/quote-compare route ranks the profile's dealer quotes at read
+# time (nothing is persisted). This case drives the Canvas Quote compare section
+# over the populated fixture world on the offline functional lane (no live LLM;
+# Δ=0 BY CONSTRUCTION — a runless kind="ui" step snapshots before==after with no
+# run between, so a pure read panel reaches no side effect).
+#
+#   step 1  quote_compare_world (undecided) → the Quote compare section mounts;
+#           BOTH the finance and lease buckets render; the finance bucket holds
+#           THREE rows (two priced + one NULL-OTD incomplete) and the lease bucket
+#           holds TWO; the APR_MARKUP audit pill renders (the latest-audit join +
+#           the flags_json code decode); the incomplete badge renders (the
+#           NULL-OTD finance row).
+#
+# WHY THESE ANCHORS ARE MEANINGFUL: both-bucket visibility proves the undecided
+# gating populates both lists; the row counts prove the mode split (finance vs
+# lease); the decoded APR_MARKUP pill proves the latest-audit LEFT JOIN + the
+# flags_json → code decode; the incomplete badge proves the NULL-OTD row renders
+# (and the ranker sorts it last). No budget number appears anywhere.
+
+[meta]
+id = "quote_compare_func"
+archetype = "B"
+skills = ["quote_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the populated panel (both buckets; audit pill; incomplete badge) --
+
+[[steps]]
+id = "compare_panel"
+kind = "ui"
+fixture_state = "quote_compare_world"
+purpose = "The Canvas Quote compare section ranks the seeded quotes: both buckets render (finance 3 rows incl. a NULL-OTD incomplete, lease 2 rows); the APR_MARKUP pill + the incomplete badge render."
+
+# Click the first compare row (a plain, non-navigating tile) to wait for the
+# section to mount before the bucket + field anchors below.
+[[steps.ui_actions]]
+verb = "click"
+testid = "quote-compare-row"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-compare"
+expect = "visible"
+
+# The undecided gate populates BOTH buckets.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-compare-finance"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-compare-lease"
+expect = "visible"
+
+# Exact match (NOT prefix): every quote row shares the identical testid
+# "quote-compare-row"; an exact selector excludes the section wrapper. FIVE rows
+# across both buckets (3 finance + 2 lease).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-compare-row"
+expect = "count"
+count = 5
+match = "exact"
+
+# The decoded audit-flag pill (the latest-audit LEFT JOIN + the flags_json code
+# decode). The cheaper finance quote carries an APR_MARKUP audit row.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-audit-pill-APR_MARKUP"
+expect = "visible"
+
+# A NULL-OTD finance row renders the "incomplete" badge (never a fabricated
+# number; the ranker sorts it last).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-incomplete-badge"
+expect = "visible"

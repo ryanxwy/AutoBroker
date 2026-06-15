@@ -25,8 +25,8 @@
  * then. A key VALUE is NEVER logged or returned — only presence is exposed.
  */
 
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { resolveDataDir } from "../db.js";
 
@@ -134,6 +134,88 @@ export function loadSecretsIntoEnv(): void {
     const value = stored[id];
     if (value !== undefined) {
       process.env[KEY_ENV_VARS[id]] = value;
+    }
+  }
+}
+
+/** Walk UP from `start` up to `maxDepth` levels and return the first `.env` file
+ *  found, or undefined. A no-throw best-effort probe (a stat error = "not here,
+ *  keep walking"). The walk stops at the filesystem root regardless of depth. */
+function findDotEnvUpwards(start: string, maxDepth: number): string | undefined {
+  let dir = start;
+  for (let depth = 0; depth <= maxDepth; depth += 1) {
+    const candidate = join(dir, ".env");
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // Not here — keep walking.
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break; // reached the filesystem root.
+    dir = parent;
+  }
+  return undefined;
+}
+
+/** Parse one `.env` line into [name, value], or undefined for a blank/comment/
+ *  malformed line. Matches `^\s*(?:export\s+)?NAME\s*=\s*VALUE$`; strips ONE layer
+ *  of matching surrounding single/double quotes; trims trailing whitespace on an
+ *  unquoted value. No variable interpolation. */
+function parseDotEnvLine(line: string): [string, string] | undefined {
+  const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+  if (m === null) return undefined;
+  const name = m[1]!;
+  let value = m[2]!;
+  const quoted =
+    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2);
+  if (quoted) value = value.slice(1, -1);
+  else value = value.replace(/\s+$/, "");
+  return [name, value];
+}
+
+/**
+ * Seed process.env from a data-dir-INDEPENDENT `.env` file — the FALLBACK store
+ * so a key written only into a repo-root `.env` works in every lane (server boot
+ * AND harness AND CLI) and shows up as "present" in the UI Keys panel.
+ *
+ * SCOPE: only the FOUR allow-listed provider keys (KEY_ENV_VARS values); every
+ * other var in `.env` (operational AUTOBROKER_*, TELEGRAM_*, ...) is IGNORED —
+ * this loader never touches a non-key var, matching the store's allow-list.
+ *
+ * NO-CLOBBER: a var is set only when currently unset-or-empty, so an ambient /
+ * exported key wins, and a later loadSecretsIntoEnv() (keys.json, the canonical
+ * store) clobbers because it runs AFTER. Precedence: ambient env / keys.json win
+ * over `.env`.
+ *
+ * LOCATION: `envFilePath` if given; else the first `.env` found walking UP from
+ * process.cwd() (up to ~5 levels). No `.env` anywhere = no-op.
+ *
+ * FAIL SAFE: a missing / unreadable / garbled `.env` is treated as "nothing to
+ * load" — NEVER throws. A key VALUE is NEVER logged or returned (presence only).
+ */
+export function loadDotEnvKeys(envFilePath?: string): void {
+  const path = envFilePath ?? findDotEnvUpwards(process.cwd(), 5);
+  if (path === undefined) return; // no .env anywhere — nothing to load.
+
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return; // missing / unreadable / a directory — fail safe.
+  }
+
+  // The allow-list as an env-var-name -> id reverse lookup (only the four).
+  const allowed = new Set<string>(Object.values(KEY_ENV_VARS));
+  for (const line of raw.split(/\r?\n/)) {
+    const parsed = parseDotEnvLine(line);
+    if (parsed === undefined) continue; // blank / comment / malformed — skip.
+    const [name, value] = parsed;
+    if (!allowed.has(name)) continue; // not one of the four — ignore.
+    if (value.length === 0) continue; // an empty value is not a key.
+    const current = process.env[name];
+    if (current === undefined || current.length === 0) {
+      process.env[name] = value; // NO-CLOBBER: only fill an unset/empty slot.
     }
   }
 }

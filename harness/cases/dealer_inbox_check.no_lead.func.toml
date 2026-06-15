@@ -1,0 +1,87 @@
+# harness/cases/dealer_inbox_check.no_lead.func.toml — the NO-LEAD precondition,
+# UI-LANE, fixture-mode (zero-LLM). The discovery window is anchored to the
+# earliest SUBMITTED lead (readFirstLeadSubmitAtMs) — replies are only swept
+# AFTER a dealer was actually contacted. With ZERO lead_submissions rows the
+# first sweep has no anchor and the workflow STOPs `no_lead_submitted` (a calm
+# precondition card, not a red error) — BEFORE any sync/discovery write.
+#
+#   step 1 (ui)    install inbox_no_lead (a pinned-able active profile + bound
+#                  dealer + replies, but NO submitted lead). Pin the profile.
+#   step 2 (skill) "/dealer_inbox_check" pinned → STOPs no_lead_submitted. ALL
+#                  inbox tables Δ=0 EXACT (no threads, no messages, no routing,
+#                  no watermark); no batch card ever renders.
+
+[meta]
+id = "dealer_inbox_check_no_lead"
+archetype = "B"
+skills = ["dealer_inbox_check"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the no-lead world + pin --------------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "inbox_no_lead"
+purpose = "Install the no-lead world (replies present but no submitted lead) and pin the profile."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-inbox-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-inbox-ready-1"
+expect = "visible"
+
+# ---- step 2: launch pinned → no_lead_submitted STOP (zero writes) ------------
+
+[[steps]]
+id = "no_lead_stop"
+skill = "dealer_inbox_check"
+purpose = "Pinned launch with no submitted lead → no_lead_submitted STOP, zero writes, no card."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+expect_stop = "no_lead_submitted"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["error"]               # a typed STOP terminates the run as error.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_routing"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "approval_gate"
+expect = "absent"                # the STOP precedes the suspend — no card ever.

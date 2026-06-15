@@ -1,0 +1,52 @@
+# harness/cases/inventory_compare_empty.func.toml — FUNCTIONAL lane: the empty
+# inventory rail.
+#
+# The twin of inventory_compare.func.toml: an active profile with NO inventory
+# listings (the active_search fixture seeds one active Hyundai Tucson Hybrid
+# profile + two bound dealers, but zero inventory_listings). The Canvas Inventory
+# candidates section then ranks zero listings → the empty rail with the verbatim
+# "Listed 0 inventory candidates (recommended: 0)." sentinel.
+#
+# A separate single-step case (not a second step of the populated case) because
+# each functional case owns one server+DB and apply-fixture is additive — two
+# listing worlds in one case would collide on the shared dealer/profile rows.
+#
+# WHY THIS ANCHOR IS MEANINGFUL: the empty sentinel proves the zero-candidates
+# terminal copy renders against a real active profile with no listings (the
+# read route returns candidates:[] and totalListings:0). No budget number
+# appears. Δ=0 by construction (a runless kind="ui" step).
+
+[meta]
+id = "inventory_compare_empty_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "empty_rail"
+kind = "ui"
+fixture_state = "active_search"
+purpose = "An active profile with no listings shows the empty rail with the verbatim zero-candidates sentinel."
+
+# The active_search fixture seeds dealer tiles; clicking one waits for the active
+# projection (incl. the Inventory candidates section) to mount.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-dealer-tile"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-inventory-candidates"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-inventory-empty"
+expect = "text"
+value = "Listed 0 inventory candidates (recommended: 0)."

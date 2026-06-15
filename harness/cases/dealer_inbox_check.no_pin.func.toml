@@ -1,0 +1,93 @@
+# harness/cases/dealer_inbox_check.no_pin.func.toml — the PIN-REQUIRED gate,
+# UI-LANE, fixture-mode (zero-LLM). dealer_inbox_check is pin_required: an active
+# profile is NOT enough — without a TRUE session pin the Skills-popover Run is
+# BLOCKED, and a slash launch STOPs `pin_required` (never a silent newest-active
+# pick). Picking the vehicle from the STOP card re-launches the skill PINNED.
+#
+#   step 1 (ui)    install inbox_ready (one active profile, NO pin). Open the
+#                  Skills popover; the inbox Run button is DISABLED (pin-gate).
+#   step 2 (skill) "/dealer_inbox_check" via slash anyway → the run STOPs with a
+#                  `pin_required` STOP card (the picker, not the intake CTA).
+#   step 3 (skill) pick the vehicle from the STOP picker → a NEW pinned run →
+#                  the InboxReviewCard renders → approve → ingest. The pinned
+#                  resolution is voiced (resolution=pinned); messages land.
+
+[meta]
+id = "dealer_inbox_check_no_pin"
+archetype = "B"
+skills = ["dealer_inbox_check"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the popover Run is blocked while unpinned -----------------------
+
+[[steps]]
+id = "popover_blocked"
+kind = "ui"
+fixture_state = "inbox_ready"
+purpose = "An active profile with no pin: the Skills-popover Run for the pin_required inbox skill is disabled."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-skills"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "ledger-run-dealer_inbox_check"
+expect = "disabled"              # pin-gate: an active profile is not enough.
+
+# ---- step 2: slash-launch anyway → the pin_required STOP card ----------------
+
+[[steps]]
+id = "slash_stop"
+skill = "dealer_inbox_check"
+purpose = "Slash launch with no pin → pin_required STOP (never a silent newest-active pick)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+expect_stop = "pin_required"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["error"]               # a typed STOP terminates the run as error.
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+# ---- step 3: pick the vehicle → a NEW pinned run → approve → ingest ----------
+
+[[steps]]
+id = "pick_pinned"
+skill = "dealer_inbox_check"
+purpose = "Pick the vehicle from the STOP picker → a pinned re-launch → review card → approve."
+gate_policy = "approve_safe"
+launch = "stop_picker"
+
+[steps.input_inline]
+pick_label = "2026 Hyundai Tucson Hybrid SEL"
+
+[[steps.resume]]
+on = "inbox_review"
+action = "accept"
+default_decision = "approve"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"                # the pick pinned the re-launch (not inferred).
+
+[[steps.anchors]]
+kind = "no_external_mutation"

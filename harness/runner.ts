@@ -42,6 +42,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { INTAKE_FIELD_META } from "@autobroker/core";
+import { loadDotEnvKeys, loadSecretsIntoEnv } from "@autobroker/tools";
 
 import { loadCase, cellIdFor, PROVIDER_DRIVER_KIND, type Case, type CaseStep, type CaseResume } from "./cases.js";
 import { buildRunDetail, type RunDetail } from "./detail.js";
@@ -56,7 +57,12 @@ import {
   type UiCheck,
   type VerdictDoc,
 } from "./evaluator.js";
-import { snapshotCounts, openReadHandle, type TableCounts } from "./dbReads.js";
+import {
+  snapshotCounts,
+  openReadHandle,
+  externalMutationDbCount,
+  type TableCounts,
+} from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
 import { applyInventorySourceSeeds } from "./seed.js";
@@ -508,6 +514,30 @@ async function readProfileIds(apiBase: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.search_profile_id).filter((x): x is string => typeof x === "string"));
 }
 
+/** The ACTIVE profile ids (the picker / pin candidates). A fixture world that
+ *  seeds exactly one active profile lets a later fixture-backed skill step scope
+ *  its table deltas to that profile (no intake step ran to carry an id). */
+async function readActiveProfileIds(apiBase: string): Promise<string[]> {
+  const res = await fetch(`${apiBase}/api/profiles?status=active`, { method: "GET" });
+  if (!res.ok) return [];
+  const rows = (await res.json()) as Array<{ search_profile_id?: string }>;
+  return rows.map((r) => r.search_profile_id).filter((x): x is string => typeof x === "string");
+}
+
+/** Capture the keystone external-mutation DB scan total at a step's BEFORE
+ *  moment (a read-only scan; the handle is opened+closed here). The
+ *  no_external_mutation anchor subtracts this baseline so the keystone measures
+ *  the RUN's delta, not pre-existing fixture rows (e.g. the seeded submitted
+ *  lead a dealer_inbox_check sweep requires as its discovery anchor). */
+function captureMutationBaseline(): number {
+  const { db, close } = openReadHandle();
+  try {
+    return externalMutationDbCount(db).total;
+  } finally {
+    close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // evaluate one step → verdict.json (the Monitor, encoded)
 // ---------------------------------------------------------------------------
@@ -532,6 +562,10 @@ async function evaluateStep(args: {
    *  reflects the fixture-installed world (the deterministic setup IS the
    *  ground truth), not a nonexistent run terminal. */
   runlessFixture?: boolean;
+  /** The keystone external-mutation DB scan total captured BEFORE the run. The
+   *  no_external_mutation anchor subtracts it (the run's delta, not pre-existing
+   *  fixture rows). Omitted → 0 (absolute-count behavior, unchanged). */
+  externalMutationBaseline?: number;
 }): Promise<VerdictDoc> {
   const { apiBase, c, step, runId, detail, before, after, profileId, layer } = args;
   const ctx: EvalContext = {
@@ -539,6 +573,7 @@ async function evaluateStep(args: {
     before,
     after,
     runWindow: { from: detail.events[0]?.ts ?? "", to: detail.events[detail.events.length - 1]?.ts ?? "" },
+    externalMutationBaseline: args.externalMutationBaseline ?? 0,
   };
 
   // Score each anchor through the read-only DB handle.
@@ -925,6 +960,35 @@ async function driveResumeScriptDom(
       // The counter must read complete (every row decided) before submit.
       await driver.checkBatchCounter(targets.length, targets.length);
       await driver.clickBatchSubmit(maxMs);
+    } else if (resume.on === "inbox_review") {
+      // The inbox-check review card renders on the gate-banner track. It mirrors
+      // the batch_review machinery (the suspend payload carries the same
+      // form_kind:"batch_review" + spec_inline.targets[{dealer_id,name,…}], so
+      // readBatchSuspendPayload reads it unchanged) but uses the inbox- testids
+      // and an `unrouted` backstop. Approve the routed dealers (or decline).
+      if (batch === undefined) {
+        throw new Error("ui lane: inbox_review resume reached with no batch drive context");
+      }
+      await driver.waitForInboxReviewCard(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      const { targets } = await batch.readSuspend();
+      if (resume.action !== "accept") {
+        // Decline twin: terminal, zero writes — no row decisions needed.
+        await driver.screenshot("inbox-card-decline");
+        await driver.clickInboxDecline();
+        continue;
+      }
+      const plan = planBatchRowDecisions(resume.rows ?? [], resume.defaultDecision, targets);
+      if (plan.kind === "select_all") {
+        await driver.clickInboxSelectAll();
+      } else {
+        for (const d of plan.decisions) {
+          await driver.decideInboxRow(d.dealerId, d.decision);
+        }
+      }
+      // The counter must read complete (every row decided) before submit.
+      await driver.checkInboxCounter(targets.length, targets.length);
+      await driver.clickInboxSubmit(maxMs);
     } else if (resume.on === "data_collection") {
       await driver.waitForIntakeForm(maxMs);
       await driver.checkFormRenderedBeforeProse();
@@ -1304,6 +1368,14 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         }
         await applyFixtureState(host.apiBase, step.fixtureState);
         await driver.reloadBrowser(stepMaxMs); // re-read the freshly-installed world.
+        // A fixture world that seeds exactly one active profile + no intake step
+        // to carry an id: adopt that profile as the scope target so later skill
+        // steps measure profile-scoped table deltas honestly. Only the first
+        // single-active install seeds it; an explicit profile_scope_from wins.
+        if (latestProfileId === null) {
+          const active = await readActiveProfileIds(host.apiBase);
+          if (active.length === 1) latestProfileId = active[0]!;
+        }
       }
 
       // ---- pure-UI step (kind="ui"): a user does DOM actions, no run --------
@@ -1376,6 +1448,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       }
 
       const before = snapshotCounts(scopeProfileId);
+      const mutationBaseline = captureMutationBaseline();
       const beforeIds = await readProfileIds(host.apiBase);
 
       // ---- start the run BY USER ACTION -----------------------------------
@@ -1412,7 +1485,9 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       // ---- drive the resume script as DOM actions, then await the terminal -
       // batch_review steps get the live suspend reader (name→dealer_id + the
       // <8KB bound) and the cross-step row-count expectation when declared.
-      const hasBatchResume = step.resume.some((r) => r.on === "batch_review");
+      const hasBatchResume = step.resume.some(
+        (r) => r.on === "batch_review" || r.on === "inbox_review",
+      );
       let batchCtx: BatchDriveContext | undefined;
       if (hasBatchResume) {
         let expectRowCount: number | null = null;
@@ -1445,7 +1520,15 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         await driver.screenshot("post-sse-break");
       }
       const uiTerminal = await driver.waitForTerminal(stepMaxMs);
-      await driver.checkTerminalSummaryVisible(uiTerminal);
+      // A FRIENDLY typed STOP (no_lead_submitted) terminates `error` but the UI
+      // deliberately renders a calm StopCard INSTEAD OF the turn-error line — so
+      // the terminal-summary error check would falsely RED. The checkStopCard
+      // call below is the terminal evidence for that case (the picker/CTA stops
+      // still render turn-error alongside the card, so they keep this check).
+      const friendlyStop = step.expectStop === "no_lead_submitted";
+      if (!friendlyStop) {
+        await driver.checkTerminalSummaryVisible(uiTerminal);
+      }
       if (step.edge === "sse_break" && uiTerminal === "done") {
         // The recovery must not have duplicated the rendering: the geosearch
         // confirm summary appears exactly once on exactly one assistant turn.
@@ -1525,6 +1608,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         lane: "ui",
         domChecks: [...driver.checks],
         waiver,
+        externalMutationBaseline: mutationBaseline,
       });
       const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
         "verdict.json": verdict,
@@ -1557,6 +1641,14 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function run(argv: string[]): Promise<number> {
+  // Self-resolve the provider key BEFORE any model/provider call or the gate-⑤
+  // key-presence preflight, so `pnpm harness` needs no manual `source .env`. The
+  // .env loader is data-dir-independent (it fills the gap even though the harness
+  // sets an ISOLATED AUTOBROKER_DATA_DIR whose keys.json is empty); keys.json runs
+  // after and wins for a direct run against the default data dir. NO-CLOBBER means
+  // an already-exported key still wins over both. Both missing = no-op.
+  loadDotEnvKeys();
+  loadSecretsIntoEnv();
   const opts = parseArgs(argv);
   switch (opts.command) {
     case "intake":

@@ -41,6 +41,7 @@ import {
   type BootRecoveryReport,
 } from "@autobroker/workflows";
 import {
+  loadDotEnvKeys,
   loadSecretsIntoEnv,
   loadEnvConfigIntoEnv,
   getDb,
@@ -82,10 +83,13 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // (1) Telemetry kill — belt before construction (honored since core 1.37.0).
   process.env.MASTRA_TELEMETRY_DISABLED ??= "1";
 
-  // (1b) Seed the user-supplied API keys into process.env from the persisted
-  // keys file BEFORE the registry / Mastra is constructed, so the first provider
-  // call and the first geocode see the stored keys (the providers + geocoder
-  // resolve their key from the env at call time). Missing file = no-op.
+  // (1b) Seed the user-supplied API keys into process.env BEFORE the registry /
+  // Mastra is constructed, so the first provider call and the first geocode see
+  // the stored keys (the providers + geocoder resolve their key from the env at
+  // call time). Precedence: ambient env wins; loadDotEnvKeys fills any gap from a
+  // data-dir-independent repo `.env` (NO-CLOBBER); loadSecretsIntoEnv runs LAST so
+  // the canonical keys.json wins over `.env`. Either missing file = no-op.
+  loadDotEnvKeys();
   loadSecretsIntoEnv();
 
   // (1b') Seed the persisted operational env-config overrides (the editable

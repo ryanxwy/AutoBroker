@@ -56,3 +56,26 @@ export const AuditFlagSchema = z
   .describe("One deterministic, code-stable audit finding (computed in calc).");
 
 export type AuditFlag = z.infer<typeof AuditFlagSchema>;
+
+/**
+ * AuditFinding — the NEW deterministic finding shape emitted by the 10-check
+ * quote audit. One firing check → one finding.
+ *
+ * Distinct from the reserved {@link AuditFlagSchema} above (cents-based, a
+ * later phase owns it). `code` is a PLAIN STRING, not a closed enum: most codes
+ * are a fixed UPPERCASE set (MATH_SANITY, DOC_FEE_CAP, …) but add-on findings
+ * carry a dynamic `ADD_ON_<NAME>` suffix, so the code space is open. Severity is
+ * the surfaced bucket ("info" | "warn" | "block"). `suggestion` is always a
+ * concrete, non-empty next step.
+ */
+export const AuditFindingSchema = z.object({
+  /** Stable identifier — UPPERCASE fixed set or dynamic `ADD_ON_<NAME>`. */
+  code: z.string(),
+  /** Surfaced severity bucket. */
+  severity: z.enum(["info", "warn", "block"]),
+  /** What fired, user-facing. No trailing period convention from the checks. */
+  text: z.string(),
+  /** Concrete next step — always non-empty. */
+  suggestion: z.string(),
+});
+export type AuditFinding = z.infer<typeof AuditFindingSchema>;

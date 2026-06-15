@@ -298,6 +298,81 @@ export const ThreadListSchema = z.array(ThreadRowSchema);
 export type ThreadList = z.infer<typeof ThreadListSchema>;
 
 // ---------------------------------------------------------------------------
+// Inventory candidates — GET /api/profiles/:id/inventory-compare: the
+// deterministic ranker payload (candidates + header tallies). Listings ≠
+// quotes: these are public-website inventory candidates ranked against the
+// profile, never negotiated out-the-door quotes. A passthrough candidate row
+// keeps extra server fields tolerated; the panel reads the named columns it
+// knows (full vin, stock_number, price, match_status chip, rank reasons).
+// ---------------------------------------------------------------------------
+
+export const InventoryCandidateRowSchema = z
+  .object({
+    listing_id: z.string(),
+    vin: z.string().nullable(),
+    stock_number: z.string().nullable(),
+    year: z.number().nullable(),
+    make: z.string().nullable(),
+    model: z.string().nullable(),
+    trim: z.string().nullable(),
+    exterior_color: z.string().nullable(),
+    listed_price: z.number().nullable(),
+    msrp: z.number().nullable(),
+    inventory_status: z.string(),
+    dealer_id: z.string(),
+    dealer_name: z.string().nullable(),
+    distance_miles: z.number().nullable(),
+    score: z.number(),
+    reasons: z.array(z.string()),
+    match_status: z.string(),
+  })
+  .passthrough();
+export type InventoryCandidateRow = z.infer<typeof InventoryCandidateRowSchema>;
+
+export const InventoryCompareResultSchema = z
+  .object({
+    candidates: z.array(InventoryCandidateRowSchema),
+    scannedAtMax: z.string().nullable(),
+    totalListings: z.number(),
+    recommendedCount: z.number(),
+  })
+  .passthrough();
+export type InventoryCompareResult = z.infer<typeof InventoryCompareResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Quote compare — GET /api/profiles/:id/quote-compare: the deterministic compare
+// ranker payload (finance + lease buckets, both always present, gated by the
+// profile's financing preference). Each ranked row carries OTD + the
+// preformatted APR/MF + down/DAS + monthly + the latest-audit flag codes; NO
+// budget anywhere. A tolerant (passthrough) shape keeps extra server fields.
+// ---------------------------------------------------------------------------
+
+export const QuoteCompareRowSchema = z
+  .object({
+    rank: z.number(),
+    dealer_id: z.string(),
+    dealer_name: z.string(),
+    otd_total: z.number().nullable(),
+    apr_or_mf: z.string(),
+    down_or_das: z.number().nullable(),
+    monthly: z.number().nullable(),
+    audit_flag_summary: z.array(z.string()),
+    financing_mode: z.string(),
+  })
+  .passthrough();
+export type QuoteCompareRow = z.infer<typeof QuoteCompareRowSchema>;
+
+export const QuoteCompareResultSchema = z
+  .object({
+    financingPreference: z.string().nullable(),
+    finance: z.array(QuoteCompareRowSchema),
+    lease: z.array(QuoteCompareRowSchema),
+    totalRanked: z.number(),
+  })
+  .passthrough();
+export type QuoteCompareResult = z.infer<typeof QuoteCompareResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Skills manifest — GET /api/skills. routes.ts:78-86 (SKILL_MANIFEST), returned
 // as a single-element array (routes.ts:279).
 // ---------------------------------------------------------------------------
@@ -383,8 +458,8 @@ export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
 // descriptor + its effective `value` exactly — flat, all-required.
 // ---------------------------------------------------------------------------
 
-/** The two editable env ids the route accepts on PUT. */
-export const ENV_EDITABLE_IDS = ["gmail_backend", "chrome_headless"] as const;
+/** The editable env ids the route accepts on PUT. */
+export const ENV_EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless"] as const;
 export type EnvEditableId = (typeof ENV_EDITABLE_IDS)[number];
 
 /** One curated env-var row with its current effective value — mirrors the store
@@ -397,6 +472,7 @@ export const EnvVarStateSchema = z.object({
   classification: z.enum([
     "editable-enum",
     "editable-bool",
+    "editable-text",
     "read-only-status",
     "read-only-path",
   ]),

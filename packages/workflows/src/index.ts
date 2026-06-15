@@ -367,6 +367,84 @@ export {
   type PipelineResetResume,
 } from "./pipelineResetContracts.js";
 
+// The inventory_compare skill contracts (typed input/output, the flat ranked
+// candidate shape, the typed STOP vocabulary). Skill-local, single-use (see the
+// header rationale in the contracts file). Zero-LLM, read-only, no suspend.
+export {
+  InventoryCompareInputSchema,
+  InventoryCompareOutputSchema,
+  InventoryCompareStopError,
+  RankedCandidateSchema,
+  INVENTORY_COMPARE_WORKFLOW_ID,
+  type InventoryCompareInput,
+  type InventoryCompareOutput,
+  type InventoryCompareStopCode,
+  type RankedCandidate,
+} from "./inventoryCompareContracts.js";
+
+// The inventory_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → rank live listings → render). Test-only deps seam exported
+// alongside.
+export {
+  inventoryCompareWorkflow,
+  __setInventoryCompareDepsForTests,
+  __resetInventoryCompareDepsForTests,
+  type InventoryCompareWorkflowDeps,
+} from "./inventoryCompare.js";
+
+// The quote_audit skill contracts (typed input/output, the per-quote row shape,
+// the typed STOP vocabulary). Skill-local, single-use (see the header rationale
+// in the contracts file). Zero-LLM, read-only-plus-idempotent-audit-upsert, no
+// suspend.
+export {
+  QuoteAuditInputSchema,
+  QuoteAuditOutputSchema,
+  QuoteAuditRowSchema,
+  QuoteAuditStopError,
+  QUOTE_AUDIT_WORKFLOW_ID,
+  type QuoteAuditInput,
+  type QuoteAuditOutput,
+  type QuoteAuditRow,
+  type QuoteAuditStopCode,
+  type BestOtd,
+  type FlagCounts,
+} from "./quoteAuditContracts.js";
+
+// The quote_audit skill workflow (4 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → load quotes/peers/incentives → run the 10-check audit →
+// idempotent UPSERT → render). Test-only deps seam exported alongside.
+export {
+  quoteAuditWorkflow,
+  __setQuoteAuditDepsForTests,
+  __resetQuoteAuditDepsForTests,
+  type QuoteAuditWorkflowDeps,
+} from "./quoteAudit.js";
+
+// The quote_compare skill contracts (typed input/output, the flat ranked compare
+// row shape, the typed STOP vocabulary). Skill-local, single-use (see the header
+// rationale in the contracts file). Zero-LLM, read-only, no suspend.
+export {
+  QuoteCompareInputSchema,
+  QuoteCompareOutputSchema,
+  QuoteRankingSchema,
+  QuoteCompareStopError,
+  QUOTE_COMPARE_WORKFLOW_ID,
+  type QuoteCompareInput,
+  type QuoteCompareOutput,
+  type QuoteCompareStopCode,
+  type QuoteRankingRow,
+} from "./quoteCompareContracts.js";
+
+// The quote_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → rank quotes (gated by preference) → confirm). Test-only deps
+// seam exported alongside.
+export {
+  quoteCompareWorkflow,
+  __setQuoteCompareDepsForTests,
+  __resetQuoteCompareDepsForTests,
+  type QuoteCompareWorkflowDeps,
+} from "./quoteCompare.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

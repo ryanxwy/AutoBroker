@@ -47,6 +47,8 @@ import {
   listProfileThreadRows,
   listProfileMessageRows,
   buildDigestView,
+  rankInventoryForProfile,
+  rankQuotesForProfile,
   update as updateProfile,
   close as closeProfile,
   restore as restoreProfile,
@@ -185,8 +187,8 @@ const TestKeyBodySchema = z.object({
  *  store is ever called (the L1 fuse var is structurally unreachable here). The
  *  store re-checks editable + allowedValues as defense-in-depth. */
 const SetEnvBodySchema = z.object({
-  id: z.enum(["gmail_backend", "chrome_headless"]),
-  value: z.string().min(1),
+  id: z.enum(["gmail_backend", "gmail_account", "chrome_headless"]),
+  value: z.string().min(1).max(254),
 });
 
 /** Dependencies the route module needs (the server wires these). */
@@ -555,6 +557,45 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       buildDigestView(db, { profileId: profile_id ?? null, nowMs: Date.now() }),
     );
   });
+
+  // ---- GET /api/profiles/:id/inventory-compare — read-only ranked listings ---
+  // The Inventory candidates canvas section reads this; delegates DOWN into the
+  // tools-layer ranker closure (routes never open the product DB or run SQL —
+  // the SQLite invariant). Listings ≠ quotes: the payload is public-website
+  // inventory candidates, ranked against the profile, never negotiated quotes.
+  app.get(
+    "/api/profiles/:id/inventory-compare",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id } = req.params as { id: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      return withDb((db) => rankInventoryForProfile(db, id));
+    },
+  );
+
+  // ---- GET /api/profiles/:id/quote-compare — read-only ranked quotes -------
+  // The Quote compare canvas section reads this; delegates DOWN into the
+  // tools-layer compare ranker closure (routes never open the product DB or run
+  // SQL — the SQLite invariant). The payload is the two mode buckets (finance +
+  // lease, both always present) gated by the profile's financing preference,
+  // each ranked by OTD, joined to the latest audit per quote. No budget anywhere.
+  app.get(
+    "/api/profiles/:id/quote-compare",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id } = req.params as { id: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      const result = withDb((db) => rankQuotesForProfile(db, id));
+      return {
+        ...result,
+        totalRanked: result.finance.length + result.lease.length,
+      };
+    },
+  );
 
   // ---- PATCH /api/profiles/:id — preference write-through ------------------
   // Delegates to the tools-layer update(); identity fields are frozen at

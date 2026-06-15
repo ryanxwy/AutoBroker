@@ -21,11 +21,14 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4 # version comes from package.json packageManager
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6 # version comes from package.json packageManager
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # Node 24 (Active LTS). engines>=24.13.0 + .npmrc engine-strict=true make a
+          # Node-22 leg un-installable, so CI runs 24 only (not a [22,24] matrix).
+          node-version: 24
+          # Explicit pnpm cache (setup-node v6 only AUTO-caches npm; explicit is honored).
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -33,3 +36,11 @@ jobs:
       - run: pnpm check:strings
       - run: pnpm lint:deps
       - run: pnpm db:check
+      # Functional UI lane (real-DOM Playwright) — catches UI / runtime-bump
+      # regressions the deterministic gates above cannot (the "gates insufficient"
+      # gap from the Node 22->24 migration). Fixture-mode: no real provider key;
+      # the ui:functional script arms the BLOCK fuse and uses a dummy key.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @autobroker/harness exec playwright install --with-deps chromium
+      - name: UI functional lane
+        run: pnpm ui:functional
