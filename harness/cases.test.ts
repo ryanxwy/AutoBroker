@@ -552,12 +552,13 @@ describe("B3 seed grammar ([[seed.dealer_inventory_sources]])", () => {
           sourceType: "manual",
         },
       ],
+      dealerReplies: null,
     });
   });
 
   it("accepts an explicit source_type and the pending status literal", () => {
     const c = parseCase(seededCase('source_type = "reply_link"\n    status = "pending"'));
-    expect(c.seed?.dealerInventorySources[0]?.sourceType).toBe("reply_link");
+    expect(c.seed?.dealerInventorySources?.[0]?.sourceType).toBe("reply_link");
   });
 
   it("rejects a non-pending status (the seeder writes nothing else)", () => {

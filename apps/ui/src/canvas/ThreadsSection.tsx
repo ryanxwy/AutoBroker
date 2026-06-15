@@ -10,21 +10,25 @@
  * the API client.
  *
  * Budget red line: a thread row renders the dealer name, a subject snippet, the
- * classification chip and a relative date — NEVER a budget, NEVER a raw id.
- * LIGHT paper skin, mirroring the dealer-tiles section.
+ * classification chip, a relative date and (when extraction failed for any of
+ * its messages) a "extraction failed, will retry" badge — NEVER a budget, NEVER
+ * a raw id. LIGHT paper skin, mirroring the dealer-tiles section.
  */
 
 import type { AsyncState } from "../api/useApi.js";
 
 /** One thread row the section renders. A local row type — the section never
  *  imports the wire schema (that lands when the route is wired). Extra server
- *  fields are tolerated and ignored. */
+ *  fields are tolerated and ignored. `extract_failed` rides through the
+ *  passthrough wire as the SQLite EXISTS result (0|1 over the wire, true in a
+ *  hand-built test row) — the render coerces it truthily. */
 export interface ThreadRow {
   thread_id: string;
   dealer_name: string | null;
   subject: string | null;
   state: string | null;
   updated_at: string | null;
+  extract_failed?: boolean;
   [key: string]: unknown;
 }
 
@@ -61,6 +65,14 @@ function ThreadRowView({ row }: { row: ThreadRow }): JSX.Element {
       </div>
       {row.subject !== null && row.subject !== "" && <div className="t-addr">{row.subject}</div>}
       {when !== "" && <div className="t-status muted">{when}</div>}
+      {/* A message in this thread failed quote extraction (the dealer_reply_extract
+          skill flips messages.quote_extraction_status to 'failed'). The flag rides
+          the passthrough wire as a 0|1 int, so coerce truthily. */}
+      {Boolean(row.extract_failed) && (
+        <span className="mini-chip" data-testid="message-extract-failed-badge">
+          extraction failed, will retry
+        </span>
+      )}
     </div>
   );
 }

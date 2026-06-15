@@ -35,8 +35,27 @@ export type {
 } from "./types.js";
 
 // Zod schemas (flat, required, explicit-null structured-output convention).
-export { DealerQuoteSchema, FinancingModeSchema } from "./schema/dealerQuote.js";
-export type { DealerQuote, FinancingMode } from "./schema/dealerQuote.js";
+export {
+  DealerQuoteSchema,
+  DealerReplyQuoteRowSchema,
+  MoneyLineSchema,
+  FinancingModeSchema,
+  QuoteFormatSchema,
+  IntentSchema,
+  ExtractorProviderSchema,
+  ExtractionMethodSchema,
+  reclassifyRule2Failures,
+} from "./schema/dealerQuote.js";
+export type {
+  DealerQuote,
+  DealerReplyQuoteRow,
+  MoneyLine,
+  FinancingMode,
+  QuoteFormat,
+  Intent,
+  ExtractorProvider,
+  ExtractionMethod,
+} from "./schema/dealerQuote.js";
 
 export {
   AuditFlagSchema,

@@ -1,0 +1,193 @@
+# harness/cases/dealer_reply_extract.live_extract.toml — the LIVE-LLM acceptance
+# for dealer_reply_extract (skill #7, the sole live-LLM keystone of the email
+# wave). UI lane, DeepSeek: a real dashboard journey that creates a Tucson
+# profile, then launches /dealer_reply_extract over a SEEDED dealer-reply corpus
+# and asserts the extractor wrote real quote rows.
+#
+# WHY A SEEDED CORPUS: dealer_reply_extract's input is "inbound replies already
+# in the mailbox". A valid candidate needs BOTH halves to line up — a product
+# `messages` row (direction='inbound', quote_extraction_status='pending',
+# profile-scoped, thread→dealer resolvable) AND the matching fake_mailbox
+# message the gmail adapter fetches body+attachment bytes by (its message_id ==
+# the inbound row's gmail_message_id). The [[seed.dealer_replies]] section
+# materializes both, plus the dealer (bound to the profile) and the thread, into
+# the ISOLATED case DB right before the dealer_reply_extract step (the runner's
+# applyDealerReplySeeds, mirroring the inventory_link_scan source bootstrap).
+#
+# THE CORPUS (4 replies, ALL extractable via TEXT — no image/OCR, since the
+# on-device OCR helper is not wired in this lane):
+#   1. text price quote        — body carries selling price + doc fee + OTD.
+#   2. PDF text-layer quote     — a real text-layer PDF attachment whose pdfjs
+#      extraction yields "Selling Price: $34,250 / Doc Fee: $85 / OTD $38,910".
+#   3. no_quote reply           — a future-promise body, no real numbers → the
+#      message succeeds with ZERO rows (intent set, not a failure).
+#   4. finance + lease two-mode — body quotes BOTH a finance APR+term AND a
+#      lease term+money-factor → two rows under the same message (the
+#      UNIQUE(source_gmail_message_id, financing_mode) key permits both).
+#
+# ANCHORS = FUNCTIONAL INVARIANTS (never exact LLM values):
+#   - run_status done             — the run reached terminal.
+#   - table_min_rows dealer_quotes delta_min=3 — the 3 quote-bearing replies
+#     (text + pdf + ≥1 of the two-mode reply) wrote ≥3 rows. Conservative: the
+#     two-mode reply alone could write 2, but we only require the floor.
+#   - no_external_mutation        — Gmail is read-only; the skill never sends.
+#   - cost_and_time               — the live per-message LLM $/ms is recorded
+#     (this is the live-LLM skill — the ledger is NOT optional/empty).
+#   - malformed_tool_call absent  — #1244 fail-closed held (no silent tool-skip).
+#
+# DB-LEVEL INVARIANTS THE CONTROLLER ALSO CHECKS POST-RUN (not anchorable here):
+#   - the no_quote reply's message flips to 'succeeded' with 0 quote rows;
+#   - every processed message flips quote_extraction_status 'pending'→'succeeded'
+#     (intent non-null) and a failed extract flips to 'failed' (re-queued);
+#   - the two-mode reply yields rows for BOTH financing_mode='finance' AND
+#     financing_mode='lease' under one source_gmail_message_id.
+
+[meta]
+id = "dealer_reply_extract_live_extract"
+archetype = "B"
+skills = ["search_profile_intake", "dealer_reply_extract"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- the dealer-reply corpus (materialized before the extract step) ----------
+
+# 1. TEXT price quote — selling price + doc fee + OTD live in the body.
+[[seed.dealer_replies]]
+dealer_name = "Alpha Hyundai"
+dealer_website = "alpha-hyundai.example.com"
+from = "Sandra Sales <sandra@alpha-hyundai.example.com>"
+subject = "Re: 2026 Tucson Hybrid Limited — your quote"
+# Single-line with \n escapes — the harness TOML parser has no multi-line """ form.
+body = "Hi! Happy to put numbers together on the 2026 Tucson Hybrid Limited.\n\nSelling price: $33,990\nDoc fee: $85\nEstimated out-the-door (Irvine, CA): $38,420\n\nThis is good through the end of the month. Let me know if you'd like to come in."
+
+# 2. PDF text-layer quote — the prices live in the attachment's text layer.
+#    This base64 is a minimal single-page PDF whose pdfjs text-layer extraction
+#    yields: "Bravo Hyundai 2026 Tucson Limited Quote / Selling Price: $34,250 /
+#    Doc Fee: $85 / Out-the-Door Total: $38,910" (verified against the product
+#    attachmentText extractor). The body itself carries no numbers.
+[[seed.dealer_replies]]
+dealer_name = "Bravo Hyundai"
+dealer_website = "bravo-hyundai.example.com"
+from = "Bravo Quotes <quotes@bravo-hyundai.example.com>"
+subject = "Your 2026 Tucson quote (attached)"
+body = "Thanks for reaching out — your quote is attached as a PDF. Reply with any questions."
+
+[seed.dealer_replies.attachment]
+filename = "tucson-quote.pdf"
+mime_type = "application/pdf"
+data_base64 = "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA0IDAgUiA+PiA+PiAvQ29udGVudHMgNSAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iago1IDAgb2JqCjw8IC9MZW5ndGggMjI3ID4+CnN0cmVhbQpCVCAvRjEgMTIgVGYgNzIgNzIwIFRkIChCcmF2byBIeXVuZGFpIDIwMjYgVHVjc29uIExpbWl0ZWQgUXVvdGUpIFRqIEVUCkJUIC9GMSAxMiBUZiA3MiA2OTYgVGQgKFNlbGxpbmcgUHJpY2U6ICQzNCwyNTApIFRqIEVUCkJUIC9GMSAxMiBUZiA3MiA2NzIgVGQgKERvYyBGZWU6ICQ4NSkgVGogRVQKQlQgL0YxIDEyIFRmIDcyIDY0OCBUZCAoT3V0LXRoZS1Eb29yIFRvdGFsOiAkMzgsOTEwKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAwMzExIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNTg5CiUlRU9G"
+
+# 3. no_quote reply — a future promise, no real numbers → succeeds with 0 rows.
+[[seed.dealer_replies]]
+dealer_name = "Charlie Hyundai"
+dealer_website = "charlie-hyundai.example.com"
+from = "Carl Client Care <carl@charlie-hyundai.example.com>"
+subject = "Re: 2026 Tucson Hybrid availability"
+body = "Thanks for your interest in the 2026 Tucson Hybrid! We're expecting more inventory next week and I'll send pricing as soon as I have firm numbers. Talk soon."
+
+# 4. finance + lease two-mode reply — both modes quoted → two rows, one message.
+[[seed.dealer_replies]]
+dealer_name = "Delta Hyundai"
+dealer_website = "delta-hyundai.example.com"
+from = "Dana Deals <dana@delta-hyundai.example.com>"
+subject = "Re: 2026 Tucson Hybrid Limited — finance & lease"
+body = "Here are both ways to go on the 2026 Tucson Hybrid Limited:\n\nFINANCE: 5.9% APR for 60 months, $3,000 down, about $612/month.\nLEASE: 36 months, money factor 0.00185, $2,995 due at signing, about $429/month, 12,000 miles per year.\n\nSelling price either way is $35,500. Let me know which you'd prefer."
+
+# ---- step 1: intake (the journey root — creates the profile) -----------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — dealer_reply_extract's input."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_reply_extract over the seeded corpus ----------------------
+
+[[steps]]
+id = "extract_replies"
+skill = "dealer_reply_extract"
+purpose = "Extract dealer quotes from the seeded reply corpus (the live-LLM keystone)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+# The 3 quote-bearing replies (text + pdf-text-layer + the two-mode reply) write
+# ≥3 dealer_quotes rows. Conservative floor (the two-mode reply alone may add 2).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_quotes"
+scope = "profile"
+delta_min = 3
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+# The live-LLM skill records real per-message $/ms — the ledger is NOT optional.
+[[steps.anchors]]
+kind = "cost_and_time"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

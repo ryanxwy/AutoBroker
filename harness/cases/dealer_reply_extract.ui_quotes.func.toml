@@ -1,0 +1,73 @@
+# harness/cases/dealer_reply_extract.ui_quotes.func.toml — FUNCTIONAL lane: the
+# dealer_reply_extract READ surfaces (the raw "Extracted quotes" Canvas section +
+# the per-thread message-extract-failed badge).
+#
+# dealer_reply_extract WRITES dealer_quotes rows (the raw extraction output) and
+# flips messages.quote_extraction_status to 'succeeded'/'failed'. This case drives
+# the Canvas read projections of that after-state on the offline functional lane
+# (no live LLM; Δ=0 BY CONSTRUCTION — a runless kind="ui" step snapshots
+# before==after with no run between, so the pure read surfaces reach no side
+# effect).
+#
+#   step 1  dealer_reply_extract_world → the active profile's Canvas projects:
+#           the "Extracted quotes" section (canvas-quotes) with THREE raw quote
+#           rows across modes (finance + lease + CASH — the cash row is the one
+#           the ranked /quote-compare finance/lease buckets would omit), AND the
+#           Threads section's message-extract-failed-badge on the one thread whose
+#           message carries quote_extraction_status='failed'.
+#
+# WHY THESE ANCHORS ARE MEANINGFUL: canvas-quotes visibility proves the raw
+# projection mounts; the row count proves every mode renders (incl. the cash
+# quote the compare buckets drop); the extract-failed badge proves the per-thread
+# EXISTS('failed') flag lights exactly the failed thread (the 'succeeded' thread
+# stays clean). No budget number appears anywhere; the empty state is the twin
+# case dealer_reply_extract.ui_quotes_empty.func.toml.
+
+[meta]
+id = "dealer_reply_extract_ui_quotes_func"
+archetype = "B"
+skills = ["dealer_reply_extract"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the populated raw-quotes section + the extract-failed badge --------
+
+[[steps]]
+id = "extracted_quotes_panel"
+kind = "ui"
+fixture_state = "dealer_reply_extract_world"
+purpose = "The Canvas Extracted-quotes section renders 3 raw quote rows across modes (finance + lease + cash); the message-extract-failed badge renders on the failed thread."
+
+# Click a bound dealer tile (a plain, non-navigating tile) to wait for the active
+# projection (incl. the Extracted-quotes + Threads sections) to mount before the
+# anchors below.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-dealer-tile"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-quotes"
+expect = "visible"
+
+# THREE raw quote rows — every financing mode renders, including the cash quote
+# the ranked compare buckets omit. Exact match (NOT prefix): the section wrapper
+# carries a different testid, so an exact selector counts only the rows.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-quote-row"
+expect = "count"
+count = 3
+match = "exact"
+
+# The per-thread extract-failed badge renders for the failed thread (the EXISTS
+# flag lights exactly the thread whose message carries 'failed').
+[[steps.anchors]]
+kind = "dom_state"
+testid = "message-extract-failed-badge"
+expect = "visible"

@@ -1,0 +1,52 @@
+# harness/cases/dealer_reply_extract.ui_quotes_empty.func.toml — FUNCTIONAL lane:
+# the empty "Extracted quotes" section (an active profile with NO quotes yet).
+#
+# The twin of dealer_reply_extract.ui_quotes.func.toml: the active_search fixture
+# seeds one active Hyundai profile + two bound dealers but ZERO dealer_quotes. The
+# Canvas Extracted-quotes section then renders the empty state with the verbatim
+# "No quotes extracted yet — they appear here as dealer replies are parsed." copy.
+#
+# A separate single-step case (not a second step of the populated case) because
+# each functional case owns one server+DB and apply-fixture is additive — two
+# active-profile worlds in one case would collide on the one-active-per-(account,
+# brand) slot.
+#
+# WHY THIS ANCHOR IS MEANINGFUL: the empty state proves the section renders its
+# zero-quotes copy against a real active profile with no extracted quotes (the
+# read route returns []). No budget number appears. Δ=0 by construction (a runless
+# kind="ui" step).
+
+[meta]
+id = "dealer_reply_extract_ui_quotes_empty_func"
+archetype = "B"
+skills = ["dealer_reply_extract"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "empty_quotes_panel"
+kind = "ui"
+fixture_state = "active_search"
+purpose = "An active profile with no extracted quotes shows the Extracted-quotes empty state with the verbatim zero-quotes copy."
+
+# The active_search fixture seeds dealer tiles; clicking one waits for the active
+# projection (incl. the Extracted-quotes section) to mount.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-dealer-tile"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-quotes"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-quotes-empty"
+expect = "text"
+value = "No quotes extracted yet"

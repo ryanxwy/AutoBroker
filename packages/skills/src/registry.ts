@@ -79,6 +79,9 @@ export const INCENTIVE_SCRAPE_SKILL_ID = "incentive_scrape" as const;
 /** The dealer inbox check skill id (skill #6, email-pull + one batch_review). */
 export const INBOX_CHECK_SKILL_ID = "dealer_inbox_check" as const;
 
+/** The dealer reply extract skill id (skill #7, the sole live-LLM extraction). */
+export const REPLY_EXTRACT_SKILL_ID = "dealer_reply_extract" as const;
+
 /** The dealer hygiene skill id (destructive; three staged batch-review confirms). */
 export const HYGIENE_SKILL_ID = "dealer_hygiene" as const;
 
@@ -219,15 +222,15 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "pin_required",
   },
   {
-    id: "dealer_reply_extract",
+    id: REPLY_EXTRACT_SKILL_ID,
     slash: "/dealer_reply_extract",
     title: "Dealer reply extract",
     summary: "Extract a structured quote from a dealer's email reply (LLM).",
     phase: 3,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["message_id"],
+    status: "implemented",
+    workflowId: REPLY_EXTRACT_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "dealer_quote",
     profilePin: "infer_ok",
   },

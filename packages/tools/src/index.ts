@@ -361,12 +361,46 @@ export {
 export {
   listProfileThreadRows,
   listProfileMessageRows,
+  listProfileQuoteRows,
   listProfileContactEmails,
   listProfileDealerDomains,
   readFirstLeadSubmitAtMs,
   listSuppressedGmailThreadIds,
   listIngestedGmailMessageIds,
 } from "./inbox/reads.js";
+
+// dealer_reply_extract deterministic core — the pure per-message quote-class +
+// price/intent/body-parse classifiers, the attachment fallback tree over the
+// adapter + the attachment-text seam, and the all-or-nothing per-message upsert
+// + mark-processed state machine (quote_id preserved on re-extract).
+export {
+  classifyMessageQuoteClass,
+  normalizeOtdPrice,
+  classifyIntent,
+  parseQuoteFromBody,
+  type MessageQuoteClass,
+  type ClassifyMessageInput,
+  type BodyIntent,
+  type ParsedBodyQuote,
+} from "./replyExtract/classify.js";
+export {
+  prepareAttachments,
+  type AttachmentOutcome,
+  type AttachmentFailureReason,
+  type AttachmentExtractionMethod,
+  type PrepareAttachmentsResult,
+  type PrepareAttachmentsOptions,
+} from "./replyExtract/attachments.js";
+export {
+  persistMessageQuotes,
+  markMessageFailed,
+  type MessageProvenance,
+  type PersistMessageResult,
+} from "./replyExtract/persist.js";
+export {
+  loadReplyExtractCandidates,
+  type ReplyExtractCandidate,
+} from "./replyExtract/candidates.js";
 
 // dealer_hygiene deterministic core — the three GLOBAL detection queries +
 // idempotent suppression pre-filter, the KEEP-biased intent classifier, the

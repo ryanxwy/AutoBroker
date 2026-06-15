@@ -65,7 +65,7 @@ import {
 } from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
-import { applyInventorySourceSeeds } from "./seed.js";
+import { applyDealerReplySeeds, applyInventorySourceSeeds } from "./seed.js";
 import { planBatchRowDecisions, UiDriver } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1366,8 +1366,12 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
     // [[seed.dealer_inventory_sources]] applies ONCE, right before the case's
     // first inventory_link_scan step (the consuming skill) — by then the
     // journey's intake+geosearch steps created the profile and bound the
-    // dealers the seed entries resolve against.
-    let seedsApplied = false;
+    // dealers the seed entries resolve against. [[seed.dealer_replies]] applies
+    // ONCE, right before the case's first dealer_reply_extract step — it CREATES
+    // its own dealer/thread/message corpus (no prior geosearch needed). Each
+    // section tracks its own applied flag so a case may carry both.
+    let inventorySeedsApplied = false;
+    let replySeedsApplied = false;
 
     for (const step of c.steps) {
       // PER-STEP budget: the CLI --max-seconds overrides; else the step's TOML
@@ -1447,11 +1451,15 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         scopeProfileId = latestProfileId;
       }
 
-      // ---- pre-step DB seed (inventory_link_scan source bootstrap) --------
+      // ---- pre-step DB seed (consuming-skill corpus bootstrap) -------------
       // Applied BEFORE the step's before-snapshot, so the seeded rows are part
       // of the baseline: the step's own table deltas measure ONLY what the run
       // wrote (a decline case's Δ=0-exact anchors stay honest).
-      if (!seedsApplied && c.seed !== null && step.skill === "inventory_link_scan") {
+      if (
+        !inventorySeedsApplied &&
+        c.seed?.dealerInventorySources != null &&
+        step.skill === "inventory_link_scan"
+      ) {
         if (scopeProfileId === null) {
           fail(`step "${step.id}": [[seed.*]] needs a profile in scope (run intake first)`);
         }
@@ -1464,7 +1472,28 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
           `[seed] dealer_inventory_sources: ${applied.seeded} row(s) inserted ` +
             `(${applied.sourceIds.length} declared) for profile ${scopeProfileId}`,
         );
-        seedsApplied = true;
+        inventorySeedsApplied = true;
+      }
+      // [[seed.dealer_replies]] → the dealer_reply_extract corpus (dealer +
+      // thread + fake_mailbox message + the matching inbound `messages` row).
+      if (
+        !replySeedsApplied &&
+        c.seed?.dealerReplies != null &&
+        step.skill === "dealer_reply_extract"
+      ) {
+        if (scopeProfileId === null) {
+          fail(`step "${step.id}": [[seed.*]] needs a profile in scope (run intake first)`);
+        }
+        const applied = applyDealerReplySeeds({
+          dbPath: opts.db,
+          profileId: scopeProfileId,
+          replies: c.seed.dealerReplies,
+        });
+        console.error(
+          `[seed] dealer_replies: ${applied.dealers} dealer(s), ${applied.threads} thread(s), ` +
+            `${applied.messages} message(s), ${applied.attachments} attachment(s) for profile ${scopeProfileId}`,
+        );
+        replySeedsApplied = true;
       }
 
       const before = snapshotCounts(scopeProfileId);

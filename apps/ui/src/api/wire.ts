@@ -298,6 +298,36 @@ export const ThreadListSchema = z.array(ThreadRowSchema);
 export type ThreadList = z.infer<typeof ThreadListSchema>;
 
 // ---------------------------------------------------------------------------
+// Extracted quotes — GET /api/profiles/:id/quotes: snake_case rows off the
+// dealer_quotes table joined to dealers for the display name, newest-received
+// first. The RAW per-quote extraction projection the "Extracted quotes" canvas
+// section renders — ALL financing modes (incl. cash), with provenance. Distinct
+// from /quote-compare's ranked finance/lease buckets. quote_id is the React key
+// only (never rendered); NO budget anywhere. A tolerant (passthrough) shape keeps
+// extra server fields.
+// ---------------------------------------------------------------------------
+
+export const QuoteRowSchema = z
+  .object({
+    quote_id: z.string(),
+    dealer_name: z.string().nullable(),
+    financing_mode: z.string().nullable(),
+    otd_total: z.number().nullable(),
+    selling_price: z.number().nullable(),
+    vin: z.string().nullable(),
+    quote_format: z.string().nullable(),
+    intent: z.string().nullable(),
+    extractor_provider: z.string().nullable(),
+    extraction_method: z.string().nullable(),
+    quote_received_at: z.string().nullable(),
+  })
+  .passthrough();
+export type QuoteRow = z.infer<typeof QuoteRowSchema>;
+
+export const QuoteListSchema = z.array(QuoteRowSchema);
+export type QuoteList = z.infer<typeof QuoteListSchema>;
+
+// ---------------------------------------------------------------------------
 // Inventory candidates — GET /api/profiles/:id/inventory-compare: the
 // deterministic ranker payload (candidates + header tallies). Listings ≠
 // quotes: these are public-website inventory candidates ranked against the

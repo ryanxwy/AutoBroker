@@ -292,6 +292,38 @@ export {
   type InboxReviewSuspend,
 } from "./dealerInboxCheckContracts.js";
 
+// The dealer_reply_extract skill workflow (skill #7 — the SOLE live-LLM
+// keystone: 4 flat steps, ZERO suspend, autonomous; per-message single
+// emit_result extraction with the #1244 fail-closed detector armed). Test-only
+// deps seam exported alongside the contracts the server descriptor builds on.
+export {
+  dealerReplyExtractWorkflow,
+  DEALER_REPLY_EXTRACT_WORKFLOW_ID,
+  __setDealerReplyExtractDepsForTests,
+  __resetDealerReplyExtractDepsForTests,
+  type DealerReplyExtractWorkflowDeps,
+} from "./dealerReplyExtract.js";
+
+// The dealer_reply_extract skill contracts (typed input/output, the single
+// emit_result extraction contract + the fenced prompt, the threaded state, and
+// the typed STOP vocabulary). Skill-local, single-use (see the header
+// rationale). Autonomous — no suspend/resume schema, no `declined` member.
+export {
+  DealerReplyExtractInputSchema,
+  DealerReplyExtractOutputSchema,
+  DealerReplyExtractEmitSchema,
+  DealerReplyExtractStopError,
+  MessageIntentSchema,
+  buildDealerReplyExtractPrompt,
+  capReplySnapshot,
+  REPLY_SNAPSHOT_CAP_CHARS,
+  type DealerReplyExtractInput,
+  type DealerReplyExtractOutput,
+  type DealerReplyExtractEmit,
+  type DealerReplyExtractStopCode,
+  type MessageIntent,
+} from "./dealerReplyExtractContracts.js";
+
 // The dealer_hygiene skill workflow (DESTRUCTIVE — three strictly-ordered
 // batch_review suspends 5a/5b/5c with a deferred single-transaction commit;
 // decline at any stage = zero writes for the whole run; zero-LLM). Test-only

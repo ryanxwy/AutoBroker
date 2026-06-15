@@ -41,6 +41,7 @@ import {
   KeyProbeResultSchema,
   InventoryCompareResultSchema,
   QuoteCompareResultSchema,
+  QuoteListSchema,
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
@@ -62,6 +63,7 @@ import {
   type FormDecisionBody,
   type InventoryCompareResult,
   type QuoteCompareResult,
+  type QuoteList,
   type KeyPresenceResponse,
   type KeyProbeResult,
   type Mode,
@@ -307,6 +309,17 @@ export class ApiClient {
       this.url(`/api/profiles/${encodeURIComponent(id)}/quote-compare`),
     );
     return decode(res, QuoteCompareResultSchema);
+  }
+
+  /** GET /api/profiles/:id/quotes → the RAW extracted dealer-quote rows bound to
+   *  one profile, newest-received first (read-only projection; 404 for a missing
+   *  profile). The Extracted quotes canvas section renders these — every
+   *  financing mode (incl. cash), with provenance, never a budget. */
+  async listProfileQuotes(id: string): Promise<QuoteList> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/quotes`),
+    );
+    return decode(res, QuoteListSchema);
   }
 
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */
