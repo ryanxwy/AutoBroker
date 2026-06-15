@@ -480,6 +480,15 @@ export class UiDriver {
     await this.page.click(sel);
   }
 
+  /** Launch a skill by clicking a Canvas control that itself starts a run (e.g.
+   *  the Threads section's "Retry failed extractions" button → escalate:true).
+   *  Waits for the button to render, then clicks it — the host's onClick POSTs
+   *  the start and navigates to /runs/:id (the caller's waitForRunRoute follows). */
+  async launchSkillFromCanvasButton(testId: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid(testId), { timeout: timeoutMs });
+    await this.page.click(tid(testId));
+  }
+
   // ---- batch_review verbs (the gate-banner track's decision card) -----------
 
   /** Wait for the batch_review card to render on the gate-banner track. */

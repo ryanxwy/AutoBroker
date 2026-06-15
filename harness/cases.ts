@@ -125,11 +125,19 @@ const RESUME_STRUCTURAL_KEYS = new Set([
 const CONTENT_FROM_SOURCES = new Set(["narrative.profile", "suspend.targets"]);
 
 /** How the UI lane starts a step: chat-rail slash text, chat-rail freeform
- *  prose, the Skills popover Run button, or a click on the PREVIOUS step's
+ *  prose, the Skills popover Run button, a click on the PREVIOUS step's
  *  STOP-card profile picker (stop_picker — a NEW run, never a resume; the
- *  pick-by-vehicle-label key rides input_inline.pick_label). Defaults from
- *  narrative.input_mode. */
-const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "skills_popover", "stop_picker"]);
+ *  pick-by-vehicle-label key rides input_inline.pick_label), or a Canvas control
+ *  that itself starts a run (canvas_button — the button's testid rides
+ *  input_inline.button_testid; e.g. the Threads "Retry failed extractions"
+ *  button → escalate:true). Defaults from narrative.input_mode. */
+const LaunchSchema = z.enum([
+  "chat_slash",
+  "chat_freeform",
+  "skills_popover",
+  "stop_picker",
+  "canvas_button",
+]);
 
 /** The typed profile-resolution + inbox-precondition STOP codes a step may
  *  expect. The first three mirror the workflow's GeosearchStopCode wire values;
@@ -323,7 +331,12 @@ export interface CaseResume {
 }
 
 /** The UI-lane launch surface for a step. */
-export type StepLaunch = "chat_slash" | "chat_freeform" | "skills_popover" | "stop_picker";
+export type StepLaunch =
+  | "chat_slash"
+  | "chat_freeform"
+  | "skills_popover"
+  | "stop_picker"
+  | "canvas_button";
 
 /** A typed profile-resolution STOP code (run terminates error + STOP card). */
 export type ExpectStop = z.infer<typeof ExpectStopSchema>;
@@ -684,6 +697,14 @@ export function toCase(raw: TomlTable): Case {
       if (typeof label !== "string" || label.trim() === "") {
         throw new Error(
           `step "${step.id}" launches stop_picker but has no input_inline.pick_label (the pick-by-vehicle-label key)`,
+        );
+      }
+    }
+    if (step.launch === "canvas_button") {
+      const testid = step.inputInline?.["button_testid"];
+      if (typeof testid !== "string" || testid.trim() === "") {
+        throw new Error(
+          `step "${step.id}" launches canvas_button but has no input_inline.button_testid (the launching control's testid)`,
         );
       }
     }

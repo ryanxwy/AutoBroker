@@ -88,6 +88,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // key in Settings calls keyPresence.refetch() → the gate clears with no reload.
   const keyPresence = useAsync<KeyPresenceResponse>(() => client.getKeyPresence(), []);
   const deepseekReady = keyPresence.kind === "ok" ? keyPresence.data.deepseek.present : true;
+  // The cross-provider RETRY key (Anthropic) gates the Threads section's manual
+  // "retry failed extractions on another provider" affordance. Default false
+  // until presence resolves (the affordance is opt-in egress — never assume the
+  // key is there before the read confirms it).
+  const anthropicReady = keyPresence.kind === "ok" ? keyPresence.data.anthropic.present : false;
   // The curated operational env vars — owned here (like presence) so the
   // Environment panel reflects a live value after a write with no reload.
   const env = useAsync<EnvConfigResponse>(() => client.getEnvConfig(), []);
@@ -345,6 +350,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     else doLaunchSkill(skill.name);
   };
 
+  // MANUAL cross-provider retry of a profile's failed extractions: launch
+  // dealer_reply_extract with escalate:true (the Anthropic native lane). This is
+  // the ONLY caller that sets escalate — the auto-path never does. The explicit
+  // profile id pins the run (the failures the user is recovering live there).
+  const onRetryFailedExtractions = (profileId: string): void =>
+    doLaunchSkill("dealer_reply_extract", { search_profile_id: profileId, escalate: true });
+
   // ---- refresh recovery: /runs/:id with no in-chat message -> re-stream -----
   useEffect(() => {
     if (route.name !== "run") return;
@@ -457,7 +469,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
             </p>
           )}
           {route.name === "home" && (
-            <Canvas client={client} onStartIntake={startIntakeFresh} deepseekReady={deepseekReady} />
+            <Canvas
+              client={client}
+              onStartIntake={startIntakeFresh}
+              deepseekReady={deepseekReady}
+              anthropicReady={anthropicReady}
+              onRetryFailedExtractions={onRetryFailedExtractions}
+            />
           )}
           {route.name === "run" && (
             <Canvas
@@ -465,6 +483,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               onStartIntake={startIntakeFresh}
               runId={route.runId}
               deepseekReady={deepseekReady}
+              anthropicReady={anthropicReady}
+              onRetryFailedExtractions={onRetryFailedExtractions}
             />
           )}
           {route.name === "profile" && <ProfileWorkspace client={client} profileId={route.profileId} />}

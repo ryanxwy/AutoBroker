@@ -50,6 +50,7 @@ import { fileURLToPath } from "node:url";
 import { buildServer } from "@autobroker/server";
 import { __setSecretsProbeForTests, openDb, resolveDataDir } from "@autobroker/tools";
 import {
+  __setDealerReplyExtractDepsForTests,
   __setDealerWebLeadSubmitDepsForTests,
   __setIntakeDepsForTests,
   __setNegotiationFollowupDepsForTests,
@@ -351,6 +352,74 @@ async function main(): Promise<void> {
     // body/subject and the atomic close+suppress run REAL against the seeded DB
     // (sendAndRecord is L1-fuse-blocked under BLOCK=1), so there is NOTHING to
     // stub. No __setDealerCloseoutEmailDepsForTests call is needed.
+
+    // dealer_reply_extract — stub ONLY the per-message LLM extraction (the single
+    // emit_result call). It returns a fixed, BUDGET-irrelevant recovering quote so
+    // a failed message recovers to `succeeded` with one quote row. This stub stands
+    // in for BOTH provider routes (the default DeepSeek useCase AND the manual
+    // `dealer_reply_extract_retry` Anthropic lane) — the func lane makes ZERO real
+    // model calls, proving the retry FLOW end-to-end with zero real egress. Every
+    // other collaborator (resolver / candidate reader / fake gmail adapter /
+    // attachment tree / all-or-nothing persist) stays REAL against the seeded DB.
+    __setDealerReplyExtractDepsForTests({
+      harnessGenerate: (async () => ({
+        object: {
+          quotes: [
+            {
+              financing_mode: "cash",
+              vin: null,
+              inventory_status: null,
+              source_listing_id: null,
+              quote_format: "text",
+              intent: "real_quote",
+              confidence: null,
+              quote_received_at: null,
+              quote_expires_at: null,
+              msrp: null,
+              selling_price: null,
+              dealer_discount: null,
+              doc_fee: null,
+              dealer_fee: null,
+              sales_tax: null,
+              dmv_fees: null,
+              title_fee: null,
+              registration_fee: null,
+              license_fee: null,
+              otd_total: 43000,
+              rebates_json: null,
+              other_fees_json: null,
+              add_ons_json: null,
+              taxable_rebates_json: null,
+              finance_apr: null,
+              finance_term_months: null,
+              finance_down_payment: null,
+              finance_monthly_payment: null,
+              finance_amount_financed: null,
+              lease_term_months: null,
+              lease_money_factor: null,
+              lease_residual_pct: null,
+              lease_residual_value: null,
+              lease_due_at_signing: null,
+              lease_monthly_payment: null,
+              lease_miles_per_year: null,
+              lease_acquisition_fee: null,
+              lease_disposition_fee: null,
+              lease_cap_cost_gross: null,
+              lease_cap_cost_adjusted: null,
+              lease_rent_charge: null,
+            },
+          ],
+          message_intent: "real_quote",
+        },
+        usage: {
+          costUsd: null,
+          durationMs: 1,
+          pricingSource: "unavailable",
+          promptTokens: null,
+          completionTokens: null,
+        },
+      })) as never,
+    });
   }
 
   // LIVE: do NOT inject the DI stubs — real geocode + real DeepSeek. We still reset

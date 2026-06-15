@@ -41,6 +41,7 @@ import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { closeoutReady } from "./closeoutReady.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
+import { dealerReplyExtractRetryWorld } from "./dealerReplyExtractRetryWorld.js";
 import { dealerReplyExtractWorld } from "./dealerReplyExtractWorld.js";
 import { digestPresent } from "./digestPresent.js";
 import { digestReady } from "./digestReady.js";
@@ -81,6 +82,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [dataArrivingGrown.id]: dataArrivingGrown,
   [digestPresent.id]: digestPresent,
   [dealerReplyExtractWorld.id]: dealerReplyExtractWorld,
+  [dealerReplyExtractRetryWorld.id]: dealerReplyExtractRetryWorld,
   [digestReady.id]: digestReady,
   [inventoryListings.id]: inventoryListings,
   [keysUnset.id]: keysUnset,

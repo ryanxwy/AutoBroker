@@ -23,6 +23,20 @@ import type { CapabilityFlags, ModelAlias, Provider } from "@autobroker/core";
 export const USE_CASES = [
   /** Extract a structured DealerQuote from a dealer reply (Phase 3 template). */
   "dealer_reply_extract",
+  /**
+   * MANUAL cross-provider RETRY of a failed dealer_reply_extract. Invoked ONLY
+   * by an EXPLICIT user-triggered retry of an already-failed extraction (the
+   * `escalate:true` workflow input) — NEVER auto-invoked. The auto-path stays
+   * DeepSeek-only and fail-closed: a same-provider retry of a deterministic
+   * (temp:0) serialization defect is futile, and auto-routing dealer-reply PII
+   * to another provider without per-run consent was rejected by the owner. So
+   * this route exists solely behind the user's button. It targets a provider
+   * whose chat model supports structured output WITH tools
+   * (supportsOutputObjectWithTools:true), so the harness takes the NATIVE
+   * output_object strategy — structurally immune to the DeepSeek emit_result
+   * serialization defect (the extra trailing brace) that fails the auto-path.
+   */
+  "dealer_reply_extract_retry",
   /** Render a Telegram headline from already-computed audit flags (Phase 1). */
   "quote_audit_headline",
   /**
@@ -98,6 +112,13 @@ export type UseCase = (typeof USE_CASES)[number];
  */
 const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   dealer_reply_extract: "deepseek.chat",
+  // MANUAL cross-provider retry only (the escalate:true input from the user's
+  // explicit "retry on another provider" button — NEVER auto-invoked). Routes to
+  // anthropic.chat (supportsOutputObjectWithTools:true), so the harness takes the
+  // NATIVE output_object strategy, immune to the DeepSeek emit_result
+  // serialization defect. Swapping to "openai.chat" is a one-string change that
+  // keeps the same output_object strategy (both rows are true).
+  dealer_reply_extract_retry: "anthropic.chat",
   quote_audit_headline: "deepseek.cheap",
   // Both intake LLM passes route to deepseek.chat (deepseek-v4-flash, temp 0,
   // per-step thinking:disabled + named tool_choice — emit_result hard constraint:
