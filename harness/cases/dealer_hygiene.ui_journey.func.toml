@@ -1,0 +1,179 @@
+# harness/cases/dealer_hygiene.ui_journey.func.toml — the DESTRUCTIVE happy path,
+# UI-LANE, fixture-mode (zero-LLM). dealer_hygiene runs THREE strictly-ordered
+# batch-review stages; approving each in turn drives the SINGLE atomic `verify`
+# commit, which applies exactly three writes: DELETE the one orphan thread (the
+# ONE allowed hard delete), SUPPRESS the one CRM thread (a thread_suppression
+# row — NOT a delete), and SOFT-DEMOTE the one CRM contact
+# (is_crm_platform_sender=1 — the row survives). A reload + re-run is a clean
+# NO-OP (the idempotent already-suppressed filter surfaces nothing).
+#
+#   step 1 (ui)    install hygiene_ready (one candidate per stage) + pin the
+#                  Tucson profile (the pin_required gate + a `pinned` resolution).
+#   step 2 (skill) "/dealer_hygiene" pinned → the three stages render IN STRICT
+#                  ORDER (5a orphans → 5b crm_threads → 5c crm_contacts, each
+#                  data-stage asserted on its entry) → approve + submit each →
+#                  cleaned. GLOBAL counts: threads 3→2 (orphan deleted),
+#                  thread_suppression 0→2 (thread-scope + contact-scope cleanup
+#                  rows), dealer_contacts steady at 1 (soft-demote, no delete).
+#                  The orphan red-line is enforced in-transaction — a leaked
+#                  message-id would roll the whole commit back (threads would
+#                  stay 3), so the 3→2 delete + the 2 suppression rows together
+#                  prove it held.
+#   step 3 (skill) reload + RE-RUN. Every candidate is already cleaned/suppressed
+#                  → nothing_to_clean, no card, ZERO new writes (the global
+#                  counts hold at 2 / 2 / 1; no approval gate).
+
+[meta]
+id = "dealer_hygiene_ui_journey"
+archetype = "B"
+skills = ["dealer_hygiene"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the world + pin the profile -----------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "hygiene_ready"
+purpose = "Install the hygiene world and pin the Tucson profile."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-hygiene-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-hygiene-ready-1"
+expect = "visible"
+
+# ---- step 2: launch pinned → 5a→5b→5c approve → cleaned ----------------------
+
+[[steps]]
+id = "hygiene_clean"
+skill = "dealer_hygiene"
+purpose = "Approve all three strictly-ordered stages; one orphan deleted, one CRM thread suppressed, one CRM contact soft-demoted."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+# Three ordered entries — one per stage. Each Select-all-approves its single
+# candidate and asserts the EXPECTED stage (the strict-order proof 5a→5b→5c).
+[[steps.resume]]
+on = "hygiene_review"
+action = "accept"
+default_decision = "approve"     # one candidate → the Select-all affordance.
+[steps.resume.content]
+stage = "orphans"                # 5a renders FIRST.
+
+[[steps.resume]]
+on = "hygiene_review"
+action = "accept"
+default_decision = "approve"
+[steps.resume.content]
+stage = "crm_threads"            # 5b renders SECOND.
+
+[[steps.resume]]
+on = "hygiene_review"
+action = "accept"
+default_decision = "approve"
+[steps.resume.content]
+stage = "crm_contacts"           # 5c renders THIRD.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"                # the explicit pin was honored (never inferred).
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "global"
+min = 2
+exact = true                     # 3 seeded − 1 orphan deleted = 2 (the ONE allowed delete).
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_suppression"
+scope = "global"
+min = 2
+exact = true                     # +1 thread-scope (CRM thread suppressed) +1 contact-scope (demote audit) cleanup rows.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_contacts"
+scope = "global"
+min = 1
+exact = true                     # SOFT-demote — the row survives (count unchanged); the flag flipped, never deleted.
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+# ---- step 3: reload (NO re-seed) — the cleanup persists ----------------------
+# A kind="ui" step with NO fixture_state acts on the PRIOR run's persisted DB
+# (re-applying hygiene_ready here would resurrect the deleted orphan via the
+# ON CONFLICT seed). Reload the dashboard, then open the Skills popover to prove
+# the pinned profile survives the reload.
+
+[[steps]]
+id = "reload_after_clean"
+kind = "ui"
+purpose = "Reload after the clean (no re-seed) — the prior cleanup persists; the Skills popover still renders the skill row."
+
+[[steps.ui_actions]]
+verb = "reload"
+testid = "app-main"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-skills"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "ledger-run-dealer_hygiene"
+expect = "visible"               # the popover renders the skill row after the reload.
+
+# ---- step 4: re-run → nothing_to_clean, no card, Δ=0 -------------------------
+
+[[steps]]
+id = "hygiene_noop"
+skill = "dealer_hygiene"
+purpose = "Re-run after the clean: every candidate already cleaned/suppressed → nothing_to_clean, no card, zero new writes."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]                # nothing_to_clean is a VALID success terminal.
+
+[[steps.anchors]]
+kind = "approval_gate"
+expect = "absent"                # no card on the re-run (no candidates to review).
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "global"
+min = 2
+exact = true                     # still 2 — no further deletes.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_suppression"
+scope = "global"
+min = 2
+exact = true                     # still 2 — idempotent, no duplicate suppression rows.
+
+[[steps.anchors]]
+kind = "no_external_mutation"

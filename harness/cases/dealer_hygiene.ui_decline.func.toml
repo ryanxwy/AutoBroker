@@ -1,0 +1,102 @@
+# harness/cases/dealer_hygiene.ui_decline.func.toml — the DESTRUCTIVE decline
+# KEYSTONE, UI-LANE, fixture-mode (zero-LLM). dealer_hygiene's second-confirm is
+# three strictly-ordered batch-review suspends (5a orphans → 5b CRM threads →
+# 5c CRM contacts); the suspend steps only STAGE selections and the SINGLE atomic
+# `verify` write fires ONLY when no stage declined. So a Decline at the FIRST
+# stage (5a) must be terminal with ZERO writes anywhere — no orphan deleted, no
+# suppression row, no contact demoted — and the approval surface is never hidden.
+#
+#   step 1 (ui)    install hygiene_ready (one candidate per stage) + pin the
+#                  Tucson profile (dealer_hygiene is pin_required → the popover
+#                  Run is pin-gated; pinning also gives a `pinned` resolution
+#                  while detection stays GLOBAL).
+#   step 2 (skill) "/dealer_hygiene" pinned → the HygieneReviewCard renders at
+#                  stage 5a (data-stage=orphans, gate BEFORE prose) → Decline.
+#                  Terminal `declined`; ALL hygiene tables Δ=0 EXACT (global);
+#                  no_external_mutation on every step.
+
+[meta]
+id = "dealer_hygiene_ui_decline"
+archetype = "B"
+skills = ["dealer_hygiene"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the world + pin the profile -----------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "hygiene_ready"
+purpose = "Install the hygiene world and pin the Tucson profile (the destructive pin_required skill needs a true pin)."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-hygiene-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-hygiene-ready-1"
+expect = "visible"               # the pin landed — the row flipped to Unpin.
+
+# ---- step 2: launch pinned → stage 5a HygieneReviewCard → DECLINE ------------
+
+[[steps]]
+id = "hygiene_decline"
+skill = "dealer_hygiene"
+purpose = "Decline at the REAL hygiene review card (stage 5a orphans) — declined terminal, ZERO destruction."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+# Decline at the FIRST card the run reaches — structurally stage 5a (orphans),
+# the first suspend in the fixed 5a→5b→5c order. A decline resume carries no
+# content, so the stage is not pinned here; the driver still reads the live
+# data-stage, and the Δ=0 proof below is the real keystone assertion.
+[[steps.resume]]
+on = "hygiene_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]            # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+# GLOBAL absolute counts — `exact` pins after===min (a global anchor counts the
+# TOTAL, not a delta), so "unchanged from the seed" reads as the seeded totals:
+# threads 3, thread_suppression 0, dealer_contacts 1. A decline leaves all three
+# at the seed values (zero net writes anywhere).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "global"
+min = 3
+exact = true                     # NO orphan thread deleted (the one allowed delete never fired).
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_suppression"
+scope = "global"
+min = 0
+exact = true                     # decline writes NO suppression rows (thread OR contact scope).
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_contacts"
+scope = "global"
+min = 1
+exact = true                     # the CRM contact's is_crm_platform_sender flag is untouched (row count steady).
+
+[[steps.anchors]]
+kind = "no_external_mutation"
