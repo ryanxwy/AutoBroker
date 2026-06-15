@@ -45,6 +45,7 @@ import { closedProfile } from "./closedProfile.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
+import { inboxNoLead, inboxReady } from "./inboxReady.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { multiActive } from "./multiActive.js";
 import { repliesArrived } from "./repliesArrived.js";
@@ -75,6 +76,8 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
   [repliesArrived.id]: repliesArrived,
+  [inboxReady.id]: inboxReady,
+  [inboxNoLead.id]: inboxNoLead,
 };
 
 /** Resolve a fixture state by id, failing LOUD on an unknown id. */

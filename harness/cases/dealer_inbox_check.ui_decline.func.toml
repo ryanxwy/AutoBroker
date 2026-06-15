@@ -1,0 +1,122 @@
+# harness/cases/dealer_inbox_check.ui_decline.func.toml — the DECLINE keystone,
+# UI-LANE, fixture-mode (zero-LLM). The InboxReviewCard suspends BEFORE any
+# reply is ingested, so a Decline must be terminal with ZERO writes and must
+# leave the per-profile window UNTOUCHED — proven by a re-run that RE-DISCOVERS
+# the same replies (the card renders again).
+#
+#   step 1 (ui)    install inbox_ready + pin the profile.
+#   step 2 (skill) "/dealer_inbox_check" pinned → the InboxReviewCard renders →
+#                  click Decline. Terminal `declined`; ALL inbox tables Δ=0
+#                  EXACT (no messages, no threads, no routing, no suppression);
+#                  no_external_mutation.
+#   step 3 (skill) RE-RUN. Because the decline ingested nothing AND did not
+#                  advance the window, the SAME replies re-surface → the
+#                  InboxReviewCard renders again (the watermark-untouched proof).
+
+[meta]
+id = "dealer_inbox_check_ui_decline"
+archetype = "B"
+skills = ["dealer_inbox_check"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the world + pin the profile -----------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "inbox_ready"
+purpose = "Install the inbox-ready world and pin the Tucson profile."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-inbox-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-inbox-ready-1"
+expect = "visible"
+
+# ---- step 2: launch pinned → InboxReviewCard → DECLINE (zero writes) ---------
+
+[[steps]]
+id = "inbox_decline"
+skill = "dealer_inbox_check"
+purpose = "Decline at the REAL inbox review card — declined terminal, zero writes."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "inbox_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]            # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true                     # zero replies ingested.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_routing"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_suppression"
+scope = "profile"
+delta_min = 0
+exact = true                     # decline writes NO suppression rows.
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+# ---- step 3: re-run → the SAME replies re-surface (window untouched) ---------
+
+[[steps]]
+id = "inbox_rediscover"
+skill = "dealer_inbox_check"
+purpose = "Re-run after the decline: the window never advanced, so the same replies re-surface."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "inbox_review"
+action = "decline"               # decline again — still zero writes, terminal.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true                     # still nothing ingested.
+
+[[steps.anchors]]
+kind = "no_external_mutation"

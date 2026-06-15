@@ -32,7 +32,11 @@ import { openDb, type Db } from "@autobroker/db";
  *  write targets (both carry a NOT NULL search_profile_id);
  *  manufacturer_incentives is the incentive_scrape write target — it carries
  *  NO search_profile_id (keyed (make, model, zip)), so its "profile scope" is
- *  the join through the profile's own make/model/postal_code slice. */
+ *  the join through the profile's own make/model/postal_code slice.
+ *  messages + threads + thread_routing + thread_suppression + dealer_contacts
+ *  are the dealer_inbox_check write targets — each carries a search_profile_id
+ *  column (the orphan-row fix makes it NON-NULL on the inbox writes), so they
+ *  scope through the generic search_profile_id clause like the rest. */
 export const SNAPSHOT_TABLES = [
   "search_profiles",
   "audit_log",
@@ -41,6 +45,11 @@ export const SNAPSHOT_TABLES = [
   "dealer_inventory_sources",
   "inventory_listings",
   "manufacturer_incentives",
+  "messages",
+  "threads",
+  "thread_routing",
+  "thread_suppression",
+  "dealer_contacts",
 ] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
@@ -214,12 +223,18 @@ export function externalMutationDbCount(db: Db): { total: number; breakdown: Rec
   breakdown["audit_log.send_submit"] = auditSendSubmit;
 
   // (3) real (non-sandbox) outbound messages, if the messages table is populated.
-  // A real send carries a gmail_message_id NOT shaped like the sandbox 'sandbox-out-%'.
+  // A real send carries a gmail_message_id NOT shaped like the sandbox
+  // 'sandbox-out-%' AND direction='outbound'. The direction clause is
+  // load-bearing: an INBOUND reply INGESTED by dealer_inbox_check also carries a
+  // real gmail_message_id (it came from the mailbox), but ingesting a received
+  // reply is never an external mutation — only an outbound SEND is. Without the
+  // direction filter the inbox sweep's legitimate inbound ingest would trip this
+  // keystone falsely.
   let realOutbound = 0;
   try {
     const msgs = readOne<{ n: number }>(
       db,
-      `SELECT COUNT(*) AS n FROM messages WHERE gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%'`,
+      `SELECT COUNT(*) AS n FROM messages WHERE gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%' AND direction = 'outbound'`,
       [],
     );
     realOutbound = msgs?.n ?? 0;
