@@ -1,0 +1,16 @@
+# Dependabot — track GitHub Actions major bumps as PRs so the recurring
+# runner-side Node deprecations (e.g. the Node 20 actions notice that drove the
+# @v6 wrapper bump) surface early instead of as a CI warning.
+#
+# Scope is github-actions ONLY: the npm graph is deliberately pinned behind the
+# parity-period regression net (the Mastra trio, ai@^6, Electron 41, etc.), so
+# npm updates are intentionally NOT automated here.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      # Keep Dependabot's commit subjects within the repo's allowed prefixes.
+      prefix: "ci"
