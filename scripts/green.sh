@@ -21,4 +21,16 @@ pnpm lint:deps
 pnpm check:strings
 pnpm db:check
 pnpm test
+
+# Real-DOM functional UI lane: builds the dashboard and drives the
+# harness/cases/*.func.toml cases through Playwright. This is the gate's only
+# defense against
+# UI / runtime-bump regressions the deterministic checks above cannot see (the
+# "gates insufficient" gap surfaced by the Node 22->24 migration). A browser
+# launch makes it heavy (~1m), so it is OFF by default to keep the inner loop
+# and the Stop-hook fast; CI runs it unconditionally, and a manual full gate
+# opts in with RUN_UI_FUNCTIONAL=1.
+if [ "${RUN_UI_FUNCTIONAL:-0}" = "1" ]; then
+  pnpm ui:functional
+fi
 echo "GREEN"

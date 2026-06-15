@@ -26,8 +26,8 @@
  *     AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS) have NO descriptor at all — they are
  *     structurally unreachable: not readable through getEnvConfig (no row),
  *     not writable through setEnvConfig (no id). They can never leak or be set.
- *   - Read-only paths are reported but never written; only the two editable
- *     enum/bool ids can be persisted.
+ *   - Read-only paths are reported but never written; only the editable
+ *     enum/bool/text ids can be persisted.
  *
  * AT-REST: the file is 0600 JSON holding ONLY the editable overrides. A launch-
  * supplied env var with no file override is left untouched at boot (mirroring the
@@ -45,6 +45,7 @@ import { resolveDataDir } from "../db.js";
 export type EnvVarId =
   // editable
   | "gmail_backend"
+  | "gmail_account"
   | "chrome_headless"
   // read-only status
   | "block_external_mutations"
@@ -56,6 +57,7 @@ export type EnvVarId =
 export type EnvVarClass =
   | "editable-enum"
   | "editable-bool"
+  | "editable-text"
   | "read-only-status"
   | "read-only-path";
 
@@ -66,7 +68,7 @@ export interface EnvVarDescriptor {
    *  resolved, not read from a single env var). */
   readonly envVar: string;
   readonly classification: EnvVarClass;
-  /** true ONLY for the two editable ids — the structural write gate. */
+  /** true ONLY for the editable ids — the structural write gate. */
   readonly editable: boolean;
   /** The enum/bool value list; null for path / free status rows. */
   readonly allowedValues: readonly string[] | null;
@@ -91,6 +93,20 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     label: "Email mode",
     tooltip:
       "Email mode. Sample uses a built-in practice inbox (nothing leaves your computer). Live reads your real Gmail. Sending stays off either way until you approve each message.",
+  },
+  {
+    id: "gmail_account",
+    envVar: "AUTOBROKER_GMAIL_ACCOUNT",
+    classification: "editable-text",
+    editable: true,
+    // Free text → no fixed value list. The default is deliberately null: no real
+    // mailbox address is baked into the committed source. The account is set here
+    // (or via env) and persisted to the 0600 env.json on this machine only.
+    allowedValues: null,
+    default: null,
+    label: "Gmail account",
+    tooltip:
+      "The Gmail address AutoBroker connects to in Live email mode. It pre-selects the right account on Google's sign-in screen when you authorize access.",
   },
   {
     id: "chrome_headless",
@@ -150,7 +166,22 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
 ];
 
 /** The editable ids only — the write allow-list. */
-export const EDITABLE_IDS = ["gmail_backend", "chrome_headless"] as const;
+export const EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless"] as const;
+
+/** Max length for a free-text editable value (an email address — RFC 5321 caps
+ *  the full address at 254 chars). Guards against a pathological payload. */
+const TEXT_VALUE_MAX_LEN = 254;
+
+/** Validate an editable-text value (currently only gmail_account → an email).
+ *  Permissive but rejects whitespace, empty, over-length, and obvious non-emails
+ *  (no "@x.y" shape). The store re-validates regardless of the route schema. */
+function isValidTextValue(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= TEXT_VALUE_MAX_LEN &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  );
+}
 
 /** One curated row with its CURRENT effective value, ready for the UI. */
 export interface EnvVarState extends EnvVarDescriptor {
@@ -206,7 +237,7 @@ function envFilePath(): string {
   return join(settingsDir(), "env.json");
 }
 
-/** The on-disk shape: a partial editable-id -> value map. Only the two editable
+/** The on-disk shape: a partial editable-id -> value map. Only the editable
  *  ids are ever written; an unknown/non-editable id read from a hand-edited file
  *  is ignored. */
 type StoredEnv = Partial<Record<(typeof EDITABLE_IDS)[number], string>>;
@@ -234,12 +265,13 @@ function readStoredEnv(): StoredEnv {
   for (const id of EDITABLE_IDS) {
     const v = (parsed as Record<string, unknown>)[id];
     const descriptor = findDescriptor(id);
-    if (
-      typeof v === "string" &&
-      descriptor?.allowedValues !== null &&
-      descriptor?.allowedValues !== undefined &&
-      descriptor.allowedValues.includes(v)
-    ) {
+    if (typeof v !== "string" || descriptor === undefined) continue;
+    if (descriptor.classification === "editable-text") {
+      // Free-text: keep only a value that still passes validation (a stale/garbage
+      // override from a hand-edited file is dropped).
+      if (isValidTextValue(v)) out[id] = v;
+    } else if (descriptor.allowedValues !== null && descriptor.allowedValues.includes(v)) {
+      // Enum/bool: keep only a value currently in the descriptor's allowedValues.
       out[id] = v;
     }
   }
@@ -283,6 +315,7 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
     case "db_path":
       return resolveActiveDbPath();
     case "gmail_backend":
+    case "gmail_account":
     case "chrome_headless": {
       // file override → live process.env → descriptor default.
       const fromFile = stored[descriptor.id];
@@ -316,7 +349,9 @@ export function getEnvConfig(): readonly EnvVarState[] {
  *   (b) descriptor.editable === true   → else NonEditableEnvVarError. This is
  *       the defense-in-depth that blocks disarming the fuse / writing a path at
  *       the STORE layer, independent of the route schema.
- *   (c) value must be in allowedValues → else InvalidEnvValueError.
+ *   (c) value must be valid for the class → else InvalidEnvValueError. For an
+ *       editable-text var (the Gmail account) that means a well-formed address;
+ *       for an enum/bool var it must be one of the descriptor's allowedValues.
  * Only after all three: merge into env.json and mutate process.env.
  */
 export function setEnvConfig(id: string, value: string): void {
@@ -327,10 +362,17 @@ export function setEnvConfig(id: string, value: string): void {
   if (!descriptor.editable) {
     throw new NonEditableEnvVarError(id);
   }
-  // An editable descriptor always carries a concrete allowedValues list.
-  const allowed = descriptor.allowedValues ?? [];
-  if (!allowed.includes(value)) {
-    throw new InvalidEnvValueError(id, value, allowed);
+  if (descriptor.classification === "editable-text") {
+    // Free-text (an email): validate shape, not an allow-list.
+    if (!isValidTextValue(value)) {
+      throw new InvalidEnvValueError(id, value, ["a valid email address"]);
+    }
+  } else {
+    // Enum/bool: the value must be one of the descriptor's allowedValues.
+    const allowed = descriptor.allowedValues ?? [];
+    if (!allowed.includes(value)) {
+      throw new InvalidEnvValueError(id, value, allowed);
+    }
   }
   const merged = { ...readStoredEnv(), [descriptor.id]: value };
   writeStoredEnv(merged);
@@ -340,7 +382,7 @@ export function setEnvConfig(id: string, value: string): void {
 /**
  * Seed process.env from the persisted env.json overrides. Called ONCE at boot,
  * BEFORE the Gmail factory / model registry, so the first request sees the saved
- * operational toggles. A missing file is a no-op. Only the two editable env vars
+ * operational toggles. A missing file is a no-op. Only the editable env vars
  * are set, and only for ids actually present in the file — a var absent from the
  * file is left to whatever the launch environment already provides (a launch-
  * supplied value is not clobbered).

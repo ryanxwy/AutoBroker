@@ -186,8 +186,8 @@ const TestKeyBodySchema = z.object({
  *  store is ever called (the L1 fuse var is structurally unreachable here). The
  *  store re-checks editable + allowedValues as defense-in-depth. */
 const SetEnvBodySchema = z.object({
-  id: z.enum(["gmail_backend", "chrome_headless"]),
-  value: z.string().min(1),
+  id: z.enum(["gmail_backend", "gmail_account", "chrome_headless"]),
+  value: z.string().min(1).max(254),
 });
 
 /** Dependencies the route module needs (the server wires these). */

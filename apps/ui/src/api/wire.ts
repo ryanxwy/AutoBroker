@@ -458,8 +458,8 @@ export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
 // descriptor + its effective `value` exactly — flat, all-required.
 // ---------------------------------------------------------------------------
 
-/** The two editable env ids the route accepts on PUT. */
-export const ENV_EDITABLE_IDS = ["gmail_backend", "chrome_headless"] as const;
+/** The editable env ids the route accepts on PUT. */
+export const ENV_EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless"] as const;
 export type EnvEditableId = (typeof ENV_EDITABLE_IDS)[number];
 
 /** One curated env-var row with its current effective value — mirrors the store
@@ -472,6 +472,7 @@ export const EnvVarStateSchema = z.object({
   classification: z.enum([
     "editable-enum",
     "editable-bool",
+    "editable-text",
     "read-only-status",
     "read-only-path",
   ]),

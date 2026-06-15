@@ -132,6 +132,14 @@ export interface EvalContext {
   before: TableCounts;
   after: TableCounts;
   runWindow: { from: string; to: string };
+  /** The keystone external-mutation DB scan total captured BEFORE the run (the
+   *  pre-existing world's submitted leads / send-audit rows / real outbound
+   *  messages). The no_external_mutation anchor subtracts it so the keystone
+   *  measures the RUN's delta — a fixture that already carries a submitted lead
+   *  (dealer_inbox_check's required discovery anchor) must not read as a fresh
+   *  mutation. Omitted (undefined) → treated as 0 (the absolute-count behavior,
+   *  unchanged for steps that never seed pre-existing mutation rows). */
+  externalMutationBaseline?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +224,7 @@ export function evalAnchor(
     }
 
     case "no_external_mutation": {
-      return evalNoExternalMutation(spec, detail, db);
+      return evalNoExternalMutation(spec, detail, db, ctx.externalMutationBaseline ?? 0);
     }
 
     case "cost_and_time": {
@@ -366,11 +374,21 @@ function evalNoExternalMutation(
   spec: Extract<AnchorSpec, { kind: "no_external_mutation" }>,
   detail: RunDetail,
   db: Db,
+  baseline: number,
 ): AnchorResult {
   const allowFake = spec.allowFakeOutbound === true;
   const dbScan = externalMutationDbCount(db);
   const eventCount = realOutboundEventCount(detail, allowFake);
-  const total = dbScan.total + eventCount;
+  // Subtract the pre-run baseline of the DB scan: the keystone measures the
+  // RUN's delta, not pre-existing fixture world state (a seeded submitted lead
+  // is the inbox sweep's required anchor, never a fresh mutation). The event
+  // scan is already run-scoped (detail.events), so it is not baselined. A
+  // negative delta (a row deleted) clamps to 0 — only NEW mutations matter.
+  // Safe to clamp: the keystone tables (lead_submissions, audit_log, messages)
+  // are insert-only in product code, and the audit + non-baselined event legs
+  // are redundant, so the clamp cannot mask a delete-then-send net-zero.
+  const dbDelta = Math.max(0, dbScan.total - baseline);
+  const total = dbDelta + eventCount;
   const ok = total === 0;
   return {
     kind: "no_external_mutation",
@@ -378,8 +396,8 @@ function evalNoExternalMutation(
     expected: 0,
     observed: total,
     detail: ok
-      ? "keystone clean (db + events, tolerance 0)"
-      : `KEYSTONE VIOLATION: db=${JSON.stringify(dbScan.breakdown)} events=${eventCount}`,
+      ? "keystone clean (db delta + events, tolerance 0)"
+      : `KEYSTONE VIOLATION: db=${JSON.stringify(dbScan.breakdown)} dbBaseline=${baseline} dbDelta=${dbDelta} events=${eventCount}`,
   };
 }
 

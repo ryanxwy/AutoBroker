@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "../api/client.js";
 import type { AsyncState } from "../api/useApi.js";
 import type { EnvConfigResponse, EnvVarState } from "../api/wire.js";
-import { click, render } from "../test/render.js";
+import { change, click, render } from "../test/render.js";
 import { EnvPanel } from "./EnvPanel.js";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,6 +42,17 @@ function curatedVars(backend: "fake" | "real" = "fake"): EnvVarState[] {
       label: "Email mode",
       tooltip: "Email mode tooltip.",
       value: backend,
+    },
+    {
+      id: "gmail_account",
+      envVar: "AUTOBROKER_GMAIL_ACCOUNT",
+      classification: "editable-text",
+      editable: true,
+      allowedValues: null,
+      default: null,
+      label: "Gmail account",
+      tooltip: "Gmail account tooltip.",
+      value: "",
     },
     {
       id: "chrome_headless",
@@ -283,6 +294,40 @@ describe("EnvPanel — bool toggle wire value", () => {
     await flush();
     expect(puts).toHaveLength(1);
     expect(puts[0]).toEqual({ id: "chrome_headless", value: "1" });
+    r.unmount();
+  });
+});
+
+describe("EnvPanel — gmail_account text control", () => {
+  it("renders a text input + Save; typing then Save writes the trimmed value once", async () => {
+    const puts: Array<Record<string, unknown>> = [];
+    const onChanged = vi.fn();
+    const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
+    const r = render(<EnvPanel client={client} env={okEnv()} onChanged={onChanged} />);
+
+    const input = r.get("env-input-gmail_account") as HTMLInputElement;
+    const save = r.get("env-save-gmail_account") as HTMLButtonElement;
+    // Empty + unchanged → Save disabled, no call.
+    expect(save.disabled).toBe(true);
+
+    change(input, "  person@example.com  ");
+    expect(save.disabled).toBe(false);
+    click(save);
+    await flush();
+
+    expect(puts).toHaveLength(1);
+    expect(puts[0]).toEqual({ id: "gmail_account", value: "person@example.com" }); // trimmed
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    r.unmount();
+  });
+
+  it("never fires a write on keystrokes alone (only on Save)", () => {
+    const puts: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
+    const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
+
+    change(r.get("env-input-gmail_account") as HTMLInputElement, "typing@example.com");
+    expect(puts).toHaveLength(0); // parked in the draft — no call until Save.
     r.unmount();
   });
 });

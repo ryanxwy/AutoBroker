@@ -128,12 +128,17 @@ const CONTENT_FROM_SOURCES = new Set(["narrative.profile", "suspend.targets"]);
  *  narrative.input_mode. */
 const LaunchSchema = z.enum(["chat_slash", "chat_freeform", "skills_popover", "stop_picker"]);
 
-/** The typed profile-resolution STOP codes a step may expect (mirrors the
- *  workflow's GeosearchStopCode wire values). */
+/** The typed profile-resolution + inbox-precondition STOP codes a step may
+ *  expect. The first three mirror the workflow's GeosearchStopCode wire values;
+ *  pin_required + no_lead_submitted are dealer_inbox_check's typed STOPs
+ *  (pin_required reuses the profile picker, no_lead_submitted is a friendly
+ *  precondition card — neither drives the intake CTA). */
 const ExpectStopSchema = z.enum([
   "no_active_profile",
   "multiple_active_profiles",
   "profile_missing_fields",
+  "pin_required",
+  "no_lead_submitted",
 ]);
 
 /** The UI-lane edge behaviors (rotation-pool corner cases, 1–2 per skill —

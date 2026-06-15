@@ -1,0 +1,126 @@
+# harness/cases/dealer_inbox_check.ui_journey.func.toml — the dealer_inbox_check
+# HAPPY PATH, UI-LANE, fixture-mode (zero-LLM). The inbox sweep is fully
+# deterministic: discover → route (dealer-domain rung) → classify → the
+# InboxReviewCard renders → APPROVE → ingest → advance the per-profile window.
+#
+#   step 1 (ui)    install inbox_ready (a pinned-able active Tucson profile + a
+#                  bound dealer WITH a website + a submitted lead anchoring the
+#                  window + two dealer-domain replies). Pin the profile via the
+#                  Searches popover (sessions are never auto-pinned; a
+#                  pin_required skill needs a TRUE pin). dom_state proves the
+#                  pin landed (the row flipped to Unpin).
+#   step 2 (skill) "/dealer_inbox_check" pinned → the InboxReviewCard renders →
+#                  approve the dealer → submit. Inbound messages + threads land
+#                  profile-scoped (Δ>=1 each); no_external_mutation on every
+#                  step; run_status done.
+#   step 3 (skill) RE-RUN the same sweep. The already-ingested dedup leaves
+#                  nothing new — no card renders (no_replies), Δ=0 EXACT on
+#                  messages + threads, no approval gate.
+
+[meta]
+id = "dealer_inbox_check_ui_journey"
+archetype = "B"
+skills = ["dealer_inbox_check"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the world + pin the profile -----------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "inbox_ready"
+purpose = "Install the inbox-ready world and pin the Tucson profile (the pin_required skill needs a true pin)."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-inbox-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-inbox-ready-1"
+expect = "visible"               # the pin landed — the row flipped to Unpin.
+
+# ---- step 2: launch pinned → InboxReviewCard → approve → ingest --------------
+
+[[steps]]
+id = "inbox_approve"
+skill = "dealer_inbox_check"
+purpose = "Pinned inbox check: the review card renders, approve the dealer, ingest the replies."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "inbox_review"
+action = "accept"
+default_decision = "approve"     # one dealer group → the Select-all affordance.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 1                    # inbound replies ingested, profile-scoped.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"                # the explicit pin was honored (never inferred).
+
+# ---- step 3: re-run the same sweep → dedup, no card, Δ=0 ---------------------
+
+[[steps]]
+id = "inbox_rerun"
+skill = "dealer_inbox_check"
+purpose = "Re-run: every reply already ingested → no_replies, no card, zero new writes."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]                # no_replies is a VALID success terminal.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true                     # dedup: nothing new ingested on the second pass.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "approval_gate"
+expect = "absent"                # no card on the re-run (no new replies to review).
+
+[[steps.anchors]]
+kind = "no_external_mutation"

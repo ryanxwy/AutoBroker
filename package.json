@@ -6,8 +6,9 @@
   "type": "module",
   "//ai": "Pinned to ^6 deliberately. Do NOT take v7: its LanguageModelV4 spec breaks V3-spec community providers (ts-migration 2026-05-29 D5/D9). CI must ignore the ai major-bump.",
   "packageManager": "pnpm@9.15.0",
+  "//node": "Track the latest Active LTS. Node 24 ('Krypton', EOL 2028-04-30) as of 2026-06; with .npmrc engine-strict=true this floor blocks stale Node 22 locally and in CI. Re-evaluate toward Node 26 around its LTS date (2026-10-28).",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.13.0"
   },
   "scripts": {
     "build": "pnpm -r run build",
@@ -27,7 +28,7 @@
     "desktop:smoke": "pnpm --filter @autobroker/desktop run smoke"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "@types/node": "^24",
     "dependency-cruiser": "^17.4.3",
     "typescript": "~5.6.3",
     "vite": "^6.0.0",

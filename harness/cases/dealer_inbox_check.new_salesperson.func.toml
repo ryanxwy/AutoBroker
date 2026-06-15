@@ -1,0 +1,96 @@
+# harness/cases/dealer_inbox_check.new_salesperson.func.toml — the DEALER-DOMAIN
+# routing rung, UI-LANE, fixture-mode (zero-LLM). On a first sweep dealer_contacts
+# is empty, so the known-contact rung (2) cannot fire. A reply from a NEW
+# salesperson address at a KNOWN dealer's domain must still route UNDER that
+# dealer via the dealer-domain host-stem rung (2.5) — never float to unrouted.
+#
+# The inbox_ready world seeds TWO replies at the SAME bound dealer's domain
+# (example-dealer.com): one known-style sales@ address and one new
+# jordan.newrep@ salesperson NOT in dealer_contacts. Both route under the one
+# dealer, so the card shows ONE target with TWO threads.
+#
+#   step 1 (ui)    install inbox_ready + pin the profile.
+#   step 2 (skill) "/dealer_inbox_check" pinned → the InboxReviewCard renders →
+#                  approve the dealer → ingest. Both threads route (thread_routing
+#                  Δ=2 EXACT — an unrouted thread writes NO routing row, so Δ=2
+#                  proves the new salesperson did NOT float to unrouted); both
+#                  messages land profile-scoped; the new contact is recorded
+#                  against the dealer (dealer_contacts Δ>=1).
+
+[meta]
+id = "dealer_inbox_check_new_salesperson"
+archetype = "B"
+skills = ["dealer_inbox_check"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the world + pin the profile -----------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "inbox_ready"
+purpose = "Install the inbox-ready world (a new-salesperson reply at the bound dealer's domain) and pin."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-inbox-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-inbox-ready-1"
+expect = "visible"
+
+# ---- step 2: launch pinned → approve → both threads route under the dealer ---
+
+[[steps]]
+id = "inbox_route"
+skill = "dealer_inbox_check"
+purpose = "Approve the dealer: the new-salesperson reply routes under it via the dealer-domain rung."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "inbox_review"
+action = "accept"
+default_decision = "approve"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_routing"
+scope = "profile"
+delta_min = 2
+exact = true                     # BOTH threads routed — the new salesperson did
+                                 # NOT float to unrouted (unrouted ⇒ no routing row).
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 2                    # both inbound replies ingested, profile-scoped.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_contacts"
+scope = "profile"
+delta_min = 1                    # the dealer's contact recorded under the right dealer.
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "pinned"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
