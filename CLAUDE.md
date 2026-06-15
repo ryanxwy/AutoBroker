@@ -31,7 +31,14 @@ pnpm typecheck        # tsc --build (honors project references)
 pnpm test             # vitest run
 pnpm db:pull          # drizzle-kit pull — introspect schema baseline
 pnpm db:generate      # drizzle-kit generate — CI gate must be empty-diff
-pnpm harness          # live-harness runner
+pnpm harness          # live-harness runner (real provider; *.ui_*.toml = live UI lane)
+bash scripts/green.sh # THE single pass/fail gate (typecheck + harness typecheck +
+                      #   lint:deps + check:strings + db:check + test) — Stop-hook & CI ask this
+pnpm ui:functional    # deterministic UI-lane gate: runs harness/cases/*.func.toml
+                      #   against seeded fixtures (no provider call). Live-LLM UI
+                      #   acceptance is the *.ui_*.toml cases via `pnpm harness`.
+pnpm lint:deps        # enforces the five-layer one-way dependency rule (below)
+pnpm check:strings    # enforces the forbidden-strings ban (no stale AutoBroker-* names)
 ```
 
 ## Five-layer one-way dependency rule

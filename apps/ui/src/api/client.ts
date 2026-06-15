@@ -18,6 +18,7 @@
  *   POST /api/profiles/:id/restore           restoreProfile ('closed' → 'active')
  *   GET  /api/skills                         listSkills
  *   GET  /api/mode                           getMode
+ *   GET  /api/digest[?profile_id]            getDigest
  *   POST /api/sessions                       createSession
  *   GET  /api/sessions[?pinned_profile_id]   listSessions
  *   GET  /api/sessions/:id                   getSession (pin + scope_notice in ONE fetch)
@@ -32,11 +33,15 @@ import { z } from "zod";
 
 import {
   DealerListSchema,
+  DigestViewSchema,
   EnvConfigResponseSchema,
   ErrorEnvelopeSchema,
   FormDecisionAckSchema,
   KeyPresenceResponseSchema,
   KeyProbeResultSchema,
+  InventoryCompareResultSchema,
+  QuoteCompareResultSchema,
+  QuoteListSchema,
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
@@ -50,11 +55,15 @@ import {
   ThreadListSchema,
   type CreateSessionBody,
   type DealerList,
+  type DigestView,
   type ThreadList,
   type EnvConfigResponse,
   type EnvEditableId,
   type FormDecisionAck,
   type FormDecisionBody,
+  type InventoryCompareResult,
+  type QuoteCompareResult,
+  type QuoteList,
   type KeyPresenceResponse,
   type KeyProbeResult,
   type Mode,
@@ -279,6 +288,40 @@ export class ApiClient {
     return decode(res, ThreadListSchema);
   }
 
+  /** GET /api/profiles/:id/inventory-compare → the deterministic ranker payload
+   *  (candidates + header tallies) for one profile (read-only; 404 for a missing
+   *  profile). The Inventory candidates canvas section renders these — public
+   *  inventory listings ranked against the profile, NEVER negotiated quotes. */
+  async listProfileInventoryCompare(id: string): Promise<InventoryCompareResult> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/inventory-compare`),
+    );
+    return decode(res, InventoryCompareResultSchema);
+  }
+
+  /** GET /api/profiles/:id/quote-compare → the deterministic compare-ranker
+   *  payload (finance + lease buckets, gated by the profile's financing
+   *  preference) for one profile (read-only; 404 for a missing profile). The
+   *  Quote compare canvas section renders these — negotiated dealer quotes
+   *  ranked by OTD, never a budget number. */
+  async listProfileQuoteCompare(id: string): Promise<QuoteCompareResult> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/quote-compare`),
+    );
+    return decode(res, QuoteCompareResultSchema);
+  }
+
+  /** GET /api/profiles/:id/quotes → the RAW extracted dealer-quote rows bound to
+   *  one profile, newest-received first (read-only projection; 404 for a missing
+   *  profile). The Extracted quotes canvas section renders these — every
+   *  financing mode (incl. cash), with provenance, never a budget. */
+  async listProfileQuotes(id: string): Promise<QuoteList> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/quotes`),
+    );
+    return decode(res, QuoteListSchema);
+  }
+
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */
   async listSkills(): Promise<SkillList> {
     const res = await this.fetchImpl(this.url("/api/skills"));
@@ -289,6 +332,20 @@ export class ApiClient {
   async getMode(): Promise<Mode> {
     const res = await this.fetchImpl(this.url("/api/mode"));
     return decode(res, ModeSchema);
+  }
+
+  /** GET /api/digest[?profile_id=…] → the DigestView projection. A profile id
+   *  scopes the digest to a single pinned search (path-param /digest/:id maps to
+   *  this query at the router); null/absent yields the all-active digest. The
+   *  view is server-computed (OTD-ascending quotes, freshness, best row) — the
+   *  page renders it verbatim. */
+  async getDigest(profileId?: string | null): Promise<DigestView> {
+    const q =
+      profileId !== undefined && profileId !== null && profileId !== ""
+        ? `?profile_id=${encodeURIComponent(profileId)}`
+        : "";
+    const res = await this.fetchImpl(this.url(`/api/digest${q}`));
+    return decode(res, DigestViewSchema);
   }
 
   // ---- settings / keys (the four managed API keys; presence-only reads) -----

@@ -61,6 +61,22 @@ describe("ThreadsSection — rows", () => {
     const { container } = render(<ThreadsSection threads={ok(rows)} dealerCount={2} />);
     expect(container.querySelector('[data-testid="canvas-threads-empty"]')).toBeNull();
   });
+
+  it("renders the extract-failed badge only on threads whose extraction failed", () => {
+    const withBadge: ThreadRowList = [
+      { ...rows[0]!, thread_id: "t-fail", extract_failed: true },
+      { ...rows[1]!, thread_id: "t-ok", extract_failed: false },
+    ];
+    const { container } = render(<ThreadsSection threads={ok(withBadge)} dealerCount={2} />);
+    const badges = container.querySelectorAll('[data-testid="message-extract-failed-badge"]');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.textContent).toBe("extraction failed, will retry");
+  });
+
+  it("renders no extract-failed badge when no thread failed", () => {
+    const { container } = render(<ThreadsSection threads={ok(rows)} dealerCount={2} />);
+    expect(container.querySelector('[data-testid="message-extract-failed-badge"]')).toBeNull();
+  });
 });
 
 describe("ThreadsSection — loading / error", () => {

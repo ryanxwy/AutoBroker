@@ -608,6 +608,64 @@ describe("GET /api/profiles/:id/dealers", () => {
   });
 });
 
+/** Seed a 'succeeded'-extraction message + its dealer_quote bound to a profile
+ *  (the same write shape the dealer_reply_extract skill produces). */
+function seedQuoteForProfile(
+  profileId: string,
+  dealerId: string,
+  quoteId: string,
+  mode: string,
+  otd: number | null,
+  receivedAt: string,
+): void {
+  const c = db.$client;
+  c.prepare("INSERT INTO dealers (dealer_id, name) VALUES (?, ?) ON CONFLICT(dealer_id) DO NOTHING").run(
+    dealerId,
+    `Dealer ${dealerId}`,
+  );
+  const messageId = `qm-${quoteId}`;
+  c.prepare(
+    "INSERT INTO messages (message_id, thread_id, direction, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
+      "VALUES (?, NULL, 'inbound', ?, 'succeeded', 'quote')",
+  ).run(messageId, profileId);
+  c.prepare(
+    "INSERT INTO dealer_quotes " +
+      "(quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, financing_mode, " +
+      " otd_total, selling_price, vin, quote_format, intent, extractor_provider, extraction_method, quote_received_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'VIN999', 'otd', 'quote', 'deepseek', 'ocr', ?)",
+  ).run(quoteId, dealerId, messageId, `g-${quoteId}`, profileId, mode, otd, otd, receivedAt);
+}
+
+describe("GET /api/profiles/:id/quotes", () => {
+  it("404 for a missing profile; [] for a profile with no quotes", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const missing = await s.app.inject({ method: "GET", url: "/api/profiles/nope/quotes" });
+    expect(missing.statusCode).toBe(404);
+
+    const id = seedProfileRow();
+    const empty = await s.app.inject({ method: "GET", url: `/api/profiles/${id}/quotes` });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json<unknown[]>()).toEqual([]);
+  });
+
+  it("returns the profile's raw quote rows (all modes) newest-first with provenance, no budget", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    seedQuoteForProfile(id, "d-alpha", "q-finance", "finance", 44540, "2026-06-10T10:00:00.000Z");
+    seedQuoteForProfile(id, "d-bravo", "q-cash", "cash", 39500, "2026-06-12T10:00:00.000Z");
+
+    const r = await s.app.inject({ method: "GET", url: `/api/profiles/${id}/quotes` });
+    expect(r.statusCode).toBe(200);
+    const rows = r.json<Array<Record<string, unknown>>>();
+    expect(rows.map((row) => row["quote_id"])).toEqual(["q-cash", "q-finance"]);
+    // The cash quote is present — what the ranked /quote-compare finance/lease
+    // buckets would omit.
+    expect(rows[0]!["financing_mode"]).toBe("cash");
+    expect(rows[0]!["dealer_name"]).toBe("Dealer d-bravo");
+    expect(rows[0]!["extractor_provider"]).toBe("deepseek");
+  });
+});
+
 describe("PATCH /api/profiles/:id — preference write-through", () => {
   it("writes a preference patch and returns the snake_case row view", async () => {
     const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });

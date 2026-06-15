@@ -24,6 +24,7 @@ import type { AwaitingUserPayload } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
 import { ApprovalPrompt } from "./ApprovalPrompt.js";
 import { BatchReviewCard, readBatchReviewSpec } from "./BatchReviewCard.js";
+import { ConfirmationGateCard, readConfirmationGateSpec } from "./ConfirmationGateCard.js";
 import { gateTrack } from "./gateTrack.js";
 import { HygieneReviewCard } from "./HygieneReviewCard.js";
 import { readHygieneStageSpec } from "./hygieneStage.js";
@@ -69,10 +70,31 @@ export function GateBannerHost({
     showBanner && kind === "approval" && typeof awaiting.specInline?.["summary"] === "string"
       ? (awaiting.specInline["summary"] as string)
       : null;
+  // The pipeline_reset DESTRUCTIVE typed-YES confirm (its own surface). A
+  // malformed payload yields null → the never-hidden pending placeholder (a
+  // destructive gate is never silently auto-approved, never mis-rendered).
+  const confirmationSpec =
+    showBanner && kind === "confirmation_gate" && awaiting.specInline !== null
+      ? readConfirmationGateSpec(awaiting.specInline)
+      : null;
 
   return (
     <section className="gate-banner" data-testid="gate-banner" aria-label="Pending approval">
-      {hygieneSpec !== null ? (
+      {confirmationSpec !== null ? (
+        <>
+          <ConfirmationGateCard
+            spec={confirmationSpec}
+            submitting={decision.submitting}
+            onConfirm={() => decision.decide("accept", { confirm_token: "YES" })}
+            onCancel={() => decision.decide("decline")}
+          />
+          {decision.decisionError !== null && (
+            <p className="danger-text" role="alert" data-testid="confirmation-decision-error">
+              {decision.decisionError}
+            </p>
+          )}
+        </>
+      ) : hygieneSpec !== null ? (
         <>
           <HygieneReviewCard
             spec={hygieneSpec}

@@ -40,7 +40,14 @@ import {
   restartStaleRun,
   type BootRecoveryReport,
 } from "@autobroker/workflows";
-import { loadSecretsIntoEnv, loadEnvConfigIntoEnv, getDb, seedDemoData } from "@autobroker/tools";
+import {
+  loadDotEnvKeys,
+  loadSecretsIntoEnv,
+  loadEnvConfigIntoEnv,
+  getDb,
+  seedDemoData,
+  ensureProductSchema,
+} from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
  *  import — the dependency wall forbids it in the app layer). */
@@ -76,10 +83,13 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // (1) Telemetry kill — belt before construction (honored since core 1.37.0).
   process.env.MASTRA_TELEMETRY_DISABLED ??= "1";
 
-  // (1b) Seed the user-supplied API keys into process.env from the persisted
-  // keys file BEFORE the registry / Mastra is constructed, so the first provider
-  // call and the first geocode see the stored keys (the providers + geocoder
-  // resolve their key from the env at call time). Missing file = no-op.
+  // (1b) Seed the user-supplied API keys into process.env BEFORE the registry /
+  // Mastra is constructed, so the first provider call and the first geocode see
+  // the stored keys (the providers + geocoder resolve their key from the env at
+  // call time). Precedence: ambient env wins; loadDotEnvKeys fills any gap from a
+  // data-dir-independent repo `.env` (NO-CLOBBER); loadSecretsIntoEnv runs LAST so
+  // the canonical keys.json wins over `.env`. Either missing file = no-op.
+  loadDotEnvKeys();
   loadSecretsIntoEnv();
 
   // (1b') Seed the persisted operational env-config overrides (the editable
@@ -88,6 +98,13 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // secrets loader. A launch-supplied env var with no file override is left
   // untouched; missing file = no-op.
   loadEnvConfigIntoEnv();
+
+  // (1b'') Instantiate the product schema on a fresh install (idempotent — the
+  // drizzle migrator no-ops an already-migrated DB). The app delegates DOWN into
+  // the tools layer; boot never opens the product DB itself. This makes a fresh
+  // ~/.autobroker-ts/autobroker.db self-sufficient BEFORE the demo seed (which
+  // writes product rows) and before the first request.
+  ensureProductSchema();
 
   // (1c) Demo mode (zero-config sample world): write the renderable demo data
   // into the (already-isolated) demo DB before the first request, so the

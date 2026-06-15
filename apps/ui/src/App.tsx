@@ -64,6 +64,7 @@ import { GateBannerHost } from "./gate/GateBannerHost.js";
 import { toSnapshot, vehicleLabel } from "./home/profileView.js";
 import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
 import { ChatRail } from "./rail/ChatRail.js";
+import { Digest } from "./routes/Digest.js";
 import { NotFound } from "./routes/NotFound.js";
 import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { Settings } from "./routes/Settings.js";
@@ -467,6 +468,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
             />
           )}
           {route.name === "profile" && <ProfileWorkspace client={client} profileId={route.profileId} />}
+          {route.name === "digest" && <Digest client={client} profileId={route.profileId} />}
           {route.name === "settings" && (
             <Settings
               client={client}

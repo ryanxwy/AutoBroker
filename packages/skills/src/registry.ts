@@ -79,8 +79,22 @@ export const INCENTIVE_SCRAPE_SKILL_ID = "incentive_scrape" as const;
 /** The dealer inbox check skill id (skill #6, email-pull + one batch_review). */
 export const INBOX_CHECK_SKILL_ID = "dealer_inbox_check" as const;
 
+/** The dealer reply extract skill id (skill #7, the sole live-LLM extraction). */
+export const REPLY_EXTRACT_SKILL_ID = "dealer_reply_extract" as const;
+
 /** The dealer hygiene skill id (destructive; three staged batch-review confirms). */
 export const HYGIENE_SKILL_ID = "dealer_hygiene" as const;
+
+/** The inventory compare skill id (deterministic ranker; read-only, zero-LLM). */
+export const INVENTORY_COMPARE_SKILL_ID = "inventory_compare" as const;
+
+/** The quote audit skill id (deterministic 10-check audit; read-only plus an
+ *  idempotent quote_audits upsert, zero-LLM). */
+export const QUOTE_AUDIT_SKILL_ID = "quote_audit" as const;
+
+/** The quote compare skill id (deterministic compare ranker; read-only,
+ *  zero-LLM, no suspend). */
+export const QUOTE_COMPARE_SKILL_ID = "quote_compare" as const;
 
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
@@ -99,40 +113,40 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "exempt",
   },
   {
-    id: "quote_audit",
+    id: QUOTE_AUDIT_SKILL_ID,
     slash: "/quote_audit",
     title: "Quote audit",
     summary: "Run the 10-check audit over a profile's recent dealer quotes and flag issues.",
     phase: 1,
     riskClass: "read_only",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: QUOTE_AUDIT_SKILL_ID,
     inputs: ["profile_id", "quote_id"],
     outputs: "audit_summary",
     profilePin: "infer_ok",
   },
   {
-    id: "quote_compare",
+    id: QUOTE_COMPARE_SKILL_ID,
     slash: "/quote_compare",
     title: "Quote compare",
     summary: "Compare multiple dealer quotes side by side.",
     phase: 1,
     riskClass: "read_only",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: QUOTE_COMPARE_SKILL_ID,
     inputs: ["quotes"],
     outputs: "comparison",
     profilePin: "infer_ok",
   },
   {
-    id: "inventory_compare",
+    id: INVENTORY_COMPARE_SKILL_ID,
     slash: "/inventory_compare",
     title: "Inventory compare",
     summary: "Compare inventory listings against a search profile.",
     phase: 1,
     riskClass: "read_only",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: INVENTORY_COMPARE_SKILL_ID,
     inputs: ["listings", "profile_id"],
     outputs: "comparison",
     profilePin: "infer_ok",
@@ -208,15 +222,15 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "pin_required",
   },
   {
-    id: "dealer_reply_extract",
+    id: REPLY_EXTRACT_SKILL_ID,
     slash: "/dealer_reply_extract",
     title: "Dealer reply extract",
     summary: "Extract a structured quote from a dealer's email reply (LLM).",
     phase: 3,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["message_id"],
+    status: "implemented",
+    workflowId: REPLY_EXTRACT_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "dealer_quote",
     profilePin: "infer_ok",
   },
@@ -255,11 +269,14 @@ export const SKILLS: readonly SkillDef[] = [
     summary: "Build a daily digest of pipeline activity for a profile.",
     phase: 4,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: "daily_digest",
     inputs: ["profile_id"],
     outputs: "digest",
-    profilePin: "pin_required",
+    // Digest aggregates ALL active profiles by design (zero-active = a graceful
+    // skip, never an ASK); the workflow's own resolveScope is the gate, so the
+    // UI pin-gate must not block it — infer_ok, not pin_required.
+    profilePin: "infer_ok",
   },
   {
     id: "pipeline_reset",
@@ -268,10 +285,14 @@ export const SKILLS: readonly SkillDef[] = [
     summary: "Wipe the whole local pipeline DB and recreate the schema (typed-YES second-confirm; default pre-reset dealer close-out pass).",
     phase: 4,
     riskClass: "destructive",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: "pipeline_reset",
     inputs: [],
     outputs: "reset_report",
+    // GLOBAL-DESTRUCTIVE-OP EXCEPTION: pipeline_reset is non-profile-scoped (a
+    // full wipe). The pin-gate posture is satisfied here, but the load-bearing
+    // safety floor is the typed-YES second-confirm (re-validated server-side),
+    // NOT the profile pin — the action is global regardless of any pin.
     profilePin: "pin_required",
   },
 

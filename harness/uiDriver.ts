@@ -24,8 +24,10 @@
  * turn-error / stop-card[data-stop-code] / stop-intake-cta / stop-pick-option /
  * turn-resolution[data-resolution] / batch-review-card / batch-row-<id> /
  * batch-approve-<id> / batch-skip-<id> / batch-select-all / batch-counter /
- * batch-submit / batch-decline / topbar-searches / searches-popover /
- * searches-row-<profileId> / searches-pin-<profileId> /
+ * batch-submit / batch-decline / inbox-review-card / inbox-row-<dealerId> /
+ * inbox-approve-<dealerId> / inbox-skip-<dealerId> / inbox-select-all /
+ * inbox-counter / inbox-submit / inbox-decline / topbar-searches /
+ * searches-popover / searches-row-<profileId> / searches-pin-<profileId> /
  * searches-unpin-<profileId>).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
@@ -546,6 +548,68 @@ export class UiDriver {
     await this.page.click(tid("batch-decline"));
   }
 
+  // ---- inbox_review verbs (the dealer_inbox_check decision card) ------------
+  // The InboxReviewCard mirrors the batch-review machinery (per-dealer
+  // Approve/Skip, an explicit Select-all, a decided/total counter, Submit +
+  // Decline) but uses the `inbox-` testid prefix and keys rows by dealer_id —
+  // so these are NEW verbs, never the `batch-` ones aimed at the inventory card.
+
+  /** Wait for the inbox-review card to render on the gate-banner track. */
+  async waitForInboxReviewCard(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("inbox-review-card"), { timeout: timeoutMs });
+  }
+
+  /** Click one inbox row's Approve/Skip control and assert the row's decision
+   *  state flipped (data-decision on the row — the undecided default is gone). */
+  async decideInboxRow(dealerId: string, decision: "approve" | "skip"): Promise<void> {
+    await this.page.click(tid(`inbox-${decision}-${dealerId}`));
+    const observed = await this.page
+      .locator(tid(`inbox-row-${dealerId}`))
+      .getAttribute("data-decision");
+    if (observed !== decision) {
+      throw new Error(
+        `uiDriver: inbox row ${dealerId} shows data-decision="${String(observed)}" after clicking ${decision}`,
+      );
+    }
+  }
+
+  /** Click the card's explicit Select-all button (the user affordance — the
+   *  wire still carries the full explicit id list, never an approve-all). */
+  async clickInboxSelectAll(): Promise<void> {
+    await this.page.click(tid("inbox-select-all"));
+  }
+
+  /** checkInboxCounter: the live decided/total counter reads exactly
+   *  "<decided>/<total> decided". Records ok:false rather than throwing. */
+  async checkInboxCounter(decided: number, total: number): Promise<void> {
+    const text = (await this.page
+      .locator(tid("inbox-counter"))
+      .textContent()
+      .catch(() => null)) ?? "";
+    const ok = text.includes(`${decided}/${total} decided`);
+    this.record({
+      surface: "dom:gate-banner",
+      selector: tid("inbox-counter"),
+      expected: `counter "${decided}/${total} decided"`,
+      observed: `counter "${text.trim()}"`,
+      ok,
+    });
+    await this.screenshot("inbox-counter");
+  }
+
+  /** Click the inbox Submit (waits for the every-row-decided + >=1-approved gate
+   *  to enable it). */
+  async clickInboxSubmit(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("inbox-submit")}:not([disabled])`, { timeout: timeoutMs });
+    await this.page.click(tid("inbox-submit"));
+  }
+
+  /** Click the inbox Decline (always enabled — terminal, zero writes). */
+  async clickInboxDecline(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("inbox-decline"), { timeout: timeoutMs });
+    await this.page.click(tid("inbox-decline"));
+  }
+
   // ---- approval verbs (the gate-banner track's ApprovalPrompt card) ---------
 
   /** Wait for the approval card to render on the gate-banner track. */
@@ -598,6 +662,80 @@ export class UiDriver {
       timeout: timeoutMs,
     });
     await this.page.click(tid("approval-deny"));
+  }
+
+  // ---- confirmation_gate verbs (pipeline_reset's destructive typed-YES card) -
+  // The DESTRUCTIVE second-confirm surface (ConfirmationGateCard on the
+  // gate-banner track). The Confirm button is DISABLED until the typed token
+  // trims to the literal YES (a CLIENT pre-check); Cancel is always enabled
+  // (the never-hidden decline). The wipe is reachable ONLY through Confirm.
+
+  /** Wait for the destructive confirmation-gate card to render on the banner
+   *  track. */
+  async waitForConfirmationGateCard(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("confirmation-gate-card"), { timeout: timeoutMs });
+  }
+
+  /** checkResetConsequenceLines: the card renders EXACTLY `expected` plain-speech
+   *  consequence lines (the destructive frame is fully shown before any decision
+   *  — the card is never collapsed to a one-liner). Records ok:false rather than
+   *  throwing, so the verdict carries the evidence. */
+  async checkResetConsequenceLines(expected: number): Promise<void> {
+    const observed = await this.page.locator(tid("reset-consequence-line")).count();
+    this.record({
+      surface: "dom:gate-banner",
+      selector: tid("reset-consequence-line"),
+      expected: `${expected} consequence line(s) shown before the user decides`,
+      observed: `${observed} line(s)`,
+      ok: observed === expected,
+    });
+    await this.screenshot("reset-consequence-lines");
+  }
+
+  /** Type a token into the reset confirm input (the typed-YES pre-check field). */
+  async fillResetToken(token: string): Promise<void> {
+    await this.page.fill(tid("reset-confirm-token"), token);
+  }
+
+  /** Click the destructive Confirm (waits for the typed-YES client gate to
+   *  enable it — `:not([disabled])`). The card posts the canonical {confirm_token:
+   *  "YES"} regardless of the typed casing. */
+  async clickResetConfirm(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("reset-confirm")}:not([disabled])`, { timeout: timeoutMs });
+    await this.page.click(tid("reset-confirm"));
+  }
+
+  /** Click the always-enabled Cancel (decline — terminal, ZERO destruction). */
+  async clickResetCancel(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("reset-cancel"), { timeout: timeoutMs });
+    await this.page.click(tid("reset-cancel"));
+  }
+
+  /** checkResetConfirmDisabledFor: type a NON-YES token and assert the
+   *  destructive Confirm button STAYS DISABLED — the client typed-YES gate holds
+   *  the line, so a wrong token can never reach the wipe through the real card
+   *  (Cancel must remain enabled, the never-hidden stop verb). The server-side
+   *  re-validation (validateResetToken → 400) is a separate surface covered at
+   *  L1; the production card normalizes Confirm to the canonical YES, so a wrong
+   *  token never leaves the client. Records ok:false rather than throwing. */
+  async checkResetConfirmDisabledFor(token: string): Promise<void> {
+    await this.fillResetToken(token);
+    const confirmDisabled = await this.page
+      .locator(tid("reset-confirm"))
+      .isDisabled()
+      .catch(() => false);
+    const cancelEnabled = !(await this.page
+      .locator(tid("reset-cancel"))
+      .isDisabled()
+      .catch(() => true));
+    this.record({
+      surface: "dom:gate-banner",
+      selector: `${tid("reset-confirm")}[disabled] (token="${token}")`,
+      expected: `a non-YES token ("${token}") keeps Confirm DISABLED while Cancel stays enabled`,
+      observed: `confirmDisabled=${confirmDisabled} cancelEnabled=${cancelEnabled}`,
+      ok: confirmDisabled && cancelEnabled,
+    });
+    await this.screenshot("reset-bad-token-disabled");
   }
 
   /** pinProfileInSearches: the EXPLICIT pin verb — open the Searches popover,
@@ -976,6 +1114,28 @@ export class UiDriver {
     await this.page.waitForSelector(tid("app-main"), { timeout: timeoutMs });
   }
 
+  /** Navigate the SPA to a client-side route WITHOUT a full reload — the harness
+   *  analog of clicking a notification deep-link (the digest skill's notify step
+   *  deep-links to "/digest"; there is no static chrome link to it). Drives the
+   *  app's OWN History-API router exactly as the in-app navigate() helper does
+   *  (pushState + the autobroker:navigate event), then waits for the named
+   *  settle testid the destination route mounts (proving the route resolved and
+   *  rendered, not just that the URL changed). */
+  async navigateTo(path: string, settleTestid: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.evaluate(
+      // String-form: runs in the page; the harness tsconfig has no DOM lib. This
+      // mirrors apps/ui router.navigate(): push the path, fire the SPA's nav
+      // event so every useRoute() consumer re-renders at the new route.
+      `(() => {
+        if (window.location.pathname !== ${JSON.stringify(path)}) {
+          window.history.pushState({}, "", ${JSON.stringify(path)});
+          window.dispatchEvent(new Event("autobroker:navigate"));
+        }
+      })()`,
+    );
+    await this.page.waitForSelector(tid(settleTestid), { timeout: timeoutMs });
+  }
+
   /**
    * recordDomState: run a dom_state assertion against the live page and push a
    * UiCheck (the same channel every named check uses). The five expects:
@@ -1002,7 +1162,16 @@ export class UiDriver {
     let observed: string;
     let ok: boolean;
     if (expect === "visible") {
-      const visible = await this.page.locator(sel).first().isVisible().catch(() => false);
+      // A positive "visible" assertion auto-waits for the widget (Playwright's
+      // normal semantics): an element that appears after an async re-render —
+      // e.g. a row flipping to Unpin right after a Pin click — must not race the
+      // assert. On timeout it falls through to the not-visible record below.
+      const visible = await this.page
+        .locator(sel)
+        .first()
+        .waitFor({ state: "visible", timeout: DEFAULT_TIMEOUT })
+        .then(() => true)
+        .catch(() => false);
       observed = visible ? "visible" : "not visible/absent";
       ok = visible;
     } else if (expect === "absent") {

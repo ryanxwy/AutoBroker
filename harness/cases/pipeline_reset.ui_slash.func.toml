@@ -1,0 +1,162 @@
+# harness/cases/pipeline_reset.ui_slash.func.toml — FUNCTIONAL lane: the
+# pipeline_reset (O2) DESTRUCTIVE accept-and-wipe proof (the typed-YES path).
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the
+# deterministic DI stubs (NO live LLM, NO live geocode) and the test-only
+# /__e2e/* routes. pipeline_reset is itself ZERO-LLM — every step (gate,
+# close-out stub, backup, wipe, migrate, verify, notify, confirm) is
+# deterministic, so the slash run completes without ever touching a model.
+#
+#   step 1 (reset_run, kind="skill"): install the POPULATED digest_present world
+#     (1 active Hyundai Tucson profile + 2 bound dealers + 2 dealer_quotes + a
+#     thread/message/analysis/question + 3 inventory_listings), then start
+#     "/pipeline_reset" via the REAL chat-rail slash. The run reaches the ONE
+#     destructive `confirmation_gate` suspend; the driver asserts the card is
+#     fully shown (the confirmation-gate-card + EXACTLY 5 reset-consequence-line
+#     entries + the reset-confirm-token input render BEFORE any decision, gate
+#     ABOVE the prose), then types YES and confirms. The wipe→migrate→verify
+#     chain runs and the run terminates `done`. Anchors:
+#       - run_status done                  (a completed reset is a `done` run)
+#       - driver_kind deepseek_apikey      (the constant zero-LLM api-key label)
+#       - no_external_mutation             (KEYSTONE — a local wipe + a local
+#                                           VACUUM-INTO backup; never a send/submit)
+#       - cost_and_time optional=true      (zero-LLM happy path — empty ledger ok)
+#       - malformed_tool_call absent       (no tools, so no #1244 surface)
+#       - table_min_rows search_profiles   (the WIPE landed: digest_present seeded
+#         scope=global exact 0             one active profile; after the reset the
+#                                           product DB is freshly recreated and
+#                                           EMPTY — a global count of 0 proves the
+#                                           seeded profile is gone).
+#       - table_min_rows profile_dealers   (the wipe is total — the 2 seeded
+#         scope=global exact 0             bound dealers are gone too).
+#       - table_min_rows inventory_listings(the 3 seeded listings are gone).
+#         scope=global exact 0
+#     ACCOUNTS retains its single re-seeded row (the accounts 1-row exception) so
+#     the app lands on a usable empty-home — accounts is not a SNAPSHOT_TABLES
+#     entry, so it is asserted at L1 (the reset tool re-seeds exactly one) and
+#     observed here transitively via step 2 (an empty-home that renders needs the
+#     account). Zero orphan suspended runs is covered at L1 too (the reset clears
+#     mastra_workflow_snapshot); the DOM `done` terminal here is the end-to-end
+#     proof that the run survived its own DB wipe.
+#
+#   step 2 (empty_home, kind="ui"): navigate the SPA back to "/" (home) and
+#     assert the dashboard returns to the empty-home start-here surface — the
+#     server READS the freshly-recreated empty DB end-to-end (the post-wipe
+#     connection is NOT stale: the reset closes every cached handle before the
+#     wipe, so the next read reopens fresh against the recreated file):
+#       - canvas-empty visible          (the start-here card renders).
+#       - canvas-start-search visible   (the create-a-search CTA renders).
+#       - canvas-profile-card absent    (no active search survived the wipe).
+
+[meta]
+id = "pipeline_reset_ui_slash_func"
+archetype = "B"
+skills = ["pipeline_reset"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the slash run → typed-YES confirm → the wipe lands --------------
+
+[[steps]]
+id = "reset_run"
+skill = "pipeline_reset"
+fixture_state = "digest_present"
+purpose = "/pipeline_reset over the populated world: the destructive gate renders (5 lines), type YES, confirm; the product DB is wiped + recreated empty; the run is `done`."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+# This run WIPES the whole product DB (the seeded digest_present profile by
+# design). The S2 cross-check then treats the scoped profile being correctly
+# ABSENT on re-pull as the EXPECTED, CONSISTENT outcome — not a contradiction.
+expects_wipe = true
+
+# The destructive card is fully shown before deciding, then YES + Confirm. The
+# `action = "confirm"` is the card's inner verb (the parser folds it + the
+# sibling confirm_token into the form-decision content; the OUTER action is the
+# card's "accept"). The card posts the canonical {confirm_token:"YES"} once the
+# typed-YES client gate enables Confirm.
+[[steps.resume]]
+on = "confirmation_gate"
+action = "confirm"
+confirm_token = "YES"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# The wipe landed: the populated tables are EMPTY after the reset (global EXACT
+# 0). digest_present seeded 1 search_profiles + 2 profile_dealers + 3
+# inventory_listings; all three go to 0.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "global"
+min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "global"
+min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "global"
+min = 0
+exact = true
+
+# ---- step 2: the dashboard returns to empty-home (kind="ui" — no run) --------
+
+[[steps]]
+id = "empty_home"
+kind = "ui"
+purpose = "The home route returns to empty-home: the start-here CTA renders and no active-search card survived the wipe (the server reads the freshly-recreated empty DB)."
+# This step runs in the post-wipe world and still carries the seeded profile as
+# its snapshot scope, so the S2 re-pull of that (now-wiped) profile must treat a
+# NOT-found as the EXPECTED, CONSISTENT outcome — same wipe-awareness as the
+# reset_run step that performed the wipe.
+expects_wipe = true
+
+# Navigate the SPA back to home and settle on the empty-home start-here card.
+[[steps.ui_actions]]
+verb = "navigate"
+value = "/"
+testid = "canvas-empty"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-empty"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-start-search"
+expect = "visible"
+
+# No active-search card survived the wipe (the profile card is ABSENT).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-profile-card"
+expect = "absent"

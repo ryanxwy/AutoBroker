@@ -22,8 +22,9 @@
 
 export type GateTrack = "rail" | "banner";
 
-/** Gate kinds reserved for the app-level banner surface. */
-const BANNER_KINDS: ReadonlySet<string> = new Set(["approval", "batch_review", "typed_yes"]);
+/** Gate kinds reserved for the app-level banner surface. The typed-YES
+ *  destructive confirm is emitted as `confirmation_gate` (pipeline_reset). */
+const BANNER_KINDS: ReadonlySet<string> = new Set(["approval", "batch_review", "confirmation_gate"]);
 
 /** Route a suspend payload's `kind` to the surface that renders it. */
 export function gateTrack(kind: string | null): GateTrack {

@@ -1,0 +1,100 @@
+# harness/cases/pipeline_reset.decline.func.toml — FUNCTIONAL lane: the
+# pipeline_reset (O2) SAFETY KEYSTONE — NO CONFIRMATION → ZERO DESTRUCTION.
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the
+# deterministic DI stubs (NO live LLM, NO live geocode). pipeline_reset is
+# zero-LLM and reaches its ONE destructive `confirmation_gate` suspend; the user
+# clicks Cancel (the never-hidden decline). A decline is TERMINAL and sets the
+# whole run to ZERO destruction — no backup is taken, no DB is deleted, no
+# workflow runtime is cleared. So the seeded world is left untouched (Δ=0).
+#
+#   step 1 (reset_decline, kind="skill"): install the POPULATED digest_present
+#     world, start "/pipeline_reset" via the REAL chat-rail slash, let the
+#     destructive gate render (the driver asserts the confirmation-gate-card + 5
+#     reset-consequence-line entries, gate ABOVE the prose), then click Cancel.
+#     Anchors:
+#       - run_status declined            (Cancel = a `declined` terminal, never
+#                                          error — the run stopped cleanly).
+#       - driver_kind deepseek_apikey    (the constant zero-LLM api-key label).
+#       - no_external_mutation           (KEYSTONE — nothing outbound, and here
+#                                          nothing destructive either).
+#       - cost_and_time optional=true    (zero-LLM happy path — empty ledger ok).
+#       - malformed_tool_call absent     (no tools).
+#       - table_min_rows search_profiles (Δ=0 destruction: the 1 seeded active
+#         scope=global exact 1            profile is STILL present after the
+#                                          decline — a global count of exactly 1
+#                                          proves the wipe never ran).
+#       - table_min_rows profile_dealers (the 2 seeded bound dealers survive).
+#         scope=global exact 2
+#       - table_min_rows inventory_listings (the 3 seeded listings survive).
+#         scope=global exact 3
+#     No pulse, no wipe, no backup: the decline is the load-bearing floor.
+
+[meta]
+id = "pipeline_reset_decline_func"
+archetype = "B"
+skills = ["pipeline_reset"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the slash run → the destructive gate → Cancel (zero destruction) -
+
+[[steps]]
+id = "reset_decline"
+skill = "pipeline_reset"
+fixture_state = "digest_present"
+purpose = "/pipeline_reset over the populated world: the destructive gate renders, click Cancel; the run is `declined` and the seeded world is untouched (Δ=0)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+# The destructive card is fully shown, then Cancel (the never-hidden decline).
+[[steps.resume]]
+on = "confirmation_gate"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# Δ=0 DESTRUCTION: the seeded rows are STILL present after the decline (global
+# EXACT — digest_present seeded exactly these counts; nothing was wiped).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "global"
+min = 1
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "global"
+min = 2
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "global"
+min = 3
+exact = true

@@ -20,7 +20,6 @@ const PIN_REQUIRED = [
   "dealer_hygiene",
   "pipeline_reset",
   "quote_pipeline",
-  "daily_digest",
 ];
 const INFER_OK = [
   "dealer_geosearch",
@@ -31,6 +30,7 @@ const INFER_OK = [
   "quote_compare",
   "inventory_compare",
   "dealer_reply_extract",
+  "daily_digest",
 ];
 
 function idsWithPin(pin: SkillProfilePin): string[] {

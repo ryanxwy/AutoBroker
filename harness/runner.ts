@@ -42,6 +42,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { INTAKE_FIELD_META } from "@autobroker/core";
+import { loadDotEnvKeys, loadSecretsIntoEnv } from "@autobroker/tools";
 
 import { loadCase, cellIdFor, PROVIDER_DRIVER_KIND, type Case, type CaseStep, type CaseResume } from "./cases.js";
 import { buildRunDetail, type RunDetail } from "./detail.js";
@@ -56,10 +57,15 @@ import {
   type UiCheck,
   type VerdictDoc,
 } from "./evaluator.js";
-import { snapshotCounts, openReadHandle, type TableCounts } from "./dbReads.js";
+import {
+  snapshotCounts,
+  openReadHandle,
+  externalMutationDbCount,
+  type TableCounts,
+} from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
-import { applyInventorySourceSeeds } from "./seed.js";
+import { applyDealerReplySeeds, applyInventorySourceSeeds } from "./seed.js";
 import { planBatchRowDecisions, UiDriver } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -468,6 +474,8 @@ function pendingKind(step: string): string {
       return "batch_review";
     case "resolveOemSource": // incentive_scrape's first-encounter approval
       return "oem_first_encounter";
+    case "confirmGate": // pipeline_reset's destructive typed-YES confirm
+      return "confirmation_gate";
     default:
       return "data_collection";
   }
@@ -519,6 +527,30 @@ async function resolveSingleActiveProfileId(apiBase: string): Promise<string | n
   return ids.length === 1 ? ids[0]! : null;
 }
 
+/** The ACTIVE profile ids (the picker / pin candidates). A fixture world that
+ *  seeds exactly one active profile lets a later fixture-backed skill step scope
+ *  its table deltas to that profile (no intake step ran to carry an id). */
+async function readActiveProfileIds(apiBase: string): Promise<string[]> {
+  const res = await fetch(`${apiBase}/api/profiles?status=active`, { method: "GET" });
+  if (!res.ok) return [];
+  const rows = (await res.json()) as Array<{ search_profile_id?: string }>;
+  return rows.map((r) => r.search_profile_id).filter((x): x is string => typeof x === "string");
+}
+
+/** Capture the keystone external-mutation DB scan total at a step's BEFORE
+ *  moment (a read-only scan; the handle is opened+closed here). The
+ *  no_external_mutation anchor subtracts this baseline so the keystone measures
+ *  the RUN's delta, not pre-existing fixture rows (e.g. the seeded submitted
+ *  lead a dealer_inbox_check sweep requires as its discovery anchor). */
+function captureMutationBaseline(): number {
+  const { db, close } = openReadHandle();
+  try {
+    return externalMutationDbCount(db).total;
+  } finally {
+    close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // evaluate one step → verdict.json (the Monitor, encoded)
 // ---------------------------------------------------------------------------
@@ -543,6 +575,16 @@ async function evaluateStep(args: {
    *  reflects the fixture-installed world (the deterministic setup IS the
    *  ground truth), not a nonexistent run terminal. */
   runlessFixture?: boolean;
+  /** The keystone external-mutation DB scan total captured BEFORE the run. The
+   *  no_external_mutation anchor subtracts it (the run's delta, not pre-existing
+   *  fixture rows). Omitted → 0 (absolute-count behavior, unchanged). */
+  externalMutationBaseline?: number;
+  /** This step's run wipes ALL profiles (a destructive global reset). When set,
+   *  the S2 re-pull expectation is INVERTED: a profile that is correctly ABSENT
+   *  after the wipe is the EXPECTED, CONSISTENT outcome (and a still-present
+   *  profile is the real failure). Omitted/false → the default present-on-re-pull
+   *  S2 (byte-identical for every non-wipe step). */
+  expectsWipe?: boolean;
 }): Promise<VerdictDoc> {
   const { apiBase, c, step, runId, detail, before, after, profileId, layer } = args;
   const ctx: EvalContext = {
@@ -550,6 +592,7 @@ async function evaluateStep(args: {
     before,
     after,
     runWindow: { from: detail.events[0]?.ts ?? "", to: detail.events[detail.events.length - 1]?.ts ?? "" },
+    externalMutationBaseline: args.externalMutationBaseline ?? 0,
   };
 
   // Score each anchor through the read-only DB handle.
@@ -570,7 +613,20 @@ async function evaluateStep(args: {
   let s2Ok = true;
   let s2Available = true;
   let s2Text = "n/a";
-  if (profileId !== null) {
+  if (profileId !== null && args.expectsWipe === true) {
+    // Wipe-aware S2: the run is a destructive GLOBAL reset, so the scoped
+    // profile is INTENTIONALLY gone afterward. A NOT-found re-pull is the
+    // EXPECTED, CONSISTENT outcome (s2Ok = !res.ok); a profile still PRESENT
+    // after the declared wipe is the real failure. S3 (the table_min_rows=0
+    // anchors) already agrees with the wipe, so the corrected S2 yields a
+    // unanimous high → GREEN.
+    const res = await fetch(`${apiBase}/api/profiles/${encodeURIComponent(profileId)}`, { method: "GET" });
+    s2Ok = !res.ok;
+    s2Available = true;
+    s2Text = res.ok
+      ? `profile ${profileId} STILL PRESENT after wipe (unexpected)`
+      : `profile ${profileId} correctly absent after wipe`;
+  } else if (profileId !== null) {
     const res = await fetch(`${apiBase}/api/profiles/${encodeURIComponent(profileId)}`, { method: "GET" });
     s2Ok = res.ok;
     s2Available = true;
@@ -765,7 +821,7 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     const after = snapshotCounts(profileId);
 
     // (9) evaluate → verdict.json + evidence.
-    const verdict = await evaluateStep({ apiBase: host.apiBase, c, step, runId, detail, before, after, profileId, layer: opts.layer });
+    const verdict = await evaluateStep({ apiBase: host.apiBase, c, step, runId, detail, before, after, profileId, layer: opts.layer, expectsWipe: step.expectsWipe });
     const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
       "verdict.json": verdict,
       "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, profileId },
@@ -936,6 +992,35 @@ async function driveResumeScriptDom(
       // The counter must read complete (every row decided) before submit.
       await driver.checkBatchCounter(targets.length, targets.length);
       await driver.clickBatchSubmit(maxMs);
+    } else if (resume.on === "inbox_review") {
+      // The inbox-check review card renders on the gate-banner track. It mirrors
+      // the batch_review machinery (the suspend payload carries the same
+      // form_kind:"batch_review" + spec_inline.targets[{dealer_id,name,…}], so
+      // readBatchSuspendPayload reads it unchanged) but uses the inbox- testids
+      // and an `unrouted` backstop. Approve the routed dealers (or decline).
+      if (batch === undefined) {
+        throw new Error("ui lane: inbox_review resume reached with no batch drive context");
+      }
+      await driver.waitForInboxReviewCard(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      const { targets } = await batch.readSuspend();
+      if (resume.action !== "accept") {
+        // Decline twin: terminal, zero writes — no row decisions needed.
+        await driver.screenshot("inbox-card-decline");
+        await driver.clickInboxDecline();
+        continue;
+      }
+      const plan = planBatchRowDecisions(resume.rows ?? [], resume.defaultDecision, targets);
+      if (plan.kind === "select_all") {
+        await driver.clickInboxSelectAll();
+      } else {
+        for (const d of plan.decisions) {
+          await driver.decideInboxRow(d.dealerId, d.decision);
+        }
+      }
+      // The counter must read complete (every row decided) before submit.
+      await driver.checkInboxCounter(targets.length, targets.length);
+      await driver.clickInboxSubmit(maxMs);
     } else if (resume.on === "data_collection") {
       await driver.waitForIntakeForm(maxMs);
       await driver.checkFormRenderedBeforeProse();
@@ -978,6 +1063,39 @@ async function driveResumeScriptDom(
         await driver.clickForceOverrideConfirm(reason);
       } else {
         await driver.clickForceOverrideDecline();
+      }
+    } else if (resume.on === "confirmation_gate") {
+      // The DESTRUCTIVE typed-YES second-confirm (pipeline_reset's ONE suspend).
+      // The card renders on the gate-banner track ABOVE the prose; assert it is
+      // fully shown (the card + its 5 plain-speech consequence lines) BEFORE any
+      // decision, then drive the chosen branch.
+      await driver.waitForConfirmationGateCard(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      await driver.checkResetConsequenceLines(5);
+      const content = resume.content ?? {};
+      const badToken = content["bad_token"];
+      if (typeof badToken === "string") {
+        // BAD-TOKEN drive: type a NON-YES token and assert the client typed-YES
+        // gate keeps Confirm DISABLED (the wipe is never reachable with a wrong
+        // token through the real card), then Cancel out — terminal, ZERO
+        // destruction. The server-side validateResetToken→400 is a separate
+        // surface (the API form-decision path) covered at L1; the production
+        // card normalizes Confirm to the canonical YES, so a wrong token never
+        // leaves the client.
+        await driver.checkResetConfirmDisabledFor(badToken);
+        await driver.screenshot("confirmation-gate-bad-token-cancel");
+        await driver.clickResetCancel(maxMs);
+      } else if (resume.action === "accept") {
+        // Type the literal token, then confirm (the card posts the canonical
+        // {confirm_token:"YES"} once the typed-YES client gate enables Confirm).
+        const token = String(content["confirm_token"] ?? "YES");
+        await driver.fillResetToken(token);
+        await driver.screenshot("confirmation-gate-confirm");
+        await driver.clickResetConfirm(maxMs);
+      } else {
+        // The never-hidden decline (Cancel) — terminal, ZERO destruction.
+        await driver.screenshot("confirmation-gate-decline");
+        await driver.clickResetCancel(maxMs);
       }
     } else if (resume.on === "oem_first_encounter" || resume.on === "approval") {
       // The banner-track ApprovalPrompt: Approve = accept (approve the shown
@@ -1113,6 +1231,13 @@ async function driveUiOnlyStep(args: {
       await driver.fillTestid(action.testid, action.value ?? "", stepMaxMs);
     } else if (action.verb === "press") {
       await driver.pressKey(action.testid, action.value ?? "Enter", stepMaxMs);
+    } else if (action.verb === "navigate") {
+      // value = the client-side path; testid = the settle testid the
+      // destination route mounts (a navigate with no value is a case bug).
+      if (action.value === undefined || action.value.trim() === "") {
+        fail(`step "${step.id}": a navigate ui_action needs value=<path> (the route to push)`);
+      }
+      await driver.navigateTo(action.value, action.testid, stepMaxMs);
     } else {
       await driver.reloadBrowser(stepMaxMs);
     }
@@ -1199,6 +1324,7 @@ async function driveUiOnlyStep(args: {
     layer: opts.layer,
     lane: "ui",
     domChecks: [...driver.checks],
+    expectsWipe: step.expectsWipe,
     ...(runlessFixture ? { runlessFixture: true } : {}),
   });
   const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
@@ -1272,8 +1398,12 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
     // [[seed.dealer_inventory_sources]] applies ONCE, right before the case's
     // first inventory_link_scan step (the consuming skill) — by then the
     // journey's intake+geosearch steps created the profile and bound the
-    // dealers the seed entries resolve against.
-    let seedsApplied = false;
+    // dealers the seed entries resolve against. [[seed.dealer_replies]] applies
+    // ONCE, right before the case's first dealer_reply_extract step — it CREATES
+    // its own dealer/thread/message corpus (no prior geosearch needed). Each
+    // section tracks its own applied flag so a case may carry both.
+    let inventorySeedsApplied = false;
+    let replySeedsApplied = false;
 
     for (const step of c.steps) {
       // PER-STEP budget: the CLI --max-seconds overrides; else the step's TOML
@@ -1294,6 +1424,14 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         }
         await applyFixtureState(host.apiBase, step.fixtureState);
         await driver.reloadBrowser(stepMaxMs); // re-read the freshly-installed world.
+        // A fixture world that seeds exactly one active profile + no intake step
+        // to carry an id: adopt that profile as the scope target so later skill
+        // steps measure profile-scoped table deltas honestly. Only the first
+        // single-active install seeds it; an explicit profile_scope_from wins.
+        if (latestProfileId === null) {
+          const active = await readActiveProfileIds(host.apiBase);
+          if (active.length === 1) latestProfileId = active[0]!;
+        }
       }
 
       // ---- pure-UI step (kind="ui"): a user does DOM actions, no run --------
@@ -1358,11 +1496,15 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         scopeProfileId = latestProfileId;
       }
 
-      // ---- pre-step DB seed (inventory_link_scan source bootstrap) --------
+      // ---- pre-step DB seed (consuming-skill corpus bootstrap) -------------
       // Applied BEFORE the step's before-snapshot, so the seeded rows are part
       // of the baseline: the step's own table deltas measure ONLY what the run
       // wrote (a decline case's Δ=0-exact anchors stay honest).
-      if (!seedsApplied && c.seed !== null && step.skill === "inventory_link_scan") {
+      if (
+        !inventorySeedsApplied &&
+        c.seed?.dealerInventorySources != null &&
+        step.skill === "inventory_link_scan"
+      ) {
         if (scopeProfileId === null) {
           fail(`step "${step.id}": [[seed.*]] needs a profile in scope (run intake first)`);
         }
@@ -1375,10 +1517,32 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
           `[seed] dealer_inventory_sources: ${applied.seeded} row(s) inserted ` +
             `(${applied.sourceIds.length} declared) for profile ${scopeProfileId}`,
         );
-        seedsApplied = true;
+        inventorySeedsApplied = true;
+      }
+      // [[seed.dealer_replies]] → the dealer_reply_extract corpus (dealer +
+      // thread + fake_mailbox message + the matching inbound `messages` row).
+      if (
+        !replySeedsApplied &&
+        c.seed?.dealerReplies != null &&
+        step.skill === "dealer_reply_extract"
+      ) {
+        if (scopeProfileId === null) {
+          fail(`step "${step.id}": [[seed.*]] needs a profile in scope (run intake first)`);
+        }
+        const applied = applyDealerReplySeeds({
+          dbPath: opts.db,
+          profileId: scopeProfileId,
+          replies: c.seed.dealerReplies,
+        });
+        console.error(
+          `[seed] dealer_replies: ${applied.dealers} dealer(s), ${applied.threads} thread(s), ` +
+            `${applied.messages} message(s), ${applied.attachments} attachment(s) for profile ${scopeProfileId}`,
+        );
+        replySeedsApplied = true;
       }
 
       const before = snapshotCounts(scopeProfileId);
+      const mutationBaseline = captureMutationBaseline();
       const beforeIds = await readProfileIds(host.apiBase);
 
       // ---- start the run BY USER ACTION -----------------------------------
@@ -1415,7 +1579,9 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       // ---- drive the resume script as DOM actions, then await the terminal -
       // batch_review steps get the live suspend reader (name→dealer_id + the
       // <8KB bound) and the cross-step row-count expectation when declared.
-      const hasBatchResume = step.resume.some((r) => r.on === "batch_review");
+      const hasBatchResume = step.resume.some(
+        (r) => r.on === "batch_review" || r.on === "inbox_review",
+      );
       let batchCtx: BatchDriveContext | undefined;
       if (hasBatchResume) {
         let expectRowCount: number | null = null;
@@ -1448,7 +1614,15 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         await driver.screenshot("post-sse-break");
       }
       const uiTerminal = await driver.waitForTerminal(stepMaxMs);
-      await driver.checkTerminalSummaryVisible(uiTerminal);
+      // A FRIENDLY typed STOP (no_lead_submitted) terminates `error` but the UI
+      // deliberately renders a calm StopCard INSTEAD OF the turn-error line — so
+      // the terminal-summary error check would falsely RED. The checkStopCard
+      // call below is the terminal evidence for that case (the picker/CTA stops
+      // still render turn-error alongside the card, so they keep this check).
+      const friendlyStop = step.expectStop === "no_lead_submitted";
+      if (!friendlyStop) {
+        await driver.checkTerminalSummaryVisible(uiTerminal);
+      }
       if (step.edge === "sse_break" && uiTerminal === "done") {
         // The recovery must not have duplicated the rendering: the geosearch
         // confirm summary appears exactly once on exactly one assistant turn.
@@ -1528,6 +1702,8 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         lane: "ui",
         domChecks: [...driver.checks],
         waiver,
+        externalMutationBaseline: mutationBaseline,
+        expectsWipe: step.expectsWipe,
       });
       const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
         "verdict.json": verdict,
@@ -1560,6 +1736,14 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function run(argv: string[]): Promise<number> {
+  // Self-resolve the provider key BEFORE any model/provider call or the gate-⑤
+  // key-presence preflight, so `pnpm harness` needs no manual `source .env`. The
+  // .env loader is data-dir-independent (it fills the gap even though the harness
+  // sets an ISOLATED AUTOBROKER_DATA_DIR whose keys.json is empty); keys.json runs
+  // after and wins for a direct run against the default data dir. NO-CLOBBER means
+  // an already-exported key still wins over both. Both missing = no-op.
+  loadDotEnvKeys();
+  loadSecretsIntoEnv();
   const opts = parseArgs(argv);
   switch (opts.command) {
     case "intake":

@@ -21,6 +21,7 @@ import { closeDb, openDb, type Db } from "../db.js";
 import {
   listProfileDealerDomains,
   listProfileMessageRows,
+  listProfileQuoteRows,
   listProfileThreadRows,
   readFirstLeadSubmitAtMs,
 } from "./reads.js";
@@ -93,6 +94,72 @@ describe("listProfileMessageRows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!["message_id"]).toBe("m-b");
     expect(rows[0]!["quote_extraction_status"]).toBe("pending");
+  });
+});
+
+describe("listProfileThreadRows — extract_failed flag", () => {
+  it("is 0 when no message failed extraction, 1 when a profile-scoped message failed", () => {
+    // The base seed leaves PROFILE_A's one message at 'pending' → flag 0.
+    expect(listProfileThreadRows(db, PROFILE_A)[0]!["extract_failed"]).toBe(0);
+
+    // Flip PROFILE_A's message to 'failed' (the CHECK requires a null intent for
+    // 'failed') → its thread's flag flips to 1.
+    db.$client
+      .prepare(
+        "UPDATE messages SET quote_extraction_status = 'failed', quote_extraction_intent = NULL WHERE message_id = 'm-a'",
+      )
+      .run();
+    expect(listProfileThreadRows(db, PROFILE_A)[0]!["extract_failed"]).toBe(1);
+
+    // PROFILE_B's thread is untouched (the EXISTS is profile-scoped + thread-scoped).
+    expect(listProfileThreadRows(db, PROFILE_B)[0]!["extract_failed"]).toBe(0);
+  });
+});
+
+describe("listProfileQuoteRows", () => {
+  /** Seed a 'succeeded'-extraction message (CHECK requires a non-null intent)
+   *  plus its dealer_quote for a profile. */
+  function insertQuote(
+    quoteId: string,
+    profile: string,
+    mode: string,
+    otd: number | null,
+    receivedAt: string,
+  ): void {
+    const c = db.$client;
+    const messageId = `qm-${quoteId}`;
+    c.prepare(
+      "INSERT INTO messages (message_id, thread_id, direction, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
+        "VALUES (?, NULL, 'inbound', ?, 'succeeded', 'quote')",
+    ).run(messageId, profile);
+    c.prepare(
+      "INSERT INTO dealer_quotes " +
+        "(quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, financing_mode, " +
+        " otd_total, selling_price, vin, quote_format, intent, extractor_provider, extraction_method, quote_received_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'otd', 'quote', 'deepseek', 'ocr', ?)",
+    ).run(quoteId, DEALER, messageId, `g-${quoteId}`, profile, mode, otd, otd, "VIN123", receivedAt);
+  }
+
+  it("returns only the passed profile's quotes, joined to the dealer name, newest-received first", () => {
+    insertQuote("q-old", PROFILE_A, "finance", 42000, "2026-06-10T10:00:00.000Z");
+    insertQuote("q-new", PROFILE_A, "cash", 39500, "2026-06-12T10:00:00.000Z");
+    insertQuote("q-other", PROFILE_B, "lease", 36000, "2026-06-11T10:00:00.000Z");
+
+    const rows = listProfileQuoteRows(db, PROFILE_A);
+    expect(rows).toHaveLength(2);
+    // Newest quote_received_at first.
+    expect(rows.map((r) => r["quote_id"])).toEqual(["q-new", "q-old"]);
+    expect(rows[0]!["dealer_name"]).toBe("Example Hyundai");
+    expect(rows[0]!["financing_mode"]).toBe("cash");
+    expect(rows[0]!["otd_total"]).toBe(39500);
+    expect(rows[0]!["extractor_provider"]).toBe("deepseek");
+    expect(rows[0]!["extraction_method"]).toBe("ocr");
+    // The profile B quote never surfaces under A (profile scoping).
+    expect(rows.map((r) => r["quote_id"])).not.toContain("q-other");
+  });
+
+  it("returns [] for a profile with no quotes", () => {
+    expect(listProfileQuoteRows(db, PROFILE_A)).toEqual([]);
   });
 });
 

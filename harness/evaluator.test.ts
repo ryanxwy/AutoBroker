@@ -39,11 +39,19 @@ afterEach(() => {
   tmp.close();
 });
 
-/** Build an EvalContext from a profileId, snapshotting before(null)/after(id). */
-function ctxFor(profileId: string | null): EvalContext {
+/** Build an EvalContext from a profileId, snapshotting before(null)/after(id).
+ *  Pass baseline to set externalMutationBaseline on the context (for the
+ *  delta-path keystone tests). */
+function ctxFor(profileId: string | null, baseline?: number): EvalContext {
   const before = snapshotCounts(null, tmp.db);
   const after = snapshotCounts(profileId, tmp.db);
-  return { profileId, before, after, runWindow: { from: "2026-06-05", to: "2026-06-05~" } };
+  return {
+    profileId,
+    before,
+    after,
+    runWindow: { from: "2026-06-05", to: "2026-06-05~" },
+    ...(baseline !== undefined ? { externalMutationBaseline: baseline } : {}),
+  };
 }
 
 describe("run_status anchor", () => {
@@ -180,6 +188,34 @@ describe("no_external_mutation KEYSTONE anchor", () => {
     );
     expect(r.ok).toBe(false);
     expect(Number(r.observed)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("(baseline-delta) baseline absorbs a pre-existing submitted lead → keystone PASSES", () => {
+    // Seed 1 submitted lead before the run (pre-existing world state).
+    insertSubmittedLead(tmp.db, { submissionId: "s-pre", dealerId: "d-1" });
+    // Baseline captures the pre-run count (1). The run adds nothing new.
+    const r = evalAnchor({ kind: "no_external_mutation" }, detailDone(null), tmp.db, ctxFor(null, 1));
+    expect(r.ok).toBe(true);
+    expect(r.observed).toBe(0); // delta = 1 − 1 = 0
+  });
+
+  it("(baseline-delta) a NEW submitted lead added after baseline is still caught", () => {
+    // Seed the pre-existing lead (baseline = 1).
+    insertSubmittedLead(tmp.db, { submissionId: "s-pre", dealerId: "d-1" });
+    // A second lead added during the run (simulates a run-produced mutation).
+    insertSubmittedLead(tmp.db, { submissionId: "s-new", dealerId: "d-2" });
+    // baseline=1 → delta = 2 − 1 = 1 → violation.
+    const r = evalAnchor({ kind: "no_external_mutation" }, detailDone(null), tmp.db, ctxFor(null, 1));
+    expect(r.ok).toBe(false);
+    expect(Number(r.observed)).toBe(1); // exactly 1 new mutation
+  });
+
+  it("(baseline-delta) baseline higher than live count clamps to 0 (Math.max guard)", () => {
+    // No rows in DB, but baseline=2 (e.g. rows were deleted externally). The
+    // Math.max(0, 0 − 2) = 0 clamp must prevent a false RED.
+    const r = evalAnchor({ kind: "no_external_mutation" }, detailDone(null), tmp.db, ctxFor(null, 2));
+    expect(r.ok).toBe(true);
+    expect(r.observed).toBe(0);
   });
 });
 

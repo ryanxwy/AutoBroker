@@ -17,15 +17,47 @@ import { hostStem } from "./discovery.js";
 /**
  * The threads bound to one profile, joined to the dealer for its display name,
  * newest-touched first. snake_case rows for the HTTP view. Read-only.
+ *
+ * `extract_failed` (0|1) is a per-thread flag: 1 when SOME message in that
+ * thread (profile-scoped) carries quote_extraction_status='failed' — the signal
+ * the Threads canvas section renders the "extraction failed, will retry" badge
+ * from. A correlated EXISTS subquery keeps it SELECT-only and per-row.
  */
 export function listProfileThreadRows(db: Db, profileId: string): Record<string, unknown>[] {
   return db.$client
     .prepare(
       "SELECT t.thread_id, t.gmail_thread_id, t.subject, t.state, t.updated_at, " +
-        "t.dealer_id, d.name AS dealer_name " +
+        "t.dealer_id, d.name AS dealer_name, " +
+        "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.thread_id " +
+        "AND m.search_profile_id = t.search_profile_id " +
+        "AND m.quote_extraction_status = 'failed') AS extract_failed " +
         "FROM threads t LEFT JOIN dealers d ON d.dealer_id = t.dealer_id " +
         "WHERE t.search_profile_id = ? " +
         "ORDER BY t.updated_at DESC, t.thread_id",
+    )
+    .all(profileId) as Record<string, unknown>[];
+}
+
+/**
+ * The dealer quotes extracted for one profile, joined to the dealer for its
+ * display name, newest-received first (quote_received_at, then extracted_at).
+ * snake_case rows for the HTTP view — the RAW per-quote extraction projection
+ * the "Extracted quotes" Canvas section renders (ALL financing modes, incl.
+ * cash/unspecified, distinct from the ranked quote-compare buckets). Read-only.
+ *
+ * Budget red line: quote_id is projected as the React key only (never rendered);
+ * the row carries the dealer, mode, prices, format, intent and provenance —
+ * NEVER a budget.
+ */
+export function listProfileQuoteRows(db: Db, profileId: string): Record<string, unknown>[] {
+  return db.$client
+    .prepare(
+      "SELECT q.quote_id, q.financing_mode, q.otd_total, q.selling_price, q.vin, " +
+        "q.quote_format, q.intent, q.extractor_provider, q.extraction_method, " +
+        "q.quote_received_at, d.name AS dealer_name " +
+        "FROM dealer_quotes q LEFT JOIN dealers d ON d.dealer_id = q.dealer_id " +
+        "WHERE q.search_profile_id = ? " +
+        "ORDER BY q.quote_received_at DESC, q.extracted_at DESC, q.quote_id",
     )
     .all(profileId) as Record<string, unknown>[];
 }

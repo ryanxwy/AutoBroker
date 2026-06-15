@@ -33,6 +33,7 @@ const TOUCHED = [
   "AUTOBROKER_DATA_DIR",
   "AUTOBROKER_DB",
   "AUTOBROKER_GMAIL_BACKEND",
+  "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
   "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
   "AUTOBROKER_DEMO_SEED",
@@ -94,6 +95,46 @@ describe("setEnvConfig — editable persist + live mutation", () => {
     setEnvConfig("chrome_headless", "0");
     const row = getEnvConfig().find((r) => r.id === "chrome_headless");
     expect(row?.value).toBe("0");
+  });
+});
+
+describe("gmail_account — the editable-text var (free-text email)", () => {
+  it("defaults to empty (NO email baked into the descriptor)", () => {
+    const row = getEnvConfig().find((r) => r.id === "gmail_account");
+    expect(row?.classification).toBe("editable-text");
+    expect(row?.editable).toBe(true);
+    expect(row?.allowedValues).toBeNull();
+    expect(row?.default).toBeNull();
+    expect(row?.value).toBe(""); // no file, no env, null default → ""
+  });
+
+  it("persists a valid address to 0600 env.json, mutates env, and projects it", () => {
+    setEnvConfig("gmail_account", "person@example.com");
+    expect(process.env.AUTOBROKER_GMAIL_ACCOUNT).toBe("person@example.com");
+    const path = envFile();
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ gmail_account: "person@example.com" });
+    expect(getEnvConfig().find((r) => r.id === "gmail_account")?.value).toBe("person@example.com");
+  });
+
+  it("round-trips through loadEnvConfigIntoEnv after a simulated restart", () => {
+    setEnvConfig("gmail_account", "person@example.com");
+    delete process.env.AUTOBROKER_GMAIL_ACCOUNT;
+    loadEnvConfigIntoEnv();
+    expect(process.env.AUTOBROKER_GMAIL_ACCOUNT).toBe("person@example.com");
+  });
+
+  it("rejects a non-email value (validated by shape, not an allow-list) with no write", () => {
+    for (const bad of ["not-an-email", "no@domain", "has space@x.com", ""]) {
+      expect(() => setEnvConfig("gmail_account", bad)).toThrow(InvalidEnvValueError);
+    }
+    expect(process.env.AUTOBROKER_GMAIL_ACCOUNT).toBeUndefined();
+    expect(existsSync(envFile())).toBe(false);
+  });
+
+  it("falls back to a launch-supplied env value when no file override exists", () => {
+    process.env.AUTOBROKER_GMAIL_ACCOUNT = "launch@example.com";
+    expect(getEnvConfig().find((r) => r.id === "gmail_account")?.value).toBe("launch@example.com");
   });
 });
 

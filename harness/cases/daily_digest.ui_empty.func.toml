@@ -1,0 +1,107 @@
+# harness/cases/daily_digest.ui_empty.func.toml — FUNCTIONAL lane: the
+# daily_digest (O0) ZERO-ACTIVE graceful-skip + empty-page proof.
+#
+# Run via `pnpm ui:functional` (--fixture). daily_digest is zero-LLM and
+# zero-suspend; with NO active search its resolveScope step takes the documented
+# graceful-SKIP branch (NOT a hard STOP) — a `skipped` outcome that is itself a
+# SUCCESS (the run terminates `done`), advances NO watermark, and points the
+# user at intake.
+#
+#   step 1 (empty_run, kind="skill"): install the empty_home world (the
+#     fresh-migrated DB is already empty — zero active profiles), then start
+#     "/daily_digest" via the REAL chat-rail slash. The run resolves zero active
+#     profiles → the graceful skip. Anchors:
+#       - run_status done              (skip is a SUCCESS terminal, never error)
+#       - driver_kind deepseek_apikey  (the constant zero-LLM api-key label)
+#       - no_external_mutation         (KEYSTONE — nothing outbound, ever)
+#       - cost_and_time optional=true  (zero-LLM happy path — empty ledger ok)
+#       - malformed_tool_call absent   (no tools)
+#       - table_min_rows pipeline_state scope=global exact delta=0 — the skip
+#         advanced NO watermark (the empty-world DB has zero pipeline_state rows
+#         before AND after; a global EXACT 0 proves nothing was written).
+#
+#   step 2 (empty_page, kind="ui"): navigate the SPA to "/digest" and assert the
+#     empty-state card renders (digest-empty — the `_NO_ACTIVE_SEARCHES` state)
+#     and the run-completed-without-crash invariant holds (the page loads its
+#     live projection; an empty world renders the start-here card, not an error).
+
+[meta]
+id = "daily_digest_ui_empty_func"
+archetype = "B"
+skills = ["daily_digest"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the slash run over an empty world (graceful skip) ---------------
+
+[[steps]]
+id = "empty_run"
+skill = "daily_digest"
+fixture_state = "empty_home"
+purpose = "/daily_digest with zero active searches: a graceful `skipped` (a `done` SUCCESS), zero mutation, NO watermark advance."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# The skip advanced NO watermark: pipeline_state stays empty (global EXACT 0).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "pipeline_state"
+scope = "global"
+min = 0
+exact = true
+
+# ---- step 2: the /digest empty-state card (kind="ui" — no run) --------------
+
+[[steps]]
+id = "empty_page"
+kind = "ui"
+purpose = "The /digest page renders the empty-searches card (the _NO_ACTIVE_SEARCHES state) — loads cleanly, no crash."
+
+# Navigate the SPA to /digest and settle on the empty-state card mounting.
+[[steps.ui_actions]]
+verb = "navigate"
+value = "/digest"
+testid = "digest-empty"
+
+# The empty card rendered (the _NO_ACTIVE_SEARCHES state — no active searches to
+# summarize), and the page root itself is present (the page loaded, no error).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-page"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-empty"
+expect = "visible"
+
+# The error surface is ABSENT — the empty world is a clean projection, never a
+# failed read.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-error"
+expect = "absent"

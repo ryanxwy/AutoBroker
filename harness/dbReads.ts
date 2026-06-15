@@ -32,7 +32,18 @@ import { openDb, type Db } from "@autobroker/db";
  *  write targets (both carry a NOT NULL search_profile_id);
  *  manufacturer_incentives is the incentive_scrape write target — it carries
  *  NO search_profile_id (keyed (make, model, zip)), so its "profile scope" is
- *  the join through the profile's own make/model/postal_code slice. */
+ *  the join through the profile's own make/model/postal_code slice;
+ *  pipeline_state is the daily_digest watermark store (the per-profile
+ *  `digest.last_at.<profileId>` key — it carries a nullable search_profile_id,
+ *  so a digest run's watermark write is asserted via a global count delta);
+ *  quote_audits is the quote_audit write target (NOT NULL search_profile_id —
+ *  the idempotency-delta anchor reads it); dealer_quotes is the audit's INPUT
+ *  set (NOT NULL search_profile_id — snapshotted so a case can prove the run
+ *  wrote zero new quote rows);
+ *  messages + threads + thread_routing + thread_suppression + dealer_contacts
+ *  are the dealer_inbox_check write targets — each carries a search_profile_id
+ *  column (the orphan-row fix makes it NON-NULL on the inbox writes), so they
+ *  scope through the generic search_profile_id clause like the rest. */
 export const SNAPSHOT_TABLES = [
   "search_profiles",
   "audit_log",
@@ -41,6 +52,9 @@ export const SNAPSHOT_TABLES = [
   "dealer_inventory_sources",
   "inventory_listings",
   "manufacturer_incentives",
+  "pipeline_state",
+  "dealer_quotes",
+  "quote_audits",
   // messages carries a nullable search_profile_id; the dealer_web_lead_submit
   // keystone asserts a profile-scoped messages delta (an email-fallback send
   // writes a row; under BLOCK=1 the send is fuse-blocked → Δ=0) — without it the
@@ -52,7 +66,9 @@ export const SNAPSHOT_TABLES = [
   // (LOCAL writes that land even under BLOCK=1, when the gated send is fuse-blocked
   // → messages Δ=0); the func cases need table_min_rows on both.
   "threads",
+  "thread_routing",
   "thread_suppression",
+  "dealer_contacts",
 ] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
@@ -243,11 +259,14 @@ export function externalMutationDbCount(
   // A real ESCAPING send is an OUTBOUND row (sendAndRecord inserts direction=
   // 'outbound' and promotes by backfilling gmail_message_id only on a non-blocked
   // send) carrying a gmail_message_id NOT shaped like the sandbox 'sandbox-out-%'.
-  // The direction='outbound' clause is load-bearing: a seeded INBOUND dealer reply
-  // (corpus data the follow-up/closeout skills read) legitimately carries a real
-  // gmail_message_id and is NEVER an outbound mutation — counting it would
-  // false-flag the keystone. Real-send detection is unaffected (a real send is
-  // always outbound).
+  // The direction='outbound' clause is load-bearing on TWO fronts: (a) a seeded
+  // INBOUND dealer reply (corpus data the follow-up/closeout skills read)
+  // legitimately carries a real gmail_message_id and is NEVER an outbound
+  // mutation; (b) an INBOUND reply INGESTED by dealer_inbox_check also carries a
+  // real gmail_message_id (it came from the mailbox), but ingesting a received
+  // reply is never an external mutation — only an outbound SEND is. Without the
+  // direction filter either legitimate inbound row would false-flag the keystone.
+  // Real-send detection is unaffected (a real send is always outbound).
   let realOutbound = 0;
   try {
     const msgs = readOne<{ n: number }>(

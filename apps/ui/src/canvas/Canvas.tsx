@@ -20,11 +20,22 @@ import { useRef, useState } from "react";
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
-import type { DealerList, DealerRow, ProfileList, ThreadList } from "../api/wire.js";
+import type {
+  DealerList,
+  DealerRow,
+  InventoryCompareResult,
+  ProfileList,
+  QuoteCompareResult,
+  QuoteList,
+  ThreadList,
+} from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
+import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileEditPanel } from "./ProfileEditPanel.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
+import { QuoteCompare } from "./QuoteCompare.js";
+import { Quotes } from "./Quotes.js";
 import { ThreadsSection } from "./ThreadsSection.js";
 
 /** The data kinds the Canvas's read views render — stable module-level literals
@@ -39,6 +50,13 @@ const THREAD_KINDS = ["threads", "messages"] as const;
  *  a lead_submissions row, may set a dealer's contact_email, and an email fallback
  *  writes a (fake) messages row — refetch the dealer tiles on any of those. */
 const LEAD_KINDS = ["lead_submissions", "dealers", "messages"] as const;
+/** The Inventory candidates section refetches on a listings pulse (the
+ *  inventory scans write that family; the ranker itself writes nothing). */
+const INVENTORY_KINDS = ["listings"] as const;
+/** The Quote compare AND the raw Extracted-quotes sections both refetch on a
+ *  quotes pulse (the quote_audit + dealer_reply_extract skills write that family;
+ *  the compare ranker + the raw projection themselves write nothing). */
+const QUOTE_KINDS = ["quotes"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -328,6 +346,21 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const inventory = useAsync<InventoryCompareResult>(
+    () => client.listProfileInventoryCompare(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
+  const quotes = useAsync<QuoteCompareResult>(
+    () => client.listProfileQuoteCompare(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
+  const quotesRaw = useAsync<QuoteList>(
+    () => client.listProfileQuotes(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
@@ -337,6 +370,9 @@ export function Canvas({
   useDataRefetch(DEALER_KINDS, dealers.refetch);
   useDataRefetch(THREAD_KINDS, threads.refetch);
   useDataRefetch(LEAD_KINDS, dealers.refetch);
+  useDataRefetch(INVENTORY_KINDS, inventory.refetch);
+  useDataRefetch(QUOTE_KINDS, quotes.refetch);
+  useDataRefetch(QUOTE_KINDS, quotesRaw.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -361,6 +397,9 @@ export function Canvas({
         <>
           <ProfileCard client={client} snapshot={active} onSaved={profiles.refetch} />
           <DealerTiles dealers={dealers} />
+          <InventoryCandidates inventory={inventory} />
+          <QuoteCompare quotes={quotes} />
+          <Quotes quotes={quotesRaw} />
           <ThreadsSection
             threads={threads}
             dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}

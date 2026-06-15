@@ -280,6 +280,32 @@ export {
   type SeedInventorySourceOptions,
 } from "./inventory/sources.js";
 
+// inventory_compare deterministic core — the pure weighted ranker (four axes,
+// hard pre-filters), the live-listings read helper (joined to dealers for the
+// distance axis), and the profile-scoped ranking glue that maps ranked rows to
+// the flat candidate the read panel + workflow surface. Zero-LLM, read-only:
+// match_status / score are transient (no match_score column is ever written).
+export {
+  TRIM_WEIGHT,
+  PRICE_WEIGHT,
+  COLOR_WEIGHT,
+  DISTANCE_WEIGHT,
+  scoreListing,
+  applyFilters,
+  rankListings,
+  type ProfileMatchCtx,
+  type RankedRow,
+} from "./inventory/inventory_rank.js";
+export {
+  listListingsForProfile,
+  type ProfileListingsRead,
+} from "./inventory/read.js";
+export {
+  rankInventoryForProfile,
+  type RankedCandidate,
+  type RankInventoryResult,
+} from "./inventory/compute.js";
+
 // Fake-mailbox corpus seeder — the inbound deterministic row builder (the
 // adapter only writes outbound, so this stages the dealer-reply corpus the read
 // paths + sync consume). Tools owns the DB write; the harness fixture calls down.
@@ -479,12 +505,46 @@ export {
 export {
   listProfileThreadRows,
   listProfileMessageRows,
+  listProfileQuoteRows,
   listProfileContactEmails,
   listProfileDealerDomains,
   readFirstLeadSubmitAtMs,
   listSuppressedGmailThreadIds,
   listIngestedGmailMessageIds,
 } from "./inbox/reads.js";
+
+// dealer_reply_extract deterministic core — the pure per-message quote-class +
+// price/intent/body-parse classifiers, the attachment fallback tree over the
+// adapter + the attachment-text seam, and the all-or-nothing per-message upsert
+// + mark-processed state machine (quote_id preserved on re-extract).
+export {
+  classifyMessageQuoteClass,
+  normalizeOtdPrice,
+  classifyIntent,
+  parseQuoteFromBody,
+  type MessageQuoteClass,
+  type ClassifyMessageInput,
+  type BodyIntent,
+  type ParsedBodyQuote,
+} from "./replyExtract/classify.js";
+export {
+  prepareAttachments,
+  type AttachmentOutcome,
+  type AttachmentFailureReason,
+  type AttachmentExtractionMethod,
+  type PrepareAttachmentsResult,
+  type PrepareAttachmentsOptions,
+} from "./replyExtract/attachments.js";
+export {
+  persistMessageQuotes,
+  markMessageFailed,
+  type MessageProvenance,
+  type PersistMessageResult,
+} from "./replyExtract/persist.js";
+export {
+  loadReplyExtractCandidates,
+  type ReplyExtractCandidate,
+} from "./replyExtract/candidates.js";
 
 // dealer_hygiene deterministic core — the three GLOBAL detection queries +
 // idempotent suppression pre-filter, the KEEP-biased intent classifier, the
@@ -559,6 +619,38 @@ export {
   type PersistIncentivesArgs,
 } from "./incentives/persist.js";
 
+// daily_digest deterministic core — the zero-LLM read aggregation + render +
+// file-artifact writer + the per-profile digest watermark + the live page
+// projection. No LLM, no budget figures, no external mutation.
+export {
+  bucketFreshness,
+  FRESH_WINDOW_MS,
+  STALE_WINDOW_MS,
+  generateDigest,
+  NO_ACTIVE_SEARCHES,
+  DEFAULT_OFFERS_LIMIT,
+  renderDigestText,
+  digestHeadline,
+  NO_ACTIVE_SEARCHES_TEXT,
+  writeDigestArtifact,
+  buildDigestView,
+  lastDigestAtKey,
+  readLastDigestAt,
+  writeLastDigestAt,
+  type FreshnessBucket,
+  type DigestPayload,
+  type DigestProfileGroup,
+  type DigestOffer,
+  type FreshnessMix,
+  type NextAction,
+  type GenerateDigestArgs,
+  type WriteDigestArtifactArgs,
+  type DigestView,
+  type DigestViewProfile,
+  type DigestViewQuoteRow,
+  type BuildDigestViewArgs,
+} from "./digest/index.js";
+
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
@@ -579,14 +671,61 @@ export {
   type TestRunRecordInsert,
 } from "./testRunRecords.js";
 
-// Pure offer math.
+// Pure offer math — the deterministic OTD recompute (selling + Σfees + tax vs
+// stated, $1 tolerance) + the per-state doc-fee cap table. quote_audit's
+// MATH_SANITY / DOC_FEE_CAP checks consume both.
 export {
   validateOfferMath,
   OFFER_MATH_TOLERANCE_USD,
   STATE_DOC_FEE_CAP,
-  type OfferLineItems,
-  type OfferMathResult,
+  type OfferMathInput,
+  type MathCheck,
+  type MathStatus,
+  type FeeItem,
 } from "./calc.js";
+
+// quote_audit deterministic core — the pure 10-check audit (each firing check
+// emits a stable-code AuditFinding; severity derived from the code by the
+// surfacing classifier), the float-dollar read helpers feeding it (the recent /
+// peer / incentive-slice projections), and the idempotent audit-row writer
+// (UPSERT on (dealer_quote_id, audit_pass_version)). Zero-LLM; the only writes
+// are quote_audits rows.
+export {
+  auditQuote,
+  classifyAuditSeverity,
+  normalizeAddOnCode,
+  medianOrNone,
+  sumNamedAmounts,
+  peerFinanceAprs,
+  peerLeaseMfs,
+  peerDealerPlusOther,
+  profileEligibilityKinds,
+  type NamedAmount,
+  type AuditQuote,
+  type AuditPeer,
+  type AuditIncentive,
+  type AuditProfile,
+} from "./quotes/audit.js";
+export {
+  listQuotesForProfile,
+  getQuote,
+  listPeerQuotes,
+  listIncentivesSlice,
+  DEFAULT_AUDIT_PASS_VERSION,
+  type AuditQuoteWithId,
+  type ListQuotesOpts,
+} from "./quotes/quotesRead.js";
+export {
+  upsertAudit,
+  type UpsertAuditArgs,
+  type UpsertAuditOutcome,
+} from "./quotes/auditPersist.js";
+export { flagCodesFromJson } from "./quotes/flags.js";
+export {
+  rankQuotesForProfile,
+  type QuoteRanking,
+  type CompareResult,
+} from "./quotes/compare.js";
 
 // Pure validators (post-validation + safety rules).
 export {
@@ -605,6 +744,7 @@ export {
 // mutates a provider env var). Routes delegate down into this surface.
 export {
   loadSecretsIntoEnv,
+  loadDotEnvKeys,
   getKeyPresence,
   setKey,
   clearKey,
@@ -693,3 +833,71 @@ export {
   type AuditAction,
   type AuditEntry,
 } from "./profile/index.js";
+
+// pipeline_reset (DESTRUCTIVE) — the typed-YES validator, the VACUUM INTO
+// backup, the atomic migrate-based recreate (+ accounts re-seed), the mastra.db
+// workflow-runtime clear (Memory chat threads preserved), the manifest schema
+// verify, the prod-DB-reject guard, and the boot-delegated ensureProductSchema.
+// Every destructive path refuses to run outside an isolated AUTOBROKER_DATA_DIR.
+export {
+  validateResetToken,
+  RESET_CONFIRM_TOKEN,
+  backupProductDb,
+  BACKUPS_TO_KEEP,
+  type BackupProductDbArgs,
+  pipelineReset,
+  DEFAULT_ACCOUNT_EMAIL,
+  type PipelineResetArgs,
+  type PipelineResetResult,
+  verifySchema,
+  type VerifySchemaResult,
+  type VerifySchemaOptions,
+  clearWorkflowRuntimeState,
+  WORKFLOW_RUNTIME_TABLE,
+  type ClearWorkflowRuntimeResult,
+  assertIsolatedDataDir,
+  isProductionDataDir,
+  PipelineResetRefusedError,
+  resolveProductDbPath,
+  resolveMastraDbPath,
+  ensureProductSchema,
+  migrate as migrateProductDb,
+  productTableNames,
+} from "./pipelineReset/index.js";
+
+// quote_pipeline deterministic core (BUILD-AHEAD) — the child-independent
+// orchestrator tools the keystone composes once E2/D2/D3 land: re-derive the 4
+// applicable-step flags each run (non-durable, no checkpoint), the read-only
+// targeted-VIN validator, the null-VIN-raising OTD ask, the idempotent
+// targeted-VIN quote writer, the deterministic LLM-free disposition, and the one
+// generic audit_log completion row. No child workflow / LLM here.
+export {
+  detectPipelineState,
+  resolveTargetedListing,
+  TargetedListingNotFound,
+  NoInboundThread,
+  buildOtdInjection,
+  MissingVinError,
+  recordQuoteFromListing,
+  MessageNotFoundError,
+  MissingMessageIdError,
+  computeFinalState,
+  computeNextAction,
+  writePipelineCompletion,
+  PIPELINE_STEPS,
+  FINAL_STATES,
+  PIPELINE_COMPLETE_ACTION,
+  type DetectPipelineStateArgs,
+  type PipelineStateFlags,
+  type ResolveTargetedListingArgs,
+  type ResolveTargetedListingResult,
+  type TargetedListing,
+  type TargetedInboundThread,
+  type BuildOtdInjectionArgs,
+  type RecordQuoteFromListingArgs,
+  type RecordQuoteFromListingResult,
+  type PipelineStep,
+  type FinalState,
+  type WritePipelineCompletionArgs,
+  type WritePipelineCompletionResult,
+} from "./pipeline/index.js";

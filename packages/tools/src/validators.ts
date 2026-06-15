@@ -66,6 +66,18 @@ export class BudgetLeakError extends Error {
  * out-the-door price …") carries none of these and is NOT flagged.
  */
 const AMOUNT = String.raw`\$?\s?\d[\d,]*(?:\.\d+)?\s?k?`;
+// A spelled-out monetary amount (no digits): a number word optionally scaled by
+// thousand/grand, immediately tagged "dollars". This catches a PARAPHRASED
+// budget leak ("around three thousand dollars", "twenty grand") that carries no
+// digit and no $-sign, so a digit-anchored pattern would miss it. The trailing
+// "dollars"/"grand"/"bucks" tag is what makes it a money figure (a bare "three
+// thousand miles" is not flagged).
+const NUMBER_WORD =
+  String.raw`(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|` +
+  String.raw`thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|` +
+  String.raw`thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)`;
+const SPELLED_AMOUNT =
+  String.raw`(?:${NUMBER_WORD}[\s-]+){1,4}(?:thousand|grand)?[\s-]*(?:dollars|bucks|grand)`;
 export const BUDGET_PHRASE_PATTERNS: readonly RegExp[] = [
   // "my budget is 35000", "budget max: $35,000", "budget of 35k"
   new RegExp(String.raw`\bbudget\b[^.\n]{0,40}?${AMOUNT}`, "i"),
@@ -90,6 +102,21 @@ export const BUDGET_PHRASE_PATTERNS: readonly RegExp[] = [
   ),
   // standalone ceiling preposition + amount: "below 45000", "under $40k", "over 38000"
   new RegExp(String.raw`\b(?:below|under|over|at most)\b\s+${AMOUNT}`, "i"),
+  // PARAPHRASED leak — a budget/cap anchor followed by a SPELLED-OUT dollar
+  // amount ("my budget is about thirty thousand dollars", "max around twenty
+  // grand"): no digit, so the digit-anchored patterns above miss it.
+  new RegExp(
+    String.raw`\b(?:budget|max(?:imum)?|ceiling|limit|spend|afford)\b[^.\n]{0,40}?${SPELLED_AMOUNT}`,
+    "i",
+  ),
+  // PARAPHRASED leak — a soft approximation cue ("around / about / roughly /
+  // up to / no more than") immediately before a SPELLED dollar amount
+  // ("around three thousand dollars"): the approximation + "dollars" tag frames
+  // it as the buyer's private ceiling, not a precise quote request.
+  new RegExp(
+    String.raw`\b(?:around|about|roughly|approximately|up to|no more than)\b[\s-]+${SPELLED_AMOUNT}`,
+    "i",
+  ),
 ];
 
 /**

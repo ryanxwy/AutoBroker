@@ -292,6 +292,38 @@ export {
   type InboxReviewSuspend,
 } from "./dealerInboxCheckContracts.js";
 
+// The dealer_reply_extract skill workflow (skill #7 — the SOLE live-LLM
+// keystone: 4 flat steps, ZERO suspend, autonomous; per-message single
+// emit_result extraction with the #1244 fail-closed detector armed). Test-only
+// deps seam exported alongside the contracts the server descriptor builds on.
+export {
+  dealerReplyExtractWorkflow,
+  DEALER_REPLY_EXTRACT_WORKFLOW_ID,
+  __setDealerReplyExtractDepsForTests,
+  __resetDealerReplyExtractDepsForTests,
+  type DealerReplyExtractWorkflowDeps,
+} from "./dealerReplyExtract.js";
+
+// The dealer_reply_extract skill contracts (typed input/output, the single
+// emit_result extraction contract + the fenced prompt, the threaded state, and
+// the typed STOP vocabulary). Skill-local, single-use (see the header
+// rationale). Autonomous — no suspend/resume schema, no `declined` member.
+export {
+  DealerReplyExtractInputSchema,
+  DealerReplyExtractOutputSchema,
+  DealerReplyExtractEmitSchema,
+  DealerReplyExtractStopError,
+  MessageIntentSchema,
+  buildDealerReplyExtractPrompt,
+  capReplySnapshot,
+  REPLY_SNAPSHOT_CAP_CHARS,
+  type DealerReplyExtractInput,
+  type DealerReplyExtractOutput,
+  type DealerReplyExtractEmit,
+  type DealerReplyExtractStopCode,
+  type MessageIntent,
+} from "./dealerReplyExtractContracts.js";
+
 // The dealer_hygiene skill workflow (DESTRUCTIVE — three strictly-ordered
 // batch_review suspends 5a/5b/5c with a deferred single-transaction commit;
 // decline at any stage = zero writes for the whole run; zero-LLM). Test-only
@@ -389,6 +421,131 @@ export {
   DealerCloseoutEmailInputSchema,
   DealerCloseoutEmailOutputSchema,
 } from "./dealerCloseoutEmailContracts.js";
+
+// The daily_digest skill workflow (Phase 4 / Wave O — zero-LLM, zero-suspend:
+// a windowed read-only aggregation of every upstream skill's output rows into a
+// local digest artifact + the in-app /digest projection, advancing the
+// per-profile digest.last_at watermark and never surfacing budget). Test-only
+// deps seam exported alongside the contracts the server descriptor builds on.
+export {
+  dailyDigestWorkflow,
+  DAILY_DIGEST_WORKFLOW_ID,
+  DIGEST_SECTIONS_COUNT,
+  __setDailyDigestDepsForTests,
+  __resetDailyDigestDepsForTests,
+  type DailyDigestWorkflowDeps,
+} from "./dailyDigest.js";
+export {
+  DailyDigestInputSchema,
+  DailyDigestOutputSchema,
+  type DailyDigestInput,
+  type DailyDigestOutput,
+} from "./dailyDigestContracts.js";
+
+// The pipeline_reset skill workflow (Phase 4 / Wave O — DESTRUCTIVE: ONE typed-
+// YES confirmation_gate suspend [re-validated server-side], a VACUUM INTO backup,
+// an atomic migrate-based recreate + accounts re-seed, the mastra.db workflow-
+// runtime clear [Memory chat threads preserved], and a manifest schema verify;
+// decline at the gate = ZERO destruction). Test-only deps seam exported alongside
+// the contracts the server descriptor builds on.
+export {
+  pipelineResetWorkflow,
+  PIPELINE_RESET_WORKFLOW_ID,
+  PIPELINE_RESET_DEEP_LINK,
+  __setPipelineResetDepsForTests,
+  __resetPipelineResetDepsForTests,
+  type PipelineResetWorkflowDeps,
+} from "./pipelineReset.js";
+export {
+  PipelineResetInputSchema,
+  PipelineResetOutputSchema,
+  PipelineResetGateSuspendSchema,
+  PipelineResetResumeSchema,
+  PIPELINE_RESET_CONSEQUENCE_LINES,
+  PIPELINE_RESET_CONFIRM_TOKEN,
+  type PipelineResetInput,
+  type PipelineResetOutput,
+  type PipelineResetGateSuspend,
+  type PipelineResetResume,
+} from "./pipelineResetContracts.js";
+
+// The inventory_compare skill contracts (typed input/output, the flat ranked
+// candidate shape, the typed STOP vocabulary). Skill-local, single-use (see the
+// header rationale in the contracts file). Zero-LLM, read-only, no suspend.
+export {
+  InventoryCompareInputSchema,
+  InventoryCompareOutputSchema,
+  InventoryCompareStopError,
+  RankedCandidateSchema,
+  INVENTORY_COMPARE_WORKFLOW_ID,
+  type InventoryCompareInput,
+  type InventoryCompareOutput,
+  type InventoryCompareStopCode,
+  type RankedCandidate,
+} from "./inventoryCompareContracts.js";
+
+// The inventory_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → rank live listings → render). Test-only deps seam exported
+// alongside.
+export {
+  inventoryCompareWorkflow,
+  __setInventoryCompareDepsForTests,
+  __resetInventoryCompareDepsForTests,
+  type InventoryCompareWorkflowDeps,
+} from "./inventoryCompare.js";
+
+// The quote_audit skill contracts (typed input/output, the per-quote row shape,
+// the typed STOP vocabulary). Skill-local, single-use (see the header rationale
+// in the contracts file). Zero-LLM, read-only-plus-idempotent-audit-upsert, no
+// suspend.
+export {
+  QuoteAuditInputSchema,
+  QuoteAuditOutputSchema,
+  QuoteAuditRowSchema,
+  QuoteAuditStopError,
+  QUOTE_AUDIT_WORKFLOW_ID,
+  type QuoteAuditInput,
+  type QuoteAuditOutput,
+  type QuoteAuditRow,
+  type QuoteAuditStopCode,
+  type BestOtd,
+  type FlagCounts,
+} from "./quoteAuditContracts.js";
+
+// The quote_audit skill workflow (4 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → load quotes/peers/incentives → run the 10-check audit →
+// idempotent UPSERT → render). Test-only deps seam exported alongside.
+export {
+  quoteAuditWorkflow,
+  __setQuoteAuditDepsForTests,
+  __resetQuoteAuditDepsForTests,
+  type QuoteAuditWorkflowDeps,
+} from "./quoteAudit.js";
+
+// The quote_compare skill contracts (typed input/output, the flat ranked compare
+// row shape, the typed STOP vocabulary). Skill-local, single-use (see the header
+// rationale in the contracts file). Zero-LLM, read-only, no suspend.
+export {
+  QuoteCompareInputSchema,
+  QuoteCompareOutputSchema,
+  QuoteRankingSchema,
+  QuoteCompareStopError,
+  QUOTE_COMPARE_WORKFLOW_ID,
+  type QuoteCompareInput,
+  type QuoteCompareOutput,
+  type QuoteCompareStopCode,
+  type QuoteRankingRow,
+} from "./quoteCompareContracts.js";
+
+// The quote_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → rank quotes (gated by preference) → confirm). Test-only deps
+// seam exported alongside.
+export {
+  quoteCompareWorkflow,
+  __setQuoteCompareDepsForTests,
+  __resetQuoteCompareDepsForTests,
+  type QuoteCompareWorkflowDeps,
+} from "./quoteCompare.js";
 
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).

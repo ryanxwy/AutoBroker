@@ -19,9 +19,6 @@
  *
  * DEFERRED (no state yet — the data has no rendering/seeding surface today):
  *   - quotes_ready          — no quotes panel renders dealer_quotes yet.
- *   - inventory_listed      — the Canvas has no inventory_listings projection
- *                             (the feed only previews "quotes land later"); the
- *                             rows seed fine but nothing renders them.
  *   - incentives_present    — likewise no manufacturer_incentives surface in the
  *                             dashboard; seeding asserts nothing.
  *   - gmail_not_connected   — needs the Gmail connection surface (E0).
@@ -44,12 +41,18 @@ import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { closeoutReady } from "./closeoutReady.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
+import { dealerReplyExtractWorld } from "./dealerReplyExtractWorld.js";
+import { digestPresent } from "./digestPresent.js";
 import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
 import { followupReady } from "./followupReady.js";
+import { inboxNoLead, inboxReady } from "./inboxReady.js";
+import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { leadSubmitReady } from "./leadSubmitReady.js";
 import { multiActive } from "./multiActive.js";
+import { quoteAuditWorld } from "./quoteAuditWorld.js";
+import { quoteCompareCashWorld, quoteCompareWorld } from "./quoteCompareWorld.js";
 import { repliesArrived } from "./repliesArrived.js";
 
 /** One named deterministic world the functional lane can install. */
@@ -74,13 +77,21 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [closedOnly.id]: closedOnly,
   [dataArriving.id]: dataArriving,
   [dataArrivingGrown.id]: dataArrivingGrown,
+  [digestPresent.id]: digestPresent,
+  [dealerReplyExtractWorld.id]: dealerReplyExtractWorld,
   [digestReady.id]: digestReady,
+  [inventoryListings.id]: inventoryListings,
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
+  [quoteAuditWorld.id]: quoteAuditWorld,
+  [quoteCompareWorld.id]: quoteCompareWorld,
+  [quoteCompareCashWorld.id]: quoteCompareCashWorld,
   [repliesArrived.id]: repliesArrived,
   [leadSubmitReady.id]: leadSubmitReady,
   [followupReady.id]: followupReady,
   [closeoutReady.id]: closeoutReady,
+  [inboxReady.id]: inboxReady,
+  [inboxNoLead.id]: inboxNoLead,
 };
 
 /** Resolve a fixture state by id, failing LOUD on an unknown id. */

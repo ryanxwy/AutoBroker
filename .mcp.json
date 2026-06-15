@@ -3,6 +3,10 @@
     "sqlite": {
       "command": "./scripts/sqlite-mcp-launcher.sh",
       "args": []
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
     }
   }
 }
