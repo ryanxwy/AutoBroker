@@ -1560,17 +1560,22 @@ export const quoteCompareDescriptor: RunDescriptor = {
 // registry-string provider swap (NOT the zero-LLM constant).
 // ===========================================================================
 
-/** The reply-extract start body fields. Only `search_profile_id` matters to the
- *  workflow — the candidate set derives from the per-message extraction status,
- *  never from the start body; envelope fields ride the same body and are
- *  ignored (non-strict object). */
+/** The reply-extract start body fields. `search_profile_id` is the profile pin;
+ *  `escalate` is the MANUAL cross-provider retry switch (default false — the
+ *  auto-path DeepSeek route). It is true ONLY when the UI's explicit "retry
+ *  failed extractions on another provider" button starts the run — there is no
+ *  auto-escalation. The candidate set otherwise derives from the per-message
+ *  extraction status; envelope fields ride the same body and are ignored
+ *  (non-strict object). */
 const ReplyExtractStartBodySchema = z.object({
   search_profile_id: z.string().nullable().optional(),
+  escalate: z.boolean().optional(),
 });
 
 /** The reply-extract workflow inputData shape. */
 interface ReplyExtractStartInput {
   search_profile_id: string | null;
+  escalate: boolean;
 }
 
 /** The dealer_reply_extract descriptor. */
@@ -1595,7 +1600,12 @@ export const dealerReplyExtractDescriptor: RunDescriptor = {
         extra: { issues: parsed.error.issues },
       });
     }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      // Default false (the auto-path); true only when the UI's explicit retry
+      // button sends it. No server-side default can ever turn this on.
+      escalate: parsed.data.escalate ?? false,
+    };
   },
 
   // No `resume` member — autonomous, no HITL suspend; a form-decision 400s as

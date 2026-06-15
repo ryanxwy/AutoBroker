@@ -80,7 +80,7 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 
 import { reclassifyRule2Failures, type DealerReplyQuoteRow } from "@autobroker/core";
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
+import { MalformedToolCallAbort, policy, type HarnessSuspend } from "@autobroker/model";
 import {
   classifyMessageQuoteClass,
   createGmailAdapter,
@@ -209,15 +209,23 @@ function vehicleLabel(p: { year: number | null; make: string; model: string; tri
 
 /** Run ONE single-emit_result extraction over one message's snapshot. A
  *  malformed tool call hard-aborts (fail-closed) — never a prose fallthrough,
- *  never a regexed-out tool call. */
+ *  never a regexed-out tool call.
+ *
+ *  The `escalate` flag picks the provider route and NOTHING else: false → the
+ *  DeepSeek `dealer_reply_extract` useCase (the auto-path); true → the
+ *  `dealer_reply_extract_retry` useCase (the Anthropic native output_object lane).
+ *  The emit schema, prompt, single-tool discipline and fail-closed handling are
+ *  IDENTICAL on both routes. This `escalate` value originates ONLY from the
+ *  user-triggered `escalate:true` workflow input — never from a catch/retry. */
 async function extractOneMessage(args: {
   runId: string;
+  escalate: boolean;
   messageBody: string;
   attachmentText: string;
 }): Promise<{ quotes: DealerReplyQuoteRow[]; messageIntent: MessageIntent }> {
   const result = await deps().harnessGenerate(
     {
-      useCase: "dealer_reply_extract",
+      useCase: args.escalate ? "dealer_reply_extract_retry" : "dealer_reply_extract",
       schema: DealerReplyExtractEmitSchema,
       prompt: buildDealerReplyExtractPrompt(args.messageBody, args.attachmentText),
       hitlAvailable: false,
@@ -268,9 +276,11 @@ const resolveProfileStep = createStep({
     }
 
     // pinned | inferred_newest — the run proceeds, provenance recorded in state.
+    // `escalate` rides through from the input UNCHANGED (the manual retry route).
     return {
       resolution: resolved.kind,
       search_profile_id: resolved.profile.id,
+      escalate: inputData.escalate,
       candidates: [],
       quotes_upserted: 0,
       messages_processed: 0,
@@ -289,9 +299,13 @@ const loadCandidatesStep = createStep({
   outputSchema: DealerReplyExtractStateSchema,
   execute: async ({ inputData }) => {
     const state = asState(inputData);
+    // The manual retry route (escalate=true) narrows the candidate set to the
+    // profile's `failed` messages ONLY — minimize egress to exactly the failures
+    // the user is recovering. The default route keeps the pending+failed set.
     const rows: ReplyExtractCandidate[] = deps().loadCandidates(
       state.search_profile_id,
       deps().getDb(),
+      state.escalate,
     );
     const candidates: ReplyCandidateState[] = rows.map((r) => ({
       message_id: r.messageId,
@@ -317,6 +331,14 @@ const extractAndPersistStep = createStep({
   execute: async ({ inputData, runId }) => {
     const state = asState(inputData);
     const adapter: GmailAdapter = deps().createGmailAdapter();
+
+    // Provenance stamps the provider this route actually used: the default route
+    // is DeepSeek; the manual retry route is whatever policy() maps the retry
+    // useCase to (anthropic by default). Derived from policy so a registry-string
+    // provider swap flips the stamped provenance in lock-step.
+    const extractorProvider = policy(
+      state.escalate ? "dealer_reply_extract_retry" : "dealer_reply_extract",
+    ).provider;
 
     let quotesUpserted = 0;
     let messagesProcessed = 0;
@@ -358,8 +380,11 @@ const extractAndPersistStep = createStep({
         const extractionMethod: "ocr" | "text" = prep.usedOcr ? "ocr" : "text";
 
         // c. extract — the ONE LLM step (single emit_result tool, fail-closed).
+        //    state.escalate picks the provider route (default DeepSeek vs the
+        //    manual retry's Anthropic native lane) and nothing else.
         const extracted = await extractOneMessage({
           runId,
+          escalate: state.escalate,
           messageBody: c.body,
           attachmentText: capReplySnapshot(prep.text),
         });
@@ -388,7 +413,7 @@ const extractAndPersistStep = createStep({
             sourceGmailMessageId: c.source_gmail_message_id,
             searchProfileId: c.search_profile_id,
             dealerId: c.dealer_id,
-            extractorProvider: "deepseek",
+            extractorProvider,
             extractionMethod,
             intent: extracted.messageIntent,
           },

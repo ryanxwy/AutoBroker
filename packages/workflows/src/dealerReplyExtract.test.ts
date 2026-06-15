@@ -284,9 +284,15 @@ function workflow() {
   return mastra.getWorkflow(DEALER_REPLY_EXTRACT_WORKFLOW_ID);
 }
 
-async function startRun(runId: string, searchProfileId: string | null = null) {
+async function startRun(
+  runId: string,
+  searchProfileId: string | null = null,
+  escalate = false,
+) {
   const run = await workflow().createRun({ runId });
-  const result = await run.start({ inputData: { search_profile_id: searchProfileId } });
+  const result = await run.start({
+    inputData: { search_profile_id: searchProfileId, escalate },
+  });
   return { run, result };
 }
 
@@ -597,6 +603,110 @@ describe("dealer_reply_extract — idempotent re-extract", () => {
     expect(rows[0]!["quote_id"]).toBe(firstQuoteId); // quote_id preserved
     expect(rows[0]!["otd_total"]).toBe(44000); // value refreshed
     expect(messageRow("msg-re")["quote_extraction_status"]).toBe("succeeded");
+  });
+});
+
+describe("dealer_reply_extract — manual cross-provider retry (escalate)", () => {
+  /** A harness stub that records the useCase of every call (so the test proves
+   *  which provider route fired) and returns a fixed recovering emit. */
+  function harnessRecordingUseCase(seen: string[]): DealerReplyExtractWorkflowDeps["harnessGenerate"] {
+    return (async (input: { useCase: string }) => {
+      seen.push(input.useCase);
+      return {
+        object: {
+          quotes: [row({ financing_mode: "cash", otd_total: 43000 })],
+          message_intent: "real_quote",
+        },
+        usage: NO_USAGE,
+      };
+    }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"];
+  }
+
+  it("escalate:true → the retry useCase fires, the failed message recovers, a quote persists", async () => {
+    seedProfile();
+    seedDealer();
+    seedThread("thread-1");
+    // A FAILED message (the failure the user is recovering). On the escalate
+    // route it is the only candidate; it recovers to succeeded with a quote.
+    seedMessage({
+      messageId: "msg-failed",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-failed",
+      body: "OTD $43,000 on the Tucson Hybrid Limited.",
+      status: "failed",
+    });
+    const seen: string[] = [];
+    installDeps({ harnessGenerate: harnessRecordingUseCase(seen) });
+
+    const { result } = await startRun("run-escalate", null, true);
+    expect(statusOf(result)).toBe("success");
+    // The retry route fired — NOT the default DeepSeek useCase.
+    expect(seen).toEqual(["dealer_reply_extract_retry"]);
+
+    const out = outputOf(result);
+    expect(out["messages_processed"]).toBe(1);
+    expect(out["quotes_upserted"]).toBe(1);
+
+    // The failed message recovered to succeeded; a quote row persisted; the
+    // provenance stamps the retry provider (anthropic by default policy).
+    const m = messageRow("msg-failed");
+    expect(m["quote_extraction_status"]).toBe("succeeded");
+    const rows = quoteRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!["extractor_provider"]).toBe("anthropic");
+  });
+
+  it("escalate:true narrows candidates to FAILED only — a pending message is NOT sent", async () => {
+    seedProfile();
+    seedDealer();
+    seedThread("thread-1");
+    seedMessage({
+      messageId: "msg-failed",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-failed",
+      body: "failed body",
+      status: "failed",
+    });
+    seedMessage({
+      messageId: "msg-pending",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-pending",
+      body: "pending body",
+      status: "pending",
+    });
+    const seen: string[] = [];
+    installDeps({ harnessGenerate: harnessRecordingUseCase(seen) });
+
+    const { result } = await startRun("run-escalate-narrow", null, true);
+    expect(statusOf(result)).toBe("success");
+    // Exactly ONE call — only the failed message; the pending one was excluded.
+    expect(seen).toEqual(["dealer_reply_extract_retry"]);
+    expect(outputOf(result)["messages_processed"]).toBe(1);
+    // The pending message was never touched (still pending, never sent).
+    expect(messageRow("msg-pending")["quote_extraction_status"]).toBe("pending");
+  });
+
+  it("escalate:false (default) keeps the DeepSeek useCase + pending messages stay candidates", async () => {
+    seedProfile();
+    seedDealer();
+    seedThread("thread-1");
+    seedMessage({
+      messageId: "msg-pending",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-pending",
+      body: "pending body",
+      status: "pending",
+    });
+    const seen: string[] = [];
+    installDeps({ harnessGenerate: harnessRecordingUseCase(seen) });
+
+    const { result } = await startRun("run-default-route", null, false);
+    expect(statusOf(result)).toBe("success");
+    // The default route — the DeepSeek useCase, and the pending message WAS a
+    // candidate (the auto-path processes pending+failed).
+    expect(seen).toEqual(["dealer_reply_extract"]);
+    expect(outputOf(result)["messages_processed"]).toBe(1);
+    expect(messageRow("msg-pending")["quote_extraction_status"]).toBe("succeeded");
   });
 });
 

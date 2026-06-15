@@ -41,19 +41,37 @@ function fakeMastra(terminal: Record<string, unknown>) {
 }
 
 describe("dealer_reply_extract descriptor — buildInput", () => {
-  it("accepts the bare body and the explicit profile pin", () => {
-    expect(dealerReplyExtractDescriptor.buildInput({})).toEqual({ search_profile_id: null });
+  it("accepts the bare body and the explicit profile pin (escalate defaults false)", () => {
+    expect(dealerReplyExtractDescriptor.buildInput({})).toEqual({
+      search_profile_id: null,
+      escalate: false,
+    });
     expect(
       dealerReplyExtractDescriptor.buildInput({
         skill: "dealer_reply_extract",
         search_profile_id: "prof-1",
       }),
-    ).toEqual({ search_profile_id: "prof-1" });
+    ).toEqual({ search_profile_id: "prof-1", escalate: false });
+  });
+
+  it("passes through an explicit escalate:true (the manual cross-provider retry)", () => {
+    expect(
+      dealerReplyExtractDescriptor.buildInput({
+        search_profile_id: "prof-1",
+        escalate: true,
+      }),
+    ).toEqual({ search_profile_id: "prof-1", escalate: true });
   });
 
   it("rejects a non-string search_profile_id as content_invalid", () => {
     expect(() =>
       dealerReplyExtractDescriptor.buildInput({ search_profile_id: 42 }),
+    ).toThrowError(FormDecisionError);
+  });
+
+  it("rejects a non-boolean escalate as content_invalid", () => {
+    expect(() =>
+      dealerReplyExtractDescriptor.buildInput({ escalate: "yes" }),
     ).toThrowError(FormDecisionError);
   });
 });
