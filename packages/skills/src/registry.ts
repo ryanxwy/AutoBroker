@@ -85,6 +85,10 @@ export const HYGIENE_SKILL_ID = "dealer_hygiene" as const;
 /** The inventory compare skill id (deterministic ranker; read-only, zero-LLM). */
 export const INVENTORY_COMPARE_SKILL_ID = "inventory_compare" as const;
 
+/** The quote audit skill id (deterministic 10-check audit; read-only plus an
+ *  idempotent quote_audits upsert, zero-LLM). */
+export const QUOTE_AUDIT_SKILL_ID = "quote_audit" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -102,14 +106,14 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "exempt",
   },
   {
-    id: "quote_audit",
+    id: QUOTE_AUDIT_SKILL_ID,
     slash: "/quote_audit",
     title: "Quote audit",
     summary: "Run the 10-check audit over a profile's recent dealer quotes and flag issues.",
     phase: 1,
     riskClass: "read_only",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: QUOTE_AUDIT_SKILL_ID,
     inputs: ["profile_id", "quote_id"],
     outputs: "audit_summary",
     profilePin: "infer_ok",

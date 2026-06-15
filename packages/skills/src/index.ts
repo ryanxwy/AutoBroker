@@ -18,6 +18,7 @@ export {
   INBOX_CHECK_SKILL_ID,
   HYGIENE_SKILL_ID,
   INVENTORY_COMPARE_SKILL_ID,
+  QUOTE_AUDIT_SKILL_ID,
   getSkill,
 } from "./registry.js";
 export type {

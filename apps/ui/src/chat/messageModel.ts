@@ -262,6 +262,7 @@ const PROFILE_STOP_ERROR_NAMES: ReadonlySet<string> = new Set([
   "DealerGeosearchStopError",
   "DealerInboxCheckStopError",
   "InventoryCompareStopError",
+  "QuoteAuditStopError",
 ]);
 
 /**

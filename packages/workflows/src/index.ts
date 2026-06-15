@@ -345,6 +345,34 @@ export {
   type InventoryCompareWorkflowDeps,
 } from "./inventoryCompare.js";
 
+// The quote_audit skill contracts (typed input/output, the per-quote row shape,
+// the typed STOP vocabulary). Skill-local, single-use (see the header rationale
+// in the contracts file). Zero-LLM, read-only-plus-idempotent-audit-upsert, no
+// suspend.
+export {
+  QuoteAuditInputSchema,
+  QuoteAuditOutputSchema,
+  QuoteAuditRowSchema,
+  QuoteAuditStopError,
+  QUOTE_AUDIT_WORKFLOW_ID,
+  type QuoteAuditInput,
+  type QuoteAuditOutput,
+  type QuoteAuditRow,
+  type QuoteAuditStopCode,
+  type BestOtd,
+  type FlagCounts,
+} from "./quoteAuditContracts.js";
+
+// The quote_audit skill workflow (4 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → load quotes/peers/incentives → run the 10-check audit →
+// idempotent UPSERT → render). Test-only deps seam exported alongside.
+export {
+  quoteAuditWorkflow,
+  __setQuoteAuditDepsForTests,
+  __resetQuoteAuditDepsForTests,
+  type QuoteAuditWorkflowDeps,
+} from "./quoteAudit.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

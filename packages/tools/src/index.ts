@@ -461,14 +461,56 @@ export {
   type TestRunRecordInsert,
 } from "./testRunRecords.js";
 
-// Pure offer math.
+// Pure offer math — the deterministic OTD recompute (selling + Σfees + tax vs
+// stated, $1 tolerance) + the per-state doc-fee cap table. quote_audit's
+// MATH_SANITY / DOC_FEE_CAP checks consume both.
 export {
   validateOfferMath,
   OFFER_MATH_TOLERANCE_USD,
   STATE_DOC_FEE_CAP,
-  type OfferLineItems,
-  type OfferMathResult,
+  type OfferMathInput,
+  type MathCheck,
+  type MathStatus,
+  type FeeItem,
 } from "./calc.js";
+
+// quote_audit deterministic core — the pure 10-check audit (each firing check
+// emits a stable-code AuditFinding; severity derived from the code by the
+// surfacing classifier), the float-dollar read helpers feeding it (the recent /
+// peer / incentive-slice projections), and the idempotent audit-row writer
+// (UPSERT on (dealer_quote_id, audit_pass_version)). Zero-LLM; the only writes
+// are quote_audits rows.
+export {
+  auditQuote,
+  classifyAuditSeverity,
+  normalizeAddOnCode,
+  medianOrNone,
+  sumNamedAmounts,
+  peerFinanceAprs,
+  peerLeaseMfs,
+  peerDealerPlusOther,
+  profileEligibilityKinds,
+  type NamedAmount,
+  type AuditQuote,
+  type AuditPeer,
+  type AuditIncentive,
+  type AuditProfile,
+} from "./quotes/audit.js";
+export {
+  listQuotesForProfile,
+  getQuote,
+  listPeerQuotes,
+  listIncentivesSlice,
+  DEFAULT_AUDIT_PASS_VERSION,
+  type AuditQuoteWithId,
+  type ListQuotesOpts,
+} from "./quotes/quotesRead.js";
+export {
+  upsertAudit,
+  type UpsertAuditArgs,
+  type UpsertAuditOutcome,
+} from "./quotes/auditPersist.js";
+export { flagCodesFromJson } from "./quotes/flags.js";
 
 // Pure validators (post-validation + safety rules).
 export {

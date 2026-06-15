@@ -1,0 +1,122 @@
+# harness/cases/quote_audit.idempotency.func.toml — FUNCTIONAL lane, the
+# quote_audit IDEMPOTENCY keystone. quote_audit is a ZERO-LLM skill (resolve →
+# read quotes/peers/incentives → run the deterministic 10-check audit → UPSERT
+# quote_audits → render), so it runs OFFLINE on the functional lane (--fixture,
+# dummy DeepSeek key, BLOCK fuse) — no provider call ever fires. Unlike every
+# other .func.toml (all runless kind="ui" DOM steps), this case drives REAL
+# kind="skill" runs: the skill genuinely executes the workflow against the
+# fixture-seeded quote world.
+#
+# WHY GLOBAL-SCOPE row anchors (not profile-scoped delta): the fixture DB is
+# ISOLATED — it holds ONLY the one seeded quote_audit_world profile, so a global
+# quote_audits count is unambiguous. A profile-scoped delta would need an intake
+# step to mint a profile id (the snapshot scope), but the world is fixture-seeded
+# at a FIXED profile id, so global-count-exact is the honest, drift-free proof.
+#
+#   step 1  fixture quote_audit_world installs (1 active CA profile + 4
+#           dealer_quotes each with a 'succeeded' message + a matching incentive
+#           slice) → "/quote_audit" via chat-slash → the run resolves the single
+#           active profile (inferred_newest), audits all 4 quotes, and UPSERTs 4
+#           quote_audits rows. ASSERT: terminal done, driver_kind deepseek_apikey
+#           (zero-LLM constant), resolution inferred_newest, quote_audits GLOBAL
+#           count == 4 EXACT (4 rows written), dealer_quotes GLOBAL count == 4
+#           EXACT (the audit wrote NO new quote rows — it only reads them),
+#           no_external_mutation, no malformed_tool_call.
+#
+#   step 2  "/quote_audit" again (SAME pass, SAME profile, no fixture re-install)
+#           → the recent/unaudited anti-join finds all 4 quotes ALREADY audited
+#           at this pass → ZERO candidates → ZERO upserts. The IDEMPOTENCY
+#           keystone. ASSERT: terminal done, quote_audits GLOBAL count STILL == 4
+#           EXACT (Δ=0 — a duplicate would make it 8), dealer_quotes still 4,
+#           no_external_mutation.
+
+[meta]
+id = "quote_audit_idempotency_func"
+archetype = "B"
+skills = ["quote_audit"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: run the audit (4 quotes → 4 quote_audits rows) ------------------
+
+[[steps]]
+id = "audit_run"
+kind = "skill"
+skill = "quote_audit"
+fixture_state = "quote_audit_world"
+launch = "chat_slash"
+gate_policy = "approve_safe"
+purpose = "Audit the 4-quote world: 4 quote_audits rows UPSERTed; the audit reads quotes, writes no new quote rows."
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"          # zero-LLM constant label (no policy() route).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"          # unpinned session + single active profile.
+
+[[steps.anchors]]
+kind = "table_min_rows"             # 4 quote_audits rows written (global, exact).
+table = "quote_audits"
+scope = "global"
+min = 4
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"             # the audit wrote NO new dealer_quotes rows —
+table = "dealer_quotes"             # it only READS them (the 4 seeded rows stand).
+scope = "global"
+min = 4
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: re-run the SAME pass → Δ=0 (idempotency keystone) ---------------
+
+[[steps]]
+id = "audit_rerun"
+kind = "skill"
+skill = "quote_audit"
+launch = "chat_slash"
+gate_policy = "approve_safe"
+purpose = "Re-run the same pass: the recent anti-join finds all 4 already audited → zero upserts → quote_audits stays 4 (Δ=0)."
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "table_min_rows"             # quote_audits STILL 4 (no duplicate rows) —
+table = "quote_audits"              # the UPSERT idempotency keystone end-to-end.
+scope = "global"
+min = 4
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"             # dealer_quotes unchanged.
+table = "dealer_quotes"
+scope = "global"
+min = 4
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
