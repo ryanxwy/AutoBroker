@@ -35,23 +35,12 @@ import { DealerReplyQuoteRowSchema } from "@autobroker/core";
 
 /** The workflow input (the server descriptor builds this from the start body).
  *  The candidate set = unprocessed inbound messages matching the resolved
- *  profile id; the profile pin is the only routing input besides `escalate`. */
+ *  profile id; the profile pin is the only routing input. The malformed-class
+ *  recovery (deepseek-v4-pro WITH thinking) is an AUTOMATIC in-message hop, not
+ *  an input — there is no manual retry switch. */
 export const DealerReplyExtractInputSchema = z.object({
   /** Explicit profile pin, or null → standard three-branch resolution. */
   search_profile_id: z.string().nullable(),
-  /**
-   * MANUAL cross-provider retry switch. false (the default, the auto-path) →
-   * the candidate set is the profile's pending+failed inbound messages and the
-   * extract step routes the DeepSeek `dealer_reply_extract` useCase, fail-closed.
-   * true → set ONLY by the user's explicit "retry failed extractions on another
-   * provider" button: the candidate set narrows to the profile's `failed`
-   * messages (minimize egress to exactly the failures the user is recovering)
-   * and the extract step routes the `dealer_reply_extract_retry` useCase (the
-   * Anthropic native output_object lane, immune to the DeepSeek serialization
-   * defect). There is NO automatic escalation anywhere — escalate flips ONLY via
-   * this input, never from a catch/retry path.
-   */
-  escalate: z.boolean(),
 });
 export type DealerReplyExtractInput = z.infer<typeof DealerReplyExtractInputSchema>;
 
@@ -155,10 +144,6 @@ export type ReplyCandidateState = z.infer<typeof ReplyCandidateStateSchema>;
 export const DealerReplyExtractStateSchema = z.object({
   resolution: z.enum(["pinned", "inferred_newest"]),
   search_profile_id: z.string(),
-  /** Carried from the input: the manual cross-provider retry route (true →
-   *  failed-only candidates + the `dealer_reply_extract_retry` useCase). Set ONLY
-   *  by the user's explicit button — never from a catch/retry path. */
-  escalate: z.boolean(),
   candidates: z.array(ReplyCandidateStateSchema),
   quotes_upserted: z.number().int(),
   messages_processed: z.number().int(),

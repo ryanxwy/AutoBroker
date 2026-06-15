@@ -355,12 +355,12 @@ async function main(): Promise<void> {
 
     // dealer_reply_extract — stub ONLY the per-message LLM extraction (the single
     // emit_result call). It returns a fixed, BUDGET-irrelevant recovering quote so
-    // a failed message recovers to `succeeded` with one quote row. This stub stands
-    // in for BOTH provider routes (the default DeepSeek useCase AND the manual
-    // `dealer_reply_extract_retry` Anthropic lane) — the func lane makes ZERO real
-    // model calls, proving the retry FLOW end-to-end with zero real egress. Every
-    // other collaborator (resolver / candidate reader / fake gmail adapter /
-    // attachment tree / all-or-nothing persist) stays REAL against the seeded DB.
+    // a failed message recovers to `succeeded` with one quote row. The stub
+    // returns success on the FIRST hop, so it stands in for BOTH same-provider
+    // DeepSeek routes (the v4-flash first hop AND the automatic v4-pro+thinking
+    // recovery hop) — the func lane makes ZERO real model calls. Every other
+    // collaborator (resolver / candidate reader / fake gmail adapter / attachment
+    // tree / all-or-nothing persist) stays REAL against the seeded DB.
     __setDealerReplyExtractDepsForTests({
       harnessGenerate: (async () => ({
         object: {

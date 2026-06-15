@@ -128,6 +128,25 @@ export interface HarnessLedgerContext {
 const EMIT_RESULT_TOOL = "emit_result" as const;
 
 /**
+ * The useCases that run the emit_result tool on the THINKING lane instead of the
+ * default forced-emit lane: thinking ON + tool_choice:"auto" rather than thinking
+ * DISABLED + a named/forced tool_choice. The only member is the malformed-class
+ * recovery hop (dealer_reply_extract_retry → deepseek-v4-pro WITH thinking).
+ *
+ * Why a separate lane: DeepSeek thinking mode REJECTS a named/forced tool_choice
+ * ("Thinking mode does not support this tool_choice"), so an emit_result step
+ * that wants the model to REASON first cannot force the tool. With tool_choice
+ * "auto" the model reasons (thinking) then voluntarily calls the single
+ * emit_result tool — structurally the same clean thinking-ON + auto lane the
+ * chat/rail runs. The single-tool discipline, the #1244 fail-closed detector and
+ * the Zod post-validation belt are IDENTICAL on both lanes; ONLY the toolChoice
+ * + thinking switch differ.
+ */
+const THINKING_AUTO_EMIT_USE_CASES: ReadonlySet<UseCase> = new Set<UseCase>([
+  "dealer_reply_extract_retry",
+]);
+
+/**
  * Input to the PROSE facade `draftProse` — a strict subset of
  * HarnessGenerateInput with NO schema and NO hitlAvailable: a no-tool plain text
  * generation. The negotiation-follow-up draft step is the only caller; the tone
@@ -258,18 +277,30 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // Stage 9 — prompt routed through the canonical-message translator.
   const messages = toModelMessages([{ role: "user", content: input.prompt }]);
 
+  // The thinking lane (the malformed-class recovery hop) reasons first, so the
+  // model must be free to think BEFORE the tool fires. The default lane forces
+  // the tool and disables thinking (a forced tool_choice is rejected in DeepSeek
+  // thinking mode). Both lanes bind the SAME single emit_result tool, run the
+  // SAME #1244 processor, and Zod-validate the SAME captured args — only the
+  // toolChoice + thinking switch differ.
+  const thinkingLane = THINKING_AUTO_EMIT_USE_CASES.has(input.useCase);
+
   const agent = new Agent({
     id: "harness-emit",
     name: "harness-emit",
-    instructions:
-      "You must produce the final result by calling the emit_result tool exactly once. Do not answer in prose.",
+    instructions: thinkingLane
+      ? "Reason about the input, then produce the final result by calling the emit_result tool exactly once. Do not answer in prose."
+      : "You must produce the final result by calling the emit_result tool exactly once. Do not answer in prose.",
     model: model as AgentModelConfig,
     tools: { [EMIT_RESULT_TOOL]: emitResult },
   });
 
-  // Stage 4 — the agent call. Force the emit_result discipline per-request:
-  // named tool_choice + DeepSeek thinking disabled + temperature 0. The #1244
-  // processor runs on every output step (expectsToolCall defaults to () => true).
+  // Stage 4 — the agent call. Default lane: force the emit_result discipline
+  // per-request (named tool_choice + DeepSeek thinking disabled). Thinking lane:
+  // tool_choice "auto" + thinking ENABLED (forced tool_choice is rejected in
+  // thinking mode); the model reasons then voluntarily calls emit_result. Both
+  // lanes keep temperature 0 and run the #1244 processor on every output step
+  // (expectsToolCall defaults to () => true) — fail-closed is identical.
   // Review F1 (2026-06-05): a THROW from the model call itself (provider 5xx,
   // transport failure, retry exhaustion) is a run that HAPPENED — record one
   // ledger row (usage unknown ⇒ NULL-not-$0) before propagating the error. If
@@ -277,7 +308,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // local faults and neither may be swallowed.
   const result = await agent
     .generate(messages, {
-      toolChoice: { type: "tool", toolName: EMIT_RESULT_TOOL },
+      toolChoice: thinkingLane ? "auto" : { type: "tool", toolName: EMIT_RESULT_TOOL },
       // The processor's `processOutputStep` is declared optional on the broad
       // `Processor` interface but the agent's `OutputProcessor` slot wants it
       // present; our processor always defines it (live-probed clean). Cast to the
@@ -287,9 +318,15 @@ async function generate<TSchema extends z.ZodTypeAny>(
           hitlAvailable: input.hitlAvailable,
         }) as OutputProcessorOrWorkflow<MalformedToolCallTripMetadata>,
       ],
-      // DeepSeek per-request thinking switch — real provider key from the .d.ts.
-      // Harmless on providers that ignore an unknown providerOptions namespace.
-      providerOptions: { deepseek: { thinking: { type: "disabled" } } },
+      // DeepSeek per-request thinking switch — real provider keys from the .d.ts
+      // (deepseekLanguageModelOptions: thinking.type + reasoningEffort). Harmless
+      // on providers that ignore an unknown providerOptions namespace. The
+      // recovery hop turns thinking ON (its whole point is to reason past the
+      // serialization defect that failed the thinking-OFF first hop), pairing the
+      // documented chat-lane reasoning_effort:"high".
+      providerOptions: thinkingLane
+        ? { deepseek: { thinking: { type: "enabled" }, reasoningEffort: "high" } }
+        : { deepseek: { thinking: { type: "disabled" } } },
       modelSettings: { temperature: 0 },
     })
     .catch((err: unknown) => {

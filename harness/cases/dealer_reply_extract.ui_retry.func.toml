@@ -1,37 +1,35 @@
 # harness/cases/dealer_reply_extract.ui_retry.func.toml — FUNCTIONAL lane: the
-# MANUAL cross-provider RETRY of a failed dealer_reply_extract (the F1 privacy-
-# conservative escape hatch). fixture-mode, the harness is STUBBED so NO real
-# Anthropic call ever fires — this proves the FLOW end-to-end with ZERO egress.
+# AUTOMATIC same-provider malformed-class recovery of a failed
+# dealer_reply_extract. fixture-mode, the harness is STUBBED so NO real model
+# call ever fires — this proves the recovery FLOW end-to-end with ZERO egress.
 #
-# BACKGROUND: the auto-path (DeepSeek, temp:0, fail-closed) left one inbound
-# dealer reply with quote_extraction_status='failed' (a deterministic
-# serialization defect a same-provider retry can't fix). The owner's ruling is NO
-# auto-egress: the auto-path stays DeepSeek-only/fail-closed, and recovery is a
-# MANUAL, user-triggered, key-guarded, DISCLOSED retry on a different provider.
+# BACKGROUND (owner ruling): the auto-path's first hop runs deepseek-v4-flash
+# (forced emit_result, thinking OFF). On the malformed class (#1244 — the
+# deterministic serialization defect a thinking-OFF retry can't fix) the SAME run
+# retries that message ONCE on deepseek-v4-pro WITH thinking (tool_choice:"auto"),
+# SAME provider — privacy-clean, NO cross-provider egress and NO user button. The
+# recovery is internal to a normal run, so this case just LAUNCHES the skill.
 #
 #   step 1 (ui)    install dealer_reply_extract_retry_world (an active Tucson
 #                  profile + a bound dealer + a thread whose ONE inbound message
-#                  is 'failed', a recoverable candidate; the Anthropic key set
-#                  present). Click the dealer tile to mount the active projection.
-#                  PROVE the key-gated affordance: the "Retry failed
-#                  extractions" button renders AND its label DISCLOSES the egress
-#                  provider (text contains "Anthropic"); the per-thread
-#                  extract-failed badge is lit.
-#   step 2 (skill) launch=canvas_button → click that retry button → the host POSTs
-#                  dealer_reply_extract with escalate:true (the ONLY caller that
-#                  sets escalate). The stubbed harness (standing in for Anthropic)
-#                  recovers the failed message → +1 dealer_quotes row,
+#                  is 'failed', a recoverable candidate). Click the dealer tile to
+#                  mount the active projection. PROVE the per-thread
+#                  extract-failed badge is lit (there is a failure to recover) and
+#                  that NO manual retry button exists any more (the recovery is
+#                  automatic — the affordance was removed).
+#   step 2 (skill) launch=chat_slash → a normal dealer_reply_extract run. The
+#                  stubbed harness (standing in for BOTH same-provider DeepSeek
+#                  hops) recovers the failed message → +1 dealer_quotes row,
 #                  profile-scoped. no_external_mutation on the step; run done.
 #   step 3 (ui)    reload → the message recovered to 'succeeded', so the
-#                  extract-failed badge is GONE and the retry button is GONE (no
-#                  failures left to recover) — the recovery is durable.
+#                  extract-failed badge is GONE — the recovery is durable.
 #
-# WHY THESE ANCHORS ARE MEANINGFUL: the disclosing button proves the key-guarded,
-# privacy-DISCLOSED affordance (absent the key it would be a Settings hint). The
-# dealer_quotes Δ>=1 proves the escalate:true run reached real persist (the flow
-# works). no_external_mutation proves the retry stays inside the gate. The badge
+# WHY THESE ANCHORS ARE MEANINGFUL: the absent retry button proves the manual
+# Anthropic affordance is gone (recovery is automatic + same-provider). The
+# dealer_quotes Δ>=1 proves the run reached real persist (the flow works).
+# no_external_mutation proves the recovery stays inside the gate. The badge
 # clearing proves the failed message genuinely recovered. No budget number appears
-# anywhere; the stub stands in for Anthropic so there is ZERO real egress.
+# anywhere; the stub stands in for DeepSeek so there is ZERO real egress.
 
 [meta]
 id = "dealer_reply_extract_ui_retry_func"
@@ -45,13 +43,13 @@ input_mode = "slash"
 provider = "deepseek"
 lane = "ui"
 
-# ---- step 1: the key-guarded, provider-DISCLOSING retry affordance renders ------
+# ---- step 1: the failed-extraction after-state — badge lit, NO manual button ----
 
 [[steps]]
-id = "retry_affordance_renders"
+id = "failed_extraction_state"
 kind = "ui"
 fixture_state = "dealer_reply_extract_retry_world"
-purpose = "With a failed extraction AND the Anthropic key present, the Threads section renders the active 'Retry failed extractions' button DISCLOSING the egress provider, and the extract-failed badge is lit."
+purpose = "A failed extraction lights the per-thread extract-failed badge; the manual retry button is GONE (recovery is automatic + same-provider, not a user affordance)."
 
 # Click a bound dealer tile to wait for the active projection (incl. the Threads
 # section) to mount before the anchors below.
@@ -59,42 +57,32 @@ purpose = "With a failed extraction AND the Anthropic key present, the Threads s
 verb = "click"
 testid = "canvas-dealer-tile"
 
-# The retry button renders (the key is present → the active button, not the hint).
-[[steps.anchors]]
-kind = "dom_state"
-testid = "retry-failed-extractions"
-expect = "visible"
-
-# Its label DISCLOSES the egress provider — the privacy-conservative contract.
-[[steps.anchors]]
-kind = "dom_state"
-testid = "retry-failed-extractions"
-expect = "text"
-value = "Anthropic"
-
-# The no-key hint is NOT shown (the key IS present).
-[[steps.anchors]]
-kind = "dom_state"
-testid = "retry-failed-extractions-hint"
-expect = "absent"
-
 # The per-thread extract-failed badge is lit (there is a failure to recover).
 [[steps.anchors]]
 kind = "dom_state"
 testid = "message-extract-failed-badge"
 expect = "visible"
 
-# ---- step 2: click the retry button → escalate:true run → the message recovers --
+# The manual retry button is GONE — the recovery is an automatic in-run hop now.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "retry-failed-extractions"
+expect = "absent"
+
+# The old no-key Settings hint is GONE too (the whole affordance was removed).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "retry-failed-extractions-hint"
+expect = "absent"
+
+# ---- step 2: a normal dealer_reply_extract run recovers the failed message -------
 
 [[steps]]
-id = "retry_escalate_run"
+id = "auto_recover_run"
 skill = "dealer_reply_extract"
-purpose = "Clicking the retry button launches dealer_reply_extract with escalate:true; the stubbed harness recovers the failed message → +1 dealer_quotes, no external mutation, run done."
+purpose = "A normal dealer_reply_extract run recovers the failed message (the stub stands in for both same-provider DeepSeek hops) → +1 dealer_quotes, no external mutation, run done."
 gate_policy = "approve_safe"
-launch = "canvas_button"
-
-[steps.input_inline]
-button_testid = "retry-failed-extractions"
+launch = "chat_slash"
 
 [[steps.anchors]]
 kind = "run_status"
@@ -107,16 +95,16 @@ table = "dealer_quotes"
 scope = "profile"
 delta_min = 1
 
-# The retry stays inside the gate — no submitted lead, no real send.
+# The recovery stays inside the gate — no submitted lead, no real send.
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-# ---- step 3: the recovery is durable — badge + button gone after reload ----------
+# ---- step 3: the recovery is durable — badge gone after reload -------------------
 
 [[steps]]
-id = "retry_recovered"
+id = "recovered_durable"
 kind = "ui"
-purpose = "The failed message recovered to 'succeeded' — the extract-failed badge and the retry button are both gone (no failures left to recover)."
+purpose = "The failed message recovered to 'succeeded' — the extract-failed badge is gone (no failures left)."
 
 [[steps.ui_actions]]
 verb = "reload"
@@ -130,10 +118,4 @@ testid = "canvas-dealer-tile"
 [[steps.anchors]]
 kind = "dom_state"
 testid = "message-extract-failed-badge"
-expect = "absent"
-
-# The retry button is gone — there are no failed extractions left to retry.
-[[steps.anchors]]
-kind = "dom_state"
-testid = "retry-failed-extractions"
 expect = "absent"

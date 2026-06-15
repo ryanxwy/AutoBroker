@@ -1,30 +1,28 @@
 /**
- * dealerReplyExtractRetryWorld — the "one failed extraction, the user wants to
- * retry it on another provider" world for the dealer_reply_extract MANUAL
- * cross-provider retry (the F1 privacy-conservative escape hatch).
+ * dealerReplyExtractRetryWorld — the "one failed extraction, recover it
+ * automatically" world for the dealer_reply_extract AUTOMATIC same-provider
+ * malformed-class recovery (the F1 recovery, owner-directed 2026-06-15).
  *
- * The auto-path (DeepSeek, fail-closed) left one inbound dealer reply with
- * quote_extraction_status='failed' (a deterministic serialization defect a
- * same-provider retry can't fix). This world stages exactly that recoverable
- * after-state PLUS the Anthropic key present, so the Threads section renders the
- * key-guarded "Retry failed extractions — sends the reply text to Anthropic"
- * button. The func case clicks it → dealer_reply_extract runs with escalate:true
- * → the stubbed harness (standing in for Anthropic — ZERO real egress) recovers
- * the message → a dealer_quotes row lands and the extract-failed badge clears.
+ * The auto-path's first hop (deepseek-v4-flash, forced emit, thinking OFF) left
+ * one inbound dealer reply with quote_extraction_status='failed' (a deterministic
+ * serialization defect a thinking-OFF retry can't fix). This world stages exactly
+ * that recoverable after-state. A normal dealer_reply_extract run then re-attempts
+ * the failed message; the stubbed harness (standing in for BOTH same-provider
+ * DeepSeek hops — ZERO real egress) recovers it → a dealer_quotes row lands and
+ * the extract-failed badge clears. There is NO manual button and NO Anthropic key
+ * — the recovery is an automatic in-run hop on the same provider.
  *
  * WHAT THIS SEEDS:
  *   - 1 active Tucson Hyundai search_profiles row (the Canvas projects it).
  *   - 1 bound dealer (the thread display name + the dealer_id the quote keys to).
  *   - 1 thread + 1 inbound message with quote_extraction_status='failed', a
  *     non-null gmail_message_id (the UNIQUE upsert key + the candidate guard),
- *     and a body_text the extraction reads — so the message IS a retry candidate.
- *   - the Anthropic key set present in the isolated secretsStore (so the
- *     anthropicReady gate opens the active retry button, not the Settings hint).
+ *     and a body_text the extraction reads — so the message IS a candidate.
  *
  * USED BY: dealer_reply_extract.ui_retry.func.toml.
  */
 
-import { setKey, type Db } from "@autobroker/tools";
+import type { Db } from "@autobroker/tools";
 
 import type { FixtureState } from "./index.js";
 
@@ -36,12 +34,6 @@ export const dealerReplyExtractRetryWorld: FixtureState = {
   id: "dealer_reply_extract_retry_world",
   seed: (db: Db) => {
     const c = db.$client;
-
-    // Make the cross-provider RETRY key present so the Threads section renders the
-    // active retry button (absent → the Settings hint instead). A fixture-only
-    // value — the func host stubs every model call, so no real Anthropic request
-    // ever fires; this only flips the UI key-presence gate.
-    setKey("anthropic", "sk-ant-fixture-not-used");
 
     // The active profile → the Canvas projects the active card + its sections.
     c.prepare(
