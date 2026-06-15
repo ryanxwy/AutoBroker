@@ -320,6 +320,26 @@ export {
   type HygieneResume,
 } from "./dealerHygieneContracts.js";
 
+// The daily_digest skill workflow (Phase 4 / Wave O — zero-LLM, zero-suspend:
+// a windowed read-only aggregation of every upstream skill's output rows into a
+// local digest artifact + the in-app /digest projection, advancing the
+// per-profile digest.last_at watermark and never surfacing budget). Test-only
+// deps seam exported alongside the contracts the server descriptor builds on.
+export {
+  dailyDigestWorkflow,
+  DAILY_DIGEST_WORKFLOW_ID,
+  DIGEST_SECTIONS_COUNT,
+  __setDailyDigestDepsForTests,
+  __resetDailyDigestDepsForTests,
+  type DailyDigestWorkflowDeps,
+} from "./dailyDigest.js";
+export {
+  DailyDigestInputSchema,
+  DailyDigestOutputSchema,
+  type DailyDigestInput,
+  type DailyDigestOutput,
+} from "./dailyDigestContracts.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

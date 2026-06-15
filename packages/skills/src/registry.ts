@@ -255,11 +255,14 @@ export const SKILLS: readonly SkillDef[] = [
     summary: "Build a daily digest of pipeline activity for a profile.",
     phase: 4,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: "daily_digest",
     inputs: ["profile_id"],
     outputs: "digest",
-    profilePin: "pin_required",
+    // Digest aggregates ALL active profiles by design (zero-active = a graceful
+    // skip, never an ASK); the workflow's own resolveScope is the gate, so the
+    // UI pin-gate must not block it — infer_ok, not pin_required.
+    profilePin: "infer_ok",
   },
   {
     id: "pipeline_reset",

@@ -1,0 +1,171 @@
+# harness/cases/daily_digest.ui_slash.func.toml — FUNCTIONAL lane: the
+# daily_digest (O0) RENDERING + watermark proof.
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the
+# deterministic DI stubs (NO live LLM, NO live geocode) and the test-only
+# /__e2e/* routes. daily_digest is itself ZERO-LLM and ZERO-suspend, so the
+# slash run completes deterministically without ever touching a model.
+#
+#   step 1 (digest_run, kind="skill"): install the digest_present world (1
+#     active Hyundai Tucson profile + 2 bound dealers + 2 dealer_quotes with
+#     DISTINCT otd_total + a current needs-response analysis + an open question
+#     + 3 listings spanning the fresh/stale/missing freshness buckets), then
+#     start "/daily_digest" via the REAL chat-rail slash. The run aggregates the
+#     seeded rows and advances the per-profile `digest.last_at.<profileId>`
+#     watermark in pipeline_state. Anchors:
+#       - run_status done                  (a generated digest is a `done` run)
+#       - driver_kind deepseek_apikey      (the constant zero-LLM api-key label)
+#       - no_external_mutation             (KEYSTONE — read + local file/watermark
+#                                           only; never a send/submit)
+#       - cost_and_time optional=true      (the happy path is zero-LLM — an empty
+#                                           ledger is the honest "no model call")
+#       - malformed_tool_call absent       (no tools, so no #1244 surface)
+#       - table_min_rows pipeline_state    (the watermark WROTE: before the run
+#         scope=global min>=1               digest_present seeds zero
+#                                           pipeline_state rows; one active
+#                                           profile → exactly one
+#                                           digest.last_at.<id> key after — a
+#                                           global count >= 1 proves the advance.
+#                                           The key carries a nullable
+#                                           search_profile_id, so the global
+#                                           count is the honest scope here).
+#
+#   step 2 (digest_page, kind="ui"): navigate the SPA to "/digest" (the harness
+#     analog of a notification deep-link click — there is no static chrome link
+#     to the digest page) and assert the page projects the seeded world:
+#       - digest-page mounts.
+#       - EXACTLY two digest-quote-row entries == the two seeded dealer_quotes.
+#       - digest-best-otd shows $31,500 (the lowest of $31,500 / $33,995 — the
+#         unambiguous best; the page marks only the single lowest-OTD row).
+#       - the dealers + next-actions sections render.
+#       - NO budget dollar figure renders: the digest carries no budget number,
+#         only the internal-only `budget-lock` chip (asserted present-as-a-lock,
+#         visible-but-never-a-number). The semantic budget red-line itself is
+#         enforced in code (assertNoBudget on the artifact + headline) at L1; the
+#         page contract here is that no budget VALUE is surfaced.
+#
+# No [[narrative.profile]] / [[steps.resume]]: daily_digest never suspends, so
+# the slash run has no form to fill — it runs straight to `done`.
+
+[meta]
+id = "daily_digest_ui_slash_func"
+archetype = "B"
+skills = ["daily_digest"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the slash run (the rows aggregate, the watermark advances) ------
+
+[[steps]]
+id = "digest_run"
+skill = "daily_digest"
+fixture_state = "digest_present"
+purpose = "/daily_digest over the seeded world: a `done` run, zero external mutation, the per-profile watermark written."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# The watermark advanced: pipeline_state went 0 → >=1 (one digest.last_at.<id>
+# key for the one summarized profile). Global scope — the key's
+# search_profile_id is nullable, so the honest assertion is the global count.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "pipeline_state"
+scope = "global"
+min = 1
+
+# ---- step 2: the /digest page projection (kind="ui" — no run) ---------------
+
+[[steps]]
+id = "digest_page"
+kind = "ui"
+purpose = "The /digest page projects the seeded world: two quote rows, the $31,500 best OTD, the dealers + next-actions sections, and NO budget number."
+
+# Navigate the SPA to the digest route (deep-link analog) and settle on the
+# page root mounting. The world is already seeded (step 1 installed it).
+[[steps.ui_actions]]
+verb = "navigate"
+value = "/digest"
+testid = "digest-page"
+
+# The page mounted (the route resolved and rendered the live projection).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-page"
+expect = "visible"
+
+# The per-profile section rendered (the seeded active search).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-section-profile"
+expect = "visible"
+
+# The dealers section rendered.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-section-dealers"
+expect = "visible"
+
+# EXACTLY two quote rows == the two seeded dealer_quotes (a real cardinality
+# proof, not a vacuous read). Exact match: every row shares the identical
+# testid "digest-quote-row".
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-quote-row"
+expect = "count"
+count = 2
+match = "exact"
+
+# The best (lowest) OTD figure is $31,500 — the page marks exactly the single
+# lowest-OTD row with digest-best-otd, so this text both proves the best-row
+# computation and that only one row is marked best.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-best-otd"
+expect = "text"
+value = "$31,500"
+
+# The next-actions section rendered (the deterministic needs-response +
+# open-question lines derived from the seeded analysis/question).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-section-next-actions"
+expect = "visible"
+
+# NO-BUDGET posture. The DigestView wire type carries NO budget field, so the
+# page can surface no budget number: the only dollar figures on it are OTD
+# totals (the user's OWN dealer offers, explicitly allowed). The dom_state DSL
+# selects by testid (it can't negative-assert arbitrary "$" text), so the
+# strongest in-DSL signal is asserting NO budget-testid family renders — there
+# is no `digest-budget` widget on the page (absence proof). The semantic budget
+# red-line itself (assertNoBudget over the artifact text + the notification
+# headline, fail-loud BEFORE anything leaves the skill) is enforced in CODE and
+# covered at L1 — it is not a value the page could leak.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "digest-budget"
+expect = "absent"
+match = "prefix"

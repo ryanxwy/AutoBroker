@@ -1091,6 +1091,13 @@ async function driveUiOnlyStep(args: {
       await driver.fillTestid(action.testid, action.value ?? "", stepMaxMs);
     } else if (action.verb === "press") {
       await driver.pressKey(action.testid, action.value ?? "Enter", stepMaxMs);
+    } else if (action.verb === "navigate") {
+      // value = the client-side path; testid = the settle testid the
+      // destination route mounts (a navigate with no value is a case bug).
+      if (action.value === undefined || action.value.trim() === "") {
+        fail(`step "${step.id}": a navigate ui_action needs value=<path> (the route to push)`);
+      }
+      await driver.navigateTo(action.value, action.testid, stepMaxMs);
     } else {
       await driver.reloadBrowser(stepMaxMs);
     }

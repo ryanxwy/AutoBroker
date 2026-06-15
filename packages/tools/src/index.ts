@@ -415,6 +415,38 @@ export {
   type PersistIncentivesArgs,
 } from "./incentives/persist.js";
 
+// daily_digest deterministic core — the zero-LLM read aggregation + render +
+// file-artifact writer + the per-profile digest watermark + the live page
+// projection. No LLM, no budget figures, no external mutation.
+export {
+  bucketFreshness,
+  FRESH_WINDOW_MS,
+  STALE_WINDOW_MS,
+  generateDigest,
+  NO_ACTIVE_SEARCHES,
+  DEFAULT_OFFERS_LIMIT,
+  renderDigestText,
+  digestHeadline,
+  NO_ACTIVE_SEARCHES_TEXT,
+  writeDigestArtifact,
+  buildDigestView,
+  lastDigestAtKey,
+  readLastDigestAt,
+  writeLastDigestAt,
+  type FreshnessBucket,
+  type DigestPayload,
+  type DigestProfileGroup,
+  type DigestOffer,
+  type FreshnessMix,
+  type NextAction,
+  type GenerateDigestArgs,
+  type WriteDigestArtifactArgs,
+  type DigestView,
+  type DigestViewProfile,
+  type DigestViewQuoteRow,
+  type BuildDigestViewArgs,
+} from "./digest/index.js";
+
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";

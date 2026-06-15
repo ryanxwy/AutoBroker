@@ -69,6 +69,7 @@ import {
 import {
   beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
+  DAILY_DIGEST_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
@@ -878,6 +879,59 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// daily_digest — the eighth registered descriptor (Phase 4 / Wave O windowed
+// read-only aggregation). zero-LLM + zero-suspend, so driver_kind is the
+// constant api-key label and there is NO resume (a form-decision 400s as
+// unsupported_action). `search_profile_id:null` → the workflow enumerates all
+// active profiles; `since_hours` is the optional "new since" window.
+// ===========================================================================
+
+/** The daily_digest start body fields. */
+const DailyDigestStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  since_hours: z.number().nullable().optional(),
+});
+
+/** The daily_digest workflow inputData shape. */
+interface DailyDigestStartInput {
+  search_profile_id: string | null;
+  since_hours: number | null;
+}
+
+export const dailyDigestDescriptor: RunDescriptor = {
+  skillId: "daily_digest",
+  workflowId: DAILY_DIGEST_WORKFLOW_ID,
+
+  // Zero-LLM: the aggregation/render is fully deterministic, so the wire label
+  // is the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): DailyDigestStartInput {
+    const parsed = DailyDigestStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      since_hours: parsed.data.since_hours ?? null,
+    };
+  },
+
+  // The workflow's confirm step templates the deterministic summary; a graceful
+  // zero-active "skipped" run carries its own summary too.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Daily digest ready.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -890,6 +944,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
   dealerHygieneDescriptor,
+  dailyDigestDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -965,6 +1020,8 @@ function affectedKinds(workflowId: string): string[] {
       return ["listings"];
     case INCENTIVE_SCRAPE_WORKFLOW_ID:
       return ["incentives"];
+    case DAILY_DIGEST_WORKFLOW_ID:
+      return ["digest"];
     case DEALER_INBOX_CHECK_WORKFLOW_ID:
       return ["threads", "messages", "contacts"];
     case DEALER_HYGIENE_WORKFLOW_ID:

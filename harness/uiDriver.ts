@@ -945,6 +945,28 @@ export class UiDriver {
     await this.page.waitForSelector(tid("app-main"), { timeout: timeoutMs });
   }
 
+  /** Navigate the SPA to a client-side route WITHOUT a full reload — the harness
+   *  analog of clicking a notification deep-link (the digest skill's notify step
+   *  deep-links to "/digest"; there is no static chrome link to it). Drives the
+   *  app's OWN History-API router exactly as the in-app navigate() helper does
+   *  (pushState + the autobroker:navigate event), then waits for the named
+   *  settle testid the destination route mounts (proving the route resolved and
+   *  rendered, not just that the URL changed). */
+  async navigateTo(path: string, settleTestid: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.evaluate(
+      // String-form: runs in the page; the harness tsconfig has no DOM lib. This
+      // mirrors apps/ui router.navigate(): push the path, fire the SPA's nav
+      // event so every useRoute() consumer re-renders at the new route.
+      `(() => {
+        if (window.location.pathname !== ${JSON.stringify(path)}) {
+          window.history.pushState({}, "", ${JSON.stringify(path)});
+          window.dispatchEvent(new Event("autobroker:navigate"));
+        }
+      })()`,
+    );
+    await this.page.waitForSelector(tid(settleTestid), { timeout: timeoutMs });
+  }
+
   /**
    * recordDomState: run a dom_state assertion against the live page and push a
    * UiCheck (the same channel every named check uses). The five expects:

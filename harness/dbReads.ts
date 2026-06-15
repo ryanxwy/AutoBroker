@@ -32,7 +32,10 @@ import { openDb, type Db } from "@autobroker/db";
  *  write targets (both carry a NOT NULL search_profile_id);
  *  manufacturer_incentives is the incentive_scrape write target — it carries
  *  NO search_profile_id (keyed (make, model, zip)), so its "profile scope" is
- *  the join through the profile's own make/model/postal_code slice. */
+ *  the join through the profile's own make/model/postal_code slice;
+ *  pipeline_state is the daily_digest watermark store (the per-profile
+ *  `digest.last_at.<profileId>` key — it carries a nullable search_profile_id,
+ *  so a digest run's watermark write is asserted via a global count delta). */
 export const SNAPSHOT_TABLES = [
   "search_profiles",
   "audit_log",
@@ -41,6 +44,7 @@ export const SNAPSHOT_TABLES = [
   "dealer_inventory_sources",
   "inventory_listings",
   "manufacturer_incentives",
+  "pipeline_state",
 ] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
