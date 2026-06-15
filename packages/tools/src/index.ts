@@ -459,6 +459,7 @@ export {
 // mutates a provider env var). Routes delegate down into this surface.
 export {
   loadSecretsIntoEnv,
+  loadDotEnvKeys,
   getKeyPresence,
   setKey,
   clearKey,

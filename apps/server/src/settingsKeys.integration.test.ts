@@ -49,12 +49,18 @@ let tmpDir: string;
 let server: BuiltServer | undefined;
 let originalDataDir: string | undefined;
 let originalDbOverride: string | undefined;
+let originalCwd: string;
 const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
   originalDbOverride = process.env[DB_OVERRIDE];
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-keys-"));
+  // boot() now seeds keys from a data-dir-INDEPENDENT repo `.env` (walked up from
+  // cwd); chdir into the isolated tmpdir so that walk finds nothing and these
+  // clean-slate presence assertions stay hermetic on a machine that has a `.env`.
+  originalCwd = process.cwd();
+  process.chdir(tmpDir);
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
   for (const v of PROVIDER_VARS) {
@@ -78,6 +84,8 @@ afterEach(async () => {
     server = undefined;
   }
   closeDb();
+  // Restore cwd before removing tmpDir (it was the working directory).
+  process.chdir(originalCwd);
   rmSync(tmpDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env[DATA_DIR];
   else process.env[DATA_DIR] = originalDataDir;

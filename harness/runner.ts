@@ -42,6 +42,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { INTAKE_FIELD_META } from "@autobroker/core";
+import { loadDotEnvKeys, loadSecretsIntoEnv } from "@autobroker/tools";
 
 import { loadCase, cellIdFor, PROVIDER_DRIVER_KIND, type Case, type CaseStep, type CaseResume } from "./cases.js";
 import { buildRunDetail, type RunDetail } from "./detail.js";
@@ -1598,6 +1599,14 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function run(argv: string[]): Promise<number> {
+  // Self-resolve the provider key BEFORE any model/provider call or the gate-⑤
+  // key-presence preflight, so `pnpm harness` needs no manual `source .env`. The
+  // .env loader is data-dir-independent (it fills the gap even though the harness
+  // sets an ISOLATED AUTOBROKER_DATA_DIR whose keys.json is empty); keys.json runs
+  // after and wins for a direct run against the default data dir. NO-CLOBBER means
+  // an already-exported key still wins over both. Both missing = no-op.
+  loadDotEnvKeys();
+  loadSecretsIntoEnv();
   const opts = parseArgs(argv);
   switch (opts.command) {
     case "intake":

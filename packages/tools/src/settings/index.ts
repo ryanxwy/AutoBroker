@@ -6,6 +6,7 @@
 
 export {
   loadSecretsIntoEnv,
+  loadDotEnvKeys,
   getKeyPresence,
   setKey,
   clearKey,
