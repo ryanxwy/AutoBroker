@@ -36,3 +36,11 @@ jobs:
       - run: pnpm check:strings
       - run: pnpm lint:deps
       - run: pnpm db:check
+      # Functional UI lane (real-DOM Playwright) — catches UI / runtime-bump
+      # regressions the deterministic gates above cannot (the "gates insufficient"
+      # gap from the Node 22->24 migration). Fixture-mode: no real provider key;
+      # the ui:functional script arms the BLOCK fuse and uses a dummy key.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @autobroker/harness exec playwright install --with-deps chromium
+      - name: UI functional lane
+        run: pnpm ui:functional
