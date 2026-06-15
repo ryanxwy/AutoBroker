@@ -90,35 +90,3 @@ export class MissingRequiredFieldError extends Error {
   }
 }
 
-/**
- * Resolver found no active profile (branch 0). STOP and point the user to
- * intake. (No dedicated envelope code — the resolver result `kind:'none'`
- * carries this; the error form is for call sites that demand a profile.)
- */
-export class NoActiveProfileError extends Error {
-  readonly code = "no_active_profile" as const;
-  constructor() {
-    super(
-      `no_active_profile: no active search profile resolved. Run intake first to ` +
-        `create one.`,
-    );
-    this.name = "NoActiveProfileError";
-  }
-}
-
-/**
- * Resolver found 2+ active profiles (branch 2+). STOP and ask the user to
- * pick by vehicle name; `candidates` carries the list. (Ambiguous.)
- */
-export class MultipleActiveProfilesError extends Error {
-  readonly code = "multiple_active_profiles" as const;
-  readonly candidates: readonly { id: string; label: string }[];
-  constructor(candidates: readonly { id: string; label: string }[]) {
-    super(
-      `multiple_active_profiles: ${candidates.length} active profiles — ask the ` +
-        `user to pick by vehicle name: ${candidates.map((c) => c.label).join(" | ")}.`,
-    );
-    this.name = "MultipleActiveProfilesError";
-    this.candidates = candidates;
-  }
-}

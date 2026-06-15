@@ -31,7 +31,6 @@ export {
 
 export {
   resolveActiveProfile,
-  requireActiveProfile,
   type ResolveResult,
   type ResolverTrace,
 } from "./resolver.js";
@@ -50,6 +49,4 @@ export {
   IDENTITY_FIELDS,
   CoordinatesNotResolvedError,
   MissingRequiredFieldError,
-  NoActiveProfileError,
-  MultipleActiveProfilesError,
 } from "./errors.js";

@@ -36,10 +36,6 @@
 
 import type { Db } from "@autobroker/db";
 import { rowToProfile, type SearchProfileRow } from "./adapter.js";
-import {
-  MultipleActiveProfilesError,
-  NoActiveProfileError,
-} from "./errors.js";
 import type { SearchProfile } from "@autobroker/core";
 
 /** Discriminated resolver result. */
@@ -127,29 +123,4 @@ export function resolveActiveProfile(
   }
   // 2+ → ambiguous. STOP → ask by vehicle name.
   return { kind: "ambiguous", candidates: profiles };
-}
-
-/**
- * Same three-branch logic, but THROWS the typed STOP errors instead of returning
- * a discriminated union — for call sites that demand a single profile and want
- * the error envelope. `pinned`/`inferred_newest` return the profile;
- * `none` → NoActiveProfileError; `ambiguous` → MultipleActiveProfilesError.
- */
-export function requireActiveProfile(
-  db: Db,
-  args: { threadPin?: string } = {},
-  trace: ResolverTrace = defaultTrace,
-): SearchProfile {
-  const result = resolveActiveProfile(db, args, trace);
-  switch (result.kind) {
-    case "pinned":
-    case "inferred_newest":
-      return result.profile;
-    case "none":
-      throw new NoActiveProfileError();
-    case "ambiguous":
-      throw new MultipleActiveProfilesError(
-        result.candidates.map((p) => ({ id: p.id, label: vehicleLabel(p) })),
-      );
-  }
 }
