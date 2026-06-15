@@ -36,7 +36,7 @@ import {
 import { createRealGmailAdapter } from "./gmail/adapter.js";
 import { FakeGmailAdapter } from "./gmail/fakeAdapter.js";
 import { type GmailAdapter, type GmailBackend } from "./gmail/types.js";
-import { assertNoBudget, BUDGET_PHRASE_PATTERNS } from "./validators.js";
+import { assertNoBudget, assertUnicodeSafe, BUDGET_PHRASE_PATTERNS } from "./validators.js";
 
 // `SendMode` (the result discriminator carried on every SendResult) and
 // `GmailBackend` (the factory selector) are the SAME `"fake" | "real"` union by
@@ -116,6 +116,12 @@ export function buildRaw(email: OutboundEmail): string {
   // Throwing wall: a budget phrase still present in an outbound body aborts
   // assembly here, before any raw message exists — guards fake AND real sends.
   assertNoBudget(redactedBody);
+  // A lone UTF-16 surrogate half in the body or subject cannot round-trip
+  // through UTF-8 encoding (it would corrupt the assembled RFC-2822 bytes), so
+  // abort assembly here before any raw message exists rather than silently
+  // mangling the message — guards fake AND real sends.
+  assertUnicodeSafe(redactedBody);
+  assertUnicodeSafe(email.subject);
 
   const date = new Date().toUTCString();
   const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@autobroker.local>`;

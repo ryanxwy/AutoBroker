@@ -164,6 +164,13 @@ describe("buildRaw", () => {
     expect(decoded).toMatch(/^From: buyer@example\.test$/m);
     expect(decoded).toMatch(/^Subject: Best out-the-door price request$/m);
   });
+
+  it("throws on a lone surrogate in the body — assembly aborts before any raw bytes", () => {
+    // \uD83D is a high surrogate with no low half — invalid Unicode that cannot
+    // round-trip through UTF-8; assembly must abort, not mangle it.
+    const bad: OutboundEmail = { ...CLEAN_EMAIL, body: `Hello \uD83D there.` };
+    expect(() => buildRaw(bad)).toThrow();
+  });
 });
 
 describe("createGmailAdapter — factory matrix", () => {

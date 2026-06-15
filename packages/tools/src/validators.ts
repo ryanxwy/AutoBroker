@@ -113,6 +113,59 @@ export function assertNoBudget(text: string): ValidationResult {
 }
 
 /**
+ * Thrown by assertUnicodeSafe when dealer-facing text carries a lone UTF-16
+ * surrogate half (an unpaired U+D800–U+DFFF code unit). FAIL-LOUD: a lone
+ * surrogate is not valid Unicode and corrupts the assembled RFC-2822 message
+ * (it cannot round-trip through UTF-8 encoding), so it must be rejected before
+ * the send path, never silently substituted. `index` is the offending code
+ * unit's position for audit.
+ */
+export class UnicodeUnsafeError extends Error {
+  readonly code = "unicode_unsafe" as const;
+  readonly index: number;
+  constructor(index: number) {
+    super(
+      `unicode_unsafe: text contains a lone UTF-16 surrogate half at index ` +
+        `${index} — unpaired surrogates are invalid Unicode and must never reach ` +
+        `the send path.`,
+    );
+    this.name = "UnicodeUnsafeError";
+    this.index = index;
+  }
+}
+
+/**
+ * Reject text that carries a lone (unpaired) UTF-16 surrogate half. A valid
+ * surrogate PAIR is a high half (U+D800–U+DBFF) immediately followed by a low
+ * half (U+DC00–U+DFFF); either half on its own — a high half not followed by a
+ * low half, or a low half not preceded by a high half — is invalid Unicode.
+ * THROWS UnicodeUnsafeError on the first lone half (fail-LOUD); returns
+ * ValidationResult (ok:true) when every surrogate is correctly paired (or there
+ * are none) so it composes with the other validators.
+ *
+ * @param text the candidate string about to enter the send path.
+ */
+export function assertUnicodeSafe(text: string): ValidationResult {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      // High surrogate — must be immediately followed by a low surrogate.
+      const next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++; // consume the paired low half
+        continue;
+      }
+      throw new UnicodeUnsafeError(i);
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      // Low surrogate not preceded by a high half (those advance past it above).
+      throw new UnicodeUnsafeError(i);
+    }
+  }
+  return { ok: true, errors: [] };
+}
+
+/**
  * Thrown by assertPhonePolicy when a REAL phone is present but the user did not
  * opt in to policy 'real'. FAIL-LOUD: fake-by-default is a code-level hard
  * constraint (CLAUDE.md §9), so a real number under a 'fake' policy is an error,
