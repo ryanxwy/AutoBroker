@@ -68,6 +68,7 @@ import {
   INVENTORY_SITE_SCAN_SKILL_ID,
   QUOTE_AUDIT_SKILL_ID,
   QUOTE_COMPARE_SKILL_ID,
+  REPLY_EXTRACT_SKILL_ID,
 } from "@autobroker/skills";
 import {
   beginRunGuarded,
@@ -76,6 +77,7 @@ import {
   DEALER_GEOSEARCH_WORKFLOW_ID,
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
+  DEALER_REPLY_EXTRACT_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   INVENTORY_COMPARE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
@@ -1179,6 +1181,65 @@ export const quoteCompareDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// dealer_reply_extract — the eleventh registered descriptor (the SOLE live-LLM
+// skill: per-message single emit_result extraction). AUTONOMOUS — NO `resume`
+// member: the workflow has no HITL suspend, so a form-decision against a
+// reply-extract run 400s as unsupported_action (like geosearch). driver_kind is
+// DERIVED from the policy() route the skill's LLM useCase (dealer_reply_extract)
+// takes — it IS a live-LLM skill, so the label flips in lock-step with a
+// registry-string provider swap (NOT the zero-LLM constant).
+// ===========================================================================
+
+/** The reply-extract start body fields. Only `search_profile_id` matters to the
+ *  workflow — the candidate set derives from the per-message extraction status,
+ *  never from the start body; envelope fields ride the same body and are
+ *  ignored (non-strict object). */
+const ReplyExtractStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The reply-extract workflow inputData shape. */
+interface ReplyExtractStartInput {
+  search_profile_id: string | null;
+}
+
+/** The dealer_reply_extract descriptor. */
+export const dealerReplyExtractDescriptor: RunDescriptor = {
+  skillId: REPLY_EXTRACT_SKILL_ID,
+  workflowId: DEALER_REPLY_EXTRACT_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's single LLM useCase
+  // (dealer_reply_extract, the per-message structured extraction) to —
+  // deepseek_apikey under the default registry strings, flipping in lock-step
+  // with a provider swap. NOT the zero-LLM constant: this IS a live-LLM skill.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("dealer_reply_extract").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): ReplyExtractStartInput {
+    const parsed = ReplyExtractStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  // No `resume` member — autonomous, no HITL suspend; a form-decision 400s as
+  // unsupported_action through the service's resume===undefined branch.
+
+  // The workflow's confirm step templates the full deterministic summary —
+  // pass it through.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Dealer reply extract complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -1190,6 +1251,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   inventoryLinkScanDescriptor,
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
+  dealerReplyExtractDescriptor,
   dealerHygieneDescriptor,
   dailyDigestDescriptor,
   pipelineResetDescriptor,
@@ -1275,6 +1337,8 @@ function affectedKinds(workflowId: string): string[] {
       return ["digest"];
     case DEALER_INBOX_CHECK_WORKFLOW_ID:
       return ["threads", "messages", "contacts"];
+    case DEALER_REPLY_EXTRACT_WORKFLOW_ID:
+      return ["quotes", "messages"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
     case PIPELINE_RESET_WORKFLOW_ID:

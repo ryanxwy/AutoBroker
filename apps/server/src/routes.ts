@@ -47,6 +47,7 @@ import {
   listProfileThreadRows,
   listProfileMessageRows,
   buildDigestView,
+  listProfileQuoteRows,
   rankInventoryForProfile,
   rankQuotesForProfile,
   update as updateProfile,
@@ -556,6 +557,21 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return withDb((db) =>
       buildDigestView(db, { profileId: profile_id ?? null, nowMs: Date.now() }),
     );
+  });
+
+  // ---- GET /api/profiles/:id/quotes — read-only RAW extracted-quote projection
+  // The "Extracted quotes" canvas section reads this; delegates DOWN into the
+  // tools-layer closure (routes never open the product DB directly — the SQLite
+  // invariant). Distinct from /quote-compare: this is the raw per-quote
+  // extraction result across ALL financing modes (incl. cash), with provenance —
+  // never a budget, never a raw id rendered.
+  app.get("/api/profiles/:id/quotes", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const profile = withDb((db) => readProfileRow(db, id));
+    if (profile === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    return withDb((db) => listProfileQuoteRows(db, id));
   });
 
   // ---- GET /api/profiles/:id/inventory-compare — read-only ranked listings ---

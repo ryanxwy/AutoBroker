@@ -4,11 +4,14 @@
  * (session_origin / input_mode / provider / profile), [[steps]] (each with
  * resume[] scripts + an anchors[] tripwire array). The anchor specs are parsed
  * into the evaluator's AnchorSpec union so a case is fully declarative.
- * An optional [[seed.dealer_inventory_sources]] section declares pending
- * inventory-link rows the UI-lane runner writes into the ISOLATED case DB
- * right before the case's first inventory_link_scan step (dealer resolved by
- * name against the scoped profile's bound dealers; fail-loud on no/ambiguous
- * match).
+ * An optional [seed] table declares pre-step rows the UI-lane runner writes
+ * into the ISOLATED case DB. [[seed.dealer_inventory_sources]] are pending
+ * inventory-link rows applied right before the case's first inventory_link_scan
+ * step (dealer RESOLVED by name against the scoped profile's bound dealers;
+ * fail-loud on no/ambiguous match). [[seed.dealer_replies]] are dealer replies
+ * applied right before the case's first dealer_reply_extract step — these CREATE
+ * the corpus (dealer + thread + fake_mailbox message + the matching inbound
+ * `messages` candidate row) rather than resolving against existing dealers.
  *
  * The case grammar maps onto the committed wire contract:
  *   - [narrative.profile]  → the form content the collect-step resume submits.
@@ -244,9 +247,42 @@ const RawSeedSourceSchema = z.object({
   status: z.literal("pending").optional(),
 });
 
-const RawSeedSchema = z.object({
-  dealer_inventory_sources: z.array(RawSeedSourceSchema).min(1),
+/** One `[[seed.dealer_replies]]` entry: a dealer reply the runner materializes
+ *  into the ISOLATED case DB right before the case's first dealer_reply_extract
+ *  step. Unlike dealer_inventory_sources (which RESOLVES against geosearch's
+ *  bound dealers), this section CREATES the corpus: each entry mints a dealer
+ *  (bound to the scoped profile), a thread, a fake_mailbox inbound message
+ *  (body + optional attachment, the bytes the gmail adapter fetches), AND the
+ *  matching inbound `messages` row the candidate SELECT reads
+ *  (quote_extraction_status='pending'). `body` is the reply prose (text quotes
+ *  live here); `attachment` is the optional quote document (PDF text layer). */
+const RawSeedAttachmentSchema = z.object({
+  filename: z.string().min(1),
+  mime_type: z.string().min(1),
+  data_base64: z.string().min(1),
 });
+
+const RawSeedReplySchema = z.object({
+  dealer_name: z.string().min(1),
+  dealer_website: z.string().min(1),
+  from: z.string().min(1),
+  subject: z.string().min(1),
+  body: z.string(),
+  attachment: RawSeedAttachmentSchema.optional(),
+});
+
+// A case may carry EITHER seed section (or both). Each is independently
+// optional, but an empty [seed] table (neither array) is a mistake — refine to
+// require at least one.
+const RawSeedSchema = z
+  .object({
+    dealer_inventory_sources: z.array(RawSeedSourceSchema).min(1).optional(),
+    dealer_replies: z.array(RawSeedReplySchema).min(1).optional(),
+  })
+  .refine(
+    (s) => s.dealer_inventory_sources !== undefined || s.dealer_replies !== undefined,
+    { message: "[seed] must declare dealer_inventory_sources and/or dealer_replies" },
+  );
 
 const RawCaseSchema = z.object({
   meta: z.object({
@@ -354,6 +390,25 @@ export interface CaseSeedSource {
   sourceType: string;
 }
 
+/** One parsed dealer_replies attachment (see RawSeedAttachmentSchema). */
+export interface CaseSeedReplyAttachment {
+  filename: string;
+  mimeType: string;
+  dataBase64: string;
+}
+
+/** One parsed dealer_replies seed entry (see RawSeedReplySchema) — a dealer
+ *  reply the runner materializes into the isolated case DB (dealer + thread +
+ *  fake_mailbox message + the matching inbound `messages` candidate row). */
+export interface CaseSeedReply {
+  dealerName: string;
+  dealerWebsite: string;
+  from: string;
+  subject: string;
+  body: string;
+  attachment: CaseSeedReplyAttachment | null;
+}
+
 export interface Case {
   id: string;
   archetype: "A" | "B";
@@ -365,9 +420,14 @@ export interface Case {
   /** The case-declared driver lane (runner --lane overrides; default "api"). */
   lane: "ui" | "api";
   profile: Record<string, unknown> | null;
-  /** Pre-step DB seeds (isolated case DB only), or null. UI-lane only —
-   *  applied right before the first inventory_link_scan step. */
-  seed: { dealerInventorySources: CaseSeedSource[] } | null;
+  /** Pre-step DB seeds (isolated case DB only), or null. UI-lane only. Each
+   *  array applies right before the case's first consuming step:
+   *  dealerInventorySources before inventory_link_scan, dealerReplies before
+   *  dealer_reply_extract. A null array means that section was not authored. */
+  seed: {
+    dealerInventorySources: CaseSeedSource[] | null;
+    dealerReplies: CaseSeedReply[] | null;
+  } | null;
   steps: CaseStep[];
 }
 
@@ -659,11 +719,32 @@ export function toCase(raw: TomlTable): Case {
       parsed.seed === undefined
         ? null
         : {
-            dealerInventorySources: parsed.seed.dealer_inventory_sources.map((s) => ({
-              dealer: s.dealer,
-              url: s.url,
-              sourceType: s.source_type ?? "manual",
-            })),
+            dealerInventorySources:
+              parsed.seed.dealer_inventory_sources === undefined
+                ? null
+                : parsed.seed.dealer_inventory_sources.map((s) => ({
+                    dealer: s.dealer,
+                    url: s.url,
+                    sourceType: s.source_type ?? "manual",
+                  })),
+            dealerReplies:
+              parsed.seed.dealer_replies === undefined
+                ? null
+                : parsed.seed.dealer_replies.map((r) => ({
+                    dealerName: r.dealer_name,
+                    dealerWebsite: r.dealer_website,
+                    from: r.from,
+                    subject: r.subject,
+                    body: r.body,
+                    attachment:
+                      r.attachment === undefined
+                        ? null
+                        : {
+                            filename: r.attachment.filename,
+                            mimeType: r.attachment.mime_type,
+                            dataBase64: r.attachment.data_base64,
+                          },
+                  })),
           },
     steps,
   };

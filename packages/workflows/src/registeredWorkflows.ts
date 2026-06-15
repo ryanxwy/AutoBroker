@@ -31,6 +31,10 @@ import {
   DEALER_INBOX_CHECK_WORKFLOW_ID,
 } from "./dealerInboxCheck.js";
 import {
+  dealerReplyExtractWorkflow,
+  DEALER_REPLY_EXTRACT_WORKFLOW_ID,
+} from "./dealerReplyExtract.js";
+import {
   incentiveScrapeWorkflow,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
 } from "./incentiveScrape.js";
@@ -72,6 +76,7 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [INCENTIVE_SCRAPE_WORKFLOW_ID]: incentiveScrapeWorkflow as unknown as Workflow,
   [DAILY_DIGEST_WORKFLOW_ID]: dailyDigestWorkflow as unknown as Workflow,
   [DEALER_INBOX_CHECK_WORKFLOW_ID]: dealerInboxCheckWorkflow as unknown as Workflow,
+  [DEALER_REPLY_EXTRACT_WORKFLOW_ID]: dealerReplyExtractWorkflow as unknown as Workflow,
   [DEALER_HYGIENE_WORKFLOW_ID]: dealerHygieneWorkflow as unknown as Workflow,
   [PIPELINE_RESET_WORKFLOW_ID]: pipelineResetWorkflow as unknown as Workflow,
   [INVENTORY_COMPARE_WORKFLOW_ID]: inventoryCompareWorkflow as unknown as Workflow,
