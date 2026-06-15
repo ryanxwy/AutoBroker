@@ -17,6 +17,7 @@ export {
   INCENTIVE_SCRAPE_SKILL_ID,
   INBOX_CHECK_SKILL_ID,
   HYGIENE_SKILL_ID,
+  INVENTORY_COMPARE_SKILL_ID,
   getSkill,
 } from "./registry.js";
 export type {

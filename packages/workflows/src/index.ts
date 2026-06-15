@@ -320,6 +320,31 @@ export {
   type HygieneResume,
 } from "./dealerHygieneContracts.js";
 
+// The inventory_compare skill contracts (typed input/output, the flat ranked
+// candidate shape, the typed STOP vocabulary). Skill-local, single-use (see the
+// header rationale in the contracts file). Zero-LLM, read-only, no suspend.
+export {
+  InventoryCompareInputSchema,
+  InventoryCompareOutputSchema,
+  InventoryCompareStopError,
+  RankedCandidateSchema,
+  INVENTORY_COMPARE_WORKFLOW_ID,
+  type InventoryCompareInput,
+  type InventoryCompareOutput,
+  type InventoryCompareStopCode,
+  type RankedCandidate,
+} from "./inventoryCompareContracts.js";
+
+// The inventory_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
+// resolve profile → rank live listings → render). Test-only deps seam exported
+// alongside.
+export {
+  inventoryCompareWorkflow,
+  __setInventoryCompareDepsForTests,
+  __resetInventoryCompareDepsForTests,
+  type InventoryCompareWorkflowDeps,
+} from "./inventoryCompare.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

@@ -280,6 +280,32 @@ export {
   type SeedInventorySourceOptions,
 } from "./inventory/sources.js";
 
+// inventory_compare deterministic core — the pure weighted ranker (four axes,
+// hard pre-filters), the live-listings read helper (joined to dealers for the
+// distance axis), and the profile-scoped ranking glue that maps ranked rows to
+// the flat candidate the read panel + workflow surface. Zero-LLM, read-only:
+// match_status / score are transient (no match_score column is ever written).
+export {
+  TRIM_WEIGHT,
+  PRICE_WEIGHT,
+  COLOR_WEIGHT,
+  DISTANCE_WEIGHT,
+  scoreListing,
+  applyFilters,
+  rankListings,
+  type ProfileMatchCtx,
+  type RankedRow,
+} from "./inventory/inventory_rank.js";
+export {
+  listListingsForProfile,
+  type ProfileListingsRead,
+} from "./inventory/read.js";
+export {
+  rankInventoryForProfile,
+  type RankedCandidate,
+  type RankInventoryResult,
+} from "./inventory/compute.js";
+
 // Fake-mailbox corpus seeder — the inbound deterministic row builder (the
 // adapter only writes outbound, so this stages the dealer-reply corpus the read
 // paths + sync consume). Tools owns the DB write; the harness fixture calls down.

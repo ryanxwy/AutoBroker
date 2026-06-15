@@ -19,9 +19,6 @@
  *
  * DEFERRED (no state yet — the data has no rendering/seeding surface today):
  *   - quotes_ready          — no quotes panel renders dealer_quotes yet.
- *   - inventory_listed      — the Canvas has no inventory_listings projection
- *                             (the feed only previews "quotes land later"); the
- *                             rows seed fine but nothing renders them.
  *   - incentives_present    — likewise no manufacturer_incentives surface in the
  *                             dashboard; seeding asserts nothing.
  *   - gmail_not_connected   — needs the Gmail connection surface (E0).
@@ -45,6 +42,7 @@ import { closedProfile } from "./closedProfile.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
+import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { multiActive } from "./multiActive.js";
 import { repliesArrived } from "./repliesArrived.js";
@@ -72,6 +70,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [dataArriving.id]: dataArriving,
   [dataArrivingGrown.id]: dataArrivingGrown,
   [digestReady.id]: digestReady,
+  [inventoryListings.id]: inventoryListings,
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
   [repliesArrived.id]: repliesArrived,

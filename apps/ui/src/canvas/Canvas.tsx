@@ -20,9 +20,16 @@ import { useRef, useState } from "react";
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
-import type { DealerList, DealerRow, ProfileList, ThreadList } from "../api/wire.js";
+import type {
+  DealerList,
+  DealerRow,
+  InventoryCompareResult,
+  ProfileList,
+  ThreadList,
+} from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
+import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileEditPanel } from "./ProfileEditPanel.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { ThreadsSection } from "./ThreadsSection.js";
@@ -35,6 +42,9 @@ const DEALER_KINDS = ["dealers"] as const;
 /** The dealer-reply Threads section refetches on a threads/messages pulse (the
  *  inbox-pull skill writes both families). */
 const THREAD_KINDS = ["threads", "messages"] as const;
+/** The Inventory candidates section refetches on a listings pulse (the
+ *  inventory scans write that family; the ranker itself writes nothing). */
+const INVENTORY_KINDS = ["listings"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -324,6 +334,11 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const inventory = useAsync<InventoryCompareResult>(
+    () => client.listProfileInventoryCompare(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
@@ -332,6 +347,7 @@ export function Canvas({
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
   useDataRefetch(DEALER_KINDS, dealers.refetch);
   useDataRefetch(THREAD_KINDS, threads.refetch);
+  useDataRefetch(INVENTORY_KINDS, inventory.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -356,6 +372,7 @@ export function Canvas({
         <>
           <ProfileCard client={client} snapshot={active} onSaved={profiles.refetch} />
           <DealerTiles dealers={dealers} />
+          <InventoryCandidates inventory={inventory} />
           <ThreadsSection
             threads={threads}
             dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}

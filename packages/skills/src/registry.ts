@@ -82,6 +82,9 @@ export const INBOX_CHECK_SKILL_ID = "dealer_inbox_check" as const;
 /** The dealer hygiene skill id (destructive; three staged batch-review confirms). */
 export const HYGIENE_SKILL_ID = "dealer_hygiene" as const;
 
+/** The inventory compare skill id (deterministic ranker; read-only, zero-LLM). */
+export const INVENTORY_COMPARE_SKILL_ID = "inventory_compare" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -125,14 +128,14 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "infer_ok",
   },
   {
-    id: "inventory_compare",
+    id: INVENTORY_COMPARE_SKILL_ID,
     slash: "/inventory_compare",
     title: "Inventory compare",
     summary: "Compare inventory listings against a search profile.",
     phase: 1,
     riskClass: "read_only",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: INVENTORY_COMPARE_SKILL_ID,
     inputs: ["listings", "profile_id"],
     outputs: "comparison",
     profilePin: "infer_ok",

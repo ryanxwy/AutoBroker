@@ -46,6 +46,7 @@ import {
   listProfileDealerRows,
   listProfileThreadRows,
   listProfileMessageRows,
+  rankInventoryForProfile,
   update as updateProfile,
   close as closeProfile,
   restore as restoreProfile,
@@ -541,6 +542,23 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
     return withDb((db) => listProfileMessageRows(db, id));
   });
+
+  // ---- GET /api/profiles/:id/inventory-compare — read-only ranked listings ---
+  // The Inventory candidates canvas section reads this; delegates DOWN into the
+  // tools-layer ranker closure (routes never open the product DB or run SQL —
+  // the SQLite invariant). Listings ≠ quotes: the payload is public-website
+  // inventory candidates, ranked against the profile, never negotiated quotes.
+  app.get(
+    "/api/profiles/:id/inventory-compare",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id } = req.params as { id: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      return withDb((db) => rankInventoryForProfile(db, id));
+    },
+  );
 
   // ---- PATCH /api/profiles/:id — preference write-through ------------------
   // Delegates to the tools-layer update(); identity fields are frozen at

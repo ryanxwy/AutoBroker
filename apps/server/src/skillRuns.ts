@@ -63,6 +63,7 @@ import {
   INBOX_CHECK_SKILL_ID,
   INCENTIVE_SCRAPE_SKILL_ID,
   INTAKE_SKILL_ID,
+  INVENTORY_COMPARE_SKILL_ID,
   INVENTORY_LINK_SCAN_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
 } from "@autobroker/skills";
@@ -73,6 +74,7 @@ import {
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
+  INVENTORY_COMPARE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
@@ -878,6 +880,57 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// inventory_compare — the eighth registered descriptor (deterministic inventory
+// ranker; read-only, zero-LLM, NO suspend). No `resume` member: the workflow
+// has no HITL suspend, so a form-decision against an inventory_compare run 400s
+// as unsupported_action. driver_kind is the constant api-key label (no useCase
+// routes through policy()).
+// ===========================================================================
+
+/** The inventory-compare start body fields. Only `search_profile_id` matters to
+ *  the workflow; the start-route envelope fields ride the same body and are
+ *  accepted + ignored (non-strict object). */
+const InventoryCompareStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The inventory-compare workflow inputData shape. */
+interface InventoryCompareStartInput {
+  search_profile_id: string | null;
+}
+
+/** The inventory_compare descriptor. */
+export const inventoryCompareDescriptor: RunDescriptor = {
+  skillId: INVENTORY_COMPARE_SKILL_ID,
+  workflowId: INVENTORY_COMPARE_WORKFLOW_ID,
+
+  // Zero-LLM: resolve/rank/render are fully deterministic, so the wire label is
+  // the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): InventoryCompareStartInput {
+    const parsed = InventoryCompareStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  // The workflow's render step templates the full deterministic summary — pass
+  // it through.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Inventory compare complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -890,6 +943,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
   dealerHygieneDescriptor,
+  inventoryCompareDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -969,6 +1023,11 @@ function affectedKinds(workflowId: string): string[] {
       return ["threads", "messages", "contacts"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
+    case INVENTORY_COMPARE_WORKFLOW_ID:
+      // Pure read: the ranker writes NOTHING (no match_score column, no row
+      // mutation). The success pulse fires with kinds:[] — the UI treats it as
+      // nothing-to-refetch.
+      return [];
     default:
       // A skill whose data family is not mapped yet — refetch broadly rather
       // than leave a view silently stale.

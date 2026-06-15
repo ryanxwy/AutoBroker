@@ -298,6 +298,48 @@ export const ThreadListSchema = z.array(ThreadRowSchema);
 export type ThreadList = z.infer<typeof ThreadListSchema>;
 
 // ---------------------------------------------------------------------------
+// Inventory candidates — GET /api/profiles/:id/inventory-compare: the
+// deterministic ranker payload (candidates + header tallies). Listings ≠
+// quotes: these are public-website inventory candidates ranked against the
+// profile, never negotiated out-the-door quotes. A passthrough candidate row
+// keeps extra server fields tolerated; the panel reads the named columns it
+// knows (full vin, stock_number, price, match_status chip, rank reasons).
+// ---------------------------------------------------------------------------
+
+export const InventoryCandidateRowSchema = z
+  .object({
+    listing_id: z.string(),
+    vin: z.string().nullable(),
+    stock_number: z.string().nullable(),
+    year: z.number().nullable(),
+    make: z.string().nullable(),
+    model: z.string().nullable(),
+    trim: z.string().nullable(),
+    exterior_color: z.string().nullable(),
+    listed_price: z.number().nullable(),
+    msrp: z.number().nullable(),
+    inventory_status: z.string(),
+    dealer_id: z.string(),
+    dealer_name: z.string().nullable(),
+    distance_miles: z.number().nullable(),
+    score: z.number(),
+    reasons: z.array(z.string()),
+    match_status: z.string(),
+  })
+  .passthrough();
+export type InventoryCandidateRow = z.infer<typeof InventoryCandidateRowSchema>;
+
+export const InventoryCompareResultSchema = z
+  .object({
+    candidates: z.array(InventoryCandidateRowSchema),
+    scannedAtMax: z.string().nullable(),
+    totalListings: z.number(),
+    recommendedCount: z.number(),
+  })
+  .passthrough();
+export type InventoryCompareResult = z.infer<typeof InventoryCompareResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Skills manifest — GET /api/skills. routes.ts:78-86 (SKILL_MANIFEST), returned
 // as a single-element array (routes.ts:279).
 // ---------------------------------------------------------------------------

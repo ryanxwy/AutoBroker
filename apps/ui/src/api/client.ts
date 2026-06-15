@@ -37,6 +37,7 @@ import {
   FormDecisionAckSchema,
   KeyPresenceResponseSchema,
   KeyProbeResultSchema,
+  InventoryCompareResultSchema,
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
@@ -55,6 +56,7 @@ import {
   type EnvEditableId,
   type FormDecisionAck,
   type FormDecisionBody,
+  type InventoryCompareResult,
   type KeyPresenceResponse,
   type KeyProbeResult,
   type Mode,
@@ -277,6 +279,17 @@ export class ApiClient {
       this.url(`/api/profiles/${encodeURIComponent(id)}/threads`),
     );
     return decode(res, ThreadListSchema);
+  }
+
+  /** GET /api/profiles/:id/inventory-compare → the deterministic ranker payload
+   *  (candidates + header tallies) for one profile (read-only; 404 for a missing
+   *  profile). The Inventory candidates canvas section renders these — public
+   *  inventory listings ranked against the profile, NEVER negotiated quotes. */
+  async listProfileInventoryCompare(id: string): Promise<InventoryCompareResult> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/inventory-compare`),
+    );
+    return decode(res, InventoryCompareResultSchema);
   }
 
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */

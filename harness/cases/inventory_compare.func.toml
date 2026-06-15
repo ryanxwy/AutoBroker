@@ -1,0 +1,99 @@
+# harness/cases/inventory_compare.func.toml — FUNCTIONAL lane: the deterministic
+# inventory ranker rail (the POPULATED world; the empty rail is its own case,
+# inventory_compare_empty.func.toml, because each functional case owns one
+# server+DB and apply-fixture is additive — two listing worlds in one case would
+# collide on the shared dealer/profile rows).
+#
+# inventory_compare is a ZERO-LLM, read-only, re-runnable skill: the
+# /api/profiles/:id/inventory-compare route ranks the profile's live listings at
+# read time (nothing is persisted). This case drives the Canvas Inventory
+# candidates section over the populated fixture world on the offline functional
+# lane (no live LLM/geocode; Δ=0 BY CONSTRUCTION — a runless kind="ui" step
+# snapshots before==after with no run between, so a pure read panel reaches no
+# side effect).
+#
+#   step 1  inventory_listings world → the Inventory candidates section mounts;
+#           exactly THREE candidate rows survive the hard filters (the ordered
+#           row + the over-budget row are dropped); the top row shows a FULL
+#           17-char VIN + its stock number; the null-price row shows the
+#           "incomplete" badge; the null-stock row shows the em-dash.
+#
+# WHY THESE ANCHORS ARE MEANINGFUL: the count=3 row anchor is a real cardinality
+# proof of the hard filters (5 seeded listings minus the ordered + over-budget
+# rows); the full-VIN + incomplete-badge + em-dash anchors prove the listings ≠
+# quotes display contract (full VIN, never-fabricated price/stock). No budget
+# number appears.
+#
+# The kind="skill" zero-write + STOP-card proofs belong to the LIVE UI-lane
+# (chat-slash launches, not part of pnpm ui:functional) — like active_search,
+# this offline functional case omits them.
+
+[meta]
+id = "inventory_compare_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the populated rail (three candidates after the hard filters) -----
+
+[[steps]]
+id = "ranked_rail"
+kind = "ui"
+fixture_state = "inventory_listings"
+purpose = "The Canvas Inventory candidates section ranks the seeded listings: 3 candidates survive the filters; full VIN, incomplete badge, em-dash stock all render."
+
+# Click the first candidate row (a plain, non-navigating tile) to wait for the
+# section to mount before the row-count + field anchors below.
+[[steps.ui_actions]]
+verb = "click"
+testid = "inventory-candidate-row"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-inventory-candidates"
+expect = "visible"
+
+# Exact match (NOT prefix): every row shares the identical testid
+# "inventory-candidate-row", and an exact selector excludes the
+# "canvas-inventory-candidates" section wrapper. Three rows = 5 seeded listings
+# minus the ordered + the over-budget rows (the hard-filter cardinality proof).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-candidate-row"
+expect = "count"
+count = 3
+match = "exact"
+
+# The FULL 17-char VIN is displayed (the listings display invariant). The
+# top-ranked row's VIN is the seeded full VIN.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-candidate-vin"
+expect = "text"
+value = "KM8JBCAE3RU000042"
+
+# A NULL listed_price row renders the "incomplete" badge, never a fabricated number.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-incomplete-badge"
+expect = "visible"
+
+# A present stock_number renders verbatim (the top-ranked row's stock).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-stock"
+expect = "text"
+value = "STK-A1"
+
+# A NULL stock_number renders an em-dash (never fabricated) — its own testid so
+# the assertion is independent of which rank position the no-stock row lands in.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-stock-missing"
+expect = "visible"
