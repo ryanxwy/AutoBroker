@@ -474,6 +474,8 @@ function pendingKind(step: string): string {
       return "batch_review";
     case "resolveOemSource": // incentive_scrape's first-encounter approval
       return "oem_first_encounter";
+    case "confirmGate": // pipeline_reset's destructive typed-YES confirm
+      return "confirmation_gate";
     default:
       return "data_collection";
   }
@@ -1030,6 +1032,39 @@ async function driveResumeScriptDom(
       } else {
         await driver.clickForceOverrideDecline();
       }
+    } else if (resume.on === "confirmation_gate") {
+      // The DESTRUCTIVE typed-YES second-confirm (pipeline_reset's ONE suspend).
+      // The card renders on the gate-banner track ABOVE the prose; assert it is
+      // fully shown (the card + its 5 plain-speech consequence lines) BEFORE any
+      // decision, then drive the chosen branch.
+      await driver.waitForConfirmationGateCard(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      await driver.checkResetConsequenceLines(5);
+      const content = resume.content ?? {};
+      const badToken = content["bad_token"];
+      if (typeof badToken === "string") {
+        // BAD-TOKEN drive: type a NON-YES token and assert the client typed-YES
+        // gate keeps Confirm DISABLED (the wipe is never reachable with a wrong
+        // token through the real card), then Cancel out — terminal, ZERO
+        // destruction. The server-side validateResetToken→400 is a separate
+        // surface (the API form-decision path) covered at L1; the production
+        // card normalizes Confirm to the canonical YES, so a wrong token never
+        // leaves the client.
+        await driver.checkResetConfirmDisabledFor(badToken);
+        await driver.screenshot("confirmation-gate-bad-token-cancel");
+        await driver.clickResetCancel(maxMs);
+      } else if (resume.action === "accept") {
+        // Type the literal token, then confirm (the card posts the canonical
+        // {confirm_token:"YES"} once the typed-YES client gate enables Confirm).
+        const token = String(content["confirm_token"] ?? "YES");
+        await driver.fillResetToken(token);
+        await driver.screenshot("confirmation-gate-confirm");
+        await driver.clickResetConfirm(maxMs);
+      } else {
+        // The never-hidden decline (Cancel) — terminal, ZERO destruction.
+        await driver.screenshot("confirmation-gate-decline");
+        await driver.clickResetCancel(maxMs);
+      }
     } else if (resume.on === "oem_first_encounter") {
       // The incentive first-encounter approval rides the banner-track
       // ApprovalPrompt: Approve = accept (approve the shown candidate),
@@ -1155,6 +1190,13 @@ async function driveUiOnlyStep(args: {
       await driver.fillTestid(action.testid, action.value ?? "", stepMaxMs);
     } else if (action.verb === "press") {
       await driver.pressKey(action.testid, action.value ?? "Enter", stepMaxMs);
+    } else if (action.verb === "navigate") {
+      // value = the client-side path; testid = the settle testid the
+      // destination route mounts (a navigate with no value is a case bug).
+      if (action.value === undefined || action.value.trim() === "") {
+        fail(`step "${step.id}": a navigate ui_action needs value=<path> (the route to push)`);
+      }
+      await driver.navigateTo(action.value, action.testid, stepMaxMs);
     } else {
       await driver.reloadBrowser(stepMaxMs);
     }

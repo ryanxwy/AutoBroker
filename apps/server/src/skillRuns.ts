@@ -72,6 +72,7 @@ import {
 import {
   beginRunGuarded,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
+  DAILY_DIGEST_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
@@ -79,6 +80,7 @@ import {
   INVENTORY_COMPARE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
+  PIPELINE_RESET_WORKFLOW_ID,
   QUOTE_AUDIT_WORKFLOW_ID,
   QUOTE_COMPARE_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
@@ -89,8 +91,10 @@ import {
   BatchReviewResumeSchema,
   HygieneResumeSchema,
   OemFirstEncounterResumeSchema,
+  PipelineResetResumeSchema,
   type createMastraInstance,
 } from "@autobroker/workflows";
+import { validateResetToken } from "@autobroker/tools";
 import { z } from "zod";
 
 import type { RunPubSub } from "./runPubSub.js";
@@ -884,7 +888,139 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
-// inventory_compare — the eighth registered descriptor (deterministic inventory
+// daily_digest — the eighth registered descriptor (Phase 4 / Wave O windowed
+// read-only aggregation). zero-LLM + zero-suspend, so driver_kind is the
+// constant api-key label and there is NO resume (a form-decision 400s as
+// unsupported_action). `search_profile_id:null` → the workflow enumerates all
+// active profiles; `since_hours` is the optional "new since" window.
+// ===========================================================================
+
+/** The daily_digest start body fields. */
+const DailyDigestStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  since_hours: z.number().nullable().optional(),
+});
+
+/** The daily_digest workflow inputData shape. */
+interface DailyDigestStartInput {
+  search_profile_id: string | null;
+  since_hours: number | null;
+}
+
+export const dailyDigestDescriptor: RunDescriptor = {
+  skillId: "daily_digest",
+  workflowId: DAILY_DIGEST_WORKFLOW_ID,
+
+  // Zero-LLM: the aggregation/render is fully deterministic, so the wire label
+  // is the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): DailyDigestStartInput {
+    const parsed = DailyDigestStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      since_hours: parsed.data.since_hours ?? null,
+    };
+  },
+
+  // The workflow's confirm step templates the deterministic summary; a graceful
+  // zero-active "skipped" run carries its own summary too.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Daily digest ready.";
+  },
+};
+
+// ===========================================================================
+// pipeline_reset — the ninth registered descriptor (DESTRUCTIVE full-DB wipe).
+// zero-LLM; ONE typed-YES confirmation_gate suspend on the step "confirmGate".
+// The token is RE-VALIDATED SERVER-SIDE here (verbatim YES, case-insensitive) —
+// the client/LLM is never trusted; a non-YES token is rejected and the gate
+// stays answerable. decline/cancel = terminal, ZERO destruction. The wipe
+// itself ignores search_profile_id (a global op — see the registry exception).
+// ===========================================================================
+
+/** The pipeline_reset start body (search_profile_id is pro forma — the wipe is
+ *  global and ignores it). */
+const PipelineResetStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** Re-validate the typed-YES token IN CODE and shape the resume. A confirm with
+ *  a non-YES token is rejected (content_invalid) — never trusted from the wire;
+ *  decline/cancel resolves to a zero-destruction decline. */
+function pipelineResetResume(
+  step: string,
+  decision: FormDecisionBody["decision"],
+  _suspendPayload: Record<string, unknown>,
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  if (step !== "confirmGate") {
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  }
+  const { action, content } = decision;
+  if (action === "decline" || action === "cancel") {
+    return {
+      resumeData: PipelineResetResumeSchema.parse({ action: "decline" }),
+      ackBody: { action, content: null },
+    };
+  }
+  // accept → the load-bearing server-side typed-YES re-validation.
+  const token = content?.confirm_token;
+  if (!validateResetToken(token)) {
+    throw new FormDecisionError("content_invalid", 400, "confirmation token must be YES", {
+      field: "/confirm_token",
+    });
+  }
+  return {
+    resumeData: PipelineResetResumeSchema.parse({ action: "confirm", confirm_token: "YES" }),
+    ackBody: { action: "accept", content: { confirm_token: "YES" } },
+  };
+}
+
+export const pipelineResetDescriptor: RunDescriptor = {
+  skillId: "pipeline_reset",
+  workflowId: PIPELINE_RESET_WORKFLOW_ID,
+
+  // Zero-LLM (backup/migrate/verify are deterministic) → the constant api-key label.
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): { search_profile_id: string | null } {
+    const parsed = PipelineResetStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume: pipelineResetResume,
+
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Pipeline reset complete.";
+  },
+};
+
+// ===========================================================================
+// inventory_compare — the tenth registered descriptor (deterministic inventory
 // ranker; read-only, zero-LLM, NO suspend). No `resume` member: the workflow
 // has no HITL suspend, so a form-decision against an inventory_compare run 400s
 // as unsupported_action. driver_kind is the constant api-key label (no useCase
@@ -1055,6 +1191,8 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
   dealerHygieneDescriptor,
+  dailyDigestDescriptor,
+  pipelineResetDescriptor,
   inventoryCompareDescriptor,
   quoteAuditDescriptor,
   quoteCompareDescriptor,
@@ -1133,10 +1271,16 @@ function affectedKinds(workflowId: string): string[] {
       return ["listings"];
     case INCENTIVE_SCRAPE_WORKFLOW_ID:
       return ["incentives"];
+    case DAILY_DIGEST_WORKFLOW_ID:
+      return ["digest"];
     case DEALER_INBOX_CHECK_WORKFLOW_ID:
       return ["threads", "messages", "contacts"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
+    case PIPELINE_RESET_WORKFLOW_ID:
+      // A full wipe — everything is gone, so refetch every projection back to
+      // empty-home.
+      return ["profiles", "sessions", "dealers", "listings", "incentives", "quotes", "digest"];
     case INVENTORY_COMPARE_WORKFLOW_ID:
       // Pure read: the ranker writes NOTHING (no match_score column, no row
       // mutation). The success pulse fires with kinds:[] — the UI treats it as

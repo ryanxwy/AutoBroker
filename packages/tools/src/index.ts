@@ -441,6 +441,38 @@ export {
   type PersistIncentivesArgs,
 } from "./incentives/persist.js";
 
+// daily_digest deterministic core — the zero-LLM read aggregation + render +
+// file-artifact writer + the per-profile digest watermark + the live page
+// projection. No LLM, no budget figures, no external mutation.
+export {
+  bucketFreshness,
+  FRESH_WINDOW_MS,
+  STALE_WINDOW_MS,
+  generateDigest,
+  NO_ACTIVE_SEARCHES,
+  DEFAULT_OFFERS_LIMIT,
+  renderDigestText,
+  digestHeadline,
+  NO_ACTIVE_SEARCHES_TEXT,
+  writeDigestArtifact,
+  buildDigestView,
+  lastDigestAtKey,
+  readLastDigestAt,
+  writeLastDigestAt,
+  type FreshnessBucket,
+  type DigestPayload,
+  type DigestProfileGroup,
+  type DigestOffer,
+  type FreshnessMix,
+  type NextAction,
+  type GenerateDigestArgs,
+  type WriteDigestArtifactArgs,
+  type DigestView,
+  type DigestViewProfile,
+  type DigestViewQuoteRow,
+  type BuildDigestViewArgs,
+} from "./digest/index.js";
+
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
@@ -621,3 +653,71 @@ export {
   type AuditAction,
   type AuditEntry,
 } from "./profile/index.js";
+
+// pipeline_reset (DESTRUCTIVE) — the typed-YES validator, the VACUUM INTO
+// backup, the atomic migrate-based recreate (+ accounts re-seed), the mastra.db
+// workflow-runtime clear (Memory chat threads preserved), the manifest schema
+// verify, the prod-DB-reject guard, and the boot-delegated ensureProductSchema.
+// Every destructive path refuses to run outside an isolated AUTOBROKER_DATA_DIR.
+export {
+  validateResetToken,
+  RESET_CONFIRM_TOKEN,
+  backupProductDb,
+  BACKUPS_TO_KEEP,
+  type BackupProductDbArgs,
+  pipelineReset,
+  DEFAULT_ACCOUNT_EMAIL,
+  type PipelineResetArgs,
+  type PipelineResetResult,
+  verifySchema,
+  type VerifySchemaResult,
+  type VerifySchemaOptions,
+  clearWorkflowRuntimeState,
+  WORKFLOW_RUNTIME_TABLE,
+  type ClearWorkflowRuntimeResult,
+  assertIsolatedDataDir,
+  isProductionDataDir,
+  PipelineResetRefusedError,
+  resolveProductDbPath,
+  resolveMastraDbPath,
+  ensureProductSchema,
+  migrate as migrateProductDb,
+  productTableNames,
+} from "./pipelineReset/index.js";
+
+// quote_pipeline deterministic core (BUILD-AHEAD) — the child-independent
+// orchestrator tools the keystone composes once E2/D2/D3 land: re-derive the 4
+// applicable-step flags each run (non-durable, no checkpoint), the read-only
+// targeted-VIN validator, the null-VIN-raising OTD ask, the idempotent
+// targeted-VIN quote writer, the deterministic LLM-free disposition, and the one
+// generic audit_log completion row. No child workflow / LLM here.
+export {
+  detectPipelineState,
+  resolveTargetedListing,
+  TargetedListingNotFound,
+  NoInboundThread,
+  buildOtdInjection,
+  MissingVinError,
+  recordQuoteFromListing,
+  MessageNotFoundError,
+  MissingMessageIdError,
+  computeFinalState,
+  computeNextAction,
+  writePipelineCompletion,
+  PIPELINE_STEPS,
+  FINAL_STATES,
+  PIPELINE_COMPLETE_ACTION,
+  type DetectPipelineStateArgs,
+  type PipelineStateFlags,
+  type ResolveTargetedListingArgs,
+  type ResolveTargetedListingResult,
+  type TargetedListing,
+  type TargetedInboundThread,
+  type BuildOtdInjectionArgs,
+  type RecordQuoteFromListingArgs,
+  type RecordQuoteFromListingResult,
+  type PipelineStep,
+  type FinalState,
+  type WritePipelineCompletionArgs,
+  type WritePipelineCompletionResult,
+} from "./pipeline/index.js";

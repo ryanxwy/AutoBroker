@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 
 import { buildServer, type BuiltServer } from "./server.js";
 import { BackgroundScheduler } from "./scheduler.js";
+import type { SkillRunService } from "./skillRuns.js";
 
 export { buildServer, type BuiltServer } from "./server.js";
 export { boot, type BootResult } from "./boot.js";
@@ -52,7 +53,7 @@ const DEFAULT_PORT = 8100;
  * standalone (dev / harness) there is no parentPort and the heartbeat + boot
  * pass alone drive catch-up.
  */
-function startScheduler(): BackgroundScheduler {
+function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
   const parentPort = (
     process as unknown as {
       parentPort?: {
@@ -75,6 +76,23 @@ function startScheduler(): BackgroundScheduler {
       : undefined;
 
   const scheduler = new BackgroundScheduler(powerGuard !== undefined ? { powerGuard } : {});
+
+  // Wire the daily_digest JOB seam: a fired job drives a headless daily_digest
+  // run over ALL active profiles (search_profile_id:null → the workflow's
+  // resolveScope enumerates them; zero-active → a graceful skip). The run's
+  // notify step output carries { headline, deepLink:"/digest" } for the U-G
+  // ladder, and the deterministic aggregation pulses data.changed{kinds:["digest"]}
+  // so any open /digest page refetches. The scheduler owns its own
+  // scheduler.last_success.daily_digest watermark (advanced on a clean handler
+  // return; a throw leaves it catch-up-due) — the PRODUCT digest.last_at
+  // watermark is the one the workflow itself advances per summarized profile.
+  scheduler.registerHandler("daily_digest", async () => {
+    await skillRuns.start({
+      skill: "daily_digest",
+      input: { search_profile_id: null, since_hours: null },
+    });
+  });
+
   scheduler.start();
 
   // utilityProcess child: relay forwarded power events from the Electron main.
@@ -102,7 +120,7 @@ export async function main(): Promise<BuiltServer> {
   await built.app.listen({ host: HOST, port });
   // Long-running-background machinery: croner + the catch-up watermark live in
   // THIS process (the durable backend), not the Electron main launcher.
-  startScheduler();
+  startScheduler(built.skillRuns);
   // Report the ACTUAL bound port (PORT=0 → ephemeral), not the configured one.
   console.info(JSON.stringify({ server: "listening", host: HOST, port: (built.app.server.address() as { port: number }).port }));
   return built;

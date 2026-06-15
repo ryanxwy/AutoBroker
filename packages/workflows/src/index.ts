@@ -320,6 +320,53 @@ export {
   type HygieneResume,
 } from "./dealerHygieneContracts.js";
 
+// The daily_digest skill workflow (Phase 4 / Wave O — zero-LLM, zero-suspend:
+// a windowed read-only aggregation of every upstream skill's output rows into a
+// local digest artifact + the in-app /digest projection, advancing the
+// per-profile digest.last_at watermark and never surfacing budget). Test-only
+// deps seam exported alongside the contracts the server descriptor builds on.
+export {
+  dailyDigestWorkflow,
+  DAILY_DIGEST_WORKFLOW_ID,
+  DIGEST_SECTIONS_COUNT,
+  __setDailyDigestDepsForTests,
+  __resetDailyDigestDepsForTests,
+  type DailyDigestWorkflowDeps,
+} from "./dailyDigest.js";
+export {
+  DailyDigestInputSchema,
+  DailyDigestOutputSchema,
+  type DailyDigestInput,
+  type DailyDigestOutput,
+} from "./dailyDigestContracts.js";
+
+// The pipeline_reset skill workflow (Phase 4 / Wave O — DESTRUCTIVE: ONE typed-
+// YES confirmation_gate suspend [re-validated server-side], a VACUUM INTO backup,
+// an atomic migrate-based recreate + accounts re-seed, the mastra.db workflow-
+// runtime clear [Memory chat threads preserved], and a manifest schema verify;
+// decline at the gate = ZERO destruction). Test-only deps seam exported alongside
+// the contracts the server descriptor builds on.
+export {
+  pipelineResetWorkflow,
+  PIPELINE_RESET_WORKFLOW_ID,
+  PIPELINE_RESET_DEEP_LINK,
+  __setPipelineResetDepsForTests,
+  __resetPipelineResetDepsForTests,
+  type PipelineResetWorkflowDeps,
+} from "./pipelineReset.js";
+export {
+  PipelineResetInputSchema,
+  PipelineResetOutputSchema,
+  PipelineResetGateSuspendSchema,
+  PipelineResetResumeSchema,
+  PIPELINE_RESET_CONSEQUENCE_LINES,
+  PIPELINE_RESET_CONFIRM_TOKEN,
+  type PipelineResetInput,
+  type PipelineResetOutput,
+  type PipelineResetGateSuspend,
+  type PipelineResetResume,
+} from "./pipelineResetContracts.js";
+
 // The inventory_compare skill contracts (typed input/output, the flat ranked
 // candidate shape, the typed STOP vocabulary). Skill-local, single-use (see the
 // header rationale in the contracts file). Zero-LLM, read-only, no suspend.

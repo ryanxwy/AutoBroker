@@ -1,0 +1,112 @@
+# harness/cases/pipeline_reset.bad_token.func.toml — FUNCTIONAL lane: the
+# pipeline_reset (O2) WRONG-TOKEN proof — a non-YES token can NEVER unlock the
+# wipe, so ZERO DESTRUCTION (the client typed-YES gate is the first floor).
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the
+# deterministic DI stubs (NO live LLM, NO live geocode). pipeline_reset reaches
+# its ONE destructive `confirmation_gate` suspend.
+#
+# WHY THIS IS A DOM-DISABLED PROOF (not a server-400 drive): the production
+# ConfirmationGateCard keeps the destructive Confirm button DISABLED until the
+# typed token trims to the literal YES (a CLIENT pre-check), and on Confirm it
+# posts the CANONICAL {confirm_token:"YES"} regardless of the user's casing — so
+# a wrong token can NEVER leave the real card to reach the server. The UI lane
+# drives the REAL card, so the honest UI proof of "a wrong token unlocks
+# nothing" is: type a non-YES token → the destructive Confirm STAYS DISABLED
+# (Cancel stays enabled) → Cancel out → Δ=0 destruction. The SERVER-side token
+# re-validation (validateResetToken → a 400 content_invalid on a non-YES token
+# posted directly to /form-decision) is a DIFFERENT surface, exercised at L1
+# (the pipelineResetResume + workflow tests) — it is unreachable through the
+# real card and so is not driven here. This case is the keystone's client floor;
+# the decline case is its other twin (both leave the world at Δ=0).
+#
+#   step 1 (reset_bad_token, kind="skill"): install the POPULATED digest_present
+#     world, start "/pipeline_reset" via the REAL chat-rail slash, let the
+#     destructive gate render (the driver asserts the confirmation-gate-card + 5
+#     reset-consequence-line entries, gate ABOVE the prose), type a NON-YES token
+#     ("yeah"), assert the Confirm button STAYS DISABLED while Cancel stays
+#     enabled (recorded as a ui_check), then Cancel out. Anchors:
+#       - run_status declined            (the Cancel-out is a clean `declined`).
+#       - driver_kind deepseek_apikey    (the constant zero-LLM api-key label).
+#       - no_external_mutation           (KEYSTONE — nothing outbound/destructive).
+#       - cost_and_time optional=true    (zero-LLM happy path — empty ledger ok).
+#       - malformed_tool_call absent     (no tools).
+#       - table_min_rows search_profiles (Δ=0: the wrong token unlocked nothing —
+#         scope=global exact 1            the 1 seeded profile is STILL present).
+#       - table_min_rows profile_dealers (the 2 seeded bound dealers survive).
+#         scope=global exact 2
+#       - table_min_rows inventory_listings (the 3 seeded listings survive).
+#         scope=global exact 3
+
+[meta]
+id = "pipeline_reset_bad_token_func"
+archetype = "B"
+skills = ["pipeline_reset"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the slash run → wrong token stays disabled → Cancel (Δ=0) -------
+
+[[steps]]
+id = "reset_bad_token"
+skill = "pipeline_reset"
+fixture_state = "digest_present"
+purpose = "/pipeline_reset over the populated world: type a non-YES token, assert Confirm STAYS DISABLED, Cancel out; `declined` and the seeded world untouched (Δ=0)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+# The inner `action = "confirm"` + a sibling bad_token (folded into the content
+# by the parser): the driver types the bad token, asserts the Confirm button
+# stays DISABLED (the client typed-YES gate holds the line), then Cancels out
+# (terminal, zero destruction).
+[[steps.resume]]
+on = "confirmation_gate"
+action = "confirm"
+bad_token = "yeah"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# Δ=0 DESTRUCTION: the wrong token unlocked nothing — the seeded rows are STILL
+# present (global EXACT — digest_present's exact counts; nothing was wiped).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "global"
+min = 1
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "global"
+min = 2
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "global"
+min = 3
+exact = true

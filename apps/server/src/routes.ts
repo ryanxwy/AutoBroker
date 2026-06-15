@@ -46,6 +46,7 @@ import {
   listProfileDealerRows,
   listProfileThreadRows,
   listProfileMessageRows,
+  buildDigestView,
   rankInventoryForProfile,
   rankQuotesForProfile,
   update as updateProfile,
@@ -542,6 +543,19 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }
     return withDb((db) => listProfileMessageRows(db, id));
+  });
+
+  // ---- GET /api/digest — the daily-digest live projection ------------------
+  // The /digest page reads this. Optional ?profile_id pins one profile; absent
+  // → enumerate all active profiles. Re-aggregated live each call (the file
+  // artifact is the archive; the page is a live view). Delegates DOWN into the
+  // tools-layer reader — routes never open the product DB directly (the SQLite
+  // invariant). Budget never appears in the projection (zero-LLM, code-redacted).
+  app.get("/api/digest", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { profile_id } = (req.query ?? {}) as { profile_id?: string };
+    return withDb((db) =>
+      buildDigestView(db, { profileId: profile_id ?? null, nowMs: Date.now() }),
+    );
   });
 
   // ---- GET /api/profiles/:id/inventory-compare — read-only ranked listings ---

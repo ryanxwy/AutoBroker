@@ -18,6 +18,7 @@
  *   POST /api/profiles/:id/restore           restoreProfile ('closed' → 'active')
  *   GET  /api/skills                         listSkills
  *   GET  /api/mode                           getMode
+ *   GET  /api/digest[?profile_id]            getDigest
  *   POST /api/sessions                       createSession
  *   GET  /api/sessions[?pinned_profile_id]   listSessions
  *   GET  /api/sessions/:id                   getSession (pin + scope_notice in ONE fetch)
@@ -32,6 +33,7 @@ import { z } from "zod";
 
 import {
   DealerListSchema,
+  DigestViewSchema,
   EnvConfigResponseSchema,
   ErrorEnvelopeSchema,
   FormDecisionAckSchema,
@@ -52,6 +54,7 @@ import {
   ThreadListSchema,
   type CreateSessionBody,
   type DealerList,
+  type DigestView,
   type ThreadList,
   type EnvConfigResponse,
   type EnvEditableId,
@@ -316,6 +319,20 @@ export class ApiClient {
   async getMode(): Promise<Mode> {
     const res = await this.fetchImpl(this.url("/api/mode"));
     return decode(res, ModeSchema);
+  }
+
+  /** GET /api/digest[?profile_id=…] → the DigestView projection. A profile id
+   *  scopes the digest to a single pinned search (path-param /digest/:id maps to
+   *  this query at the router); null/absent yields the all-active digest. The
+   *  view is server-computed (OTD-ascending quotes, freshness, best row) — the
+   *  page renders it verbatim. */
+  async getDigest(profileId?: string | null): Promise<DigestView> {
+    const q =
+      profileId !== undefined && profileId !== null && profileId !== ""
+        ? `?profile_id=${encodeURIComponent(profileId)}`
+        : "";
+    const res = await this.fetchImpl(this.url(`/api/digest${q}`));
+    return decode(res, DigestViewSchema);
   }
 
   // ---- settings / keys (the four managed API keys; presence-only reads) -----

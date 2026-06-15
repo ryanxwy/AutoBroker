@@ -155,10 +155,14 @@ const ExpectStopSchema = z.enum([
 const EdgeSchema = z.enum(["reload_mid_form", "double_click_submit", "sse_break"]);
 
 /** One generic DOM verb a pure-UI step drives: click/fill/press a widget by its
- *  stable data-testid, or reload the whole page. `value` carries the fill text
- *  or the key name (press); it is unused for click/reload. */
+ *  stable data-testid, reload the whole page, or navigate the SPA to a path. For
+ *  the `navigate` verb `value` carries the client-side path (e.g. "/digest" —
+ *  the same in-app route a notification deep-link click lands on) and `testid`
+ *  is the testid the SPA must mount AFTER the route resolves (the settle
+ *  signal); for fill/press `value` is the fill text or key name; it is unused
+ *  for click/reload. */
 const RawUiActionSchema = z.object({
-  verb: z.enum(["click", "fill", "press", "reload"]),
+  verb: z.enum(["click", "fill", "press", "reload", "navigate"]),
   testid: z.string(),
   value: z.string().optional(),
 });
@@ -286,7 +290,7 @@ export type StepEdge = z.infer<typeof EdgeSchema>;
 
 /** One generic DOM verb a pure-UI step drives (see RawUiActionSchema). */
 export interface CaseUiAction {
-  verb: "click" | "fill" | "press" | "reload";
+  verb: "click" | "fill" | "press" | "reload" | "navigate";
   testid: string;
   value?: string;
 }

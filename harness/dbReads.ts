@@ -33,6 +33,9 @@ import { openDb, type Db } from "@autobroker/db";
  *  manufacturer_incentives is the incentive_scrape write target — it carries
  *  NO search_profile_id (keyed (make, model, zip)), so its "profile scope" is
  *  the join through the profile's own make/model/postal_code slice;
+ *  pipeline_state is the daily_digest watermark store (the per-profile
+ *  `digest.last_at.<profileId>` key — it carries a nullable search_profile_id,
+ *  so a digest run's watermark write is asserted via a global count delta);
  *  quote_audits is the quote_audit write target (NOT NULL search_profile_id —
  *  the idempotency-delta anchor reads it); dealer_quotes is the audit's INPUT
  *  set (NOT NULL search_profile_id — snapshotted so a case can prove the run
@@ -49,6 +52,7 @@ export const SNAPSHOT_TABLES = [
   "dealer_inventory_sources",
   "inventory_listings",
   "manufacturer_incentives",
+  "pipeline_state",
   "dealer_quotes",
   "quote_audits",
   "messages",

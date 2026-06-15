@@ -27,7 +27,7 @@ describe("gateTrack — kind → surface routing", () => {
   });
 
   it("routes the reserved banner kinds to the banner", () => {
-    for (const kind of ["approval", "batch_review", "typed_yes"]) {
+    for (const kind of ["approval", "batch_review", "confirmation_gate"]) {
       expect(gateTrack(kind)).toBe("banner");
     }
   });

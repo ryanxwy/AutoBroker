@@ -40,6 +40,7 @@ import { activeSearch } from "./activeSearch.js";
 import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
+import { digestPresent } from "./digestPresent.js";
 import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
 import { inboxNoLead, inboxReady } from "./inboxReady.js";
@@ -72,6 +73,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [closedOnly.id]: closedOnly,
   [dataArriving.id]: dataArriving,
   [dataArrivingGrown.id]: dataArrivingGrown,
+  [digestPresent.id]: digestPresent,
   [digestReady.id]: digestReady,
   [inventoryListings.id]: inventoryListings,
   [keysUnset.id]: keysUnset,

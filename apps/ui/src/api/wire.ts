@@ -504,3 +504,74 @@ export interface SetEnvBody {
   id: EnvEditableId;
   value: string;
 }
+
+// ---------------------------------------------------------------------------
+// Digest — GET /api/digest[?profile_id=…] → DigestView. The daily-digest skill
+// (deterministic, zero-LLM) writes the "digest" data family; the page is a PURE
+// projection of these server-computed fields (no client-side sort/format/
+// freshness classification). The server pre-sorts each profile's quotes
+// OTD-ascending and marks exactly one row `isBest` when there are quotes.
+//
+// Budget red-line: the view carries NO budget field. OTD dollars (`otdTotal`)
+// are the user's OWN collected offers — rendered; budget is never on the wire,
+// and the page renders only the internal-only `budget-lock` chip.
+// ---------------------------------------------------------------------------
+
+/** One dealer's quote row in a profile's OTD-ascending list. `otdTotal` is a
+ *  dollar figure (the user's own offer) or null when no OTD has landed; the
+ *  server pre-classifies `freshness` and marks the single best row. */
+export const DigestViewQuoteRowSchema = z.object({
+  quoteId: z.string(),
+  dealerId: z.string(),
+  dealerName: z.string(),
+  otdTotal: z.number().nullable(),
+  financingMode: z.string(),
+  freshness: z.enum(["fresh", "stale", "missing"]),
+  isBest: z.boolean(),
+});
+export type DigestViewQuoteRow = z.infer<typeof DigestViewQuoteRowSchema>;
+
+/** One active search's digest section — the dealer/thread tallies, the
+ *  freshness mix, and the OTD-ascending quote rows. */
+export const DigestViewProfileSchema = z.object({
+  searchProfileId: z.string(),
+  vehicle: z.string(),
+  dealerCount: z.number(),
+  boundDealerCount: z.number(),
+  threadCount: z.number(),
+  needsResponseCount: z.number(),
+  unansweredQuestionCount: z.number(),
+  totalQuotes: z.number(),
+  bestOtd: z.number().nullable(),
+  freshnessMix: z.object({
+    fresh: z.number(),
+    stale: z.number(),
+    missing: z.number(),
+  }),
+  quotes: z.array(DigestViewQuoteRowSchema),
+});
+export type DigestViewProfile = z.infer<typeof DigestViewProfileSchema>;
+
+/** One deterministic next-action prompt (no budget). */
+export const DigestViewNextActionSchema = z.object({
+  kind: z.string(),
+  profileId: z.string(),
+  vehicle: z.string(),
+  count: z.number(),
+  label: z.string(),
+});
+export type DigestViewNextAction = z.infer<typeof DigestViewNextActionSchema>;
+
+/** GET /api/digest → the whole digest projection. `profiles: []` ⇒ empty state
+ *  (state `_NO_ACTIVE_SEARCHES`). `generatedAt` is always populated (the
+ *  stamp always renders). `headline` carries no budget. */
+export const DigestViewSchema = z.object({
+  empty: z.boolean(),
+  state: z.enum(["_NO_ACTIVE_SEARCHES", "ok"]),
+  generatedAt: z.string(),
+  headline: z.string(),
+  overallBestOtd: z.number().nullable(),
+  nextActions: z.array(DigestViewNextActionSchema),
+  profiles: z.array(DigestViewProfileSchema),
+});
+export type DigestView = z.infer<typeof DigestViewSchema>;
