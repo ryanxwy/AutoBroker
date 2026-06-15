@@ -244,8 +244,12 @@ export class FakeGmailAdapter implements GmailAdapter {
     // Monotonic: one tick past the current ceiling so two sends in the same
     // millisecond still order strictly — the watermark proof depends on it.
     const internalDateMs = this.maxDateMs() + 1;
-    const messageId = `fake-msg-${internalDateMs}`;
-    const threadId = `fake-thread-${internalDateMs}`;
+    // The id self-describes as a sandbox send: the `sandbox-out-%` shape is the
+    // one the harness `messages.real_outbound` keystone scan whitelists, so if a
+    // fake send is ever promoted onto a product `messages` row (a disarmed-fuse
+    // path), the keystone still classifies it as fake — never a real escape.
+    const messageId = `sandbox-out-${internalDateMs}`;
+    const threadId = `sandbox-thread-${internalDateMs}`;
 
     const txn = this.db.$client.transaction(() => {
       this.db.$client.prepare(INSERT_THREAD).run(threadId, subject === "" ? null : subject, null);
