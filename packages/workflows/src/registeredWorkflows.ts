@@ -15,6 +15,10 @@
 import type { Workflow } from "@mastra/core/workflows";
 
 import {
+  dealerCloseoutEmailWorkflow,
+  DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
+} from "./dealerCloseoutEmail.js";
+import {
   dealerGeosearchWorkflow,
   DEALER_GEOSEARCH_WORKFLOW_ID,
 } from "./dealerGeosearch.js";
@@ -35,6 +39,10 @@ import {
   DEALER_REPLY_EXTRACT_WORKFLOW_ID,
 } from "./dealerReplyExtract.js";
 import {
+  dealerWebLeadSubmitWorkflow,
+  DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+} from "./dealerWebLeadSubmit.js";
+import {
   incentiveScrapeWorkflow,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
 } from "./incentiveScrape.js";
@@ -42,6 +50,10 @@ import {
   inventoryCompareWorkflow,
   INVENTORY_COMPARE_WORKFLOW_ID,
 } from "./inventoryCompare.js";
+import {
+  negotiationFollowupWorkflow,
+  NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
+} from "./negotiationFollowup.js";
 import {
   inventoryLinkScanWorkflow,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
@@ -82,6 +94,9 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [INVENTORY_COMPARE_WORKFLOW_ID]: inventoryCompareWorkflow as unknown as Workflow,
   [QUOTE_AUDIT_WORKFLOW_ID]: quoteAuditWorkflow as unknown as Workflow,
   [QUOTE_COMPARE_WORKFLOW_ID]: quoteCompareWorkflow as unknown as Workflow,
+  [DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID]: dealerWebLeadSubmitWorkflow as unknown as Workflow,
+  [NEGOTIATION_FOLLOWUP_WORKFLOW_ID]: negotiationFollowupWorkflow as unknown as Workflow,
+  [DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID]: dealerCloseoutEmailWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

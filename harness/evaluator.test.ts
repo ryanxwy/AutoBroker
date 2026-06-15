@@ -160,6 +160,36 @@ describe("no_external_mutation KEYSTONE anchor", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("allow_fake_outbound: a fake-submit lead_submissions row does NOT count (X1 keystone)", () => {
+    // Under the harness lane (BLOCK=1) a submitted lead row is the fake-submit
+    // LOCAL record (no real POST is possible). With allow_fake_outbound the
+    // keystone stays clean (invariant #1).
+    insertSubmittedLead(tmp.db, { submissionId: "s-fake", dealerId: "d-1" });
+    const r = evalAnchor(
+      { kind: "no_external_mutation", allowFakeOutbound: true },
+      detailDone(null),
+      tmp.db,
+      ctxFor(null),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.observed).toBe(0);
+  });
+
+  it("allow_fake_outbound does NOT relax real-escape detection (a send/submit audit still fails)", () => {
+    // The flag only carves out the fake-submit lead row; a real send/submit audit
+    // action is a genuine escape and must still be caught even with the flag on.
+    insertSubmittedLead(tmp.db, { submissionId: "s-fake2", dealerId: "d-2" });
+    insertAudit(tmp.db, { auditId: "a-real", action: "gmail_send", profileId: null });
+    const r = evalAnchor(
+      { kind: "no_external_mutation", allowFakeOutbound: true },
+      detailDone(null),
+      tmp.db,
+      ctxFor(null),
+    );
+    expect(r.ok).toBe(false);
+    expect(Number(r.observed)).toBeGreaterThanOrEqual(1);
+  });
+
   it("(baseline-delta) baseline absorbs a pre-existing submitted lead → keystone PASSES", () => {
     // Seed 1 submitted lead before the run (pre-existing world state).
     insertSubmittedLead(tmp.db, { submissionId: "s-pre", dealerId: "d-1" });

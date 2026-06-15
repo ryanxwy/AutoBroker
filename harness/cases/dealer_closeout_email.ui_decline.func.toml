@@ -1,0 +1,89 @@
+# dealer_closeout_email.ui_decline.func.toml — the X3 irreversible-send KEYSTONE
+# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_
+# MUTATIONS=1, NO live LLM/browser — X3 is zero-LLM). The batch_review card
+# (suspend ①) renders over the addressable dealers BEFORE any send/close/suppress,
+# so a Decline must be terminal with ZERO messages, ZERO thread_suppression rows,
+# and NO threads-state change (decline = zero writes, no destruction).
+#
+#   step 1  install closeout_ready (1 active Tucson profile + 3 bound US dealers:
+#           2 ADDRESSABLE with OPEN threads + 1 no-address dealer skipped before
+#           the gate) and PIN the profile (X3 is pin_required → the launch threads
+#           the pin as search_profile_id).
+#   step 2  "/dealer_closeout_email" via slash → the batch_review card renders the
+#           two addressable dealers on the gate-banner track → the driver clicks
+#           the REAL Decline button. Terminal `declined`; threads + thread_suppression
+#           + messages all Δ=0 EXACT; keystone clean; no malformed tool call.
+
+[meta]
+id = "dealer_closeout_email_ui_decline"
+archetype = "A"
+skills = ["dealer_closeout_email"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "closeout_ready"
+purpose = "Seed the ready-to-close-out world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the batch card → DECLINE (terminal, zero writes) ----------------
+
+[[steps]]
+id = "closeout_decline"
+skill = "dealer_closeout_email"
+purpose = "Decline at the REAL batch card — declined terminal, zero close/suppress/send (no destruction)."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]       # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "approval_gate"      # the batch card rendered; the decline answered it.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # thread_suppression Δ=0 EXACT (no closeout row on a decline).
+table = "thread_suppression"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # threads Δ=0 EXACT (no rows added; the close is an UPDATE
+table = "threads"           # and a decline performs none).
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # messages Δ=0 EXACT (no Gmail send on a decline).
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # zero sent rows → keystone clean (no allow_fake_outbound).
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

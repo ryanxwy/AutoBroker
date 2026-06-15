@@ -377,7 +377,12 @@ function evalNoExternalMutation(
   baseline: number,
 ): AnchorResult {
   const allowFake = spec.allowFakeOutbound === true;
-  const dbScan = externalMutationDbCount(db);
+  // The DB scan honors allowFakeOutbound too: under the harness lane (BLOCK=1)
+  // the fake-submit lead_submissions row is a LOCAL record, not a real POST, so
+  // it must not register as a mutation when the step opted in (invariant #1).
+  // Real-escape signals (send/submit audit actions, non-sandbox outbound
+  // messages) are NEVER relaxed by the flag.
+  const dbScan = externalMutationDbCount(db, { allowFakeOutbound: allowFake });
   const eventCount = realOutboundEventCount(detail, allowFake);
   // Subtract the pre-run baseline of the DB scan: the keystone measures the
   // RUN's delta, not pre-existing fixture world state (a seeded submitted lead

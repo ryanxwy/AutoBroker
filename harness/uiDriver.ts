@@ -698,6 +698,37 @@ export class UiDriver {
     await this.page.waitForSelector(tid("approval-prompt"), { timeout: timeoutMs });
   }
 
+  /** Assert the approval card's bulk affordance matches its sensitivity: a
+   *  SENSITIVE event (data-sensitive="true", e.g. the dealer_web_lead_submit
+   *  email_fallback re-confirm — a mutating scope switch) must NOT expose an
+   *  approve-all button (no batch-approval of a mutating tool), while a
+   *  non-sensitive event (e.g. incentive_scrape's first-encounter approval) DOES.
+   *  Reads the live card, records a REAL UiCheck (never a passthrough), and
+   *  screenshots. Call after waitForApprovalPrompt, before the approve/deny. */
+  async checkApprovalApproveAllForSensitivity(): Promise<void> {
+    const observed = (await this.page.evaluate(
+      `(() => {
+        const card = document.querySelector('[data-testid="approval-prompt"]');
+        const sensitive = card !== null && card.getAttribute("data-sensitive") === "true";
+        const approveAll = document.querySelectorAll('[data-testid="approval-approve-all"]').length;
+        return { present: card !== null, sensitive, approveAll };
+      })()`,
+    )) as { present: boolean; sensitive: boolean; approveAll: number };
+    // sensitive ⇒ zero approve-all controls; non-sensitive ⇒ exactly one.
+    const ok =
+      observed.present && (observed.sensitive ? observed.approveAll === 0 : observed.approveAll === 1);
+    this.record({
+      surface: "dom:gate-banner",
+      selector: `${tid("approval-prompt")}[data-sensitive] vs ${tid("approval-approve-all")}`,
+      expected: observed.sensitive
+        ? "sensitive approval card: zero approve-all affordances (no bulk-approve of a mutating scope)"
+        : "non-sensitive approval card: exactly one approve-all affordance",
+      observed: `present=${observed.present} sensitive=${observed.sensitive} approveAll=${observed.approveAll}`,
+      ok,
+    });
+    await this.screenshot("approval-sensitivity-approve-all");
+  }
+
   /** Click the approval card's Approve (accept — approves the shown action). */
   async clickApprovalApprove(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
     await this.page.waitForSelector(`${tid("approval-approve")}:not([disabled])`, {

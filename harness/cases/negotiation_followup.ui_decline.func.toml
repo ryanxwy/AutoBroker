@@ -1,0 +1,90 @@
+# negotiation_followup.ui_decline.func.toml — the X2 irreversible-send KEYSTONE
+# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_
+# MUTATIONS=1, NO live LLM). The batch_review card (suspend ①) renders over ALL
+# drafts BEFORE any send face is reached, so a Decline must be terminal with ZERO
+# messages, NO threads-state change, and a clean keystone (decline = zero writes).
+#
+#   step 1  install followup_ready (1 active Tucson profile + 2 bound US dealers
+#           with OPEN threads whose latest message is an INBOUND dealer reply +
+#           itemized open quotes) and PIN the profile through the REAL Searches
+#           popover (X2 is pin_required → the launch threads the pin as
+#           search_profile_id).
+#   step 2  "/negotiation_followup" via slash → the prose drafts are written
+#           (stubbed draftProse — a fixed budget-free, no-competing-name body),
+#           the batch_review card renders on the gate-banner track → the driver
+#           clicks the REAL Decline button. Terminal `declined`; messages Δ=0
+#           EXACT (no send on a decline); keystone clean; no malformed tool call.
+#
+# WHY NO threads-state delta anchor: threads.state='negotiating' is written ONLY
+# on a SENT thread (confirm step), and even on a send it is an UPDATE, not an
+# INSERT — table_min_rows counts rows, never values. A decline writes nothing at
+# all, so messages Δ0 + a clean keystone + the `declined` terminal fully pin the
+# zero-writes invariant here. (The threads-state VALUE is asserted in the offline
+# negotiationFollowup.test.ts decline case.)
+
+[meta]
+id = "negotiation_followup_ui_decline"
+archetype = "A"
+skills = ["negotiation_followup"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "followup_ready"
+purpose = "Seed the ready-to-follow-up world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the batch card → DECLINE (terminal, zero writes) ----------------
+
+[[steps]]
+id = "followup_decline"
+skill = "negotiation_followup"
+purpose = "Decline at the REAL batch_review card — declined terminal, zero messages, no send."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]       # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "approval_gate"      # the batch card rendered; the decline answered it.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # messages Δ=0 EXACT (no Gmail send on a decline).
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # threads Δ=0 EXACT (no rows added; decline = zero writes).
+table = "threads"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # zero sent rows → keystone clean.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

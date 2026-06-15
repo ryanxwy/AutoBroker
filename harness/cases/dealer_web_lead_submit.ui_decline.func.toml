@@ -1,0 +1,81 @@
+# dealer_web_lead_submit.ui_decline.func.toml — the X1 irreversible-send KEYSTONE
+# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_
+# MUTATIONS=1, NO live LLM/browser). The batch_review card suspends BEFORE any
+# dealer-site contact, so a Decline must be terminal with ZERO lead_submissions,
+# ZERO messages, and a clean keystone (decline = zero writes).
+#
+#   step 1  install the lead_submit_ready fixture (1 active Tucson profile +
+#           2 bound US dealers with sites + contact_email) and PIN the profile
+#           through the REAL Searches popover (X1 is pin_required → the launch
+#           threads the pin as search_profile_id).
+#   step 2  "/dealer_web_lead_submit" via slash → the batch_review card renders
+#           on the gate-banner track → the driver clicks the REAL Decline button.
+#           Terminal `declined`; lead_submissions + messages Δ=0 EXACT; the
+#           suspend precedes ANY submit; keystone clean; no malformed tool call.
+
+[meta]
+id = "dealer_web_lead_submit_ui_decline"
+archetype = "A"
+skills = ["dealer_web_lead_submit"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "lead_submit_ready"
+purpose = "Seed the ready-to-submit world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the batch card → DECLINE (terminal, zero writes) ----------------
+
+[[steps]]
+id = "lead_decline"
+skill = "dealer_web_lead_submit"
+purpose = "Decline at the REAL batch card — declined terminal, zero lead_submissions, zero messages."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]       # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "approval_gate"      # the batch card rendered; the decline answered it.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # lead_submissions Δ=0 EXACT (decline = zero writes).
+table = "lead_submissions"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # messages Δ=0 EXACT (no Gmail send on a decline).
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # zero submitted rows → keystone clean.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

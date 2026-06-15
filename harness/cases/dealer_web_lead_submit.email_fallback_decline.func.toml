@@ -1,0 +1,101 @@
+# dealer_web_lead_submit.email_fallback_decline.func.toml — the X1 FAIL-CLOSED
+# keystone twin. FUNCTIONAL lane (pnpm ui:functional, BLOCK=1).
+#
+# The load-bearing proof: the gmail.send scope CANNOT fire without the SECOND
+# (email_fallback) approval. The driver approves the no-form dealer at the batch
+# card, the submit routes it to the email fallback, the INDEPENDENT re-confirm
+# suspend renders — and the driver DECLINES it. That dealer's fallback is skipped
+# (no send): recordConfirm writes a typed user_skipped FAILURE row (outcome
+# 'failed' — reviewed but not authorized), and ZERO messages rows are written
+# (gmail.send never fired). messages Δ=0 EXACT is the anchor that would RED-out
+# the moment a send leaked past the un-given second approval.
+#
+#   step 1  install lead_submit_ready + pin the profile (pin_required).
+#   step 2  "/dealer_web_lead_submit" → batch card → APPROVE the no-form dealer
+#           (Tucson Kia), SKIP the web-form dealer (Jim Click), submit. Tucson Kia
+#           routes to the email fallback → the SECOND kind:"approval" suspend
+#           (sensitive=true) renders → the driver clicks Deny. Terminal `done`
+#           (the run completes; only THIS dealer's fallback was skipped). messages
+#           Δ=0 EXACT (the keystone: no send without the second approval); keystone
+#           clean (the user_skipped row is a FAILURE record, not a fake outbound);
+#           no malformed tool call.
+
+[meta]
+id = "dealer_web_lead_submit_email_fallback_decline"
+archetype = "A"
+skills = ["dealer_web_lead_submit"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "lead_submit_ready"
+purpose = "Seed the ready-to-submit world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: approve the NO-FORM dealer → email fallback → re-confirm DECLINE -
+
+[[steps]]
+id = "lead_email_fallback_decline"
+skill = "dealer_web_lead_submit"
+purpose = "Approve the no-form dealer at the batch card, then DECLINE the independent email re-confirm — fallback skipped, ZERO messages (no send without the second approval)."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+# resume ①: the batch card — approve ONLY the no-form dealer (Tucson Kia), skip
+# the web-form dealer (Jim Click). Tucson Kia routes to the email fallback.
+[[steps.resume]]
+on = "batch_review"
+action = "approve"
+default_decision = "skip"
+[[steps.resume.rows]]
+match = "Tucson Kia"
+decision = "approve"
+[[steps.resume.rows]]
+match = "Jim Click Hyundai"
+decision = "skip"
+
+# resume ②: the INDEPENDENT email_fallback re-confirm — DECLINE. The scope switch
+# (browser.submit → gmail.send) is refused: the send never fires.
+[[steps.resume]]
+on = "approval"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"         # the run completes — only THIS dealer's fallback was skipped.
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "approval_gate"      # BOTH suspends rendered (the batch card + the re-confirm).
+
+# THE LOAD-BEARING FAIL-CLOSED ANCHOR: gmail.send physically cannot fire without
+# the second approval — declining it writes ZERO messages rows.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+# The keystone holds WITHOUT allow_fake_outbound: a declined fallback leaves NO
+# 'submitted' lead_submissions row (only a typed user_skipped FAILURE record,
+# which the mutation detector does not count), and zero messages.
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

@@ -50,10 +50,18 @@ import { fileURLToPath } from "node:url";
 import { buildServer } from "@autobroker/server";
 import { __setSecretsProbeForTests, openDb, resolveDataDir } from "@autobroker/tools";
 import {
+  __setDealerWebLeadSubmitDepsForTests,
   __setIntakeDepsForTests,
+  __setNegotiationFollowupDepsForTests,
   resetMastraForTests,
   resetRuntimeGlueForTests,
+  type ScoutFormsArgs,
+  type ScoutOutcome,
+  type SubmitOneArgs,
+  type SubmitVerdict,
 } from "@autobroker/workflows";
+
+import { LEAD_SUBMIT_NOFORM_DEALER } from "./fixtures/states/leadSubmitReady.js";
 
 import { harnessGenerateStub, resolveLocationStub, setScenario, type Scenario } from "./fixtures/stubs.js";
 import { getFixtureState } from "./fixtures/states/index.js";
@@ -233,6 +241,92 @@ async function main(): Promise<void> {
       harnessGenerate: harnessGenerateStub as never,
       resolveLocation: resolveLocationStub as never,
     });
+    // X1 (dealer_web_lead_submit) — inject the browser-touching collaborators so
+    // the keystone func cases drive the REAL workflow + REAL suspend/resume gate
+    // chain WITHOUT a real chromium. The scout boundary returns the seeded
+    // dealers' deterministic form SHAPES (a known-platform web form for the
+    // web-form dealer → NO LLM field-map; no form + a contact_email for the
+    // no-form dealer → the email fallback). The gated submit boundary returns
+    // `fuse_blocked` for the web-form dealer (the BLOCK=1 fake-submit) and
+    // `needs_fallback` for the no-form dealer (defensive — a no-form dealer never
+    // reaches submitOne, but the stub mirrors that shape). recordSubmission +
+    // sendAndRecord stay REAL (the latter is L1-fuse-blocked under BLOCK=1, so the
+    // email fallback writes its lead_submissions row but ZERO messages rows).
+    __setDealerWebLeadSubmitDepsForTests({
+      scoutForms: (args: ScoutFormsArgs): Promise<ScoutOutcome[]> =>
+        Promise.resolve(
+          args.dealers.map((d): ScoutOutcome => {
+            if (d.dealerId === LEAD_SUBMIT_NOFORM_DEALER) {
+              // No usable web form, but a harvested contact email → email fallback.
+              return {
+                dealerId: d.dealerId,
+                name: d.name,
+                website: d.website,
+                form: null,
+                platform: "custom",
+                fieldMap: null,
+                formSnapshot: null,
+                contactEmail: "sales@tucsonkia.example.com",
+              };
+            }
+            // Default (the web-form dealer): a known DealerFire platform with a
+            // usable contact form → the deterministic parity field map, NO LLM.
+            return {
+              dealerId: d.dealerId,
+              name: d.name,
+              website: d.website,
+              form: { url: `${d.website}/contact.htm`, submitSelector: "button[type=submit]" },
+              platform: "dealerfire",
+              fieldMap: [
+                { name: "Email", role: "email" },
+                { name: "Comments", role: "comment" },
+              ],
+              formSnapshot: null,
+              contactEmail: null,
+            };
+          }),
+        ),
+      submitOne: (args: SubmitOneArgs): Promise<SubmitVerdict> =>
+        // The web-form dealer's gated submit hits the armed L1 fuse → fuse_blocked
+        // (the fake-submit; recorded as a web_form lead row). A no-form dealer
+        // never reaches here (the submit step routes it straight to fallback) —
+        // return needs_fallback defensively if it ever does.
+        Promise.resolve(
+          args.dealerId === LEAD_SUBMIT_NOFORM_DEALER
+            ? { kind: "needs_fallback", reason: "no_form" }
+            : { kind: "fuse_blocked" },
+        ),
+    });
+
+    // X2 (negotiation_followup) — stub ONLY the prose draft (the single LLM
+    // touch). It returns a fixed, tone-appropriate, BUDGET-FREE body that names
+    // NO competing dealer (numbers only — the bare "31,200" carries no `$`, so
+    // assertNoBudget passes, and there is no dealer name in the text → the
+    // "no competing name" red line holds). Every DB read (candidate threads /
+    // quote situation / thread snapshot / reply-target ladder), the send path
+    // (sendAndRecord — L1-fuse-blocked under BLOCK=1 → ZERO messages rows), the
+    // contact-flip write, and the threads.state='negotiating' LOCAL write all
+    // stay REAL against the seeded fixture DB.
+    __setNegotiationFollowupDepsForTests({
+      draftProse: () =>
+        Promise.resolve({
+          text:
+            "Thanks for the quote. I'm comparing a few out-the-door numbers and another " +
+            "dealer is currently at 31,200 OTD. Can you match or beat that on the same " +
+            "trim? Happy to move quickly if the numbers work.",
+          usage: {
+            costUsd: null,
+            durationMs: 1,
+            pricingSource: "unavailable",
+            promptTokens: null,
+            completionTokens: null,
+          },
+        }),
+    });
+    // X3 (dealer_closeout_email) is zero-LLM + zero-browser — the deterministic
+    // body/subject and the atomic close+suppress run REAL against the seeded DB
+    // (sendAndRecord is L1-fuse-blocked under BLOCK=1), so there is NOTHING to
+    // stub. No __setDealerCloseoutEmailDepsForTests call is needed.
   }
 
   // LIVE: do NOT inject the DI stubs — real geocode + real DeepSeek. We still reset

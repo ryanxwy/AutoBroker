@@ -78,6 +78,9 @@ import {
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
   DEALER_REPLY_EXTRACT_WORKFLOW_ID,
+  DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+  NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
+  DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   INVENTORY_COMPARE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
@@ -92,8 +95,11 @@ import {
   MalformedRetryResumeSchema,
   BatchReviewResumeSchema,
   HygieneResumeSchema,
+  LeadApprovalResumeSchema,
   OemFirstEncounterResumeSchema,
   PipelineResetResumeSchema,
+  ContactFlipApprovalResumeSchema,
+  requestContactFlipForRun,
   type createMastraInstance,
 } from "@autobroker/workflows";
 import { validateResetToken } from "@autobroker/tools";
@@ -890,6 +896,117 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// dealer_web_lead_submit — the IRREVERSIBLE-SEND keystone descriptor (Phase 5,
+// [fake-send]). The skill's LLM useCase is lead_form_map (the ONE Custom-platform
+// field map), so driver_kind DERIVES from policy("lead_form_map") and flips with a
+// registry-string provider swap. TWO suspend kinds, so the resume dispatches on
+// the suspended STEP id:
+//   - "batchReview" → suspend ① — a FULL-BATCH input shows the batch_review card
+//     (reuse the shared batchReviewResume seam); a SINGLE-STORE input collapses ①
+//     to a kind:"approval" single_store_confirm card (the approve/decline seam).
+//     The retained suspend payload's `kind` selects which (the card the user saw).
+//   - "emailFallback" → suspend ② — the INDEPENDENT email_fallback re-confirm
+//     (the browser.submit → gmail.send scope switch); approve/decline only.
+// decline/cancel everywhere = skip THAT scope: ① decline is terminal/zero writes,
+// ② decline skips that dealer's fallback only (the run continues).
+// ===========================================================================
+
+/** The dealer-web-lead-submit start body fields. All optional with null defaults:
+ *  a pin-less full-batch input STOPs in the workflow (pin_required), and the
+ *  single-store / force_retry fields default off; envelope fields ride the same
+ *  body and are ignored. */
+const DealerWebLeadSubmitStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  target_listing_id: z.string().nullable().optional(),
+  force_retry: z.boolean().optional(),
+});
+
+/** The dealer-web-lead-submit workflow inputData shape. */
+interface DealerWebLeadSubmitStartInput {
+  search_profile_id: string | null;
+  target_listing_id: string | null;
+  force_retry: boolean;
+}
+
+/**
+ * The suspend ② (and single-store ①) resume shaping: the approval card carries no
+ * content — accept → {action:"approve"}, decline/cancel → {action:"decline"}
+ * (skip THAT scope, never a global terminal). Mirrors the OEM first-encounter
+ * approve button (no content member). The workflow re-validates with
+ * LeadApprovalResumeSchema, so this is the wire→typed translation only.
+ */
+function leadApprovalResume(
+  decision: FormDecisionBody["decision"],
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  const { action } = decision;
+  const inner = action === "accept" ? "approve" : "decline";
+  return {
+    resumeData: LeadApprovalResumeSchema.parse({ action: inner }),
+    ackBody: { action, content: null },
+  };
+}
+
+/** The dealer_web_lead_submit descriptor. */
+export const dealerWebLeadSubmitDescriptor: RunDescriptor = {
+  skillId: "dealer_web_lead_submit",
+  workflowId: DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's single LLM useCase
+  // (lead_form_map, the Custom-platform field map) to — flipping in lock-step
+  // with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("lead_form_map").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): DealerWebLeadSubmitStartInput {
+    const parsed = DealerWebLeadSubmitStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      target_listing_id: parsed.data.target_listing_id ?? null,
+      force_retry: parsed.data.force_retry ?? false,
+    };
+  },
+
+  resume(
+    step: string,
+    decision: FormDecisionBody["decision"],
+    suspendPayload: Record<string, unknown>,
+  ): { resumeData: unknown; ackBody: Record<string, unknown> } {
+    // suspend ① (batchReview): a single-store input collapses the batch card to a
+    // kind:"approval" single_store_confirm card — the retained payload's `kind`
+    // selects the resume vocabulary the user's card actually used.
+    if (step === "batchReview") {
+      return suspendPayload["kind"] === "approval"
+        ? leadApprovalResume(decision)
+        : batchReviewResume("batchReview", step, decision, suspendPayload);
+    }
+    // suspend ② (emailFallback): the INDEPENDENT email_fallback re-confirm.
+    if (step === "emailFallback") {
+      return leadApprovalResume(decision);
+    }
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  },
+
+  // The workflow's recordConfirm step templates the full deterministic summary —
+  // pass it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Lead submission complete.";
+  },
+};
+
+// ===========================================================================
 // daily_digest — the eighth registered descriptor (Phase 4 / Wave O windowed
 // read-only aggregation). zero-LLM + zero-suspend, so driver_kind is the
 // constant api-key label and there is NO resume (a form-decision 400s as
@@ -939,6 +1056,256 @@ export const dailyDigestDescriptor: RunDescriptor = {
   summaryText(result: unknown): string {
     const r = result as { summary?: string } | undefined;
     return r?.summary ?? "Daily digest ready.";
+  },
+};
+
+// ===========================================================================
+// negotiation_followup (X2) — the irreversible-send (fake-send) email follow-up.
+//
+// ONE LLM useCase (negotiation_followup, the prose draft), so driver_kind DERIVES
+// from policy("negotiation_followup") and flips with a registry-string provider
+// swap (mirror X1's lead_form_map derivation). TWO suspend kinds ride the one
+// "batchReview" step (exactly like X1's batchReview raises batch_review OR a
+// single_store approval): suspend ① is the batch_review SEND-n card; suspend ②
+// is the sensitive contact-flip re-confirm (approve/decline only). The retained
+// payload's `kind` selects the resume vocabulary the user's card actually used.
+//
+// The contact-flip ② is an EXPLICIT, opt-in override: it fires ONLY when the ①
+// batch-approve decision carried a flip request. The shared BatchReviewResume
+// schema has no address-change field, so the request rides the batch-approve
+// content out-of-band (flip_primary_contact_id + the dealer/thread it applies to)
+// and is registered into the workflow's per-run carry via requestContactFlipForRun
+// BEFORE the Mastra resume runs (see formDecision's pre-resume hook). The carry is
+// per-run in-process; a crash re-asks (fail-closed), never fail-open.
+// ===========================================================================
+
+/** The negotiation_followup start body. Both ids optional+nullable: a pin-less
+ *  full-batch input STOPs in the workflow (pin_required); a named thread runs the
+ *  single-thread path. */
+const NegotiationFollowupStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  thread_id: z.string().nullable().optional(),
+});
+
+/** The negotiation_followup workflow inputData shape. */
+interface NegotiationFollowupStartInput {
+  search_profile_id: string | null;
+  thread_id: string | null;
+}
+
+/**
+ * The contact-flip ② re-confirm resume shaping: the sensitive approval card
+ * carries no content — accept → {action:"approve"}, decline/cancel → {action:
+ * "decline"} (no flip; the run continues, the send is independent). The workflow
+ * re-validates with ContactFlipApprovalResumeSchema, so this is the wire→typed
+ * translation only.
+ */
+function contactFlipApprovalResume(
+  decision: FormDecisionBody["decision"],
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  const inner = decision.action === "accept" ? "approve" : "decline";
+  return {
+    resumeData: ContactFlipApprovalResumeSchema.parse({ action: inner }),
+    ackBody: { action: decision.action, content: null },
+  };
+}
+
+/** The optional flip-override fields the ① batch-approve content may carry (an
+ *  EXPLICIT user address-change request; absent in the happy path). All three are
+ *  required together — a partial request is a 400. */
+const ContactFlipOverrideContentSchema = z.object({
+  flip_primary_contact_id: z.string().min(1),
+  flip_dealer_id: z.string().min(1),
+  flip_thread_id: z.string().min(1),
+});
+
+/** Parse a flip override off a ① batch-approve decision content, or null when
+ *  none was requested. A content that carries SOME but not all flip fields is a
+ *  400 content_invalid (a partial override is a contract breach, not a silent
+ *  no-flip). */
+function contactFlipOverrideFrom(
+  decision: FormDecisionBody["decision"],
+): { threadId: string; dealerId: string; contactId: string } | null {
+  const content = decision.content ?? {};
+  const anyFlip =
+    "flip_primary_contact_id" in content ||
+    "flip_dealer_id" in content ||
+    "flip_thread_id" in content;
+  if (!anyFlip) return null;
+  const parsed = ContactFlipOverrideContentSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new FormDecisionError("content_invalid", 400, "contact-flip override incomplete", {
+      ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+      extra: { issues: parsed.error.issues },
+    });
+  }
+  return {
+    threadId: parsed.data.flip_thread_id,
+    dealerId: parsed.data.flip_dealer_id,
+    contactId: parsed.data.flip_primary_contact_id,
+  };
+}
+
+/** The negotiation_followup descriptor. */
+export const negotiationFollowupDescriptor: RunDescriptor = {
+  skillId: "negotiation_followup",
+  workflowId: NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the prose-draft useCase to.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("negotiation_followup").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): NegotiationFollowupStartInput {
+    const parsed = NegotiationFollowupStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      thread_id: parsed.data.thread_id ?? null,
+    };
+  },
+
+  resume(
+    step: string,
+    decision: FormDecisionBody["decision"],
+    suspendPayload: Record<string, unknown>,
+  ): { resumeData: unknown; ackBody: Record<string, unknown> } {
+    // Both suspends ride the "batchReview" step; the retained payload's `kind`
+    // selects which the user answered. The ① batch-approve may ALSO carry a flip
+    // override in its content — that override is registered out-of-band in
+    // formDecision's pre-resume hook (the descriptor.resume signature has no runId).
+    if (step === "batchReview") {
+      // suspend ② — the sensitive contact-flip re-confirm.
+      if (suspendPayload["kind"] === "approval") {
+        return contactFlipApprovalResume(decision);
+      }
+      // suspend ① — the batch_review SEND-n list. Validate the flip override (if
+      // present) so a malformed override 400s here, before resume; the registration
+      // itself is the formDecision hook's job (it owns runId).
+      contactFlipOverrideFrom(decision);
+      return batchReviewResume("batchReview", step, decision, suspendPayload);
+    }
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  },
+
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Negotiation follow-up complete.";
+  },
+};
+
+// ===========================================================================
+// dealer_closeout_email (X3) — the Phase-5 EXIT skill (fake-send, state-only).
+//
+// NEAR-ZERO-LLM (the default body is deterministic) → driver_kind is the constant
+// api-key lane, NOT a policy() derivation (there is no LLM useCase to route). ONE
+// suspend: the batch_review card. decline → terminal zero writes; "SKIP ALL" → the
+// typed `skip_all_reset` outcome (the Phase-4 pipeline_reset hand-off). The
+// workflow recognizes SKIP ALL as an approve whose approved_dealer_ids intersect
+// ZERO reviewed targets, so the descriptor emits an approve carrying a SENTINEL
+// non-target id (a non-empty list satisfying the schema's .min(1), but matching no
+// shown dealer) when the decision content sets `skip_all`. The shared
+// batchReviewResume helper would 400 an unknown id, so X3 needs its OWN batch
+// resume shaper (closeoutBatchResume) that allows the skip-all sentinel.
+// ===========================================================================
+
+/** The dealer_closeout_email start body. search_profile_id optional+nullable: a
+ *  pin-less input STOPs in the workflow (pin_required). */
+const DealerCloseoutEmailStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The dealer_closeout_email workflow inputData shape. */
+interface DealerCloseoutEmailStartInput {
+  search_profile_id: string | null;
+}
+
+/** The sentinel approved id the SKIP-ALL approve carries: a non-empty list (the
+ *  schema requires .min(1)) that intersects no reviewed target → the workflow's
+ *  `approved ∩ targets === ∅` branch produces the typed skip_all_reset outcome. */
+const SKIP_ALL_SENTINEL_ID = "__closeout_skip_all__";
+
+/** The closeout batch_review resume shaping. Like batchReviewResume, BUT the
+ *  accept content may set `skip_all:true` → emit an approve carrying the skip-all
+ *  sentinel id (the workflow turns an empty target-intersection into the
+ *  skip_all_reset outcome). A normal accept validates approved_dealer_ids ⊆ the
+ *  shown targets (the shared invariant). decline/cancel → the decline resumeData. */
+function closeoutBatchResume(
+  step: string,
+  decision: FormDecisionBody["decision"],
+  suspendPayload: Record<string, unknown>,
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  if (step !== "batchReview") {
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  }
+  const { action, content } = decision;
+  if (action === "decline" || action === "cancel") {
+    return {
+      resumeData: BatchReviewResumeSchema.parse({ action: "decline" }),
+      ackBody: { action, content: null },
+    };
+  }
+  // SKIP ALL — an explicit "send none, reset the pipeline" accept. The wire is an
+  // approve carrying the sentinel id; the workflow reads the empty intersection as
+  // the skip_all_reset hand-off. This is NOT a decline (a decline is a plain stop).
+  if (content !== undefined && content["skip_all"] === true) {
+    return {
+      resumeData: BatchReviewResumeSchema.parse({
+        action: "approve",
+        approved_dealer_ids: [SKIP_ALL_SENTINEL_ID],
+      }),
+      ackBody: { action: "accept", content: { skip_all: true } },
+    };
+  }
+  // Normal accept — the explicit dealer-id list ⊆ the shown targets (reuse the
+  // shared validator so the ⊆-targets check and the content schema match X1).
+  return batchReviewResume("batchReview", step, decision, suspendPayload);
+}
+
+/** The dealer_closeout_email descriptor. */
+export const dealerCloseoutEmailDescriptor: RunDescriptor = {
+  skillId: "dealer_closeout_email",
+  workflowId: DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
+
+  // ZERO-LLM — the default closeout body is deterministic, so there is no useCase
+  // to route. The api-key lane is the constant driver_kind (mirror the zero-LLM
+  // dealer_inbox_check / dealer_hygiene descriptors).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): DealerCloseoutEmailStartInput {
+    const parsed = DealerCloseoutEmailStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume: closeoutBatchResume,
+
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Dealer closeout complete.";
   },
 };
 
@@ -1258,6 +1625,9 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   inventoryCompareDescriptor,
   quoteAuditDescriptor,
   quoteCompareDescriptor,
+  dealerWebLeadSubmitDescriptor,
+  negotiationFollowupDescriptor,
+  dealerCloseoutEmailDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -1361,6 +1731,20 @@ function affectedKinds(workflowId: string): string[] {
       // the latest audit per quote and ranks in memory). The success pulse fires
       // with kinds:[] — the UI treats it as nothing-to-refetch.
       return [];
+    case DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID:
+      // A submitted lead writes a lead_submissions row, may update a dealer's
+      // contact_email, and an email fallback writes a (fake) messages row.
+      return ["lead_submissions", "dealers", "messages"];
+    case NEGOTIATION_FOLLOWUP_WORKFLOW_ID:
+      // A follow-up sends a (fake) reply on an existing thread and updates that
+      // thread's state (the contact-flip is a dealer-contact write, but the visible
+      // surfaces that refetch are the thread list + its messages).
+      return ["threads", "messages"];
+    case DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID:
+      // A closeout closes threads + writes a thread_suppression row and flips the
+      // profile to 'closed' on completion (the "profiles" kind, NOT the table name —
+      // the profile card refetches on it).
+      return ["threads", "messages", "profiles"];
     default:
       // A skill whose data family is not mapped yet — refetch broadly rather
       // than leave a view silently stale.
@@ -1612,6 +1996,25 @@ export class SkillRunService {
       // content_invalid / unsupported_action → rollback processing → pending.
       run.claims.delete(decisionId);
       throw err;
+    }
+
+    // negotiation_followup contact-flip ② pre-resume hook: an EXPLICIT flip
+    // override on the ① batch_review approve is registered into the workflow's
+    // per-run carry BEFORE the Mastra resume, so its batchReview step raises the
+    // sensitive ② re-confirm for the approved thread. Scoped to the X2 workflow +
+    // the ① batch_review card (NOT the ② approval re-confirm itself). The override
+    // content was already validated in descriptor.resume; here we register it.
+    // (The descriptor.resume signature has no runId, so this is the right seam.)
+    if (
+      descriptor.workflowId === NEGOTIATION_FOLLOWUP_WORKFLOW_ID &&
+      run.pending.step === "batchReview" &&
+      run.pending.payload["kind"] !== "approval" &&
+      body.decision.action === "accept"
+    ) {
+      const override = contactFlipOverrideFrom(body.decision);
+      if (override !== null) {
+        requestContactFlipForRun(runId, override);
+      }
     }
 
     const step = run.pending.step;

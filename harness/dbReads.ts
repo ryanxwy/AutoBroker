@@ -55,7 +55,16 @@ export const SNAPSHOT_TABLES = [
   "pipeline_state",
   "dealer_quotes",
   "quote_audits",
+  // messages carries a nullable search_profile_id; the dealer_web_lead_submit
+  // keystone asserts a profile-scoped messages delta (an email-fallback send
+  // writes a row; under BLOCK=1 the send is fuse-blocked → Δ=0) — without it the
+  // table_min_rows(messages) anchor would read a vacuous 0.
   "messages",
+  // threads carries a thread-state column (open/replied/closed/…) the negotiation_
+  // followup + dealer_closeout_email cases assert deltas around. dealer_closeout_
+  // email's ui_send closes threads + writes a thread_suppression row on approve
+  // (LOCAL writes that land even under BLOCK=1, when the gated send is fuse-blocked
+  // → messages Δ=0); the func cases need table_min_rows on both.
   "threads",
   "thread_routing",
   "thread_suppression",
@@ -208,16 +217,30 @@ const SEND_SUBMIT_ACTIONS = new Set([
   "negotiation_followup",
 ]);
 
-export function externalMutationDbCount(db: Db): { total: number; breakdown: Record<string, number> } {
+export function externalMutationDbCount(
+  db: Db,
+  opts: { allowFakeOutbound?: boolean } = {},
+): { total: number; breakdown: Record<string, number> } {
   const breakdown: Record<string, number> = {};
 
-  // (1) submitted leads.
-  const submitted = readOne<{ n: number }>(
-    db,
-    `SELECT COUNT(*) AS n FROM lead_submissions WHERE outcome = 'submitted'`,
-    [],
-  );
-  breakdown["lead_submissions.submitted"] = submitted?.n ?? 0;
+  // (1) submitted leads. Under the harness lane the L1 fuse (BLOCK=1) makes a
+  // real dealer-form POST / Gmail send physically impossible, so a
+  // lead_submissions row with outcome='submitted' is the FAKE-submit LOCAL
+  // record (invariant #1: fake-submit = a lead_submissions row + NO real POST is
+  // LEGAL — recordSubmission is a local write, not fuse-gated). When the step
+  // explicitly opted into allowFakeOutbound (the X1 approve/email-fallback
+  // keystone), these fake-submit rows are EXPECTED and do NOT count as an
+  // external mutation. Real-escape detection stays intact regardless: a real
+  // send still surfaces through (2) audit_log.send_submit and (3) the non-sandbox
+  // messages scan below — neither is relaxed by the flag.
+  const submitted = opts.allowFakeOutbound
+    ? 0
+    : (readOne<{ n: number }>(
+        db,
+        `SELECT COUNT(*) AS n FROM lead_submissions WHERE outcome = 'submitted'`,
+        [],
+      )?.n ?? 0);
+  breakdown["lead_submissions.submitted"] = submitted;
 
   // (2) send/submit-shaped audit actions. Pull distinct actions and filter in JS
   // so the set stays the single source of truth (no giant IN list to drift).
@@ -233,18 +256,22 @@ export function externalMutationDbCount(db: Db): { total: number; breakdown: Rec
   breakdown["audit_log.send_submit"] = auditSendSubmit;
 
   // (3) real (non-sandbox) outbound messages, if the messages table is populated.
-  // A real send carries a gmail_message_id NOT shaped like the sandbox
-  // 'sandbox-out-%' AND direction='outbound'. The direction clause is
-  // load-bearing: an INBOUND reply INGESTED by dealer_inbox_check also carries a
+  // A real ESCAPING send is an OUTBOUND row (sendAndRecord inserts direction=
+  // 'outbound' and promotes by backfilling gmail_message_id only on a non-blocked
+  // send) carrying a gmail_message_id NOT shaped like the sandbox 'sandbox-out-%'.
+  // The direction='outbound' clause is load-bearing on TWO fronts: (a) a seeded
+  // INBOUND dealer reply (corpus data the follow-up/closeout skills read)
+  // legitimately carries a real gmail_message_id and is NEVER an outbound
+  // mutation; (b) an INBOUND reply INGESTED by dealer_inbox_check also carries a
   // real gmail_message_id (it came from the mailbox), but ingesting a received
   // reply is never an external mutation — only an outbound SEND is. Without the
-  // direction filter the inbox sweep's legitimate inbound ingest would trip this
-  // keystone falsely.
+  // direction filter either legitimate inbound row would false-flag the keystone.
+  // Real-send detection is unaffected (a real send is always outbound).
   let realOutbound = 0;
   try {
     const msgs = readOne<{ n: number }>(
       db,
-      `SELECT COUNT(*) AS n FROM messages WHERE gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%' AND direction = 'outbound'`,
+      `SELECT COUNT(*) AS n FROM messages WHERE direction = 'outbound' AND gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%'`,
       [],
     );
     realOutbound = msgs?.n ?? 0;
@@ -254,7 +281,7 @@ export function externalMutationDbCount(db: Db): { total: number; breakdown: Rec
   }
   breakdown["messages.real_outbound"] = realOutbound;
 
-  const total = breakdown["lead_submissions.submitted"]! + auditSendSubmit + realOutbound;
+  const total = submitted + auditSendSubmit + realOutbound;
   return { total, breakdown };
 }
 

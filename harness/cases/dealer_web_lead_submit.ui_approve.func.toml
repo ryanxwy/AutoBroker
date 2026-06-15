@@ -1,0 +1,91 @@
+# dealer_web_lead_submit.ui_approve.func.toml — the X1 fake-submit HAPPY PATH,
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1).
+# Approving a web-form dealer at the batch card writes EXACTLY ONE web_form
+# lead_submissions row (the fake-submit LOCAL record — the L1 fuse blocked the
+# real POST), ZERO messages (a web-form dealer never emails), and the keystone
+# stays clean via allow_fake_outbound (the fake-submit row is a legal fake
+# outbound, NOT a real mutation — invariant #1).
+#
+#   step 1  install lead_submit_ready + pin the profile (pin_required).
+#   step 2  "/dealer_web_lead_submit" → the batch card renders both bound dealers;
+#           the driver APPROVES the web-form dealer (Jim Click Hyundai) and SKIPS
+#           the no-form dealer (Tucson Kia), then submits. The injected scout
+#           reports a known-platform form for Jim Click (NO LLM); the gated
+#           submit hits the armed fuse → fuse_blocked → the fake-submit web_form
+#           row. Terminal `done`; +1 lead_submissions EXACT; messages Δ=0 EXACT;
+#           keystone clean with allow_fake_outbound; no malformed tool call.
+
+[meta]
+id = "dealer_web_lead_submit_ui_approve"
+archetype = "A"
+skills = ["dealer_web_lead_submit"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "lead_submit_ready"
+purpose = "Seed the ready-to-submit world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: approve the web-form dealer → ONE fake-submit row ---------------
+
+[[steps]]
+id = "lead_approve"
+skill = "dealer_web_lead_submit"
+purpose = "Approve the web-form dealer at the REAL batch card — one fake-submit web_form row, zero email."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "approve"
+default_decision = "skip"
+[[steps.resume.rows]]
+match = "Jim Click Hyundai"
+decision = "approve"
+[[steps.resume.rows]]
+match = "Tucson Kia"
+decision = "skip"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "approval_gate"      # the batch card rendered.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # the ONE fake-submit web_form row.
+table = "lead_submissions"
+scope = "profile"
+delta_min = 1
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # zero Gmail sends — a web-form dealer never emails.
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # the fake-submit row is a LEGAL fake outbound.
+allow_fake_outbound = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

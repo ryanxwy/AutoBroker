@@ -352,6 +352,76 @@ export {
   type HygieneResume,
 } from "./dealerHygieneContracts.js";
 
+// The dealer_web_lead_submit skill workflow (IRREVERSIBLE-SEND keystone, Phase 5,
+// [fake-send] — TWO suspends before any side effect: the batch_review card ① and
+// the INDEPENDENT email_fallback re-confirm ②). Test-only deps seam + the per-run
+// browser-emitter factory setter exported alongside.
+export {
+  dealerWebLeadSubmitWorkflow,
+  DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+  setDealerWebLeadSubmitBrowserEmitterFactory,
+  __setDealerWebLeadSubmitDepsForTests,
+  __resetDealerWebLeadSubmitDepsForTests,
+  type DealerWebLeadSubmitWorkflowDeps,
+  // The injectable scout/submit boundary types — the functional-lane host builds
+  // deterministic stubs of these (no browser) so the X1 keystone cases drive the
+  // REAL workflow + REAL suspend/resume + REAL recordSubmission against a fixture.
+  type ScoutOutcome,
+  type ScoutFormsArgs,
+  type SubmitOneArgs,
+  type SubmitVerdict,
+} from "./dealerWebLeadSubmit.js";
+
+// The dealer_web_lead_submit contracts (typed input/output + the suspend ②
+// approval resume vocabulary the server descriptor imports; the batch_review ①
+// resume reuses inventorySiteScan's already-exported BatchReviewResumeSchema).
+export {
+  DealerWebLeadSubmitInputSchema,
+  DealerWebLeadSubmitOutputSchema,
+  LeadApprovalResumeSchema,
+} from "./dealerWebLeadSubmitContracts.js";
+
+// negotiation_followup (X2) — irreversible-send (fake-send) email follow-up. NO
+// browser (email-only), so no browser-emitter setter. The contact-flip ② override
+// is registered out-of-band via requestContactFlipForRun (the server descriptor
+// threads an approved-thread flip request before the ① batch_review resume).
+export {
+  negotiationFollowupWorkflow,
+  NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
+  __setNegotiationFollowupDepsForTests,
+  __resetNegotiationFollowupDepsForTests,
+  requestContactFlipForRun,
+  type NegotiationFollowupWorkflowDeps,
+  type ContactFlipRequest,
+} from "./negotiationFollowup.js";
+
+// The negotiation_followup contracts (typed input/output + the suspend ②
+// contact-flip approval resume vocabulary the server descriptor imports; the
+// batch_review ① resume reuses inventorySiteScan's BatchReviewResumeSchema).
+export {
+  NegotiationFollowupInputSchema,
+  NegotiationFollowupOutputSchema,
+  ContactFlipApprovalResumeSchema,
+} from "./negotiationFollowupContracts.js";
+
+// dealer_closeout_email (X3) — the Phase-5 EXIT skill: near-zero-LLM, state-only
+// (close + suppress, never delete). NO browser, NO LLM, so no emitter setter and
+// no resume vocabulary beyond the shared BatchReviewResumeSchema.
+export {
+  dealerCloseoutEmailWorkflow,
+  DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
+  __setDealerCloseoutEmailDepsForTests,
+  __resetDealerCloseoutEmailDepsForTests,
+  type DealerCloseoutEmailWorkflowDeps,
+} from "./dealerCloseoutEmail.js";
+
+// The dealer_closeout_email contracts (typed input/output incl. the
+// `skip_all_reset` member; the batch_review resume reuses the shared schema).
+export {
+  DealerCloseoutEmailInputSchema,
+  DealerCloseoutEmailOutputSchema,
+} from "./dealerCloseoutEmailContracts.js";
+
 // The daily_digest skill workflow (Phase 4 / Wave O — zero-LLM, zero-suspend:
 // a windowed read-only aggregation of every upstream skill's output rows into a
 // local digest artifact + the in-app /digest projection, advancing the

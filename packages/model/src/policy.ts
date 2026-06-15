@@ -62,6 +62,21 @@ export const USE_CASES = [
    * means a single emit_result tool; never Output.object + tools.
    */
   "incentive_extract",
+  /**
+   * Custom-platform lead-form field map for the dealer_web_lead_submit skill:
+   * over a fenced (UNTRUSTED) contact-form DOM snapshot, a single no-tools
+   * structured call emitting the flat {fields[], submit_selector} map. On
+   * DeepSeek that means a single emit_result tool; never Output.object + tools.
+   */
+  "lead_form_map",
+  /**
+   * Negotiation follow-up PROSE drafting for the negotiation_followup skill: a
+   * plain text generation (NO tools, NO structured output) — the tone is chosen
+   * in CODE and the model only writes the chosen register's prose. Because there
+   * are no tools and no per-step json_schema, the #1244 mixing failure is
+   * structurally inapplicable. Routes to deepseek.chat.
+   */
+  "negotiation_followup",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
   /**
@@ -100,6 +115,12 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Offer-card row extraction (two-phase: capture is zero-LLM); single
   // emit_result tool on DeepSeek, same discipline as inventory_extract.
   incentive_extract: "deepseek.chat",
+  // Custom lead-form field map (single emit_result tool over the fenced form
+  // DOM); same DeepSeek discipline as inventory_extract / incentive_extract.
+  lead_form_map: "deepseek.chat",
+  // Negotiation follow-up PROSE draft (NO tools, NO structured output — the
+  // draftProse facade). #1244 is structurally inapplicable; deepseek.chat.
+  negotiation_followup: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
   // Routes to anthropic.chat (supportsOutputObjectWithTools:true) so the harness
   // takes the NATIVE output_object strategy. Swapping to "openai.chat" is a

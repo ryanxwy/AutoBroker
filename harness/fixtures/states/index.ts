@@ -39,15 +39,18 @@ import type { Scenario } from "../stubs.js";
 import { activeSearch } from "./activeSearch.js";
 import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
+import { closeoutReady } from "./closeoutReady.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { dealerReplyExtractWorld } from "./dealerReplyExtractWorld.js";
 import { digestPresent } from "./digestPresent.js";
 import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
+import { followupReady } from "./followupReady.js";
 import { hygieneReady } from "./hygieneReady.js";
 import { inboxNoLead, inboxReady } from "./inboxReady.js";
 import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
+import { leadSubmitReady } from "./leadSubmitReady.js";
 import { multiActive } from "./multiActive.js";
 import { quoteAuditWorld } from "./quoteAuditWorld.js";
 import { quoteCompareCashWorld, quoteCompareWorld } from "./quoteCompareWorld.js";
@@ -85,6 +88,9 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [quoteCompareWorld.id]: quoteCompareWorld,
   [quoteCompareCashWorld.id]: quoteCompareCashWorld,
   [repliesArrived.id]: repliesArrived,
+  [leadSubmitReady.id]: leadSubmitReady,
+  [followupReady.id]: followupReady,
+  [closeoutReady.id]: closeoutReady,
   [inboxReady.id]: inboxReady,
   [inboxNoLead.id]: inboxNoLead,
   [hygieneReady.id]: hygieneReady,

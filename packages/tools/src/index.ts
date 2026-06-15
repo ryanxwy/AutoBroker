@@ -317,6 +317,150 @@ export {
   type SeedFakeMailboxResult,
 } from "./gmail/fakeSeed.js";
 
+// Fake-mailbox-send-only preflight — the fail-CLOSED 2-AND matrix the
+// irreversible-send skills run before any send (fake adapter instance + backend
+// self-declares 'fake'); ANY false aborts the send.
+export {
+  assertFakeMailboxSendOnly,
+  FakeMailboxPreflightError,
+  type FakeMailboxPreflightDeps,
+} from "./gmail/sendPreflight.js";
+
+// Outbound send+record writer — the single skill-facing draft-then-promote
+// send path (preflight → draft row → fuse → fake send → promote, all inside one
+// gated commit). Four discriminated outcomes (sent/declined/blocked/partial) +
+// the serial batch variant that stops at the first failure.
+export {
+  sendAndRecord,
+  sendBatch,
+  promoteOutbound,
+  ThreadFlagMismatchError,
+  type SendRecordTarget,
+  type SendRecordDeps,
+  type SendRecordOutcome,
+  type PartialSendResult,
+  type SendBatchResult,
+} from "./gmail/sendRecord.js";
+
+// Lead-submission XOR writer — the INSERT-only typed-union writer over the three
+// legal `ck_lead_submissions_xor` shapes (web_form | email+fallback | failed) +
+// the duplicate-skip / force-retry precondition guard.
+export {
+  recordSubmission,
+  checkSubmissionPrecondition,
+  ForceRetryRefusedError,
+  type SubmissionOutcome,
+  type SubmissionPrecondition,
+  type EmailFallbackReason,
+  type FailReason,
+} from "./leadSubmissions/recordSubmission.js";
+
+// dealer_web_lead_submit deterministic scout — the lead-form platform
+// fingerprint + contact-path probe set, the dealer-facing payload assembler
+// (fake phone LOCKED, budget redacted, consent CHECKED, SMS opt-in OMITTED),
+// and the US-only HARD GATE partition (non-US filtered before the banner). Pure:
+// the gated submit / email fallback / record writes all live downstream.
+export {
+  platformOf,
+  contactPathFor,
+  buildLeadPayload,
+  partitionUsDealers,
+  CONTACT_PATHS,
+  type LeadPlatform,
+  type LeadFieldRole,
+  type FormFieldRole,
+  type LeadPayloadProfile,
+  type ScoutDealerRow,
+} from "./leadSubmit/scout.js";
+
+// dealerComm — shared dealer-facing message builders + deterministic
+// classification helpers (pure: constants/templates, submit-outcome state
+// machine, closeout draft, reply-target ladder, quote-situation tone).
+export {
+  FAKE_PHONE_DEFAULT,
+  MAX_RETRIES,
+  ASSERTIVE_OTD_DELTA_USD,
+  SUBJECT_PREFIX_FIRST_TOUCH,
+  SUBJECT_PREFIX_FOLLOWUP,
+  FOOTER_DISCLAIMER,
+  wrapUntrustedDealerInput,
+} from "./dealerComm/constants.js";
+export {
+  safeBodyTemplate,
+  safeSubjectLine,
+  subjectForFollowup,
+  type MessageProfile,
+} from "./dealerComm/messageTemplates.js";
+export {
+  classifySubmitOutcome,
+  retryStrategy,
+  normalizeFormFieldName,
+  requiredFieldSet,
+  type SubmitOutcome,
+  type RetryAction,
+  type FormFieldSpec,
+} from "./dealerComm/submitOutcome.js";
+export {
+  buildCloseoutDraft,
+  renderCloseoutSubject,
+  closeoutGreetingName,
+  type CloseoutProfile,
+  type CloseoutDealer,
+} from "./dealerComm/closeoutDraft.js";
+export {
+  selectNextReplyTargets,
+  gateDecisionForTarget,
+  resolveReplyTarget,
+  buildDraftContext,
+  reuseThreadIdForReply,
+  type ReplyCandidateThread,
+  type GateDecision,
+  type ReplyTargetSource,
+  type ReplyTarget,
+  type ContactRow,
+  type InboundMessageRow,
+  type LeadSubmissionRow,
+  type DealerRow,
+  type ReplyTargetInputs,
+  type ThreadMessageRow,
+  type ThreadSnapshotInput,
+  type DraftContextMessage,
+  type DraftContext,
+} from "./dealerComm/replyTargets.js";
+export {
+  classifyQuoteSituation,
+  type QuoteTone,
+  type QuoteSituation,
+} from "./dealerComm/quoteSituation.js";
+
+// negotiation_followup (X2) — the single-transaction contact-flip writer + the
+// per-profile follow-up reads (open-quote OTD situation, needs-response thread
+// candidates, the reply-thread snapshot, and the 4-level reply-target inputs).
+export { setPrimaryReplyTarget } from "./dealerComm/contactFlip.js";
+export {
+  readQuoteSituationForThread,
+  listFollowupCandidateThreads,
+  readThreadSnapshotForDraft,
+  readReplyTargetInputs,
+  type QuoteSituationRead,
+  type FollowupCandidateThread,
+  type ThreadSnapshotRead,
+  type ReplyTargetInputsRead,
+} from "./inbox/followupReads.js";
+
+// dealer_closeout_email (X3) — the closeout target assembler (open threads minus
+// closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)
+// + the atomic per-dealer send+close+suppress tool (gated send fuse-blocked under
+// the L1 fuse; the close + thread_suppression commit locally in one transaction).
+export {
+  assembleCloseoutTargets,
+  closeAndSuppressDealer,
+  type CloseoutTarget,
+  type AssembleResult,
+  type CloseoutDealerOutcome,
+  type CloseAndSuppressArgs,
+} from "./closeout/sendCloseSuppress.js";
+
 // dealer_inbox_check deterministic core — the pure 4-pass discovery query
 // builder + dealer-token sweep + first-pass-wins thread dedupe + the
 // deterministic quoted/replied classifier, the CRM-relay sender detector, the
@@ -587,8 +731,10 @@ export {
 export {
   postValidate,
   assertNoBudget,
+  assertUnicodeSafe,
   assertPhonePolicy,
   BudgetLeakError,
+  UnicodeUnsafeError,
   PhonePolicyViolationError,
   type ValidationResult,
 } from "./validators.js";

@@ -85,6 +85,7 @@ import {
   type HarnessGenerateResult,
   type HarnessSuspend,
   type PolicyResolution,
+  type UseCase,
 } from "@autobroker/model";
 import { writeTestRunRecord, type Db } from "@autobroker/tools";
 
@@ -125,6 +126,32 @@ export interface HarnessLedgerContext {
 
 /** The fixed name of the single structured-output tool (emit_result discipline). */
 const EMIT_RESULT_TOOL = "emit_result" as const;
+
+/**
+ * Input to the PROSE facade `draftProse` — a strict subset of
+ * HarnessGenerateInput with NO schema and NO hitlAvailable: a no-tool plain text
+ * generation. The negotiation-follow-up draft step is the only caller; the tone
+ * is decided in CODE and the prompt carries the chosen register.
+ */
+export interface DraftProseInput {
+  /** Provider-neutral use-case; policy() maps it to a ModelAlias. */
+  useCase: UseCase;
+  /** The already-built draft prompt (fenced untrusted dealer text, red lines). */
+  prompt: string;
+}
+
+/** The result of a PROSE generation: the model's text + the same usage shape the
+ *  structured facade returns (minus the parsed object). */
+export interface DraftProseResult {
+  text: string;
+  usage: {
+    costUsd: number | null;
+    durationMs: number;
+    pricingSource: "computed" | "unavailable";
+    promptTokens: number | null;
+    completionTokens: number | null;
+  };
+}
 
 /** ISO-ish date bucket for the ledger created_at column (YYYY-MM-DD). */
 function createdAtBucket(): string {
@@ -714,7 +741,157 @@ function _dbArg(overrides: HarnessTestOverrides | undefined): [Db] | [] {
 }
 
 /**
- * The runnable harness facade re-exported from the layer surface. `as const` so
- * the shape is frozen; skills call `harness.generate(input, ledger)`.
+ * Run one PROSE generation: resolve route → drive a no-tool Mastra Agent → return
+ * the model's text + usage, after writing exactly ONE ledger row. A strict subset
+ * of `generate`: NO emit_result tool, NO structuredOutput, NO toolChoice, NO Zod.
+ *
+ * #1244 is STRUCTURALLY INAPPLICABLE here — the mixing failure is "structured
+ * output (response_format/json_schema) WITH tools"; this call has neither tools
+ * nor structured output, so a clean prose turn finishes `stop` with text and
+ * never carries a tool call. We still pass the result through the pure detector
+ * belt with `expectsToolCall:false` for discipline: that gate only fires on a
+ * tool-shaped blob in the content (a real escape), in which case we fail CLOSED
+ * with a typed MalformedToolCallAbort — never fall through to the prose. A clean
+ * prose stop always returns [] from the detector.
+ *
+ * Ledger discipline mirrors `generate` verbatim: a THROW from the model call
+ * (provider 5xx / transport) still writes one row (usage unknown ⇒ NULL-not-$0)
+ * before propagating; the success path writes one row with fail_reason null.
  */
-export const harness = { generate } as const;
+async function draftProse(
+  input: DraftProseInput,
+  ledger: HarnessLedgerContext,
+  _testOverrides?: HarnessTestOverrides,
+): Promise<DraftProseResult> {
+  const startedAt = Date.now();
+
+  // Test-seam guard (same rule as generate): refuse the override outside a test
+  // runner — a production caller must never inject a model or redirect the ledger.
+  if (
+    _testOverrides !== undefined &&
+    process.env["VITEST"] === undefined &&
+    process.env["NODE_ENV"] !== "test"
+  ) {
+    throw new Error(
+      "harness.draftProse: _testOverrides is a test-only seam (refused outside a test runner)",
+    );
+  }
+
+  // Stage 1 — route (fail-LOUD inherited from policy()).
+  const route = policy(input.useCase);
+  const model = _testOverrides?.model ?? resolveModel(route.alias);
+  const modelId = concreteModelId(model);
+
+  // Stage 9 — prompt routed through the canonical-message translator.
+  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+
+  const agent = new Agent({
+    id: "harness-prose",
+    name: "harness-prose",
+    instructions:
+      "Write the reply as plain prose. Do not call any tools and do not return JSON.",
+    model: model as AgentModelConfig,
+    // No tools, no structured output: prose is the only delivery mechanism.
+  });
+
+  // Stage 4 — the agent call. No toolChoice, no structuredOutput. temperature 0;
+  // DeepSeek thinking disabled (harmless on providers that ignore the namespace).
+  // A throw is a run that HAPPENED — ledger one row (NULL-not-$0) before rethrow.
+  const result = await agent
+    .generate(messages, {
+      providerOptions: { deepseek: { thinking: { type: "disabled" } } },
+      modelSettings: { temperature: 0 },
+    })
+    .catch((err: unknown) => {
+      writeTestRunRecord(
+        {
+          runId: ledger.runId,
+          skill: ledger.skill,
+          createdAt: createdAtBucket(),
+          layer: ledger.layer,
+          provider: route.provider,
+          modelAlias: route.alias,
+          costUsd: null,
+          latencyMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          pricingSource: "unavailable",
+          priceInputPerMtok: null,
+          priceOutputPerMtok: null,
+          promptVersion: ledger.promptVersion,
+          schemaVersion: ledger.schemaVersion,
+          failReason: err instanceof Error ? err.name : "model_call_failed",
+        },
+        ..._dbArg(_testOverrides),
+      );
+      throw err;
+    });
+
+  const durationMs = Date.now() - startedAt;
+  const promptTokens = result.usage?.inputTokens ?? null;
+  const completionTokens = result.usage?.outputTokens ?? null;
+  const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
+  const priceColumns = pricingColumns(modelId, pricingSource);
+
+  const writeLedger = (failReason: string | null): void => {
+    writeTestRunRecord(
+      {
+        runId: ledger.runId,
+        skill: ledger.skill,
+        createdAt: createdAtBucket(),
+        layer: ledger.layer,
+        provider: route.provider,
+        modelAlias: route.alias,
+        costUsd,
+        latencyMs: durationMs,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        pricingSource,
+        priceInputPerMtok: priceColumns.input,
+        priceOutputPerMtok: priceColumns.output,
+        promptVersion: ledger.promptVersion,
+        schemaVersion: ledger.schemaVersion,
+        failReason,
+      },
+      ..._dbArg(_testOverrides),
+    );
+  };
+
+  const text = result.text ?? "";
+
+  // Detector belt — discipline only. expectsToolCall:false, so the
+  // finish_reason / empty-tool-call signals are gated off (a prose stop is the
+  // legitimate finish here); only a tool-shaped blob in content can still fire.
+  // On any signal we fail CLOSED (typed abort) — never return the blob as prose.
+  const signals = detectMalformedToolCall({
+    finishReason: normalizeFinishReason(result.finishReason),
+    expectsToolCall: false,
+    toolCallCount: result.toolCalls?.length ?? 0,
+    content: text,
+  });
+  if (signals.length > 0) {
+    writeLedger("malformed_tool_call");
+    throw new MalformedToolCallAbort(signals);
+  }
+
+  writeLedger(null);
+
+  return {
+    text,
+    usage: {
+      costUsd,
+      durationMs,
+      pricingSource: pricingSource === "unavailable" ? "unavailable" : "computed",
+      promptTokens,
+      completionTokens,
+    },
+  };
+}
+
+/**
+ * The runnable harness facade re-exported from the layer surface. `as const` so
+ * the shape is frozen; skills call `harness.generate(input, ledger)` for a
+ * structured result, or `harness.draftProse(input, ledger)` for a no-tool prose
+ * draft.
+ */
+export const harness = { generate, draftProse } as const;
