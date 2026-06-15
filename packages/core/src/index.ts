@@ -57,18 +57,8 @@ export type {
   ExtractionMethod,
 } from "./schema/dealerQuote.js";
 
-export {
-  AuditFlagSchema,
-  AuditFlagCodeSchema,
-  AuditSeveritySchema,
-  AuditFindingSchema,
-} from "./schema/auditFlag.js";
-export type {
-  AuditFlag,
-  AuditFlagCode,
-  AuditSeverity,
-  AuditFinding,
-} from "./schema/auditFlag.js";
+export { AuditFindingSchema } from "./schema/auditFlag.js";
+export type { AuditFinding } from "./schema/auditFlag.js";
 
 export { DealerCandidateSchema } from "./schema/dealerCandidate.js";
 export type { DealerCandidate } from "./schema/dealerCandidate.js";
