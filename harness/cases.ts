@@ -209,6 +209,13 @@ const RawStepSchema = z.object({
    *  (inventory_site_scan) author 1800 here so a corpus run without flags
    *  does not abort them at the 900s default. */
   max_seconds: z.number().int().positive().optional(),
+  /** This step's run wipes ALL profiles (a destructive global reset). The
+   *  S1/S2/S3 cross-check then treats a profile that is correctly ABSENT on the
+   *  S2 re-pull as CONSISTENT, not a contradiction — a wipe that leaves the
+   *  scoped profile GONE is the expected outcome, so the re-pull's NOT-found is
+   *  the agreeing signal (and a still-present profile is the real failure).
+   *  Default false: every non-wipe step keeps the present-on-re-pull S2. */
+  expects_wipe: z.boolean().optional(),
   /** UI lane only: after this step's terminal + checks, pin the profile whose
    *  vehicle label equals this string via the Searches popover's Pin verb (the
    *  REAL DOM — the explicit pin action; sessions are never auto-pinned). */
@@ -325,6 +332,10 @@ export interface CaseStep {
   /** Per-step budget (seconds) when the CLI --max-seconds is absent, or null
    *  (the runner's 900s default). CLI overrides. */
   maxSeconds: number | null;
+  /** This step's run wipes all profiles (a destructive global reset): the
+   *  S1/S2/S3 cross-check treats a profile correctly ABSENT on re-pull as
+   *  CONSISTENT, not a contradiction. Default false. */
+  expectsWipe: boolean;
   /** UI lane: pin this vehicle label via the Searches popover AFTER the step's
    *  terminal + checks (the explicit Pin verb), or null. */
   pinLabel: string | null;
@@ -531,6 +542,7 @@ export function toCase(raw: TomlTable): Case {
     expectStop: s.expect_stop ?? null,
     edge: s.edge ?? null,
     maxSeconds: s.max_seconds ?? null,
+    expectsWipe: s.expects_wipe ?? false,
     pinLabel: s.pin_label ?? null,
     batchRowsFrom: s.batch_rows_from ?? null,
     inputInline: s.input_inline ?? null,
