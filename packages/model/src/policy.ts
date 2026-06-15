@@ -23,6 +23,18 @@ import type { CapabilityFlags, ModelAlias, Provider } from "@autobroker/core";
 export const USE_CASES = [
   /** Extract a structured DealerQuote from a dealer reply (Phase 3 template). */
   "dealer_reply_extract",
+  /**
+   * Bounded escalation route for dealer_reply_extract. When the DEFAULT
+   * (DeepSeek, emit_result lane) deterministically emits malformed tool-call
+   * arguments — an InvalidToolInputError / #1244 abort that every byte-identical
+   * same-provider retry would reproduce — the skill makes EXACTLY ONE fresh
+   * generate against this route. It targets an output_object-capable provider
+   * (anthropic.chat: supportsOutputObjectWithTools:true → the NATIVE structured
+   * lane, structurally immune to the emit_result serialization defect). Workflows
+   * still name a useCase, never a provider; swapping to "openai.chat" is a
+   * one-string edit that keeps the same output_object strategy.
+   */
+  "dealer_reply_extract_escalation",
   /** Render a Telegram headline from already-computed audit flags (Phase 1). */
   "quote_audit_headline",
   /**
@@ -98,6 +110,11 @@ export type UseCase = (typeof USE_CASES)[number];
  */
 const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   dealer_reply_extract: "deepseek.chat",
+  // Bounded escalation: routes to anthropic.chat (supportsOutputObjectWithTools:true)
+  // so the harness takes the NATIVE output_object strategy — structurally immune to
+  // DeepSeek's emit_result serialization defect. One-string swap to "openai.chat"
+  // keeps the same strategy (both rows are true).
+  dealer_reply_extract_escalation: "anthropic.chat",
   quote_audit_headline: "deepseek.cheap",
   // Both intake LLM passes route to deepseek.chat (deepseek-v4-flash, temp 0,
   // per-step thinking:disabled + named tool_choice — emit_result hard constraint:

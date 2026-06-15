@@ -268,11 +268,25 @@ function noAttachmentAdapter(): GmailAdapter {
   } as unknown as GmailAdapter;
 }
 
+/** A getKeyPresence stub: every key present by default; pass `absent` to mark
+ *  specific provider keys missing (drives the escalation key-guard branch). */
+function keyPresence(
+  absent: ReadonlyArray<"deepseek" | "anthropic" | "openai" | "google_places"> = [],
+): DealerReplyExtractWorkflowDeps["getKeyPresence"] {
+  const ids = ["deepseek", "anthropic", "openai", "google_places"] as const;
+  return (() => {
+    const out = {} as Record<(typeof ids)[number], { present: boolean }>;
+    for (const id of ids) out[id] = { present: !absent.includes(id) };
+    return out;
+  }) as DealerReplyExtractWorkflowDeps["getKeyPresence"];
+}
+
 function installDeps(partial: Partial<DealerReplyExtractWorkflowDeps> = {}): void {
   __setDealerReplyExtractDepsForTests({
     createGmailAdapter: (() =>
       noAttachmentAdapter()) as DealerReplyExtractWorkflowDeps["createGmailAdapter"],
     harnessGenerate: harnessFixed([row({ financing_mode: "cash", otd_total: 43000 })]),
+    getKeyPresence: keyPresence(),
     ...partial,
   });
 }
@@ -504,6 +518,196 @@ describe("dealer_reply_extract — #1244 fail-closed, per-message", () => {
     expect(quoteRows()).toHaveLength(0);
 
     const m = messageRow("msg-susp");
+    expect(m["quote_extraction_status"]).toBe("failed");
+    expect(m["processed_at"]).toBeNull();
+  });
+});
+
+describe("dealer_reply_extract — bounded provider escalation (F1)", () => {
+  /** An AI SDK InvalidToolInputError stand-in: the harness re-throws the real
+   *  one, whose `.name` is exactly this. The escalation predicate keys on the
+   *  stable name, never a message match. */
+  function invalidToolInputError(): Error {
+    const e = new Error("Invalid arguments for tool emit_result: trailing }");
+    e.name = "AI_InvalidToolInputError";
+    return e;
+  }
+
+  /** A harness stub: the DEFAULT route throws `onDefault`; the escalation route
+   *  (useCase === 'dealer_reply_extract_escalation') runs `onEscalation`. */
+  function harnessEscalating(opts: {
+    onDefault: () => never;
+    onEscalation: () => Promise<{ object: unknown; usage: typeof NO_USAGE }> | never;
+    spy?: { defaultCalls: number; escalationCalls: number };
+  }): DealerReplyExtractWorkflowDeps["harnessGenerate"] {
+    return (async (input: { useCase: string }) => {
+      if (input.useCase === "dealer_reply_extract_escalation") {
+        if (opts.spy) opts.spy.escalationCalls += 1;
+        return opts.onEscalation();
+      }
+      if (opts.spy) opts.spy.defaultCalls += 1;
+      return opts.onDefault();
+    }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"];
+  }
+
+  function seedOneMessage(messageId: string, gmailMessageId: string, body: string): void {
+    seedProfile();
+    seedDealer();
+    seedThread("thread-1");
+    seedMessage({ messageId, threadId: "thread-1", gmailMessageId, body });
+  }
+
+  it("(a) DeepSeek InvalidToolInputError → escalation succeeds → quotes persisted with the escalation provider", async () => {
+    seedOneMessage("msg-esc", "gmail-esc", "OTD $43,000 on the Tucson.");
+    seedMessage({
+      messageId: "msg-clean",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-clean",
+      body: "CLEANMARK OTD $50,000.",
+    });
+    const spy = { defaultCalls: 0, escalationCalls: 0 };
+    installDeps({
+      harnessGenerate: (async (input: { useCase: string; prompt: string }) => {
+        if (input.useCase === "dealer_reply_extract_escalation") {
+          spy.escalationCalls += 1;
+          return {
+            object: {
+              quotes: [row({ financing_mode: "cash", otd_total: 43000 })],
+              message_intent: "real_quote",
+            },
+            usage: NO_USAGE,
+          };
+        }
+        spy.defaultCalls += 1;
+        // The OTHER (clean) message extracts on the default route untouched.
+        if (input.prompt.includes("CLEANMARK")) {
+          return {
+            object: {
+              quotes: [row({ financing_mode: "cash", otd_total: 50000 })],
+              message_intent: "real_quote",
+            },
+            usage: NO_USAGE,
+          };
+        }
+        // The F1 message: the default route deterministically rejects.
+        const e = new Error("Invalid arguments for tool emit_result: trailing }");
+        e.name = "AI_InvalidToolInputError";
+        throw e;
+      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
+    });
+
+    const { result } = await startRun("run-esc-a");
+    expect(statusOf(result)).toBe("success");
+    const out = outputOf(result);
+    expect(out["messages_processed"]).toBe(2); // BOTH messages succeed
+    expect(out["messages_failed"]).toBe(0);
+    expect(out["quotes_upserted"]).toBe(2);
+
+    // Exactly ONE escalation hop fired (for the F1 message only).
+    expect(spy.escalationCalls).toBe(1);
+
+    const rows = quoteRows();
+    expect(rows).toHaveLength(2);
+    const escalated = rows.find((r) => r["source_gmail_message_id"] === "gmail-esc")!;
+    expect(escalated["extractor_provider"]).toBe("anthropic"); // the escalation provider
+    expect(escalated["otd_total"]).toBe(43000);
+    // The clean message stays on the default provider.
+    const clean = rows.find((r) => r["source_gmail_message_id"] === "gmail-clean")!;
+    expect(clean["extractor_provider"]).toBe("deepseek");
+
+    expect(messageRow("msg-esc")["quote_extraction_status"]).toBe("succeeded");
+    expect(messageRow("msg-clean")["quote_extraction_status"]).toBe("succeeded");
+  });
+
+  it("(b) default AND escalation both fail → message failed, fail-closed, 0 rows", async () => {
+    seedOneMessage("msg-bb", "gmail-bb", "OTD numbers attached.");
+    const spy = { defaultCalls: 0, escalationCalls: 0 };
+    installDeps({
+      harnessGenerate: harnessEscalating({
+        onDefault: () => {
+          throw invalidToolInputError();
+        },
+        onEscalation: () => {
+          // The escalation also fails (a #1244 abort) → propagate → fail-closed.
+          throw new MalformedToolCallAbort(["empty_tool_calls"]);
+        },
+        spy,
+      }),
+    });
+
+    const { result } = await startRun("run-esc-b");
+    expect(statusOf(result)).toBe("success"); // the run does not abort
+    expect(outputOf(result)["messages_failed"]).toBe(1);
+    expect(outputOf(result)["quotes_upserted"]).toBe(0);
+    expect(quoteRows()).toHaveLength(0);
+
+    expect(spy.defaultCalls).toBe(1);
+    expect(spy.escalationCalls).toBe(1); // the one bounded hop WAS attempted
+
+    const m = messageRow("msg-bb");
+    expect(m["quote_extraction_status"]).toBe("failed");
+    expect(m["quote_extraction_intent"]).toBeNull();
+    expect(m["processed_at"]).toBeNull(); // re-queued
+  });
+
+  it("(c) escalation key absent → graceful no-op, message failed (no throw)", async () => {
+    seedOneMessage("msg-cc", "gmail-cc", "OTD numbers attached.");
+    const spy = { defaultCalls: 0, escalationCalls: 0 };
+    installDeps({
+      // anthropic is the escalation provider; mark its key absent.
+      getKeyPresence: keyPresence(["anthropic"]),
+      harnessGenerate: harnessEscalating({
+        onDefault: () => {
+          throw invalidToolInputError();
+        },
+        onEscalation: () => {
+          throw new Error("escalation must NOT be attempted when the key is absent");
+        },
+        spy,
+      }),
+    });
+
+    const { result } = await startRun("run-esc-c");
+    expect(statusOf(result)).toBe("success");
+    expect(outputOf(result)["messages_failed"]).toBe(1);
+    expect(quoteRows()).toHaveLength(0);
+
+    expect(spy.defaultCalls).toBe(1);
+    expect(spy.escalationCalls).toBe(0); // NEVER hopped — key absent
+
+    const m = messageRow("msg-cc");
+    expect(m["quote_extraction_status"]).toBe("failed");
+    expect(m["processed_at"]).toBeNull();
+  });
+
+  it("(d) a non-malformed failure (transport error) does NOT escalate → fail-closed", async () => {
+    seedOneMessage("msg-dd", "gmail-dd", "OTD numbers attached.");
+    const spy = { defaultCalls: 0, escalationCalls: 0 };
+    installDeps({
+      harnessGenerate: harnessEscalating({
+        onDefault: () => {
+          // A transport / 5xx model-call failure — a DIFFERENT model cannot fix
+          // a network fault, so this must NOT escalate.
+          const e = new Error("503 Service Unavailable");
+          e.name = "APICallError";
+          throw e;
+        },
+        onEscalation: () => {
+          throw new Error("escalation must NOT fire for a non-malformed failure");
+        },
+        spy,
+      }),
+    });
+
+    const { result } = await startRun("run-esc-d");
+    expect(statusOf(result)).toBe("success");
+    expect(outputOf(result)["messages_failed"]).toBe(1);
+    expect(quoteRows()).toHaveLength(0);
+
+    expect(spy.defaultCalls).toBe(1);
+    expect(spy.escalationCalls).toBe(0); // a transport error never escalates
+
+    const m = messageRow("msg-dd");
     expect(m["quote_extraction_status"]).toBe("failed");
     expect(m["processed_at"]).toBeNull();
   });

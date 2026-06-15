@@ -79,12 +79,13 @@
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 
-import { reclassifyRule2Failures, type DealerReplyQuoteRow } from "@autobroker/core";
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
+import { reclassifyRule2Failures, type DealerReplyQuoteRow, type Provider } from "@autobroker/core";
+import { MalformedToolCallAbort, policy, type HarnessSuspend, type UseCase } from "@autobroker/model";
 import {
   classifyMessageQuoteClass,
   createGmailAdapter,
   getDb,
+  getKeyPresence as getKeyPresenceImpl,
   loadReplyExtractCandidates as loadReplyExtractCandidatesImpl,
   markMessageFailed as markMessageFailedImpl,
   persistMessageQuotes as persistMessageQuotesImpl,
@@ -137,6 +138,9 @@ export interface DealerReplyExtractWorkflowDeps {
   markMessageFailed: typeof markMessageFailedImpl;
   /** The DB accessor the read/write closures run through (tools layer). */
   getDb: typeof getDb;
+  /** Per-key presence (NEVER the value) — gates the bounded escalation hop on
+   *  the escalation provider's API key actually being configured. */
+  getKeyPresence: typeof getKeyPresenceImpl;
 }
 
 const realDeps: DealerReplyExtractWorkflowDeps = {
@@ -148,6 +152,7 @@ const realDeps: DealerReplyExtractWorkflowDeps = {
   persistMessageQuotes: persistMessageQuotesImpl,
   markMessageFailed: markMessageFailedImpl,
   getDb,
+  getKeyPresence: getKeyPresenceImpl,
 };
 
 let injectedDeps: DealerReplyExtractWorkflowDeps | undefined;
@@ -207,17 +212,66 @@ function vehicleLabel(p: { year: number | null; make: string; model: string; tri
   return [p.year, p.make, p.model, p.trim].filter((x) => x != null && `${x}`.trim() !== "").join(" ");
 }
 
+/** The bounded provider-escalation route. The DEFAULT (deepseek.chat) runs the
+ *  emit_result single-tool lane, which can — deterministically at temperature 0
+ *  — serialize malformed tool-call arguments (an extra trailing brace) that an
+ *  AI SDK InvalidToolInputError / a #1244 abort rejects. Every same-provider
+ *  retry is byte-identical, so the message can NEVER extract on the default
+ *  route. The escalation useCase routes to an output_object-capable provider
+ *  (the NATIVE structured lane, structurally immune to that serialization
+ *  defect); the skill makes EXACTLY ONE fresh, well-formed generate against it.
+ */
+const ESCALATION_USE_CASE: UseCase = "dealer_reply_extract_escalation";
+
+/** The AI SDK's name for a malformed tool-call ARGUMENTS rejection (the trailing
+ *  -brace serialization defect that started F1). We key on the STABLE error name,
+ *  never a message string-match. */
+const INVALID_TOOL_INPUT_ERROR_NAME = "AI_InvalidToolInputError" as const;
+
+/**
+ * Is `err` the bounded-escalatable malformed-tool-call class — and ONLY that?
+ *
+ * Escalate ONLY a provider serialization DEFECT that a byte-identical retry on
+ * the same provider would reproduce verbatim:
+ *   - a #1244 MalformedToolCallAbort (the harness's typed fail-closed abort), or
+ *   - the AI SDK's InvalidToolInputError (name 'AI_InvalidToolInputError'),
+ *     thrown + re-thrown by the harness when the model's tool-call args are
+ *     un-parseable.
+ * NEVER escalate a real contract violation (a ZodError → 'zod_validation', a
+ * genuine schema breach the escalation provider would also reject) NOR a
+ * transport / 5xx model-call failure (a different model cannot fix a network
+ * fault). Those fall straight through to the fail-closed mark-failed path.
+ */
+function isEscalatableMalformedError(err: unknown): boolean {
+  if (err instanceof MalformedToolCallAbort) return true;
+  return (
+    err instanceof Error && err.name === INVALID_TOOL_INPUT_ERROR_NAME
+  );
+}
+
+/** The escalation provider (derived from the escalation useCase via policy — the
+ *  workflow names a useCase, never a provider) and whether its API key is
+ *  configured. The bounded hop only fires when the key is present; absent → a
+ *  graceful no-op (the message stays fail-closed). */
+function escalationGuard(): { provider: Provider; keyPresent: boolean } {
+  const provider = policy(ESCALATION_USE_CASE).provider;
+  const keyPresent = deps().getKeyPresence()[provider]?.present === true;
+  return { provider, keyPresent };
+}
+
 /** Run ONE single-emit_result extraction over one message's snapshot. A
  *  malformed tool call hard-aborts (fail-closed) — never a prose fallthrough,
- *  never a regexed-out tool call. */
+ *  never a regexed-out tool call. `useCase` selects the route (default vs the
+ *  bounded escalation provider); a non-default route is otherwise identical. */
 async function extractOneMessage(args: {
   runId: string;
   messageBody: string;
   attachmentText: string;
+  useCase?: UseCase;
 }): Promise<{ quotes: DealerReplyQuoteRow[]; messageIntent: MessageIntent }> {
   const result = await deps().harnessGenerate(
     {
-      useCase: "dealer_reply_extract",
+      useCase: args.useCase ?? "dealer_reply_extract",
       schema: DealerReplyExtractEmitSchema,
       prompt: buildDealerReplyExtractPrompt(args.messageBody, args.attachmentText),
       hitlAvailable: false,
@@ -357,44 +411,78 @@ const extractAndPersistStep = createStep({
         // 'vision' enum member is forward-compat for a vision-capable provider.
         const extractionMethod: "ocr" | "text" = prep.usedOcr ? "ocr" : "text";
 
-        // c. extract — the ONE LLM step (single emit_result tool, fail-closed).
-        const extracted = await extractOneMessage({
-          runId,
-          messageBody: c.body,
-          attachmentText: capReplySnapshot(prep.text),
-        });
-
-        // d. validatePersist — reclass Rule2 failures, then persist all-or-
-        //    nothing. The persist layer re-validates every row through
-        //    DealerQuoteSchema (.strict + Rule1/Rule2) BEFORE the SQL txn; one
-        //    row failing rolls the WHOLE message back + marks it failed.
-        //
         // Backfill quote_format from the message-level class when the LLM
         // left it null. The LLM's own non-null value always wins; this only
-        // fills the gap when the LLM omitted it.
+        // fills the gap when the LLM omitted it. (Provider-independent — the
+        // primary route and the escalation route share this persist shape.)
         const formatFromClass = (
           { pdf_quote: "pdf", image_quote: "image", text_quote: "text", no_quote: null } as const
         )[messageClass];
-        const rows: DealerReplyQuoteRow[] = extracted.quotes.map((row) =>
-          reclassifyRule2Failures(
-            row.quote_format == null && formatFromClass != null
-              ? { ...row, quote_format: formatFromClass }
-              : row,
-          ),
-        );
-        const persistResult = deps().persistMessageQuotes({
-          provenance: {
-            messageId: c.message_id,
-            sourceGmailMessageId: c.source_gmail_message_id,
-            searchProfileId: c.search_profile_id,
-            dealerId: c.dealer_id,
-            extractorProvider: "deepseek",
-            extractionMethod,
-            intent: extracted.messageIntent,
-          },
-          rows,
-          db: deps().getDb(),
-        });
+
+        // d. validatePersist — reclass Rule2 failures, then persist all-or-
+        //    nothing under the SERVING provider. The persist layer re-validates
+        //    every row through DealerQuoteSchema (.strict + Rule1/Rule2) BEFORE
+        //    the SQL txn; one row failing rolls the WHOLE message back + marks it
+        //    failed. `extractor_provider` honestly reflects who served the rows.
+        const persistExtracted = (
+          extracted: { quotes: DealerReplyQuoteRow[]; messageIntent: MessageIntent },
+          extractorProvider: Provider,
+        ) => {
+          const rows: DealerReplyQuoteRow[] = extracted.quotes.map((qrow) =>
+            reclassifyRule2Failures(
+              qrow.quote_format == null && formatFromClass != null
+                ? { ...qrow, quote_format: formatFromClass }
+                : qrow,
+            ),
+          );
+          return deps().persistMessageQuotes({
+            provenance: {
+              messageId: c.message_id,
+              sourceGmailMessageId: c.source_gmail_message_id,
+              searchProfileId: c.search_profile_id,
+              dealerId: c.dealer_id,
+              extractorProvider,
+              extractionMethod,
+              intent: extracted.messageIntent,
+            },
+            rows,
+            db: deps().getDb(),
+          });
+        };
+
+        // c. extract — the ONE LLM step (single emit_result tool, fail-closed).
+        //    A malformed-tool-call DEFECT on the default (DeepSeek) route is
+        //    bounded-escalated to a fresh, well-formed generate on an
+        //    output_object-capable provider — caught INSIDE the per-message body
+        //    so the escalation hop is its own attempt.
+        let persistResult;
+        try {
+          const extracted = await extractOneMessage({
+            runId,
+            messageBody: c.body,
+            attachmentText: capReplySnapshot(prep.text),
+          });
+          persistResult = persistExtracted(extracted, "deepseek");
+        } catch (err) {
+          // Bounded escalation: ONLY the malformed-tool-call class (a provider
+          // serialization defect a byte-identical retry would reproduce), and
+          // ONLY when the escalation provider's key is present. A Zod-validation
+          // breach, a transport/5xx failure, or an absent key all decline the
+          // hop → re-throw so the outer catch fail-closes the message as today.
+          const guard = escalationGuard();
+          if (!isEscalatableMalformedError(err) || !guard.keyPresent) throw err;
+          // EXACTLY ONE fresh hop. NOT a salvage of the corrupt bytes — a new
+          // generate against a different model. If it ALSO throws (any reason),
+          // the throw propagates to the outer catch → fail-closed. The hop writes
+          // its OWN ledger row (honest cost/provider provenance) via the harness.
+          const escalated = await extractOneMessage({
+            runId,
+            messageBody: c.body,
+            attachmentText: capReplySnapshot(prep.text),
+            useCase: ESCALATION_USE_CASE,
+          });
+          persistResult = persistExtracted(escalated, guard.provider);
+        }
 
         if (persistResult.ok) {
           quotesUpserted += persistResult.rowsUpserted;
@@ -407,11 +495,11 @@ const extractAndPersistStep = createStep({
           processed.push({ ...c, status: "failed", rows_upserted: 0 });
         }
       } catch {
-        // A thrown MalformedToolCallAbort (#1244) or any other per-message error
-        // (adapter/extract throw) → mark the message failed (intent NULL,
-        // processed_at NULL → re-queued) via the persist layer's mark-failed
-        // path, write ZERO quotes, then continue. ONE bad message never fails
-        // the whole run.
+        // A thrown MalformedToolCallAbort (#1244) the escalation declined or also
+        // failed, or any other per-message error (adapter/extract throw) → mark
+        // the message failed (intent NULL, processed_at NULL → re-queued) via the
+        // persist layer's mark-failed path, write ZERO quotes, then continue. ONE
+        // bad message never fails the whole run.
         deps().markMessageFailed({ messageId: c.message_id, db: deps().getDb() });
         messagesFailed += 1;
         processed.push({ ...c, status: "failed", rows_upserted: 0 });
