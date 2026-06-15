@@ -25,7 +25,9 @@ jobs:
       - uses: pnpm/action-setup@v6 # version comes from package.json packageManager
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # Node 24 (Active LTS). engines>=24.13.0 + .npmrc engine-strict=true make a
+          # Node-22 leg un-installable, so CI runs 24 only (not a [22,24] matrix).
+          node-version: 24
           # Explicit pnpm cache (setup-node v6 only AUTO-caches npm; explicit is honored).
           cache: pnpm
       - run: pnpm install --frozen-lockfile
