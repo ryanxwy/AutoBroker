@@ -43,6 +43,7 @@ const MIGRATION_SQL = join(
 // leaks a toggle into a sibling test or the host process.
 const ENV_VARS = [
   "AUTOBROKER_GMAIL_BACKEND",
+  "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
   "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
   "AUTOBROKER_DEMO_SEED",
@@ -143,6 +144,32 @@ describe("PUT /api/settings/env", () => {
 
     // the no-restart keystone — the next gmail-factory call sees real immediately.
     expect(process.env["AUTOBROKER_GMAIL_BACKEND"]).toBe("real");
+  });
+
+  it("sets gmail_account (free-text email) → 200 with the value echoed and env mutated", async () => {
+    const { app } = await build();
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/settings/env",
+      payload: { id: "gmail_account", value: "person@example.com" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; vars: { id: string; value: string }[] };
+    expect(body.ok).toBe(true);
+    expect(body.vars.find((v) => v.id === "gmail_account")?.value).toBe("person@example.com");
+    expect(process.env["AUTOBROKER_GMAIL_ACCOUNT"]).toBe("person@example.com");
+  });
+
+  it("rejects a malformed gmail_account address with 400 invalid_value (no env mutation)", async () => {
+    const { app } = await build();
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/settings/env",
+      payload: { id: "gmail_account", value: "not-an-email" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: { code: string } }).error.code).toBe("invalid_value");
+    expect(process.env["AUTOBROKER_GMAIL_ACCOUNT"]).toBeUndefined();
   });
 
   it("rejects an out-of-enum value with 400 invalid_value", async () => {

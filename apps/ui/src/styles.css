@@ -1179,6 +1179,17 @@ details.optional[open] summary { margin-bottom: 10px; }
   word-break: break-all;
 }
 .env-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.env-text { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.env-input {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 6px 9px;
+  min-width: 16rem;
+}
 /* the inline enum confirm rides the shared gate-card; give it room below the row */
 .env-confirm { flex-basis: 100%; margin-top: 10px; animation: popIn 0.16s ease both; }
 
