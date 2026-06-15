@@ -271,10 +271,14 @@ export const SKILLS: readonly SkillDef[] = [
     summary: "Wipe the whole local pipeline DB and recreate the schema (typed-YES second-confirm; default pre-reset dealer close-out pass).",
     phase: 4,
     riskClass: "destructive",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: "pipeline_reset",
     inputs: [],
     outputs: "reset_report",
+    // GLOBAL-DESTRUCTIVE-OP EXCEPTION: pipeline_reset is non-profile-scoped (a
+    // full wipe). The pin-gate posture is satisfied here, but the load-bearing
+    // safety floor is the typed-YES second-confirm (re-validated server-side),
+    // NOT the profile pin — the action is global regardless of any pin.
     profilePin: "pin_required",
   },
 

@@ -40,7 +40,13 @@ import {
   restartStaleRun,
   type BootRecoveryReport,
 } from "@autobroker/workflows";
-import { loadSecretsIntoEnv, loadEnvConfigIntoEnv, getDb, seedDemoData } from "@autobroker/tools";
+import {
+  loadSecretsIntoEnv,
+  loadEnvConfigIntoEnv,
+  getDb,
+  seedDemoData,
+  ensureProductSchema,
+} from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
  *  import — the dependency wall forbids it in the app layer). */
@@ -88,6 +94,13 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // secrets loader. A launch-supplied env var with no file override is left
   // untouched; missing file = no-op.
   loadEnvConfigIntoEnv();
+
+  // (1b'') Instantiate the product schema on a fresh install (idempotent — the
+  // drizzle migrator no-ops an already-migrated DB). The app delegates DOWN into
+  // the tools layer; boot never opens the product DB itself. This makes a fresh
+  // ~/.autobroker-ts/autobroker.db self-sufficient BEFORE the demo seed (which
+  // writes product rows) and before the first request.
+  ensureProductSchema();
 
   // (1c) Demo mode (zero-config sample world): write the renderable demo data
   // into the (already-isolated) demo DB before the first request, so the

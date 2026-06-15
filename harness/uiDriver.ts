@@ -569,6 +569,80 @@ export class UiDriver {
     await this.page.click(tid("approval-deny"));
   }
 
+  // ---- confirmation_gate verbs (pipeline_reset's destructive typed-YES card) -
+  // The DESTRUCTIVE second-confirm surface (ConfirmationGateCard on the
+  // gate-banner track). The Confirm button is DISABLED until the typed token
+  // trims to the literal YES (a CLIENT pre-check); Cancel is always enabled
+  // (the never-hidden decline). The wipe is reachable ONLY through Confirm.
+
+  /** Wait for the destructive confirmation-gate card to render on the banner
+   *  track. */
+  async waitForConfirmationGateCard(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("confirmation-gate-card"), { timeout: timeoutMs });
+  }
+
+  /** checkResetConsequenceLines: the card renders EXACTLY `expected` plain-speech
+   *  consequence lines (the destructive frame is fully shown before any decision
+   *  — the card is never collapsed to a one-liner). Records ok:false rather than
+   *  throwing, so the verdict carries the evidence. */
+  async checkResetConsequenceLines(expected: number): Promise<void> {
+    const observed = await this.page.locator(tid("reset-consequence-line")).count();
+    this.record({
+      surface: "dom:gate-banner",
+      selector: tid("reset-consequence-line"),
+      expected: `${expected} consequence line(s) shown before the user decides`,
+      observed: `${observed} line(s)`,
+      ok: observed === expected,
+    });
+    await this.screenshot("reset-consequence-lines");
+  }
+
+  /** Type a token into the reset confirm input (the typed-YES pre-check field). */
+  async fillResetToken(token: string): Promise<void> {
+    await this.page.fill(tid("reset-confirm-token"), token);
+  }
+
+  /** Click the destructive Confirm (waits for the typed-YES client gate to
+   *  enable it — `:not([disabled])`). The card posts the canonical {confirm_token:
+   *  "YES"} regardless of the typed casing. */
+  async clickResetConfirm(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("reset-confirm")}:not([disabled])`, { timeout: timeoutMs });
+    await this.page.click(tid("reset-confirm"));
+  }
+
+  /** Click the always-enabled Cancel (decline — terminal, ZERO destruction). */
+  async clickResetCancel(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("reset-cancel"), { timeout: timeoutMs });
+    await this.page.click(tid("reset-cancel"));
+  }
+
+  /** checkResetConfirmDisabledFor: type a NON-YES token and assert the
+   *  destructive Confirm button STAYS DISABLED — the client typed-YES gate holds
+   *  the line, so a wrong token can never reach the wipe through the real card
+   *  (Cancel must remain enabled, the never-hidden stop verb). The server-side
+   *  re-validation (validateResetToken → 400) is a separate surface covered at
+   *  L1; the production card normalizes Confirm to the canonical YES, so a wrong
+   *  token never leaves the client. Records ok:false rather than throwing. */
+  async checkResetConfirmDisabledFor(token: string): Promise<void> {
+    await this.fillResetToken(token);
+    const confirmDisabled = await this.page
+      .locator(tid("reset-confirm"))
+      .isDisabled()
+      .catch(() => false);
+    const cancelEnabled = !(await this.page
+      .locator(tid("reset-cancel"))
+      .isDisabled()
+      .catch(() => true));
+    this.record({
+      surface: "dom:gate-banner",
+      selector: `${tid("reset-confirm")}[disabled] (token="${token}")`,
+      expected: `a non-YES token ("${token}") keeps Confirm DISABLED while Cancel stays enabled`,
+      observed: `confirmDisabled=${confirmDisabled} cancelEnabled=${cancelEnabled}`,
+      ok: confirmDisabled && cancelEnabled,
+    });
+    await this.screenshot("reset-bad-token-disabled");
+  }
+
   /** pinProfileInSearches: the EXPLICIT pin verb — open the Searches popover,
    *  find the profile row whose vehicle-label link text equals `label` (zero or
    *  ambiguous matches fail LOUD, never by index), click its Pin control, wait

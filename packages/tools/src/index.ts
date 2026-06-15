@@ -579,3 +579,34 @@ export {
   type AuditAction,
   type AuditEntry,
 } from "./profile/index.js";
+
+// pipeline_reset (DESTRUCTIVE) — the typed-YES validator, the VACUUM INTO
+// backup, the atomic migrate-based recreate (+ accounts re-seed), the mastra.db
+// workflow-runtime clear (Memory chat threads preserved), the manifest schema
+// verify, the prod-DB-reject guard, and the boot-delegated ensureProductSchema.
+// Every destructive path refuses to run outside an isolated AUTOBROKER_DATA_DIR.
+export {
+  validateResetToken,
+  RESET_CONFIRM_TOKEN,
+  backupProductDb,
+  BACKUPS_TO_KEEP,
+  type BackupProductDbArgs,
+  pipelineReset,
+  DEFAULT_ACCOUNT_EMAIL,
+  type PipelineResetArgs,
+  type PipelineResetResult,
+  verifySchema,
+  type VerifySchemaResult,
+  type VerifySchemaOptions,
+  clearWorkflowRuntimeState,
+  WORKFLOW_RUNTIME_TABLE,
+  type ClearWorkflowRuntimeResult,
+  assertIsolatedDataDir,
+  isProductionDataDir,
+  PipelineResetRefusedError,
+  resolveProductDbPath,
+  resolveMastraDbPath,
+  ensureProductSchema,
+  migrate as migrateProductDb,
+  productTableNames,
+} from "./pipelineReset/index.js";

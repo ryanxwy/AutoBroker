@@ -22,6 +22,10 @@
     "./testRunRecords": {
       "types": "./dist/testRunRecords.d.ts",
       "import": "./dist/testRunRecords.js"
+    },
+    "./migrator": {
+      "types": "./dist/migrator.d.ts",
+      "import": "./dist/migrator.js"
     }
   },
   "scripts": {

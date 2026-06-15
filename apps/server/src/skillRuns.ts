@@ -76,6 +76,7 @@ import {
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
+  PIPELINE_RESET_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
@@ -84,8 +85,10 @@ import {
   BatchReviewResumeSchema,
   HygieneResumeSchema,
   OemFirstEncounterResumeSchema,
+  PipelineResetResumeSchema,
   type createMastraInstance,
 } from "@autobroker/workflows";
+import { validateResetToken } from "@autobroker/tools";
 import { z } from "zod";
 
 import type { RunPubSub } from "./runPubSub.js";
@@ -932,6 +935,85 @@ export const dailyDigestDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// pipeline_reset — the ninth registered descriptor (DESTRUCTIVE full-DB wipe).
+// zero-LLM; ONE typed-YES confirmation_gate suspend on the step "confirmGate".
+// The token is RE-VALIDATED SERVER-SIDE here (verbatim YES, case-insensitive) —
+// the client/LLM is never trusted; a non-YES token is rejected and the gate
+// stays answerable. decline/cancel = terminal, ZERO destruction. The wipe
+// itself ignores search_profile_id (a global op — see the registry exception).
+// ===========================================================================
+
+/** The pipeline_reset start body (search_profile_id is pro forma — the wipe is
+ *  global and ignores it). */
+const PipelineResetStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** Re-validate the typed-YES token IN CODE and shape the resume. A confirm with
+ *  a non-YES token is rejected (content_invalid) — never trusted from the wire;
+ *  decline/cancel resolves to a zero-destruction decline. */
+function pipelineResetResume(
+  step: string,
+  decision: FormDecisionBody["decision"],
+  _suspendPayload: Record<string, unknown>,
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  if (step !== "confirmGate") {
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  }
+  const { action, content } = decision;
+  if (action === "decline" || action === "cancel") {
+    return {
+      resumeData: PipelineResetResumeSchema.parse({ action: "decline" }),
+      ackBody: { action, content: null },
+    };
+  }
+  // accept → the load-bearing server-side typed-YES re-validation.
+  const token = content?.confirm_token;
+  if (!validateResetToken(token)) {
+    throw new FormDecisionError("content_invalid", 400, "confirmation token must be YES", {
+      field: "/confirm_token",
+    });
+  }
+  return {
+    resumeData: PipelineResetResumeSchema.parse({ action: "confirm", confirm_token: "YES" }),
+    ackBody: { action: "accept", content: { confirm_token: "YES" } },
+  };
+}
+
+export const pipelineResetDescriptor: RunDescriptor = {
+  skillId: "pipeline_reset",
+  workflowId: PIPELINE_RESET_WORKFLOW_ID,
+
+  // Zero-LLM (backup/migrate/verify are deterministic) → the constant api-key label.
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): { search_profile_id: string | null } {
+    const parsed = PipelineResetStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  resume: pipelineResetResume,
+
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Pipeline reset complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -945,6 +1027,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   dealerInboxCheckDescriptor,
   dealerHygieneDescriptor,
   dailyDigestDescriptor,
+  pipelineResetDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -1026,6 +1109,10 @@ function affectedKinds(workflowId: string): string[] {
       return ["threads", "messages", "contacts"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
+    case PIPELINE_RESET_WORKFLOW_ID:
+      // A full wipe — everything is gone, so refetch every projection back to
+      // empty-home.
+      return ["profiles", "sessions", "dealers", "listings", "incentives", "quotes", "digest"];
     default:
       // A skill whose data family is not mapped yet — refetch broadly rather
       // than leave a view silently stale.

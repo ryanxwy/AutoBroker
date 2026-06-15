@@ -4,12 +4,12 @@
  * floor. batch_review renders its REAL decision surface (BatchReviewCard) and
  * wires submit/decline onto the decide() controller; an approval suspend
  * carrying a `summary` renders the REAL ApprovalPrompt (Approve → accept,
- * Deny → decline, Cancel run → cancel; sensitive hides batch approval); the
- * remaining banner-tracked kinds (typed_yes, a summary-less approval) still
- * surface the pending placeholder with zero decision controls; a rail-tracked
- * kind leaves the banner host empty; a MALFORMED batch_review payload falls
- * back to the placeholder (a pending gate is never silently hidden, never
- * mis-rendered).
+ * Deny → decline, Cancel run → cancel; sensitive hides batch approval); a
+ * confirmation_gate suspend renders the REAL destructive typed-YES card
+ * (ConfirmationGateCard). A summary-less approval still surfaces the pending
+ * placeholder with zero decision controls; a rail-tracked kind leaves the banner
+ * host empty; a MALFORMED payload falls back to the placeholder (a pending gate
+ * is never silently hidden, never mis-rendered).
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -17,7 +17,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GateBannerHost } from "./GateBannerHost.js";
 import type { AwaitingUserPayload } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
-import { click, render } from "../test/render.js";
+import { change, click, render } from "../test/render.js";
 
 /** The projected pending suspend for a gate of `kind` (what App passes down). */
 function awaiting(kind: string, specExtra: Record<string, unknown> = {}): AwaitingUserPayload {
@@ -186,6 +186,63 @@ describe("GateBannerHost — the inbox decision surface + three-reader disambigu
       <GateBannerHost awaiting={awaiting("batch_review", INBOX_SPEC)} decision={decision} />,
     );
     expect(r.get("inbox-decision-error").textContent).toContain("content_invalid");
+    r.unmount();
+  });
+});
+
+const CONFIRMATION_SPEC = {
+  destructive: true,
+  confirm_token: "YES",
+  question: "This permanently erases all of your local pipeline data. Type YES to confirm, or cancel.",
+  consequence_lines: ["one", "two", "three", "four", "five"],
+};
+
+describe("GateBannerHost — the destructive confirmation_gate surface", () => {
+  it("a confirmation_gate suspend renders the REAL typed-YES card (no placeholder); Confirm posts accept{confirm_token:'YES'}", () => {
+    const decision = controller();
+    const r = render(
+      <GateBannerHost awaiting={awaiting("confirmation_gate", CONFIRMATION_SPEC)} decision={decision} />,
+    );
+    expect(r.query("gate-banner-pending")).toBeNull();
+    expect(r.query("confirmation-gate-card")).not.toBeNull();
+    expect(r.all("reset-consequence-line")).toHaveLength(5);
+
+    // Confirm is gated on the typed-YES pre-check.
+    expect((r.get("reset-confirm") as HTMLButtonElement).disabled).toBe(true);
+    change(r.get("reset-confirm-token") as HTMLInputElement, "YES");
+    click(r.get("reset-confirm"));
+    expect(decision.decide).toHaveBeenCalledWith("accept", { confirm_token: "YES" });
+    r.unmount();
+  });
+
+  it("the card's Cancel posts the decline action (terminal, zero destruction)", () => {
+    const decision = controller();
+    const r = render(
+      <GateBannerHost awaiting={awaiting("confirmation_gate", CONFIRMATION_SPEC)} decision={decision} />,
+    );
+    click(r.get("reset-cancel"));
+    expect(decision.decide).toHaveBeenCalledWith("decline");
+    r.unmount();
+  });
+
+  it("a MALFORMED confirmation_gate payload falls back to the never-hidden pending placeholder (never auto-approves)", () => {
+    const r = render(
+      <GateBannerHost
+        awaiting={awaiting("confirmation_gate", { destructive: true, confirm_token: "YES", question: "q", consequence_lines: ["only", "four", "lines", "here"] })}
+        decision={controller()}
+      />,
+    );
+    expect(r.query("confirmation-gate-card")).toBeNull();
+    expect(r.query("gate-banner-pending")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("a confirmation decision error surfaces alongside the card", () => {
+    const decision = { submitting: false, decisionError: "content_invalid: confirmation token must be YES", decide: vi.fn() };
+    const r = render(
+      <GateBannerHost awaiting={awaiting("confirmation_gate", CONFIRMATION_SPEC)} decision={decision} />,
+    );
+    expect(r.get("confirmation-decision-error").textContent).toContain("content_invalid");
     r.unmount();
   });
 });

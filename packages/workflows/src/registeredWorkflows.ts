@@ -43,6 +43,10 @@ import {
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
 } from "./inventorySiteScan.js";
 import {
+  pipelineResetWorkflow,
+  PIPELINE_RESET_WORKFLOW_ID,
+} from "./pipelineReset.js";
+import {
   searchProfileIntakeWorkflow,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
 } from "./searchProfileIntake.js";
@@ -57,6 +61,7 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [DAILY_DIGEST_WORKFLOW_ID]: dailyDigestWorkflow as unknown as Workflow,
   [DEALER_INBOX_CHECK_WORKFLOW_ID]: dealerInboxCheckWorkflow as unknown as Workflow,
   [DEALER_HYGIENE_WORKFLOW_ID]: dealerHygieneWorkflow as unknown as Workflow,
+  [PIPELINE_RESET_WORKFLOW_ID]: pipelineResetWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

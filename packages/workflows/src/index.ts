@@ -340,6 +340,33 @@ export {
   type DailyDigestOutput,
 } from "./dailyDigestContracts.js";
 
+// The pipeline_reset skill workflow (Phase 4 / Wave O — DESTRUCTIVE: ONE typed-
+// YES confirmation_gate suspend [re-validated server-side], a VACUUM INTO backup,
+// an atomic migrate-based recreate + accounts re-seed, the mastra.db workflow-
+// runtime clear [Memory chat threads preserved], and a manifest schema verify;
+// decline at the gate = ZERO destruction). Test-only deps seam exported alongside
+// the contracts the server descriptor builds on.
+export {
+  pipelineResetWorkflow,
+  PIPELINE_RESET_WORKFLOW_ID,
+  PIPELINE_RESET_DEEP_LINK,
+  __setPipelineResetDepsForTests,
+  __resetPipelineResetDepsForTests,
+  type PipelineResetWorkflowDeps,
+} from "./pipelineReset.js";
+export {
+  PipelineResetInputSchema,
+  PipelineResetOutputSchema,
+  PipelineResetGateSuspendSchema,
+  PipelineResetResumeSchema,
+  PIPELINE_RESET_CONSEQUENCE_LINES,
+  PIPELINE_RESET_CONFIRM_TOKEN,
+  type PipelineResetInput,
+  type PipelineResetOutput,
+  type PipelineResetGateSuspend,
+  type PipelineResetResume,
+} from "./pipelineResetContracts.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {
