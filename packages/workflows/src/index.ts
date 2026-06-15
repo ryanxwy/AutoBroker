@@ -320,6 +320,35 @@ export {
   type HygieneResume,
 } from "./dealerHygieneContracts.js";
 
+// The dealer_web_lead_submit skill workflow (IRREVERSIBLE-SEND keystone, Phase 5,
+// [fake-send] — TWO suspends before any side effect: the batch_review card ① and
+// the INDEPENDENT email_fallback re-confirm ②). Test-only deps seam + the per-run
+// browser-emitter factory setter exported alongside.
+export {
+  dealerWebLeadSubmitWorkflow,
+  DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+  setDealerWebLeadSubmitBrowserEmitterFactory,
+  __setDealerWebLeadSubmitDepsForTests,
+  __resetDealerWebLeadSubmitDepsForTests,
+  type DealerWebLeadSubmitWorkflowDeps,
+  // The injectable scout/submit boundary types — the functional-lane host builds
+  // deterministic stubs of these (no browser) so the X1 keystone cases drive the
+  // REAL workflow + REAL suspend/resume + REAL recordSubmission against a fixture.
+  type ScoutOutcome,
+  type ScoutFormsArgs,
+  type SubmitOneArgs,
+  type SubmitVerdict,
+} from "./dealerWebLeadSubmit.js";
+
+// The dealer_web_lead_submit contracts (typed input/output + the suspend ②
+// approval resume vocabulary the server descriptor imports; the batch_review ①
+// resume reuses inventorySiteScan's already-exported BatchReviewResumeSchema).
+export {
+  DealerWebLeadSubmitInputSchema,
+  DealerWebLeadSubmitOutputSchema,
+  LeadApprovalResumeSchema,
+} from "./dealerWebLeadSubmitContracts.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

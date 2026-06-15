@@ -506,6 +506,19 @@ async function readProfileIds(apiBase: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.search_profile_id).filter((x): x is string => typeof x === "string"));
 }
 
+/** Resolve THE single active profile id (the func-lane pin scope). Used after a
+ *  fixture-backed ui step pins the seeded world's one active profile: the read
+ *  API returns exactly that profile, so the next skill step's table deltas scope
+ *  to it. Returns null when zero or 2+ active profiles exist (an ambiguous scope
+ *  the caller leaves unset rather than guess). */
+async function resolveSingleActiveProfileId(apiBase: string): Promise<string | null> {
+  const res = await fetch(`${apiBase}/api/profiles?status=active`, { method: "GET" });
+  if (!res.ok) return null;
+  const rows = (await res.json()) as Array<{ search_profile_id?: string }>;
+  const ids = rows.map((r) => r.search_profile_id).filter((x): x is string => typeof x === "string");
+  return ids.length === 1 ? ids[0]! : null;
+}
+
 // ---------------------------------------------------------------------------
 // evaluate one step → verdict.json (the Monitor, encoded)
 // ---------------------------------------------------------------------------
@@ -966,12 +979,21 @@ async function driveResumeScriptDom(
       } else {
         await driver.clickForceOverrideDecline();
       }
-    } else if (resume.on === "oem_first_encounter") {
-      // The incentive first-encounter approval rides the banner-track
-      // ApprovalPrompt: Approve = accept (approve the shown candidate),
-      // Deny = decline (terminal, zero navigation, zero writes).
+    } else if (resume.on === "oem_first_encounter" || resume.on === "approval") {
+      // The banner-track ApprovalPrompt: Approve = accept (approve the shown
+      // action), Deny = decline (terminal/skip, zero writes). Two suspend kinds
+      // ride this same card: incentive_scrape's first-encounter approval
+      // (oem_first_encounter) and dealer_web_lead_submit's email_fallback
+      // re-confirm (approval, sensitive=true → the approve-all affordance is
+      // structurally absent, which the case asserts via a dom_state anchor).
       await driver.waitForApprovalPrompt(maxMs);
       await driver.checkBannerGateBeforeProse();
+      // The bulk affordance must match the card's sensitivity: a sensitive
+      // event (dealer_web_lead_submit's email_fallback re-confirm — a mutating
+      // scope switch) carries ZERO approve-all controls; a non-sensitive one
+      // (incentive_scrape's first-encounter approval) carries exactly one. A
+      // REAL DOM read recorded into ui_checks (not a vacuous anchor passthrough).
+      await driver.checkApprovalApproveAllForSensitivity();
       if (resume.action === "accept") {
         await driver.screenshot("approval-approve");
         await driver.clickApprovalApprove();
@@ -1134,6 +1156,16 @@ async function driveUiOnlyStep(args: {
     await driver.screenshot("data-changed-emitted");
   }
 
+  // The explicit Pin verb on a runless fixture step: pin the fixture-seeded
+  // profile through the REAL Searches-popover Pin button BEFORE scoring, so a
+  // later pin_required skill step (e.g. dealer_web_lead_submit) launches pinned.
+  // This is the func-lane twin of the live lane's intake-then-pin: the fixture
+  // installs the profile, this verb pins it (sessions are never auto-pinned), and
+  // the pin lands the ui_check the verdict carries.
+  if (step.pinLabel !== null) {
+    await driver.pinProfileInSearches(step.pinLabel, stepMaxMs);
+  }
+
   // Score the dom_state anchors against the live page (recordDomState pushes a
   // UiCheck per anchor — the channel the verdict carries).
   for (const anchor of step.anchors) {
@@ -1283,6 +1315,19 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
           stepMaxMs,
           scopeProfileId: latestProfileId,
         });
+        // A fixture-backed ui step that PINNED a profile makes that profile the
+        // scope for the following skill steps (the func-lane twin of an intake
+        // step setting latestProfileId): the fixture seeds exactly one active
+        // profile, so the pin resolves it unambiguously off the read API. The
+        // pinned profile's lead_submissions/messages deltas the next X1 step
+        // asserts then scope correctly.
+        if (step.pinLabel !== null) {
+          const pinned = await resolveSingleActiveProfileId(host.apiBase);
+          if (pinned !== null) {
+            latestProfileId = pinned;
+            profileByStep.set(step.id, pinned);
+          }
+        }
         results.push({ cell: verdict.cell_id, step: step.id, verdict: verdict.verdict });
         if (verdict.verdict !== "GREEN" && verdict.verdict !== "GREEN_WITH_WAIVER") {
           exitCode = 1;

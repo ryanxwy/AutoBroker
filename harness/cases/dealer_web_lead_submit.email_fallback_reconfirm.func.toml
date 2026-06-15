@@ -1,0 +1,114 @@
+# dealer_web_lead_submit.email_fallback_reconfirm.func.toml — the X1 KEYSTONE.
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1).
+#
+# The whole reason X1 exists: the email_fallback scope switch (browser.submit →
+# gmail.send) is a NEW SENSITIVE SCOPE that demands its OWN approval — it is
+# NEVER folded into the batch_review approval. This case proves the SECOND
+# suspend renders and that approving it routes through a fake-send.
+#
+#   step 1  install lead_submit_ready + pin the profile (pin_required).
+#   step 2  "/dealer_web_lead_submit" → the batch card renders both bound dealers.
+#           The driver APPROVES the NO-FORM dealer (Tucson Kia) and SKIPS the
+#           web-form dealer (Jim Click), then submits. Tucson Kia has no usable
+#           form (the injected scout reports form:null + a contact_email), so the
+#           submit step routes it STRAIGHT to the email fallback — and the
+#           emailFallback step raises a SECOND kind:"approval" suspend
+#           (sensitive=true) on the gate-banner ApprovalPrompt. The driver
+#           confirms it (Approve). Only THEN does the gmail.send scope fire —
+#           and under BLOCK=1 sendAndRecord is L1-fuse-blocked, so the run writes
+#           the local email-shape lead_submissions row but ZERO messages rows.
+#           Terminal `done`; +1 lead_submissions EXACT (the email-fallback row);
+#           messages Δ=0 EXACT (gmail.send fuse-blocked); keystone clean with
+#           allow_fake_outbound; the sensitive approval card carried NO
+#           approve-all affordance (asserted via dom_state); no malformed call.
+
+[meta]
+id = "dealer_web_lead_submit_email_fallback_reconfirm"
+archetype = "A"
+skills = ["dealer_web_lead_submit"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "lead_submit_ready"
+purpose = "Seed the ready-to-submit world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: approve the NO-FORM dealer → email fallback → re-confirm APPROVE -
+
+[[steps]]
+id = "lead_email_fallback"
+skill = "dealer_web_lead_submit"
+purpose = "Approve the no-form dealer at the batch card, then APPROVE the independent email re-confirm — one email-shape fake row, zero messages."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+# resume ①: the batch card — approve ONLY the no-form dealer (Tucson Kia),
+# skip the web-form dealer (Jim Click). Tucson Kia routes to the email fallback.
+[[steps.resume]]
+on = "batch_review"
+action = "approve"
+default_decision = "skip"
+[[steps.resume.rows]]
+match = "Tucson Kia"
+decision = "approve"
+[[steps.resume.rows]]
+match = "Jim Click Hyundai"
+decision = "skip"
+
+# resume ②: the INDEPENDENT email_fallback re-confirm (kind:"approval",
+# sensitive=true) — Approve. Only this second approval lets gmail.send fire.
+[[steps.resume]]
+on = "approval"
+action = "approve"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "approval_gate"      # BOTH suspends rendered (the batch card + the re-confirm).
+
+# The sensitive email re-confirm card must NOT expose an approve-all affordance
+# (sensitive=true → no bulk-approve of a mutating scope). That assertion is made
+# DRIVER-SIDE during the approval resume (checkApprovalApproveAllForSensitivity
+# reads the live card's data-sensitive + counts approval-approve-all controls and
+# records a REAL ui_check — a failure RED-outs the verdict via failedUi). It is
+# NOT authored as a dom_state anchor here: on a kind="skill" step a dom_state
+# anchor is a no-op passthrough in evalAnchor, which would assert nothing.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # the ONE email-fallback lead row (the fake-send record).
+table = "lead_submissions"
+scope = "profile"
+delta_min = 1
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # zero Gmail sends — sendAndRecord is L1-fuse-blocked.
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # the email-fallback row is a LEGAL fake outbound.
+allow_fake_outbound = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

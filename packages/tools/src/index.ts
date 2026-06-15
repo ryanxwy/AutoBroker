@@ -329,6 +329,24 @@ export {
   type FailReason,
 } from "./leadSubmissions/recordSubmission.js";
 
+// dealer_web_lead_submit deterministic scout — the lead-form platform
+// fingerprint + contact-path probe set, the dealer-facing payload assembler
+// (fake phone LOCKED, budget redacted, consent CHECKED, SMS opt-in OMITTED),
+// and the US-only HARD GATE partition (non-US filtered before the banner). Pure:
+// the gated submit / email fallback / record writes all live downstream.
+export {
+  platformOf,
+  contactPathFor,
+  buildLeadPayload,
+  partitionUsDealers,
+  CONTACT_PATHS,
+  type LeadPlatform,
+  type LeadFieldRole,
+  type FormFieldRole,
+  type LeadPayloadProfile,
+  type ScoutDealerRow,
+} from "./leadSubmit/scout.js";
+
 // dealerComm — shared dealer-facing message builders + deterministic
 // classification helpers (pure: constants/templates, submit-outcome state
 // machine, closeout draft, reply-target ladder, quote-situation tone).

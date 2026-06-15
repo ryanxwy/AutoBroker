@@ -41,6 +41,11 @@ export const SNAPSHOT_TABLES = [
   "dealer_inventory_sources",
   "inventory_listings",
   "manufacturer_incentives",
+  // messages carries a nullable search_profile_id; the dealer_web_lead_submit
+  // keystone asserts a profile-scoped messages delta (an email-fallback send
+  // writes a row; under BLOCK=1 the send is fuse-blocked → Δ=0) — without it the
+  // table_min_rows(messages) anchor would read a vacuous 0.
+  "messages",
 ] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
@@ -189,16 +194,30 @@ const SEND_SUBMIT_ACTIONS = new Set([
   "negotiation_followup",
 ]);
 
-export function externalMutationDbCount(db: Db): { total: number; breakdown: Record<string, number> } {
+export function externalMutationDbCount(
+  db: Db,
+  opts: { allowFakeOutbound?: boolean } = {},
+): { total: number; breakdown: Record<string, number> } {
   const breakdown: Record<string, number> = {};
 
-  // (1) submitted leads.
-  const submitted = readOne<{ n: number }>(
-    db,
-    `SELECT COUNT(*) AS n FROM lead_submissions WHERE outcome = 'submitted'`,
-    [],
-  );
-  breakdown["lead_submissions.submitted"] = submitted?.n ?? 0;
+  // (1) submitted leads. Under the harness lane the L1 fuse (BLOCK=1) makes a
+  // real dealer-form POST / Gmail send physically impossible, so a
+  // lead_submissions row with outcome='submitted' is the FAKE-submit LOCAL
+  // record (invariant #1: fake-submit = a lead_submissions row + NO real POST is
+  // LEGAL — recordSubmission is a local write, not fuse-gated). When the step
+  // explicitly opted into allowFakeOutbound (the X1 approve/email-fallback
+  // keystone), these fake-submit rows are EXPECTED and do NOT count as an
+  // external mutation. Real-escape detection stays intact regardless: a real
+  // send still surfaces through (2) audit_log.send_submit and (3) the non-sandbox
+  // messages scan below — neither is relaxed by the flag.
+  const submitted = opts.allowFakeOutbound
+    ? 0
+    : (readOne<{ n: number }>(
+        db,
+        `SELECT COUNT(*) AS n FROM lead_submissions WHERE outcome = 'submitted'`,
+        [],
+      )?.n ?? 0);
+  breakdown["lead_submissions.submitted"] = submitted;
 
   // (2) send/submit-shaped audit actions. Pull distinct actions and filter in JS
   // so the set stays the single source of truth (no giant IN list to drift).
@@ -229,7 +248,7 @@ export function externalMutationDbCount(db: Db): { total: number; breakdown: Rec
   }
   breakdown["messages.real_outbound"] = realOutbound;
 
-  const total = breakdown["lead_submissions.submitted"]! + auditSendSubmit + realOutbound;
+  const total = submitted + auditSendSubmit + realOutbound;
   return { total, breakdown };
 }
 

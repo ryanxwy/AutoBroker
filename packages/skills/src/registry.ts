@@ -283,9 +283,12 @@ export const SKILLS: readonly SkillDef[] = [
     summary: "Submit a lead to a dealer's web form (fake-send; human approval).",
     phase: 5,
     riskClass: "irreversible",
-    status: "planned",
-    workflowId: null,
-    inputs: ["dealer_id", "profile_id"],
+    status: "implemented",
+    workflowId: "dealer_web_lead_submit",
+    // Display-only (the run inputData is built by the server descriptor from the
+    // start body); reconciled to the workflow contract: explicit pin, optional
+    // single-store listing, optional duplicate-skip override.
+    inputs: ["search_profile_id", "target_listing_id", "force_retry"],
     outputs: "lead_receipt",
     profilePin: "pin_required",
   },

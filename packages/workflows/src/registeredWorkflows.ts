@@ -27,6 +27,10 @@ import {
   DEALER_INBOX_CHECK_WORKFLOW_ID,
 } from "./dealerInboxCheck.js";
 import {
+  dealerWebLeadSubmitWorkflow,
+  DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+} from "./dealerWebLeadSubmit.js";
+import {
   incentiveScrapeWorkflow,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
 } from "./incentiveScrape.js";
@@ -52,6 +56,7 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [INCENTIVE_SCRAPE_WORKFLOW_ID]: incentiveScrapeWorkflow as unknown as Workflow,
   [DEALER_INBOX_CHECK_WORKFLOW_ID]: dealerInboxCheckWorkflow as unknown as Workflow,
   [DEALER_HYGIENE_WORKFLOW_ID]: dealerHygieneWorkflow as unknown as Workflow,
+  [DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID]: dealerWebLeadSubmitWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

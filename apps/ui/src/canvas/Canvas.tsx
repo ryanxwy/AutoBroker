@@ -35,6 +35,10 @@ const DEALER_KINDS = ["dealers"] as const;
 /** The dealer-reply Threads section refetches on a threads/messages pulse (the
  *  inbox-pull skill writes both families). */
 const THREAD_KINDS = ["threads", "messages"] as const;
+/** A submitted lead changes the dealer/pipeline rail: the lead-submit skill writes
+ *  a lead_submissions row, may set a dealer's contact_email, and an email fallback
+ *  writes a (fake) messages row — refetch the dealer tiles on any of those. */
+const LEAD_KINDS = ["lead_submissions", "dealers", "messages"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -332,6 +336,7 @@ export function Canvas({
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
   useDataRefetch(DEALER_KINDS, dealers.refetch);
   useDataRefetch(THREAD_KINDS, threads.refetch);
+  useDataRefetch(LEAD_KINDS, dealers.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">

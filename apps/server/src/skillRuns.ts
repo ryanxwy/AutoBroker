@@ -72,6 +72,7 @@ import {
   DEALER_GEOSEARCH_WORKFLOW_ID,
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
+  DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
@@ -82,6 +83,7 @@ import {
   MalformedRetryResumeSchema,
   BatchReviewResumeSchema,
   HygieneResumeSchema,
+  LeadApprovalResumeSchema,
   OemFirstEncounterResumeSchema,
   type createMastraInstance,
 } from "@autobroker/workflows";
@@ -878,6 +880,117 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// dealer_web_lead_submit — the IRREVERSIBLE-SEND keystone descriptor (Phase 5,
+// [fake-send]). The skill's LLM useCase is lead_form_map (the ONE Custom-platform
+// field map), so driver_kind DERIVES from policy("lead_form_map") and flips with a
+// registry-string provider swap. TWO suspend kinds, so the resume dispatches on
+// the suspended STEP id:
+//   - "batchReview" → suspend ① — a FULL-BATCH input shows the batch_review card
+//     (reuse the shared batchReviewResume seam); a SINGLE-STORE input collapses ①
+//     to a kind:"approval" single_store_confirm card (the approve/decline seam).
+//     The retained suspend payload's `kind` selects which (the card the user saw).
+//   - "emailFallback" → suspend ② — the INDEPENDENT email_fallback re-confirm
+//     (the browser.submit → gmail.send scope switch); approve/decline only.
+// decline/cancel everywhere = skip THAT scope: ① decline is terminal/zero writes,
+// ② decline skips that dealer's fallback only (the run continues).
+// ===========================================================================
+
+/** The dealer-web-lead-submit start body fields. All optional with null defaults:
+ *  a pin-less full-batch input STOPs in the workflow (pin_required), and the
+ *  single-store / force_retry fields default off; envelope fields ride the same
+ *  body and are ignored. */
+const DealerWebLeadSubmitStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  target_listing_id: z.string().nullable().optional(),
+  force_retry: z.boolean().optional(),
+});
+
+/** The dealer-web-lead-submit workflow inputData shape. */
+interface DealerWebLeadSubmitStartInput {
+  search_profile_id: string | null;
+  target_listing_id: string | null;
+  force_retry: boolean;
+}
+
+/**
+ * The suspend ② (and single-store ①) resume shaping: the approval card carries no
+ * content — accept → {action:"approve"}, decline/cancel → {action:"decline"}
+ * (skip THAT scope, never a global terminal). Mirrors the OEM first-encounter
+ * approve button (no content member). The workflow re-validates with
+ * LeadApprovalResumeSchema, so this is the wire→typed translation only.
+ */
+function leadApprovalResume(
+  decision: FormDecisionBody["decision"],
+): { resumeData: unknown; ackBody: Record<string, unknown> } {
+  const { action } = decision;
+  const inner = action === "accept" ? "approve" : "decline";
+  return {
+    resumeData: LeadApprovalResumeSchema.parse({ action: inner }),
+    ackBody: { action, content: null },
+  };
+}
+
+/** The dealer_web_lead_submit descriptor. */
+export const dealerWebLeadSubmitDescriptor: RunDescriptor = {
+  skillId: "dealer_web_lead_submit",
+  workflowId: DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's single LLM useCase
+  // (lead_form_map, the Custom-platform field map) to — flipping in lock-step
+  // with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("lead_form_map").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): DealerWebLeadSubmitStartInput {
+    const parsed = DealerWebLeadSubmitStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      target_listing_id: parsed.data.target_listing_id ?? null,
+      force_retry: parsed.data.force_retry ?? false,
+    };
+  },
+
+  resume(
+    step: string,
+    decision: FormDecisionBody["decision"],
+    suspendPayload: Record<string, unknown>,
+  ): { resumeData: unknown; ackBody: Record<string, unknown> } {
+    // suspend ① (batchReview): a single-store input collapses the batch card to a
+    // kind:"approval" single_store_confirm card — the retained payload's `kind`
+    // selects the resume vocabulary the user's card actually used.
+    if (step === "batchReview") {
+      return suspendPayload["kind"] === "approval"
+        ? leadApprovalResume(decision)
+        : batchReviewResume("batchReview", step, decision, suspendPayload);
+    }
+    // suspend ② (emailFallback): the INDEPENDENT email_fallback re-confirm.
+    if (step === "emailFallback") {
+      return leadApprovalResume(decision);
+    }
+    throw new FormDecisionError(
+      "unsupported_action",
+      400,
+      `no resume schema for suspended step '${step}'`,
+    );
+  },
+
+  // The workflow's recordConfirm step templates the full deterministic summary —
+  // pass it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Lead submission complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -890,6 +1003,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
   dealerHygieneDescriptor,
+  dealerWebLeadSubmitDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -969,6 +1083,10 @@ function affectedKinds(workflowId: string): string[] {
       return ["threads", "messages", "contacts"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
+    case DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID:
+      // A submitted lead writes a lead_submissions row, may update a dealer's
+      // contact_email, and an email fallback writes a (fake) messages row.
+      return ["lead_submissions", "dealers", "messages"];
     default:
       // A skill whose data family is not mapped yet — refetch broadly rather
       // than leave a view silently stale.
