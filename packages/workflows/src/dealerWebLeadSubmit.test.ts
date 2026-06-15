@@ -80,6 +80,7 @@ let originalDbOverride: string | undefined;
 const PROFILE_ID = "prof-leadsubmit-1";
 const DEALER_FORM = "dealer-jim-click"; // a web-form dealer
 const DEALER_NOFORM = "dealer-tucson-kia"; // a no-form (email-fallback) dealer
+const DEALER_CAPTCHA = "dealer-captcha-1"; // a captcha-gated form (captcha email-fallback)
 
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
@@ -198,6 +199,7 @@ function scoutStub(
         ],
         formSnapshot: null,
         contactEmail: null,
+        captcha: false,
       }),
     }));
 }
@@ -212,6 +214,7 @@ const WEB_FORM_SHAPE: Omit<ScoutOutcome, "dealerId" | "name" | "website"> = {
   ],
   formSnapshot: null,
   contactEmail: null,
+  captcha: false,
 };
 
 /** A no-form scout shape (no web form, but a contact email → email fallback). */
@@ -221,6 +224,19 @@ const NO_FORM_SHAPE: Omit<ScoutOutcome, "dealerId" | "name" | "website"> = {
   fieldMap: null,
   formSnapshot: null,
   contactEmail: "sales@tucsonkia.example.com",
+  captcha: false,
+};
+
+/** A captcha scout shape: a captcha-gated contact form → NO usable form, but a
+ *  harvested contact email → email fallback with reason "captcha_fallback" (the
+ *  captcha is NEVER submitted). The scout sets form:null + captcha:true. */
+const CAPTCHA_SHAPE: Omit<ScoutOutcome, "dealerId" | "name" | "website"> = {
+  form: null,
+  captcha: true,
+  platform: "custom",
+  fieldMap: null,
+  formSnapshot: null,
+  contactEmail: "sales@captcha-dealer.example.com",
 };
 
 /** A submit stub modeling the disarmed-fuse approve path: a web-form dealer
@@ -546,6 +562,72 @@ describe("dealer_web_lead_submit — email_fallback re-confirm (the X1 fix point
 });
 
 // ---------------------------------------------------------------------------
+// case 4c — captcha-gated form → captcha_fallback (the dead-branch wire-up)
+// ---------------------------------------------------------------------------
+
+describe("dealer_web_lead_submit — captcha-gated form routes to email fallback", () => {
+  it("approve a captcha dealer → SECOND suspend with captcha_fallback → email row + captcha_manual_count===1", async () => {
+    seedProfile();
+    seedBoundDealer({
+      dealerId: DEALER_CAPTCHA,
+      name: "Captcha Motors",
+      website: "https://captcha-dealer.example.com",
+      contactEmail: "sales@captcha-dealer.example.com",
+    });
+    const sends: { calls: SendRecordTargetLike[] } = { calls: [] };
+    __setDealerWebLeadSubmitDepsForTests({
+      scoutForms: scoutStub({ [DEALER_CAPTCHA]: CAPTCHA_SHAPE }),
+      submitOne: submitNeverCalled, // a captcha dealer NEVER reaches the gated submit.
+      sendAndRecord: sendAndRecordSpy(sends),
+      harnessGenerate: harnessNeverCalled,
+    });
+
+    // ① batch card → approve the captcha dealer.
+    const { run, result } = await startRun("ls-captcha-approve", { search_profile_id: PROFILE_ID });
+    expect(result.status).toBe("suspended");
+    expect(suspendPayloadOf(result, "batchReview")["kind"]).toBe("batch_review");
+
+    const afterBatch = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [DEALER_CAPTCHA] },
+    });
+    // ② the SECOND, INDEPENDENT approval suspend, surfacing the captcha reason.
+    expect(afterBatch.status).toBe("suspended");
+    const second = suspendPayloadOf(afterBatch, "emailFallback");
+    expect(second["kind"]).toBe("approval");
+    expect(second["sensitive"]).toBe(true);
+    expect(second["fallbackReason"]).toBe("captcha_fallback");
+    // No send / no row on ①'s approval alone — the captcha was never submitted.
+    expect(sends.calls.length).toBe(0);
+    expect(count("lead_submissions")).toBe(0);
+
+    // Re-confirm → the email scope fires (fake); the captcha is NEVER submitted.
+    const final = await run.resume({ step: "emailFallback", resumeData: { action: "approve" } });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as {
+      outcome: string;
+      email_fallback_count: number;
+      captcha_manual_count: number;
+    };
+    expect(out.outcome).toBe("scanned");
+    expect(out.email_fallback_count).toBe(1);
+    expect(out.captcha_manual_count).toBe(1);
+
+    expect(sends.calls.length).toBe(1);
+    expect(sends.calls[0]!.to).toBe("sales@captcha-dealer.example.com");
+    expect(count("messages")).toBe(1);
+
+    // The email-shape XOR row carries the captcha_fallback reason.
+    const rows = leadRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0]!["outcome"]).toBe("submitted");
+    expect(rows[0]!["submission_channel"]).toBe("email");
+    expect(rows[0]!["email_fallback_reason"]).toBe("captcha_fallback");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // case 5 — scoutMapCustom with a stubbed harnessGenerate (the only LLM step)
 // ---------------------------------------------------------------------------
 
@@ -562,6 +644,7 @@ describe("dealer_web_lead_submit — scoutMapCustom (the Custom field-map LLM st
           fieldMap: null,
           formSnapshot: "<form><input name=your_email><textarea name=your_message></form>",
           contactEmail: null,
+          captcha: false,
         },
       }),
       submitOne: submitStubSubmitted,

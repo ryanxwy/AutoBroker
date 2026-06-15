@@ -1,0 +1,124 @@
+# dealer_web_lead_submit.captcha_fallback.func.toml — the X1 CAPTCHA follow-on.
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1).
+#
+# A captcha-gated contact form can NEVER be auto-submitted (retrying a captcha
+# never helps), so the scout detects the captcha at SCOUT time (a READ on the
+# form-DOM snapshot — the armed L1 fuse makes a post-submit page unreachable, so
+# the captcha could only ever be caught here) and routes the dealer to the email
+# fallback with reason "captcha_fallback". The captcha is NEVER submitted. Like
+# every email_fallback, the browser.submit → gmail.send scope switch demands its
+# OWN sensitive approval — NEVER folded into the batch_review approval.
+#
+#   step 1  install lead_submit_ready + pin the profile (pin_required).
+#   step 2  "/dealer_web_lead_submit" → the batch card renders all three bound
+#           dealers. The driver APPROVES the CAPTCHA dealer (Captcha Motors) and
+#           SKIPS the others, then submits. The injected scout reports the captcha
+#           dealer as form:null + captcha:true + a contact_email, so the submit
+#           step routes it STRAIGHT to the email fallback (the captcha gated submit
+#           is NEVER attempted) — and the emailFallback step raises a SECOND
+#           kind:"approval" suspend (sensitive=true) on the gate-banner
+#           ApprovalPrompt. The driver confirms it (Approve). Only THEN does the
+#           gmail.send scope fire — and under BLOCK=1 sendAndRecord is
+#           L1-fuse-blocked, so the run writes the local email-shape
+#           lead_submissions row (email_fallback_reason='captcha_fallback') but
+#           ZERO messages rows. Terminal `done`; +1 lead_submissions EXACT (the
+#           captcha email-fallback row); messages Δ=0 EXACT (gmail.send
+#           fuse-blocked); keystone clean with allow_fake_outbound; the sensitive
+#           approval card carried NO approve-all affordance (asserted DRIVER-SIDE
+#           on the approval resume); no malformed call.
+#
+# (The captcha_fallback REASON + captcha_manual_count===1 are proven by the
+#  offline workflow test; this func case proves the end-to-end UI-lane shape.)
+
+[meta]
+id = "dealer_web_lead_submit_captcha_fallback"
+archetype = "A"
+skills = ["dealer_web_lead_submit"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "lead_submit_ready"
+purpose = "Seed the ready-to-submit world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: approve the CAPTCHA dealer → email fallback → re-confirm APPROVE -
+
+[[steps]]
+id = "lead_captcha_fallback"
+skill = "dealer_web_lead_submit"
+purpose = "Approve the captcha-gated dealer at the batch card, then APPROVE the independent email re-confirm — one captcha email-shape fake row, zero messages, captcha never submitted."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+# resume ①: the batch card — approve ONLY the captcha dealer (Captcha Motors),
+# skip the web-form + no-form dealers. Captcha Motors routes to the email
+# fallback with reason "captcha_fallback" (the captcha is NEVER submitted).
+[[steps.resume]]
+on = "batch_review"
+action = "approve"
+default_decision = "skip"
+[[steps.resume.rows]]
+match = "Captcha Motors"
+decision = "approve"
+[[steps.resume.rows]]
+match = "Jim Click Hyundai"
+decision = "skip"
+[[steps.resume.rows]]
+match = "Tucson Kia"
+decision = "skip"
+
+# resume ②: the INDEPENDENT email_fallback re-confirm (kind:"approval",
+# sensitive=true) — Approve. Only this second approval lets gmail.send fire.
+[[steps.resume]]
+on = "approval"
+action = "approve"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "approval_gate"      # BOTH suspends rendered (the batch card + the re-confirm).
+
+# The sensitive email re-confirm card must NOT expose an approve-all affordance
+# (sensitive=true → no bulk-approve of a mutating scope). That assertion is made
+# DRIVER-SIDE during the approval resume (checkApprovalApproveAllForSensitivity
+# reads the live card's data-sensitive + counts approval-approve-all controls and
+# records a REAL ui_check — a failure RED-outs the verdict via failedUi).
+
+[[steps.anchors]]
+kind = "table_min_rows"     # the ONE captcha email-fallback lead row (the fake-send record).
+table = "lead_submissions"
+scope = "profile"
+delta_min = 1
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # zero Gmail sends — sendAndRecord is L1-fuse-blocked.
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # the captcha email-fallback row is a LEGAL fake outbound.
+allow_fake_outbound = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
