@@ -69,6 +69,10 @@ fixture_state = "digest_present"
 purpose = "/pipeline_reset over the populated world: the destructive gate renders (5 lines), type YES, confirm; the product DB is wiped + recreated empty; the run is `done`."
 gate_policy = "approve_safe"
 launch = "chat_slash"
+# This run WIPES the whole product DB (the seeded digest_present profile by
+# design). The S2 cross-check then treats the scoped profile being correctly
+# ABSENT on re-pull as the EXPECTED, CONSISTENT outcome — not a contradiction.
+expects_wipe = true
 
 # The destructive card is fully shown before deciding, then YES + Confirm. The
 # `action = "confirm"` is the card's inner verb (the parser folds it + the
@@ -129,6 +133,11 @@ exact = true
 id = "empty_home"
 kind = "ui"
 purpose = "The home route returns to empty-home: the start-here CTA renders and no active-search card survived the wipe (the server reads the freshly-recreated empty DB)."
+# This step runs in the post-wipe world and still carries the seeded profile as
+# its snapshot scope, so the S2 re-pull of that (now-wiped) profile must treat a
+# NOT-found as the EXPECTED, CONSISTENT outcome — same wipe-awareness as the
+# reset_run step that performed the wipe.
+expects_wipe = true
 
 # Navigate the SPA back to home and settle on the empty-home start-here card.
 [[steps.ui_actions]]

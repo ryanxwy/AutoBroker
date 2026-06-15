@@ -566,6 +566,12 @@ async function evaluateStep(args: {
    *  no_external_mutation anchor subtracts it (the run's delta, not pre-existing
    *  fixture rows). Omitted → 0 (absolute-count behavior, unchanged). */
   externalMutationBaseline?: number;
+  /** This step's run wipes ALL profiles (a destructive global reset). When set,
+   *  the S2 re-pull expectation is INVERTED: a profile that is correctly ABSENT
+   *  after the wipe is the EXPECTED, CONSISTENT outcome (and a still-present
+   *  profile is the real failure). Omitted/false → the default present-on-re-pull
+   *  S2 (byte-identical for every non-wipe step). */
+  expectsWipe?: boolean;
 }): Promise<VerdictDoc> {
   const { apiBase, c, step, runId, detail, before, after, profileId, layer } = args;
   const ctx: EvalContext = {
@@ -594,7 +600,20 @@ async function evaluateStep(args: {
   let s2Ok = true;
   let s2Available = true;
   let s2Text = "n/a";
-  if (profileId !== null) {
+  if (profileId !== null && args.expectsWipe === true) {
+    // Wipe-aware S2: the run is a destructive GLOBAL reset, so the scoped
+    // profile is INTENTIONALLY gone afterward. A NOT-found re-pull is the
+    // EXPECTED, CONSISTENT outcome (s2Ok = !res.ok); a profile still PRESENT
+    // after the declared wipe is the real failure. S3 (the table_min_rows=0
+    // anchors) already agrees with the wipe, so the corrected S2 yields a
+    // unanimous high → GREEN.
+    const res = await fetch(`${apiBase}/api/profiles/${encodeURIComponent(profileId)}`, { method: "GET" });
+    s2Ok = !res.ok;
+    s2Available = true;
+    s2Text = res.ok
+      ? `profile ${profileId} STILL PRESENT after wipe (unexpected)`
+      : `profile ${profileId} correctly absent after wipe`;
+  } else if (profileId !== null) {
     const res = await fetch(`${apiBase}/api/profiles/${encodeURIComponent(profileId)}`, { method: "GET" });
     s2Ok = res.ok;
     s2Available = true;
@@ -789,7 +808,7 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     const after = snapshotCounts(profileId);
 
     // (9) evaluate → verdict.json + evidence.
-    const verdict = await evaluateStep({ apiBase: host.apiBase, c, step, runId, detail, before, after, profileId, layer: opts.layer });
+    const verdict = await evaluateStep({ apiBase: host.apiBase, c, step, runId, detail, before, after, profileId, layer: opts.layer, expectsWipe: step.expectsWipe });
     const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
       "verdict.json": verdict,
       "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, profileId },
@@ -1273,6 +1292,7 @@ async function driveUiOnlyStep(args: {
     layer: opts.layer,
     lane: "ui",
     domChecks: [...driver.checks],
+    expectsWipe: step.expectsWipe,
     ...(runlessFixture ? { runlessFixture: true } : {}),
   });
   const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
@@ -1609,6 +1629,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         domChecks: [...driver.checks],
         waiver,
         externalMutationBaseline: mutationBaseline,
+        expectsWipe: step.expectsWipe,
       });
       const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
         "verdict.json": verdict,
