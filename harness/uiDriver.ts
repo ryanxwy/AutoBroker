@@ -26,8 +26,11 @@
  * batch-approve-<id> / batch-skip-<id> / batch-select-all / batch-counter /
  * batch-submit / batch-decline / inbox-review-card / inbox-row-<dealerId> /
  * inbox-approve-<dealerId> / inbox-skip-<dealerId> / inbox-select-all /
- * inbox-counter / inbox-submit / inbox-decline / topbar-searches /
- * searches-popover / searches-row-<profileId> / searches-pin-<profileId> /
+ * inbox-counter / inbox-submit / inbox-decline / hygiene-review-card /
+ * hygiene-stage[data-stage] / hygiene-row-<id> / hygiene-approve-<id> /
+ * hygiene-skip-<id> / hygiene-select-all / hygiene-counter / hygiene-submit /
+ * hygiene-decline / topbar-searches / searches-popover /
+ * searches-row-<profileId> / searches-pin-<profileId> /
  * searches-unpin-<profileId>).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
@@ -608,6 +611,84 @@ export class UiDriver {
   async clickInboxDecline(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
     await this.page.waitForSelector(tid("inbox-decline"), { timeout: timeoutMs });
     await this.page.click(tid("inbox-decline"));
+  }
+
+  // ---- hygiene_review verbs (the dealer_hygiene per-stage cleanup card) ------
+  // The DESTRUCTIVE HygieneReviewCard renders ONCE PER STAGE across the three
+  // strictly-ordered suspends (5a orphans → 5b CRM threads → 5c CRM contacts).
+  // It mirrors the batch/inbox review machinery (per-row Approve/Skip, an
+  // explicit Select-all, a decided/total counter, Submit + Decline) but uses the
+  // `hygiene-` testid prefix, keys rows by the target id (a thread_id or
+  // contact_id — NOT a dealer_id), and carries a `data-stage` the driver reads to
+  // assert the strict stage order. These are NEW verbs, never the batch/inbox
+  // ones.
+
+  /** Wait for the hygiene-review card to render on the gate-banner track. */
+  async waitForHygieneReviewCard(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("hygiene-review-card"), { timeout: timeoutMs });
+  }
+
+  /** Read the current stage's `data-stage` value off the hygiene-stage element
+   *  (`orphans` | `crm_threads` | `crm_contacts`) — the strict-order proof. */
+  async readHygieneStage(): Promise<string> {
+    const stage = await this.page.locator(tid("hygiene-stage")).getAttribute("data-stage");
+    if (stage === null) {
+      throw new Error("uiDriver: hygiene-stage element carries no data-stage attribute");
+    }
+    return stage;
+  }
+
+  /** Click one hygiene row's Approve/Skip control and assert the row's decision
+   *  state flipped (data-decision on the row — the undecided default is gone).
+   *  `id` is the target's thread_id or contact_id (NOT a dealer_id). */
+  async decideHygieneRow(id: string, decision: "approve" | "skip"): Promise<void> {
+    await this.page.click(tid(`hygiene-${decision}-${id}`));
+    const observed = await this.page
+      .locator(tid(`hygiene-row-${id}`))
+      .getAttribute("data-decision");
+    if (observed !== decision) {
+      throw new Error(
+        `uiDriver: hygiene row ${id} shows data-decision="${String(observed)}" after clicking ${decision}`,
+      );
+    }
+  }
+
+  /** Click the card's explicit Select-all button (the user affordance — the wire
+   *  still carries the full explicit id list, never an approve-all). */
+  async clickHygieneSelectAll(): Promise<void> {
+    await this.page.click(tid("hygiene-select-all"));
+  }
+
+  /** checkHygieneCounter: the live decided/total counter reads exactly
+   *  "<decided>/<total> decided". Records ok:false rather than throwing. */
+  async checkHygieneCounter(decided: number, total: number): Promise<void> {
+    const text = (await this.page
+      .locator(tid("hygiene-counter"))
+      .textContent()
+      .catch(() => null)) ?? "";
+    const ok = text.includes(`${decided}/${total} decided`);
+    this.record({
+      surface: "dom:gate-banner",
+      selector: tid("hygiene-counter"),
+      expected: `counter "${decided}/${total} decided"`,
+      observed: `counter "${text.trim()}"`,
+      ok,
+    });
+    await this.screenshot("hygiene-counter");
+  }
+
+  /** Click the hygiene Submit (waits for the every-row-decided + >=1-approved
+   *  gate to enable it). */
+  async clickHygieneSubmit(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(`${tid("hygiene-submit")}:not([disabled])`, { timeout: timeoutMs });
+    await this.page.click(tid("hygiene-submit"));
+  }
+
+  /** Click the hygiene Decline (always enabled — terminal, ZERO writes for the
+   *  WHOLE run, even when earlier stages were approved-and-staged). */
+  async clickHygieneDecline(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("hygiene-decline"), { timeout: timeoutMs });
+    await this.page.click(tid("hygiene-decline"));
   }
 
   // ---- approval verbs (the gate-banner track's ApprovalPrompt card) ---------

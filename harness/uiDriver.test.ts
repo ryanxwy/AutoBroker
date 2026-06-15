@@ -25,6 +25,8 @@ interface FakeLocatorState {
   disabled?: boolean;
   text?: string;
   count?: number;
+  /** getAttribute(name) → value (e.g. data-stage / data-decision). */
+  attrs?: Record<string, string | null>;
 }
 
 /** Build a fake UiDriver whose page is scripted per selector. Bypasses the
@@ -41,6 +43,7 @@ function fakeDriver(states: Record<string, FakeLocatorState> = {}): {
       isVisible: () => Promise.resolve(st.visible ?? false),
       isDisabled: () => Promise.resolve(st.disabled ?? false),
       textContent: () => Promise.resolve(st.text ?? null),
+      getAttribute: (name: string) => Promise.resolve(st.attrs?.[name] ?? null),
       // recordDomState's "visible" expect auto-waits via waitFor; the fake
       // resolves when scripted visible, rejects (the timeout twin) when not.
       waitFor: () =>
@@ -209,6 +212,53 @@ describe("generic verb layer (clickTestid / fillTestid / pressKey / reloadBrowse
     await driver.reloadBrowser();
     expect(calls[0]).toEqual({ method: "reload", args: [{ waitUntil: "domcontentloaded" }] });
     expect(calls[1]).toEqual({ method: "waitForSelector", args: ['[data-testid="app-main"]', { timeout: 20_000 }] });
+  });
+});
+
+describe("hygiene_review verbs (the dealer_hygiene per-stage cleanup card)", () => {
+  const SEL = (id: string) => `[data-testid="${id}"]`;
+
+  it("readHygieneStage returns the hygiene-stage data-stage value", async () => {
+    const { driver } = fakeDriver({ [SEL("hygiene-stage")]: { attrs: { "data-stage": "orphans" } } });
+    expect(await driver.readHygieneStage()).toBe("orphans");
+  });
+
+  it("readHygieneStage fails loud when data-stage is missing", async () => {
+    const { driver } = fakeDriver({ [SEL("hygiene-stage")]: {} });
+    await expect(driver.readHygieneStage()).rejects.toThrow(/no data-stage/);
+  });
+
+  it("decideHygieneRow clicks hygiene-<decision>-<id> and asserts the row flipped", async () => {
+    const { driver, calls } = fakeDriver({
+      [SEL("hygiene-row-t-1")]: { attrs: { "data-decision": "approve" } },
+    });
+    await driver.decideHygieneRow("t-1", "approve");
+    expect(calls).toContainEqual({ method: "click", args: ['[data-testid="hygiene-approve-t-1"]'] });
+  });
+
+  it("decideHygieneRow throws when the row's data-decision did not flip", async () => {
+    const { driver } = fakeDriver({
+      [SEL("hygiene-row-t-1")]: { attrs: { "data-decision": "undecided" } },
+    });
+    await expect(driver.decideHygieneRow("t-1", "approve")).rejects.toThrow(/data-decision="undecided"/);
+  });
+
+  it("checkHygieneCounter records ok when the counter text matches", async () => {
+    const { driver } = fakeDriver({ [SEL("hygiene-counter")]: { text: "2/2 decided" } });
+    await driver.checkHygieneCounter(2, 2);
+    expect(lastCheck(driver)).toMatchObject({ surface: "dom:gate-banner", ok: true });
+  });
+
+  it("checkHygieneCounter records ok:false (never throws) on a mismatch", async () => {
+    const { driver } = fakeDriver({ [SEL("hygiene-counter")]: { text: "1/2 decided" } });
+    await driver.checkHygieneCounter(2, 2);
+    expect(lastCheck(driver).ok).toBe(false);
+  });
+
+  it("clickHygieneDecline waits for then clicks the always-enabled decline", async () => {
+    const { driver, calls } = fakeDriver();
+    await driver.clickHygieneDecline();
+    expect(calls).toContainEqual({ method: "click", args: ['[data-testid="hygiene-decline"]'] });
   });
 });
 

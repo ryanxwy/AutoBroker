@@ -385,6 +385,68 @@ async function readBatchSuspendPayload(
   return { spec, targets };
 }
 
+/** One hygiene-stage suspend target (keyed by id — a thread_id or contact_id,
+ *  NOT a dealer_id). */
+interface HygieneSuspendTarget {
+  id: string;
+  name: string;
+}
+
+/**
+ * Read the run's CURRENT hygiene-stage suspend spec_inline (the LAST
+ * awaiting_user frame with form_kind batch_review). The hygiene card uses the
+ * SAME form_kind as the scan/inbox batch reviews but carries a `stage`
+ * discriminator and targets keyed by `id` (thread_id | contact_id) instead of
+ * `dealer_id` — so this reader extracts `id` + the stage. Fails LOUD when no
+ * such frame exists; asserts the <8KB payload bound on every sighting.
+ */
+async function readHygieneSuspendPayload(
+  apiBase: string,
+  runId: string,
+): Promise<{ spec: Record<string, unknown>; stage: string; targets: HygieneSuspendTarget[] }> {
+  const res = await fetch(`${apiBase}/api/skill-runs/${encodeURIComponent(runId)}`, { method: "GET" });
+  if (!res.ok) throw new Error(`readHygieneSuspendPayload: GET /api/skill-runs/${runId} → HTTP ${res.status}`);
+  const body = (await res.json()) as {
+    events?: Array<{ kind?: string; payload?: Record<string, unknown> }>;
+  };
+  const events = body.events ?? [];
+  let spec: Record<string, unknown> | null = null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const ev = events[i]!;
+    if (ev.kind !== "awaiting_user") continue;
+    const payload = ev.payload ?? {};
+    if (payload["form_kind"] !== "batch_review") continue;
+    const inline = payload["spec_inline"];
+    if (inline !== null && typeof inline === "object" && "stage" in (inline as object)) {
+      spec = inline as Record<string, unknown>;
+      break;
+    }
+  }
+  if (spec === null) {
+    throw new Error(`readHygieneSuspendPayload: run ${runId} has no hygiene-stage awaiting_user frame`);
+  }
+
+  const bytes = Buffer.byteLength(JSON.stringify(spec), "utf8");
+  if (bytes >= BATCH_SUSPEND_MAX_BYTES) {
+    throw new Error(
+      `hygiene spec_inline payload is ${bytes} bytes — breaches the <${BATCH_SUSPEND_MAX_BYTES} byte bound`,
+    );
+  }
+
+  const stage = typeof spec["stage"] === "string" ? (spec["stage"] as string) : "";
+  const targetsRaw = spec["targets"];
+  const targets: HygieneSuspendTarget[] = [];
+  if (Array.isArray(targetsRaw)) {
+    for (const t of targetsRaw) {
+      const row = t as { id?: unknown; name?: unknown };
+      if (typeof row.id === "string" && typeof row.name === "string") {
+        targets.push({ id: row.id, name: row.name });
+      }
+    }
+  }
+  return { spec, stage, targets };
+}
+
 /** Drive the resume[] script: for each suspend the run reaches, find the matching
  *  resume entry (by `on` = suspend kind) and POST /form-decision. Polls pending
  *  status between resumes. Returns when the run reaches a terminal status. */
@@ -943,6 +1005,13 @@ const INTAKE_PII_FIELD_SET = new Set(
  *  delta), when the case declares batch_rows_from. */
 interface BatchDriveContext {
   readSuspend: () => Promise<{ spec: Record<string, unknown>; targets: BatchSuspendTarget[] }>;
+  /** The hygiene-stage reader (targets keyed by id + the stage discriminator);
+   *  present only for a step whose resume names the hygiene_review kind. */
+  readHygieneSuspend?: () => Promise<{
+    spec: Record<string, unknown>;
+    stage: string;
+    targets: HygieneSuspendTarget[];
+  }>;
   expectRowCount: number | null;
 }
 
@@ -1021,6 +1090,61 @@ async function driveResumeScriptDom(
       // The counter must read complete (every row decided) before submit.
       await driver.checkInboxCounter(targets.length, targets.length);
       await driver.clickInboxSubmit(maxMs);
+    } else if (resume.on === "hygiene_review") {
+      // The DESTRUCTIVE dealer_hygiene cleanup card renders ONCE PER STAGE across
+      // the three strictly-ordered suspends (5a orphans → 5b CRM threads → 5c CRM
+      // contacts). Each `resume on="hygiene_review"` entry handles the NEXT stage
+      // suspend in author order — so a case expresses the three stage decisions
+      // as three ordered entries. The card carries a `data-stage` discriminator
+      // and targets keyed by id (thread_id | contact_id, not dealer_id), so it
+      // uses the hygiene reader + the hygiene- testid verbs, never the
+      // batch/inbox ones.
+      if (batch?.readHygieneSuspend === undefined) {
+        throw new Error("ui lane: hygiene_review resume reached with no hygiene drive context");
+      }
+      await driver.waitForHygieneReviewCard(maxMs);
+      await driver.checkBannerGateBeforeProse();
+      // EVERY stage sighting reads the live suspend payload (the <8KB bound is
+      // asserted inside the reader) + the stage discriminator.
+      const { stage, targets } = await batch.readHygieneSuspend();
+      const observedStage = await driver.readHygieneStage();
+      // A case may pin the EXPECTED stage on the entry's content.stage — the
+      // strict-order proof (5a→5b→5c). A mismatch fails the step loudly.
+      const expectStage = (resume.content ?? {})["stage"];
+      if (typeof expectStage === "string" && (expectStage !== stage || expectStage !== observedStage)) {
+        throw new Error(
+          `ui lane: hygiene stage mismatch — expected "${expectStage}", wire="${stage}", dom="${observedStage}"`,
+        );
+      }
+      if (resume.action !== "accept") {
+        // Decline twin: terminal, ZERO writes for the WHOLE run — even when an
+        // EARLIER stage was approved-and-staged (the single atomic verify commit
+        // only fires when no stage declined). No row decisions needed; stop
+        // processing later stage entries (the run is terminal, never suspends
+        // again).
+        await driver.screenshot(`hygiene-card-decline-${stage}`);
+        await driver.clickHygieneDecline(maxMs);
+        break;
+      }
+      // Approve: each stage's one candidate is approved via the explicit
+      // Select-all affordance (the wire still carries the full explicit id list).
+      // A row-level plan (rows[]) keyed by the target name is also supported.
+      if (resume.rows !== null && resume.rows.length > 0) {
+        for (const r of resume.rows) {
+          const match = targets.find((t) => t.name === r.match);
+          if (match === undefined) {
+            throw new Error(
+              `ui lane: hygiene row "${r.match}" not in stage "${stage}" targets`,
+            );
+          }
+          await driver.decideHygieneRow(match.id, r.decision);
+        }
+      } else {
+        await driver.clickHygieneSelectAll();
+      }
+      // The counter must read complete (every row decided) before submit.
+      await driver.checkHygieneCounter(targets.length, targets.length);
+      await driver.clickHygieneSubmit(maxMs);
     } else if (resume.on === "data_collection") {
       await driver.waitForIntakeForm(maxMs);
       await driver.checkFormRenderedBeforeProse();
@@ -1582,8 +1706,9 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       const hasBatchResume = step.resume.some(
         (r) => r.on === "batch_review" || r.on === "inbox_review",
       );
+      const hasHygieneResume = step.resume.some((r) => r.on === "hygiene_review");
       let batchCtx: BatchDriveContext | undefined;
-      if (hasBatchResume) {
+      if (hasBatchResume || hasHygieneResume) {
         let expectRowCount: number | null = null;
         if (step.batchRowsFrom !== null) {
           const delta = dealersDeltaByStep.get(step.batchRowsFrom);
@@ -1594,6 +1719,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         }
         batchCtx = {
           readSuspend: () => readBatchSuspendPayload(host.apiBase, runId),
+          readHygieneSuspend: () => readHygieneSuspendPayload(host.apiBase, runId),
           expectRowCount,
         };
       }

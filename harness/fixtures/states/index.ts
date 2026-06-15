@@ -46,6 +46,7 @@ import { digestPresent } from "./digestPresent.js";
 import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
 import { followupReady } from "./followupReady.js";
+import { hygieneReady } from "./hygieneReady.js";
 import { inboxNoLead, inboxReady } from "./inboxReady.js";
 import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
@@ -92,6 +93,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [closeoutReady.id]: closeoutReady,
   [inboxReady.id]: inboxReady,
   [inboxNoLead.id]: inboxNoLead,
+  [hygieneReady.id]: hygieneReady,
 };
 
 /** Resolve a fixture state by id, failing LOUD on an unknown id. */
