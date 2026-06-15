@@ -67,6 +67,13 @@ export interface CanvasProps {
   /** Whether the required DeepSeek key is configured. When false, the start CTA
    *  is disabled and points to Settings (the first-run gate). */
   deepseekReady?: boolean;
+  /** Whether the cross-provider RETRY key (Anthropic) is configured. Gates the
+   *  Threads section's manual "retry failed extractions" affordance. */
+  anthropicReady?: boolean;
+  /** Launch the MANUAL cross-provider retry of a profile's failed extractions
+   *  (escalate:true). The host owns the launch (session/pin threading); the
+   *  active profile id is passed so the host pins it. */
+  onRetryFailedExtractions?: (profileId: string) => void;
 }
 
 function str(row: DealerRow, key: string): string | null {
@@ -331,6 +338,8 @@ export function Canvas({
   onStartIntake,
   runId = null,
   deepseekReady = true,
+  anthropicReady = false,
+  onRetryFailedExtractions,
 }: CanvasProps): JSX.Element {
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   const active: ProfileSnapshot | null =
@@ -403,6 +412,10 @@ export function Canvas({
           <ThreadsSection
             threads={threads}
             dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}
+            anthropicReady={anthropicReady}
+            onRetryFailedExtractions={() => {
+              if (activeId !== null) onRetryFailedExtractions?.(activeId);
+            }}
           />
           <CanvasFeed
             snapshot={active}

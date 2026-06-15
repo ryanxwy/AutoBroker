@@ -79,6 +79,93 @@ describe("ThreadsSection — rows", () => {
   });
 });
 
+describe("ThreadsSection — manual cross-provider retry affordance", () => {
+  const failedRows: ThreadRowList = [
+    {
+      thread_id: "t-fail",
+      dealer_name: "Example Hyundai",
+      subject: "Re: Tucson availability",
+      state: "replied",
+      updated_at: new Date().toISOString(),
+      extract_failed: true,
+    },
+  ];
+  const cleanRows: ThreadRowList = [
+    {
+      thread_id: "t-ok",
+      dealer_name: "Example Hyundai",
+      subject: "Re: Tucson availability",
+      state: "quoted",
+      updated_at: new Date().toISOString(),
+      extract_failed: false,
+    },
+  ];
+
+  it("renders the retry button (disclosing Anthropic) when a thread failed AND the key is present", () => {
+    const { container } = render(
+      <ThreadsSection
+        threads={ok(failedRows)}
+        dealerCount={1}
+        anthropicReady={true}
+        onRetryFailedExtractions={() => {}}
+      />,
+    );
+    const btn = container.querySelector('[data-testid="retry-failed-extractions"]');
+    expect(btn).not.toBeNull();
+    // The label DISCLOSES the egress provider (the privacy-conservative contract).
+    expect(btn!.textContent).toContain("Anthropic");
+    // The no-key hint is NOT shown when the key is present.
+    expect(container.querySelector('[data-testid="retry-failed-extractions-hint"]')).toBeNull();
+  });
+
+  it("invokes the launch callback on click", () => {
+    let clicked = 0;
+    const { container } = render(
+      <ThreadsSection
+        threads={ok(failedRows)}
+        dealerCount={1}
+        anthropicReady={true}
+        onRetryFailedExtractions={() => {
+          clicked += 1;
+        }}
+      />,
+    );
+    const btn = container.querySelector<HTMLButtonElement>(
+      '[data-testid="retry-failed-extractions"]',
+    );
+    btn!.click();
+    expect(clicked).toBe(1);
+  });
+
+  it("renders the Settings hint (not the button) when a thread failed but the key is ABSENT", () => {
+    const { container } = render(
+      <ThreadsSection
+        threads={ok(failedRows)}
+        dealerCount={1}
+        anthropicReady={false}
+        onRetryFailedExtractions={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-testid="retry-failed-extractions"]')).toBeNull();
+    const hint = container.querySelector('[data-testid="retry-failed-extractions-hint"]');
+    expect(hint).not.toBeNull();
+    expect(hint!.textContent).toContain("Anthropic key in Settings");
+  });
+
+  it("renders NEITHER the button nor the hint when no thread failed (key present)", () => {
+    const { container } = render(
+      <ThreadsSection
+        threads={ok(cleanRows)}
+        dealerCount={1}
+        anthropicReady={true}
+        onRetryFailedExtractions={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-testid="retry-failed-extractions"]')).toBeNull();
+    expect(container.querySelector('[data-testid="retry-failed-extractions-hint"]')).toBeNull();
+  });
+});
+
 describe("ThreadsSection — loading / error", () => {
   it("renders a loading line", () => {
     const { container } = render(

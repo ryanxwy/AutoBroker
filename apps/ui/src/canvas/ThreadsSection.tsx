@@ -82,9 +82,30 @@ export interface ThreadsSectionProps {
   threads: AsyncState<ThreadRowList>;
   /** How many dealers the user has contacted (for the empty wait-state copy). */
   dealerCount: number;
+  /** Whether the cross-provider RETRY key (Anthropic) is configured. Gates the
+   *  manual "retry failed extractions on another provider" affordance: present →
+   *  the active button; absent → a disabled Settings hint. Threaded from the
+   *  host the same way the canvas wires its other key-presence reads. Default
+   *  false (the affordance is opt-in egress — never assume the key is there). */
+  anthropicReady?: boolean;
+  /** Launch the MANUAL cross-provider retry of this profile's failed
+   *  extractions (escalate:true). Invoked ONLY by the user clicking the retry
+   *  button — there is no auto-escalation. The host owns the actual skill launch
+   *  (session/pin threading), so the section just signals the click. */
+  onRetryFailedExtractions?: () => void;
 }
 
-export function ThreadsSection({ threads, dealerCount }: ThreadsSectionProps): JSX.Element {
+export function ThreadsSection({
+  threads,
+  dealerCount,
+  anthropicReady = false,
+  onRetryFailedExtractions,
+}: ThreadsSectionProps): JSX.Element {
+  // The retry affordance shows ONLY when at least one thread carries a failed
+  // extraction — there is nothing to recover otherwise.
+  const hasFailed =
+    threads.kind === "ok" && threads.data.some((row) => Boolean(row.extract_failed));
+
   return (
     <section data-testid="canvas-threads">
       <h2>Dealer replies</h2>
@@ -107,6 +128,27 @@ export function ThreadsSection({ threads, dealerCount }: ThreadsSectionProps): J
           ))}
         </div>
       )}
+
+      {/* MANUAL cross-provider retry of failed extractions. The auto-path stays
+          DeepSeek-only + fail-closed; this is the user's explicit, key-guarded,
+          DISCLOSED escape hatch — the click sends the reply text to another
+          provider (Anthropic). Shown only when (a) a thread failed extraction
+          AND (b) the retry key is present; absent → a Settings hint instead. */}
+      {hasFailed &&
+        (anthropicReady ? (
+          <button
+            type="button"
+            className="btn-secondary"
+            data-testid="retry-failed-extractions"
+            onClick={() => onRetryFailedExtractions?.()}
+          >
+            Retry failed extractions — sends the reply text to Anthropic
+          </button>
+        ) : (
+          <p className="muted" data-testid="retry-failed-extractions-hint">
+            Configure an Anthropic key in Settings to retry on another provider.
+          </p>
+        ))}
     </section>
   );
 }

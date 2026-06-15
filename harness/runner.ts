@@ -1687,6 +1687,16 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
           fail(`case step "${step.id}" launches stop_picker but has no input_inline.pick_label`);
         }
         await driver.pickProfileStopOption(label, stepMaxMs);
+      } else if (step.launch === "canvas_button") {
+        // A Canvas control that itself starts a run (the host's onClick POSTs the
+        // start + navigates to /runs/:id). The button's testid rides
+        // input_inline.button_testid (e.g. the Threads "Retry failed extractions"
+        // button → dealer_reply_extract escalate:true).
+        const testid = step.inputInline?.["button_testid"];
+        if (typeof testid !== "string" || testid.trim() === "") {
+          fail(`case step "${step.id}" launches canvas_button but has no input_inline.button_testid`);
+        }
+        await driver.launchSkillFromCanvasButton(testid, stepMaxMs);
       } else {
         // chat_slash: a bare `/skill`, OR with input_inline.slash_args appended as
         // key=value tokens (the parser coerces them to start-body args, e.g.
