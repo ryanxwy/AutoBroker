@@ -280,6 +280,32 @@ export {
   type SeedInventorySourceOptions,
 } from "./inventory/sources.js";
 
+// inventory_compare deterministic core — the pure weighted ranker (four axes,
+// hard pre-filters), the live-listings read helper (joined to dealers for the
+// distance axis), and the profile-scoped ranking glue that maps ranked rows to
+// the flat candidate the read panel + workflow surface. Zero-LLM, read-only:
+// match_status / score are transient (no match_score column is ever written).
+export {
+  TRIM_WEIGHT,
+  PRICE_WEIGHT,
+  COLOR_WEIGHT,
+  DISTANCE_WEIGHT,
+  scoreListing,
+  applyFilters,
+  rankListings,
+  type ProfileMatchCtx,
+  type RankedRow,
+} from "./inventory/inventory_rank.js";
+export {
+  listListingsForProfile,
+  type ProfileListingsRead,
+} from "./inventory/read.js";
+export {
+  rankInventoryForProfile,
+  type RankedCandidate,
+  type RankInventoryResult,
+} from "./inventory/compute.js";
+
 // Fake-mailbox corpus seeder — the inbound deterministic row builder (the
 // adapter only writes outbound, so this stages the dealer-reply corpus the read
 // paths + sync consume). Tools owns the DB write; the harness fixture calls down.
@@ -435,14 +461,61 @@ export {
   type TestRunRecordInsert,
 } from "./testRunRecords.js";
 
-// Pure offer math.
+// Pure offer math — the deterministic OTD recompute (selling + Σfees + tax vs
+// stated, $1 tolerance) + the per-state doc-fee cap table. quote_audit's
+// MATH_SANITY / DOC_FEE_CAP checks consume both.
 export {
   validateOfferMath,
   OFFER_MATH_TOLERANCE_USD,
   STATE_DOC_FEE_CAP,
-  type OfferLineItems,
-  type OfferMathResult,
+  type OfferMathInput,
+  type MathCheck,
+  type MathStatus,
+  type FeeItem,
 } from "./calc.js";
+
+// quote_audit deterministic core — the pure 10-check audit (each firing check
+// emits a stable-code AuditFinding; severity derived from the code by the
+// surfacing classifier), the float-dollar read helpers feeding it (the recent /
+// peer / incentive-slice projections), and the idempotent audit-row writer
+// (UPSERT on (dealer_quote_id, audit_pass_version)). Zero-LLM; the only writes
+// are quote_audits rows.
+export {
+  auditQuote,
+  classifyAuditSeverity,
+  normalizeAddOnCode,
+  medianOrNone,
+  sumNamedAmounts,
+  peerFinanceAprs,
+  peerLeaseMfs,
+  peerDealerPlusOther,
+  profileEligibilityKinds,
+  type NamedAmount,
+  type AuditQuote,
+  type AuditPeer,
+  type AuditIncentive,
+  type AuditProfile,
+} from "./quotes/audit.js";
+export {
+  listQuotesForProfile,
+  getQuote,
+  listPeerQuotes,
+  listIncentivesSlice,
+  DEFAULT_AUDIT_PASS_VERSION,
+  type AuditQuoteWithId,
+  type ListQuotesOpts,
+} from "./quotes/quotesRead.js";
+export {
+  upsertAudit,
+  type UpsertAuditArgs,
+  type UpsertAuditOutcome,
+} from "./quotes/auditPersist.js";
+export { flagCodesFromJson } from "./quotes/flags.js";
+export {
+  rankQuotesForProfile,
+  type QuoteRanking,
+  type CompareResult,
+} from "./quotes/compare.js";
 
 // Pure validators (post-validation + safety rules).
 export {

@@ -261,6 +261,9 @@ export type ProfileStopCode = (typeof PROFILE_STOP_CODES)[number];
 const PROFILE_STOP_ERROR_NAMES: ReadonlySet<string> = new Set([
   "DealerGeosearchStopError",
   "DealerInboxCheckStopError",
+  "InventoryCompareStopError",
+  "QuoteAuditStopError",
+  "QuoteCompareStopError",
 ]);
 
 /**

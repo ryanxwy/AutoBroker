@@ -31,6 +31,10 @@ import {
   INCENTIVE_SCRAPE_WORKFLOW_ID,
 } from "./incentiveScrape.js";
 import {
+  inventoryCompareWorkflow,
+  INVENTORY_COMPARE_WORKFLOW_ID,
+} from "./inventoryCompare.js";
+import {
   inventoryLinkScanWorkflow,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
 } from "./inventoryLinkScan.js";
@@ -38,6 +42,14 @@ import {
   inventorySiteScanWorkflow,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
 } from "./inventorySiteScan.js";
+import {
+  quoteAuditWorkflow,
+  QUOTE_AUDIT_WORKFLOW_ID,
+} from "./quoteAudit.js";
+import {
+  quoteCompareWorkflow,
+  QUOTE_COMPARE_WORKFLOW_ID,
+} from "./quoteCompare.js";
 import {
   searchProfileIntakeWorkflow,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
@@ -52,6 +64,9 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [INCENTIVE_SCRAPE_WORKFLOW_ID]: incentiveScrapeWorkflow as unknown as Workflow,
   [DEALER_INBOX_CHECK_WORKFLOW_ID]: dealerInboxCheckWorkflow as unknown as Workflow,
   [DEALER_HYGIENE_WORKFLOW_ID]: dealerHygieneWorkflow as unknown as Workflow,
+  [INVENTORY_COMPARE_WORKFLOW_ID]: inventoryCompareWorkflow as unknown as Workflow,
+  [QUOTE_AUDIT_WORKFLOW_ID]: quoteAuditWorkflow as unknown as Workflow,
+  [QUOTE_COMPARE_WORKFLOW_ID]: quoteCompareWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

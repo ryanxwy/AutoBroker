@@ -32,7 +32,11 @@ import { openDb, type Db } from "@autobroker/db";
  *  write targets (both carry a NOT NULL search_profile_id);
  *  manufacturer_incentives is the incentive_scrape write target — it carries
  *  NO search_profile_id (keyed (make, model, zip)), so its "profile scope" is
- *  the join through the profile's own make/model/postal_code slice.
+ *  the join through the profile's own make/model/postal_code slice;
+ *  quote_audits is the quote_audit write target (NOT NULL search_profile_id —
+ *  the idempotency-delta anchor reads it); dealer_quotes is the audit's INPUT
+ *  set (NOT NULL search_profile_id — snapshotted so a case can prove the run
+ *  wrote zero new quote rows);
  *  messages + threads + thread_routing + thread_suppression + dealer_contacts
  *  are the dealer_inbox_check write targets — each carries a search_profile_id
  *  column (the orphan-row fix makes it NON-NULL on the inbox writes), so they
@@ -45,6 +49,8 @@ export const SNAPSHOT_TABLES = [
   "dealer_inventory_sources",
   "inventory_listings",
   "manufacturer_incentives",
+  "dealer_quotes",
+  "quote_audits",
   "messages",
   "threads",
   "thread_routing",

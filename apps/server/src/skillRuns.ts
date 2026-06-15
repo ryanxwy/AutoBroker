@@ -63,8 +63,11 @@ import {
   INBOX_CHECK_SKILL_ID,
   INCENTIVE_SCRAPE_SKILL_ID,
   INTAKE_SKILL_ID,
+  INVENTORY_COMPARE_SKILL_ID,
   INVENTORY_LINK_SCAN_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
+  QUOTE_AUDIT_SKILL_ID,
+  QUOTE_COMPARE_SKILL_ID,
 } from "@autobroker/skills";
 import {
   beginRunGuarded,
@@ -73,8 +76,11 @@ import {
   DEALER_HYGIENE_WORKFLOW_ID,
   DEALER_INBOX_CHECK_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
+  INVENTORY_COMPARE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
+  QUOTE_AUDIT_WORKFLOW_ID,
+  QUOTE_COMPARE_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
@@ -878,6 +884,165 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// inventory_compare — the eighth registered descriptor (deterministic inventory
+// ranker; read-only, zero-LLM, NO suspend). No `resume` member: the workflow
+// has no HITL suspend, so a form-decision against an inventory_compare run 400s
+// as unsupported_action. driver_kind is the constant api-key label (no useCase
+// routes through policy()).
+// ===========================================================================
+
+/** The inventory-compare start body fields. Only `search_profile_id` matters to
+ *  the workflow; the start-route envelope fields ride the same body and are
+ *  accepted + ignored (non-strict object). */
+const InventoryCompareStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The inventory-compare workflow inputData shape. */
+interface InventoryCompareStartInput {
+  search_profile_id: string | null;
+}
+
+/** The inventory_compare descriptor. */
+export const inventoryCompareDescriptor: RunDescriptor = {
+  skillId: INVENTORY_COMPARE_SKILL_ID,
+  workflowId: INVENTORY_COMPARE_WORKFLOW_ID,
+
+  // Zero-LLM: resolve/rank/render are fully deterministic, so the wire label is
+  // the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): InventoryCompareStartInput {
+    const parsed = InventoryCompareStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  // The workflow's render step templates the full deterministic summary — pass
+  // it through.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Inventory compare complete.";
+  },
+};
+
+// ===========================================================================
+// quote_audit — the ninth registered descriptor (deterministic 10-check audit;
+// read-only plus an idempotent quote_audits upsert, zero-LLM, NO suspend). No
+// `resume` member: the workflow has no HITL suspend, so a form-decision against a
+// quote_audit run 400s as unsupported_action. driver_kind is the constant api-key
+// label (no useCase routes through policy()).
+// ===========================================================================
+
+/** The quote-audit start body fields. `search_profile_id` is the profile pin;
+ *  `quote_id` selects single-quote mode (null → the recent batch). The
+ *  start-route envelope fields ride the same body and are accepted + ignored
+ *  (non-strict object). */
+const QuoteAuditStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  quote_id: z.string().nullable().optional(),
+});
+
+/** The quote-audit workflow inputData shape. */
+interface QuoteAuditStartInput {
+  search_profile_id: string | null;
+  quote_id: string | null;
+}
+
+/** The quote_audit descriptor. */
+export const quoteAuditDescriptor: RunDescriptor = {
+  skillId: QUOTE_AUDIT_SKILL_ID,
+  workflowId: QUOTE_AUDIT_WORKFLOW_ID,
+
+  // Zero-LLM: resolve/load/audit/persist are fully deterministic, so the wire
+  // label is the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): QuoteAuditStartInput {
+    const parsed = QuoteAuditStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      quote_id: parsed.data.quote_id ?? null,
+    };
+  },
+
+  // The workflow's confirm step templates the full deterministic summary — pass
+  // it through.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Quote audit complete.";
+  },
+};
+
+// ===========================================================================
+// quote_compare — the tenth registered descriptor (deterministic compare ranker;
+// read-only, zero-LLM, NO suspend). No `resume` member: the workflow has no HITL
+// suspend, so a form-decision against a quote_compare run 400s as
+// unsupported_action. driver_kind is the constant api-key label (no useCase
+// routes through policy()).
+// ===========================================================================
+
+/** The quote-compare start body fields. Only `search_profile_id` matters to the
+ *  workflow; the start-route envelope fields ride the same body and are accepted
+ *  + ignored (non-strict object). */
+const QuoteCompareStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The quote-compare workflow inputData shape. */
+interface QuoteCompareStartInput {
+  search_profile_id: string | null;
+}
+
+/** The quote_compare descriptor. */
+export const quoteCompareDescriptor: RunDescriptor = {
+  skillId: QUOTE_COMPARE_SKILL_ID,
+  workflowId: QUOTE_COMPARE_WORKFLOW_ID,
+
+  // Zero-LLM: resolve/rank/confirm are fully deterministic, so the wire label is
+  // the constant api-key lane (no useCase routes through policy()).
+  driverKind(): HarnessDriverKind {
+    return "deepseek_apikey";
+  },
+
+  buildInput(body: Record<string, unknown>): QuoteCompareStartInput {
+    const parsed = QuoteCompareStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  // The workflow's confirm step templates the full deterministic summary — pass
+  // it through.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Quote compare complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -890,6 +1055,9 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
   dealerHygieneDescriptor,
+  inventoryCompareDescriptor,
+  quoteAuditDescriptor,
+  quoteCompareDescriptor,
 ];
 
 const DESCRIPTORS_BY_SKILL = new Map(RUN_DESCRIPTORS.map((d) => [d.skillId, d]));
@@ -969,6 +1137,22 @@ function affectedKinds(workflowId: string): string[] {
       return ["threads", "messages", "contacts"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
+    case INVENTORY_COMPARE_WORKFLOW_ID:
+      // Pure read: the ranker writes NOTHING (no match_score column, no row
+      // mutation). The success pulse fires with kinds:[] — the UI treats it as
+      // nothing-to-refetch.
+      return [];
+    case QUOTE_AUDIT_WORKFLOW_ID:
+      // Writes quote_audits rows (the only mutation) — name the "quotes" data
+      // family so the quote-compare surface refetches the freshly-audited
+      // findings. (quote_audits rides under the quotes kind; D3's compare panel
+      // invalidates on it.)
+      return ["quotes"];
+    case QUOTE_COMPARE_WORKFLOW_ID:
+      // Pure read: the compare ranker writes NOTHING (it reads dealer_quotes +
+      // the latest audit per quote and ranks in memory). The success pulse fires
+      // with kinds:[] — the UI treats it as nothing-to-refetch.
+      return [];
     default:
       // A skill whose data family is not mapped yet — refetch broadly rather
       // than leave a view silently stale.
