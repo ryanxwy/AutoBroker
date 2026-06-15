@@ -42,25 +42,12 @@ export interface ReplyExtractCandidate {
   body: string;
 }
 
-/** The status-filter half of the candidate SELECT — the only difference between
- *  the default route and the manual cross-provider retry route.
- *
- *   - DEFAULT (failedOnly=false): pending+failed inbound messages (the normal
- *     auto-path candidate set — a `failed` row is re-attempted on a re-run).
- *   - RETRY  (failedOnly=true):  the profile's `failed` messages ONLY — the
- *     manual `escalate:true` route minimizes egress to exactly the failures the
- *     user is recovering (a `pending` message is NOT sent to the other provider).
- *
- * A `succeeded` row is terminal and never re-processed on either route. */
-const STATUS_FILTER = {
-  default: "m.quote_extraction_status IN ('pending', 'failed')",
-  failedOnly: "m.quote_extraction_status = 'failed'",
-} as const;
-
-/** Build the candidate SELECT for the chosen status filter (the rest is shared:
- *  inbound, profile-scoped, thread-resolvable dealer, non-null gmail key). */
-function selectCandidatesSql(failedOnly: boolean): string {
-  return `
+/** The candidate SELECT: inbound, profile-scoped, thread-resolvable dealer,
+ *  non-null gmail key, and a non-terminal extraction status. A `succeeded` row
+ *  is terminal and never re-processed; a `failed` row is re-attempted on a
+ *  re-run. (The malformed-class recovery is an in-message hop on a single
+ *  candidate, NOT a candidate-set change, so there is one status filter.) */
+const SELECT_CANDIDATES_SQL = `
 SELECT
   m.message_id          AS message_id,
   t.dealer_id           AS dealer_id,
@@ -70,13 +57,12 @@ SELECT
 FROM messages m
 JOIN threads t ON t.thread_id = m.thread_id
 WHERE m.direction = 'inbound'
-  AND ${failedOnly ? STATUS_FILTER.failedOnly : STATUS_FILTER.default}
+  AND m.quote_extraction_status IN ('pending', 'failed')
   AND m.search_profile_id = ?
   AND m.gmail_message_id IS NOT NULL
   AND m.search_profile_id IS NOT NULL  -- provenance guard: exclude NULL-profile rows
 ORDER BY m.message_id
 `;
-}
 
 interface CandidateRow {
   message_id: string;
@@ -91,19 +77,16 @@ interface CandidateRow {
  * enforces the orphan-row discipline (a message with no resolvable dealer thread
  * is silently excluded — nothing valid to key a quote to). Only messages with
  * `search_profile_id = searchProfileId` are candidates; rows with a NULL profile
- * are excluded (no valid provenance to stamp on the quote).
- *
- * `failedOnly` selects the status filter: the DEFAULT (false) pending+failed set
- * for the auto-path, or the `failed`-only set for the manual cross-provider retry
- * (minimizing egress to exactly the failures the user is recovering).
+ * are excluded (no valid provenance to stamp on the quote). The set is the
+ * profile's pending+failed inbound messages (a `failed` row is re-attempted on a
+ * re-run; a `succeeded` row is terminal and skipped).
  */
 export function loadReplyExtractCandidates(
   searchProfileId: string,
   db: Db = getDb(),
-  failedOnly = false,
 ): ReplyExtractCandidate[] {
   const rows = db.$client
-    .prepare(selectCandidatesSql(failedOnly))
+    .prepare(SELECT_CANDIDATES_SQL)
     .all(searchProfileId) as CandidateRow[];
   return rows.map((r) => ({
     messageId: r.message_id,

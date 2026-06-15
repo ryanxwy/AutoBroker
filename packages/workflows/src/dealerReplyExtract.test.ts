@@ -13,6 +13,10 @@
  *   - #1244: an injected harness throwing MalformedToolCallAbort for one message
  *     → that message `failed` (processed_at NULL, re-queued), the run still
  *     completes `extracted`, the OTHER messages succeed, messages_failed === 1.
+ *   - AUTOMATIC malformed-class recovery: a v4-flash malformed first hop →
+ *     exactly ONE same-provider v4-pro+thinking retry. The retry recovers →
+ *     succeeded; the retry also-malformed → failed (fail-closed); the hop is
+ *     bounded to ONE; a non-malformed error (ZodError) skips the retry.
  *   - suspend-shaped harness return fail-closes identically (isHarnessSuspend).
  *   - all-or-nothing: an emitted row that fails DealerQuoteSchema (Rule1 bleed)
  *     rolls back the whole message → 0 quotes for it, message `failed`.
@@ -31,6 +35,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { MalformedToolCallAbort } from "@autobroker/model";
 import {
@@ -284,14 +289,10 @@ function workflow() {
   return mastra.getWorkflow(DEALER_REPLY_EXTRACT_WORKFLOW_ID);
 }
 
-async function startRun(
-  runId: string,
-  searchProfileId: string | null = null,
-  escalate = false,
-) {
+async function startRun(runId: string, searchProfileId: string | null = null) {
   const run = await workflow().createRun({ runId });
   const result = await run.start({
-    inputData: { search_profile_id: searchProfileId, escalate },
+    inputData: { search_profile_id: searchProfileId },
   });
   return { run, result };
 }
@@ -606,107 +607,146 @@ describe("dealer_reply_extract — idempotent re-extract", () => {
   });
 });
 
-describe("dealer_reply_extract — manual cross-provider retry (escalate)", () => {
-  /** A harness stub that records the useCase of every call (so the test proves
-   *  which provider route fired) and returns a fixed recovering emit. */
-  function harnessRecordingUseCase(seen: string[]): DealerReplyExtractWorkflowDeps["harnessGenerate"] {
+describe("dealer_reply_extract — automatic same-provider malformed-class retry", () => {
+  /** A recovering emit object (a cash OTD quote). */
+  const recoverEmit = {
+    quotes: [row({ financing_mode: "cash", otd_total: 43000 })],
+    message_intent: "real_quote" as const,
+  };
+
+  /** A harness stub recording each call's useCase: the v4-flash hop
+   *  (`dealer_reply_extract`) FAILS malformed; the v4-pro+thinking hop
+   *  (`dealer_reply_extract_retry`) recovers. */
+  function harnessFlashFailsRetrySucceeds(
+    seen: string[],
+  ): DealerReplyExtractWorkflowDeps["harnessGenerate"] {
     return (async (input: { useCase: string }) => {
       seen.push(input.useCase);
-      return {
-        object: {
-          quotes: [row({ financing_mode: "cash", otd_total: 43000 })],
-          message_intent: "real_quote",
-        },
-        usage: NO_USAGE,
-      };
+      if (input.useCase === "dealer_reply_extract") {
+        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+      }
+      return { object: recoverEmit, usage: NO_USAGE };
     }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"];
   }
 
-  it("escalate:true → the retry useCase fires, the failed message recovers, a quote persists", async () => {
+  it("(a) v4-flash malformed → auto v4-pro+thinking retry recovers → succeeded with a quote", async () => {
     seedProfile();
     seedDealer();
     seedThread("thread-1");
-    // A FAILED message (the failure the user is recovering). On the escalate
-    // route it is the only candidate; it recovers to succeeded with a quote.
     seedMessage({
-      messageId: "msg-failed",
+      messageId: "msg-recover",
       threadId: "thread-1",
-      gmailMessageId: "gmail-failed",
+      gmailMessageId: "gmail-recover",
       body: "OTD $43,000 on the Tucson Hybrid Limited.",
-      status: "failed",
     });
     const seen: string[] = [];
-    installDeps({ harnessGenerate: harnessRecordingUseCase(seen) });
+    installDeps({ harnessGenerate: harnessFlashFailsRetrySucceeds(seen) });
 
-    const { result } = await startRun("run-escalate", null, true);
+    const { result } = await startRun("run-recover");
     expect(statusOf(result)).toBe("success");
-    // The retry route fired — NOT the default DeepSeek useCase.
-    expect(seen).toEqual(["dealer_reply_extract_retry"]);
+    // BOTH hops fired, in order: the flash hop, then the v4-pro+thinking retry.
+    expect(seen).toEqual(["dealer_reply_extract", "dealer_reply_extract_retry"]);
 
     const out = outputOf(result);
     expect(out["messages_processed"]).toBe(1);
+    expect(out["messages_failed"]).toBe(0);
     expect(out["quotes_upserted"]).toBe(1);
 
-    // The failed message recovered to succeeded; a quote row persisted; the
-    // provenance stamps the retry provider (anthropic by default policy).
-    const m = messageRow("msg-failed");
+    const m = messageRow("msg-recover");
     expect(m["quote_extraction_status"]).toBe("succeeded");
     const rows = quoteRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0]!["extractor_provider"]).toBe("anthropic");
+    // SAME provider on both hops — the recovery is privacy-clean (no Anthropic).
+    expect(rows[0]!["extractor_provider"]).toBe("deepseek");
   });
 
-  it("escalate:true narrows candidates to FAILED only — a pending message is NOT sent", async () => {
+  it("(b) retry ALSO malformed → message stays failed (fail-closed), 0 rows", async () => {
     seedProfile();
     seedDealer();
     seedThread("thread-1");
     seedMessage({
-      messageId: "msg-failed",
+      messageId: "msg-still-bad",
       threadId: "thread-1",
-      gmailMessageId: "gmail-failed",
-      body: "failed body",
-      status: "failed",
-    });
-    seedMessage({
-      messageId: "msg-pending",
-      threadId: "thread-1",
-      gmailMessageId: "gmail-pending",
-      body: "pending body",
-      status: "pending",
+      gmailMessageId: "gmail-still-bad",
+      body: "anything",
     });
     const seen: string[] = [];
-    installDeps({ harnessGenerate: harnessRecordingUseCase(seen) });
+    installDeps({
+      // BOTH hops fail malformed → no recovery; the message stays failed.
+      harnessGenerate: (async (input: { useCase: string }) => {
+        seen.push(input.useCase);
+        throw new MalformedToolCallAbort(["empty_tool_calls"]);
+      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
+    });
 
-    const { result } = await startRun("run-escalate-narrow", null, true);
-    expect(statusOf(result)).toBe("success");
-    // Exactly ONE call — only the failed message; the pending one was excluded.
-    expect(seen).toEqual(["dealer_reply_extract_retry"]);
-    expect(outputOf(result)["messages_processed"]).toBe(1);
-    // The pending message was never touched (still pending, never sent).
-    expect(messageRow("msg-pending")["quote_extraction_status"]).toBe("pending");
+    const { result } = await startRun("run-still-bad");
+    expect(statusOf(result)).toBe("success"); // ONE bad message never fails the run
+    // The retry hop was attempted exactly once after the flash hop.
+    expect(seen).toEqual(["dealer_reply_extract", "dealer_reply_extract_retry"]);
+    expect(outputOf(result)["messages_failed"]).toBe(1);
+    expect(outputOf(result)["quotes_upserted"]).toBe(0);
+    expect(quoteRows()).toHaveLength(0);
+
+    const m = messageRow("msg-still-bad");
+    expect(m["quote_extraction_status"]).toBe("failed");
+    expect(m["quote_extraction_intent"]).toBeNull();
+    expect(m["processed_at"]).toBeNull(); // re-queued
   });
 
-  it("escalate:false (default) keeps the DeepSeek useCase + pending messages stay candidates", async () => {
+  it("(c) the recovery is bounded to ONE retry hop (exactly one retry call)", async () => {
     seedProfile();
     seedDealer();
     seedThread("thread-1");
     seedMessage({
-      messageId: "msg-pending",
+      messageId: "msg-bounded",
       threadId: "thread-1",
-      gmailMessageId: "gmail-pending",
-      body: "pending body",
-      status: "pending",
+      gmailMessageId: "gmail-bounded",
+      body: "anything",
     });
     const seen: string[] = [];
-    installDeps({ harnessGenerate: harnessRecordingUseCase(seen) });
+    installDeps({
+      harnessGenerate: (async (input: { useCase: string }) => {
+        seen.push(input.useCase);
+        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
+    });
 
-    const { result } = await startRun("run-default-route", null, false);
-    expect(statusOf(result)).toBe("success");
-    // The default route — the DeepSeek useCase, and the pending message WAS a
-    // candidate (the auto-path processes pending+failed).
+    await startRun("run-bounded");
+    // Exactly TWO calls total — one flash hop + ONE retry hop. The retry's own
+    // malformed throw does NOT spawn a third call (no retry loop).
+    expect(seen).toHaveLength(2);
+    expect(seen.filter((u) => u === "dealer_reply_extract_retry")).toHaveLength(1);
+  });
+
+  it("(d) a NON-malformed error (ZodError) does NOT trigger the retry — fail-closed immediately", async () => {
+    seedProfile();
+    seedDealer();
+    seedThread("thread-1");
+    seedMessage({
+      messageId: "msg-zod",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-zod",
+      body: "anything",
+    });
+    const seen: string[] = [];
+    installDeps({
+      // The flash hop throws a ZodError (zod_validation), NOT a malformed class
+      // — re-running on v4-pro+thinking is not the owner-directed recovery.
+      harnessGenerate: (async (input: { useCase: string }) => {
+        seen.push(input.useCase);
+        throw new z.ZodError([
+          { code: "custom", path: [], message: "schema rejected the args" },
+        ]);
+      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
+    });
+
+    const { result } = await startRun("run-zod");
+    expect(statusOf(result)).toBe("success"); // the per-message catch still completes the run
+    // ONLY the flash hop fired — the ZodError did NOT escalate to the retry.
     expect(seen).toEqual(["dealer_reply_extract"]);
-    expect(outputOf(result)["messages_processed"]).toBe(1);
-    expect(messageRow("msg-pending")["quote_extraction_status"]).toBe("succeeded");
+    expect(outputOf(result)["messages_failed"]).toBe(1);
+    expect(quoteRows()).toHaveLength(0);
+    expect(messageRow("msg-zod")["quote_extraction_status"]).toBe("failed");
   });
 });
 
