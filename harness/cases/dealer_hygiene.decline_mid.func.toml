@@ -1,0 +1,101 @@
+# harness/cases/dealer_hygiene.decline_mid.func.toml — the DEFERRED-SINGLE-TX
+# proof, UI-LANE, fixture-mode (zero-LLM). The load-bearing destructive
+# invariant: the three suspend stages ONLY stage selections; the SINGLE atomic
+# `verify` write fires ONLY when NO stage declined. So approving stage 5a (the
+# orphan) and THEN declining stage 5b must roll the WHOLE run back to ZERO
+# writes — the 5a-staged orphan is NEVER deleted, because the staged ids live in
+# in-memory threaded state until the one terminal commit that the decline skips.
+#
+#   step 1 (ui)    install hygiene_ready + pin the Tucson profile.
+#   step 2 (skill) "/dealer_hygiene" pinned → stage 5a (orphans) → APPROVE +
+#                  submit (stages the orphan, writes NOTHING) → stage 5b
+#                  (crm_threads) → DECLINE. Terminal `declined`; ALL hygiene
+#                  tables Δ=0 EXACT (GLOBAL) — the approved-and-staged 5a orphan
+#                  is still present (threads steady at the seeded 3), zero
+#                  suppression rows, the contact flag untouched.
+
+[meta]
+id = "dealer_hygiene_decline_mid"
+archetype = "B"
+skills = ["dealer_hygiene"]
+risk_group = "E"
+
+[narrative]
+session_origin = "reuse_pinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the world + pin the profile -----------------------------
+
+[[steps]]
+id = "pin_profile"
+kind = "ui"
+fixture_state = "hygiene_ready"
+purpose = "Install the hygiene world and pin the Tucson profile."
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "topbar-searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "searches-pin-hygiene-ready-1"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "searches-unpin-hygiene-ready-1"
+expect = "visible"
+
+# ---- step 2: 5a approve+submit → 5b DECLINE → whole run rolls back to Δ=0 ----
+
+[[steps]]
+id = "hygiene_decline_mid"
+skill = "dealer_hygiene"
+purpose = "Approve 5a (stage the orphan), then DECLINE at 5b — the single atomic commit never fires, so the staged 5a orphan is NOT deleted (Δ=0 everywhere)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+# 5a: approve the orphan (Select-all) + submit — this only STAGES it.
+[[steps.resume]]
+on = "hygiene_review"
+action = "accept"
+default_decision = "approve"
+[steps.resume.content]
+stage = "orphans"                # 5a renders FIRST.
+
+# 5b: DECLINE — terminal; the decline stops the loop (no 5c entry needed). The
+# decline lands at stage 5b structurally (5a was approved+submitted, advancing
+# the workflow to the 5b suspend); a decline resume carries no content, so the
+# stage is not pinned on this entry — the Δ=0 proof below is the real assertion.
+[[steps.resume]]
+on = "hygiene_review"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]            # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "threads"
+scope = "global"
+min = 3
+exact = true                     # the 5a-staged orphan was NEVER deleted — still all 3 seeded threads.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "thread_suppression"
+scope = "global"
+min = 0
+exact = true                     # zero suppression rows — the whole commit was skipped.
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_contacts"
+scope = "global"
+min = 1
+exact = true                     # the contact survives untouched (no demote committed).
+
+[[steps.anchors]]
+kind = "no_external_mutation"
