@@ -116,7 +116,7 @@ describe("FakeGmailAdapter.send", () => {
     const raw = buildRaw("dealer@x.test", "buyer@x.test", "Re: quote", "thanks, looks good");
     const { messageId } = await adapter.send(raw);
 
-    expect(messageId).toMatch(/^fake-msg-/);
+    expect(messageId).toMatch(/^sandbox-out-/);
     const row = db.$client
       .prepare("SELECT * FROM fake_mailbox_messages WHERE message_id = ?")
       .get(messageId) as Record<string, unknown>;
