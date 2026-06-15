@@ -52,6 +52,7 @@ import { __setSecretsProbeForTests, openDb, resolveDataDir } from "@autobroker/t
 import {
   __setDealerWebLeadSubmitDepsForTests,
   __setIntakeDepsForTests,
+  __setNegotiationFollowupDepsForTests,
   resetMastraForTests,
   resetRuntimeGlueForTests,
   type ScoutFormsArgs,
@@ -296,6 +297,36 @@ async function main(): Promise<void> {
             : { kind: "fuse_blocked" },
         ),
     });
+
+    // X2 (negotiation_followup) — stub ONLY the prose draft (the single LLM
+    // touch). It returns a fixed, tone-appropriate, BUDGET-FREE body that names
+    // NO competing dealer (numbers only — the bare "31,200" carries no `$`, so
+    // assertNoBudget passes, and there is no dealer name in the text → the
+    // "no competing name" red line holds). Every DB read (candidate threads /
+    // quote situation / thread snapshot / reply-target ladder), the send path
+    // (sendAndRecord — L1-fuse-blocked under BLOCK=1 → ZERO messages rows), the
+    // contact-flip write, and the threads.state='negotiating' LOCAL write all
+    // stay REAL against the seeded fixture DB.
+    __setNegotiationFollowupDepsForTests({
+      draftProse: () =>
+        Promise.resolve({
+          text:
+            "Thanks for the quote. I'm comparing a few out-the-door numbers and another " +
+            "dealer is currently at 31,200 OTD. Can you match or beat that on the same " +
+            "trim? Happy to move quickly if the numbers work.",
+          usage: {
+            costUsd: null,
+            durationMs: 1,
+            pricingSource: "unavailable",
+            promptTokens: null,
+            completionTokens: null,
+          },
+        }),
+    });
+    // X3 (dealer_closeout_email) is zero-LLM + zero-browser — the deterministic
+    // body/subject and the atomic close+suppress run REAL against the seeded DB
+    // (sendAndRecord is L1-fuse-blocked under BLOCK=1), so there is NOTHING to
+    // stub. No __setDealerCloseoutEmailDepsForTests call is needed.
   }
 
   // LIVE: do NOT inject the DI stubs — real geocode + real DeepSeek. We still reset

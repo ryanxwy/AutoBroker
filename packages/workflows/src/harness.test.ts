@@ -348,6 +348,119 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
   });
 });
 
+describe("harness.draftProse — no-tool prose facade", () => {
+  // draftProse is a strict subset of generate: NO tools, NO structuredOutput, NO
+  // toolChoice, NO Zod. negotiation_followup routes to deepseek.chat. A clean
+  // prose `stop` returns { text, usage } + ONE ledger row; a tool-shaped blob in
+  // the content fails CLOSED (typed MalformedToolCallAbort) so the blob is never
+  // returned as prose; a throwing model still writes one NULL-not-$0 row.
+  const proseLedger: HarnessLedgerContext = {
+    runId: "run-prose-1",
+    skill: "negotiation_followup",
+    layer: "L2",
+    promptVersion: null,
+    schemaVersion: null,
+  };
+
+  it("returns the prose text + usage and writes ONE ledger row (fail_reason null)", async () => {
+    const model = makeProseDumpModel({
+      text: "Thanks for the quote. Another dealer is at 31,200 out-the-door — can you match or beat that on the same trim? Happy to move quickly if the numbers work.",
+      modelId: "deepseek-v4-flash",
+      usage: { inputTokens: 800, outputTokens: 120 },
+    });
+
+    const out = await harness.draftProse(
+      { useCase: "negotiation_followup", prompt: "Write an assertive follow-up." },
+      proseLedger,
+      { model, db },
+    );
+
+    expect(out.text).toContain("out-the-door");
+    expect(out.usage.pricingSource).toBe("computed");
+    expect(out.usage.costUsd).not.toBeNull();
+    expect(out.usage.durationMs).toBeGreaterThanOrEqual(0);
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBeNull();
+    // negotiation_followup routes to deepseek.chat (the prose lane).
+    expect(rows[0]?.provider).toBe("deepseek");
+    expect(rows[0]?.model_alias).toBe("deepseek.chat");
+  });
+
+  it("fails CLOSED on a tool-shaped blob in the prose (typed abort + ledger 'malformed_tool_call')", async () => {
+    // A real escape: the model dumped a tool-call shape as text. expectsToolCall
+    // is false on this lane, so finish_reason/empty-tool signals are gated off —
+    // but the tool_shaped_blob signal still fires. Never return the blob as prose.
+    const model = makeProseDumpModel({
+      text: '{"name":"emit_result","arguments":{"body":"x"}}',
+      modelId: "deepseek-v4-flash",
+    });
+
+    await expect(
+      harness.draftProse({ useCase: "negotiation_followup", prompt: "x" }, proseLedger, {
+        model,
+        db,
+      }),
+    ).rejects.toBeInstanceOf(MalformedToolCallAbort);
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBe("malformed_tool_call");
+  });
+
+  it("NULL-not-$0: an unknown model id → costUsd null + pricing_source 'unavailable'", async () => {
+    const model = makeProseDumpModel({
+      text: "A short, clean follow-up reply.",
+      modelId: "mystery-model-not-in-table",
+      usage: { inputTokens: 0, outputTokens: 0 },
+    });
+
+    const out = await harness.draftProse(
+      { useCase: "negotiation_followup", prompt: "x" },
+      proseLedger,
+      { model, db },
+    );
+    expect(out.usage.costUsd).toBeNull();
+    expect(out.usage.pricingSource).toBe("unavailable");
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("unavailable");
+  });
+
+  it("a model call that THROWS still writes ONE NULL-not-$0 ledger row and propagates", async () => {
+    const boom = new Error("simulated provider transport failure");
+    boom.name = "SimulatedProviderError";
+    const throwingModel = {
+      specificationVersion: "v3",
+      provider: "test",
+      modelId: "throwing-model",
+      supportedUrls: {},
+      doGenerate: async () => {
+        throw boom;
+      },
+      doStream: async () => {
+        throw boom;
+      },
+    };
+
+    await expect(
+      harness.draftProse({ useCase: "negotiation_followup", prompt: "x" }, proseLedger, {
+        model: throwingModel,
+        db,
+      }),
+    ).rejects.toThrow();
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).not.toBeNull();
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("unavailable");
+  });
+});
+
 describe("harness.generate — adversarial-review fixes (2026-06-05)", () => {
   it("F1: a model call that THROWS still writes ONE ledger row and propagates", async () => {
     // A structural v3 model whose doGenerate/doStream reject — a thrown model
@@ -379,6 +492,24 @@ describe("harness.generate — adversarial-review fixes (2026-06-05)", () => {
     expect(rows[0]?.fail_reason).not.toBeNull();
     expect(rows[0]?.cost_usd).toBeNull();
     expect(rows[0]?.pricing_source).toBe("unavailable");
+  });
+
+  it("F3 (draftProse): the _testOverrides seam is refused when no test-runner env is present", async () => {
+    const vitestVal = process.env["VITEST"];
+    const nodeEnvVal = process.env["NODE_ENV"];
+    delete process.env["VITEST"];
+    delete process.env["NODE_ENV"];
+    try {
+      await expect(
+        harness.draftProse({ useCase: "negotiation_followup", prompt: "x" }, ledger, { db }),
+      ).rejects.toThrow(/test-only seam/);
+    } finally {
+      if (vitestVal === undefined) delete process.env["VITEST"];
+      else process.env["VITEST"] = vitestVal;
+      if (nodeEnvVal === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = nodeEnvVal;
+    }
+    expect(ledgerRows()).toHaveLength(0);
   });
 
   it("F3: the _testOverrides seam is refused when no test-runner env is present", async () => {

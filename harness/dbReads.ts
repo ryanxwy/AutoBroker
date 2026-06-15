@@ -46,6 +46,13 @@ export const SNAPSHOT_TABLES = [
   // writes a row; under BLOCK=1 the send is fuse-blocked → Δ=0) — without it the
   // table_min_rows(messages) anchor would read a vacuous 0.
   "messages",
+  // threads carries a thread-state column (open/replied/closed/…) the negotiation_
+  // followup + dealer_closeout_email cases assert deltas around. dealer_closeout_
+  // email's ui_send closes threads + writes a thread_suppression row on approve
+  // (LOCAL writes that land even under BLOCK=1, when the gated send is fuse-blocked
+  // → messages Δ=0); the func cases need table_min_rows on both.
+  "threads",
+  "thread_suppression",
 ] as const;
 export type SnapshotTable = (typeof SNAPSHOT_TABLES)[number];
 
@@ -233,12 +240,19 @@ export function externalMutationDbCount(
   breakdown["audit_log.send_submit"] = auditSendSubmit;
 
   // (3) real (non-sandbox) outbound messages, if the messages table is populated.
-  // A real send carries a gmail_message_id NOT shaped like the sandbox 'sandbox-out-%'.
+  // A real ESCAPING send is an OUTBOUND row (sendAndRecord inserts direction=
+  // 'outbound' and promotes by backfilling gmail_message_id only on a non-blocked
+  // send) carrying a gmail_message_id NOT shaped like the sandbox 'sandbox-out-%'.
+  // The direction='outbound' clause is load-bearing: a seeded INBOUND dealer reply
+  // (corpus data the follow-up/closeout skills read) legitimately carries a real
+  // gmail_message_id and is NEVER an outbound mutation — counting it would
+  // false-flag the keystone. Real-send detection is unaffected (a real send is
+  // always outbound).
   let realOutbound = 0;
   try {
     const msgs = readOne<{ n: number }>(
       db,
-      `SELECT COUNT(*) AS n FROM messages WHERE gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%'`,
+      `SELECT COUNT(*) AS n FROM messages WHERE direction = 'outbound' AND gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%'`,
       [],
     );
     realOutbound = msgs?.n ?? 0;

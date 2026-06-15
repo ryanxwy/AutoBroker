@@ -1,0 +1,105 @@
+# dealer_closeout_email.ui_send.func.toml — the X3 fake-send HAPPY PATH, FUNCTIONAL
+# lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1, NO live LLM —
+# X3 is zero-LLM). Approving the two addressable dealers at the batch_review card
+# runs, per dealer, the ONE atomic unit: the gated send (L1-fuse-blocked under
+# BLOCK=1 → ZERO messages rows) folded around the LOCAL threads.state='closed' +
+# a thread_suppression closeout row, all in one txn. The local close+suppress
+# commit ON APPROVE regardless of the fuse (the lead-submission split). The
+# keystone stays clean: X3 writes no lead row, and the gmail send is fuse-blocked
+# (no messages row), so no fake-outbound flag is needed.
+#
+#   step 1  install closeout_ready + pin the profile (pin_required). The no-address
+#           dealer is skipped + counted BEFORE the gate (never a card row).
+#   step 2  "/dealer_closeout_email" → the batch_review card renders the two
+#           addressable dealers; the driver APPROVES both, then submits. Each
+#           atomic unit fuse-blocks the send (zero messages) and commits the local
+#           close+suppress. Terminal `done`; +2 thread_suppression EXACT (one per
+#           closed dealer — the closeout receipt); messages Δ=0 EXACT;
+#           resolution=pinned; keystone clean; no malformed tool call.
+#
+# WHY +2 thread_suppression IS the meaningful local-write anchor: the close is an
+# UPDATE (threads.state→'closed', invisible to a row-count check), but each
+# closeout INSERTs one thread_suppression row — a real, countable delta that
+# proves the LOCAL writes landed under the blocked send. resolution=pinned doubles
+# as the SENT-confirm proof. The threads.state VALUE (and the
+# profile_status_transition='closed' + the deterministic body byte-match) are
+# asserted OFFLINE in dealerCloseoutEmail.test.ts (the func lane reads row counts,
+# not status values).
+
+[meta]
+id = "dealer_closeout_email_ui_send"
+archetype = "A"
+skills = ["dealer_closeout_email"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "closeout_ready"
+purpose = "Seed the ready-to-close-out world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid Limited"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: approve both addressable dealers → fake close-out ---------------
+
+[[steps]]
+id = "closeout_send"
+skill = "dealer_closeout_email"
+purpose = "Approve both addressable dealers — fake send (fuse-blocked, zero messages) + the local close+suppress."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "batch_review"
+action = "approve"
+default_decision = "skip"
+[[steps.resume.rows]]
+match = "Jim Click Hyundai"
+decision = "approve"
+[[steps.resume.rows]]
+match = "Tucson Kia"
+decision = "approve"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "approval_gate"      # the batch card rendered.
+
+[[steps.anchors]]
+kind = "table_min_rows"     # +2 closeout suppression rows (one per closed dealer) —
+table = "thread_suppression"  # the LOCAL-write proof that survives the blocked send.
+scope = "profile"
+delta_min = 2
+exact = true
+
+[[steps.anchors]]
+kind = "table_min_rows"     # zero Gmail sends — the L1 fuse blocked each send.
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+[[steps.anchors]]
+kind = "resolution"         # the SENT-confirm proof (the `sent` outcome sets pinned).
+expect = "pinned"
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # the fuse blocked each send → no messages row → keystone clean.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

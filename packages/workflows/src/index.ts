@@ -349,6 +349,47 @@ export {
   LeadApprovalResumeSchema,
 } from "./dealerWebLeadSubmitContracts.js";
 
+// negotiation_followup (X2) — irreversible-send (fake-send) email follow-up. NO
+// browser (email-only), so no browser-emitter setter. The contact-flip ② override
+// is registered out-of-band via requestContactFlipForRun (the server descriptor
+// threads an approved-thread flip request before the ① batch_review resume).
+export {
+  negotiationFollowupWorkflow,
+  NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
+  __setNegotiationFollowupDepsForTests,
+  __resetNegotiationFollowupDepsForTests,
+  requestContactFlipForRun,
+  type NegotiationFollowupWorkflowDeps,
+  type ContactFlipRequest,
+} from "./negotiationFollowup.js";
+
+// The negotiation_followup contracts (typed input/output + the suspend ②
+// contact-flip approval resume vocabulary the server descriptor imports; the
+// batch_review ① resume reuses inventorySiteScan's BatchReviewResumeSchema).
+export {
+  NegotiationFollowupInputSchema,
+  NegotiationFollowupOutputSchema,
+  ContactFlipApprovalResumeSchema,
+} from "./negotiationFollowupContracts.js";
+
+// dealer_closeout_email (X3) — the Phase-5 EXIT skill: near-zero-LLM, state-only
+// (close + suppress, never delete). NO browser, NO LLM, so no emitter setter and
+// no resume vocabulary beyond the shared BatchReviewResumeSchema.
+export {
+  dealerCloseoutEmailWorkflow,
+  DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
+  __setDealerCloseoutEmailDepsForTests,
+  __resetDealerCloseoutEmailDepsForTests,
+  type DealerCloseoutEmailWorkflowDeps,
+} from "./dealerCloseoutEmail.js";
+
+// The dealer_closeout_email contracts (typed input/output incl. the
+// `skip_all_reset` member; the batch_review resume reuses the shared schema).
+export {
+  DealerCloseoutEmailInputSchema,
+  DealerCloseoutEmailOutputSchema,
+} from "./dealerCloseoutEmailContracts.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

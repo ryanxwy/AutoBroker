@@ -15,6 +15,10 @@
 import type { Workflow } from "@mastra/core/workflows";
 
 import {
+  dealerCloseoutEmailWorkflow,
+  DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
+} from "./dealerCloseoutEmail.js";
+import {
   dealerGeosearchWorkflow,
   DEALER_GEOSEARCH_WORKFLOW_ID,
 } from "./dealerGeosearch.js";
@@ -34,6 +38,10 @@ import {
   incentiveScrapeWorkflow,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
 } from "./incentiveScrape.js";
+import {
+  negotiationFollowupWorkflow,
+  NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
+} from "./negotiationFollowup.js";
 import {
   inventoryLinkScanWorkflow,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
@@ -57,6 +65,8 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [DEALER_INBOX_CHECK_WORKFLOW_ID]: dealerInboxCheckWorkflow as unknown as Workflow,
   [DEALER_HYGIENE_WORKFLOW_ID]: dealerHygieneWorkflow as unknown as Workflow,
   [DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID]: dealerWebLeadSubmitWorkflow as unknown as Workflow,
+  [NEGOTIATION_FOLLOWUP_WORKFLOW_ID]: negotiationFollowupWorkflow as unknown as Workflow,
+  [DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID]: dealerCloseoutEmailWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

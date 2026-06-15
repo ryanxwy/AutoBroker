@@ -261,6 +261,13 @@ export type ProfileStopCode = (typeof PROFILE_STOP_CODES)[number];
 const PROFILE_STOP_ERROR_NAMES: ReadonlySet<string> = new Set([
   "DealerGeosearchStopError",
   "DealerInboxCheckStopError",
+  // The three irreversible-send skills' pin-required STOPs (so a pin_required /
+  // no_active_profile / multiple_active_profiles STOP renders as the pin-picker /
+  // intake-pointer card, not a raw error line). DealerWebLeadSubmitStopError was
+  // absent before X2/X3 (a pre-existing X1 gap) — added here alongside.
+  "DealerWebLeadSubmitStopError",
+  "NegotiationFollowupStopError",
+  "DealerCloseoutEmailStopError",
 ]);
 
 /**

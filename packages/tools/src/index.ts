@@ -407,6 +407,34 @@ export {
   type QuoteSituation,
 } from "./dealerComm/quoteSituation.js";
 
+// negotiation_followup (X2) — the single-transaction contact-flip writer + the
+// per-profile follow-up reads (open-quote OTD situation, needs-response thread
+// candidates, the reply-thread snapshot, and the 4-level reply-target inputs).
+export { setPrimaryReplyTarget } from "./dealerComm/contactFlip.js";
+export {
+  readQuoteSituationForThread,
+  listFollowupCandidateThreads,
+  readThreadSnapshotForDraft,
+  readReplyTargetInputs,
+  type QuoteSituationRead,
+  type FollowupCandidateThread,
+  type ThreadSnapshotRead,
+  type ReplyTargetInputsRead,
+} from "./inbox/followupReads.js";
+
+// dealer_closeout_email (X3) — the closeout target assembler (open threads minus
+// closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)
+// + the atomic per-dealer send+close+suppress tool (gated send fuse-blocked under
+// the L1 fuse; the close + thread_suppression commit locally in one transaction).
+export {
+  assembleCloseoutTargets,
+  closeAndSuppressDealer,
+  type CloseoutTarget,
+  type AssembleResult,
+  type CloseoutDealerOutcome,
+  type CloseAndSuppressArgs,
+} from "./closeout/sendCloseSuppress.js";
+
 // dealer_inbox_check deterministic core — the pure 4-pass discovery query
 // builder + dealer-token sweep + first-pass-wins thread dedupe + the
 // deterministic quoted/replied classifier, the CRM-relay sender detector, the

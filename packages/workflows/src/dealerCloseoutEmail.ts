@@ -1,0 +1,582 @@
+/**
+ * dealer_closeout_email — the Phase-5 EXIT skill (irreversible-send, [fake-send]).
+ * ONE flat linear Mastra `createWorkflow`: 7 named steps chained with `.then()`,
+ * no nested workflow. NEAR-ZERO-LLM (the closeout body/subject are deterministic
+ * templates, so this skill wires NO LLM step and there is no emit_result — the
+ * #1244 mixing surface is structurally absent) and STATE-ONLY (it closes a thread
+ * + writes a suppression row; it NEVER deletes). ONE human suspend (BEFORE any
+ * side effect): the batch_review card. decline → terminal zero sends / zero
+ * writes; "SKIP ALL" → the typed `skip_all_reset` outcome (the Phase-4
+ * pipeline_reset hand-off, call site STUBBED) — a SUCCESS, never a throw.
+ *
+ * STEP MAP:
+ *   0 resolveProfile — EXPLICIT-PIN REQUIRED (this skill never infers, not even
+ *                      the single-active case): a pin-less input STOPs by the
+ *                      generalized classifier (0 → no_active_profile pointing at
+ *                      intake; 1 → pin_required; 2+ → multiple_active_profiles ask
+ *                      by vehicle). A supplied pin must resolve `pinned`.
+ *   1 assembleTargets — assembleCloseoutTargets: bound dealers with an OPEN thread
+ *                      MINUS dealers already closeout-suppressed (the idempotency
+ *                      floor — a 2nd run re-assembles zero targets → no-op), each
+ *                      resolved to a reply address by the 4-rung ladder. A dealer
+ *                      with no resolvable address is SKIPPED + counted
+ *                      (skippedNoAddress, shown BEFORE the gate). Zero candidates →
+ *                      a graceful exit (not an error, no suspend).
+ *   2 draft         — per target: buildCloseoutDraft default body + renderCloseoutSubject
+ *                      [deterministic, NO LLM]. The default body IS the sent body
+ *                      unless the user EDITs (an EDITed body re-asserts in the
+ *                      atomic tool before the send).
+ *   3 batchReview   — SUSPEND ① batch_review. decline → terminal `declined` (zero
+ *                      writes). approve naming the explicit dealer-id list → SEND;
+ *                      approve whose ids do NOT intersect the reviewed targets
+ *                      ("SKIP ALL") → the typed `skip_all_reset` outcome (NOT a
+ *                      throw — the irreversible reset hand-off, call site stubbed).
+ *   4 sendCloseClose — per approved dealer SERIAL: closeAndSuppressDealer (the ONE
+ *                      atomic tool — the gated send folded around the LOCAL
+ *                      threads.state='closed' + thread_suppression INSERT in one
+ *                      txn; the close+suppress commit on approve regardless of the
+ *                      L1 fuse, the send alone is fuse-gated). A mid-batch
+ *                      short-circuit (a gate-declined send) halts: trailing dealers
+ *                      write NOTHING. Collect closed_thread_ids + emails_sent.
+ *   5 transition    — search_profiles.status='closed' once any closeout landed (a
+ *                      LOCAL state-only product write, not gated). declined /
+ *                      skip_all / zero-closed → unchanged.
+ *   6 confirm       — ZERO-LLM summary (closed_thread_ids, emails_sent,
+ *                      profile_status_transition, skipped_no_address).
+ *
+ * COMMUNICATION RED LINES: the closeout body never carries a budget (the template
+ * has none AND assertNoBudget belts the body/subject inside closeAndSuppressDealer,
+ * again inside sendAndRecord's buildRaw). No real email is ever sent — the send is
+ * a fake draft+promote against the FakeGmailAdapter, fuse-blocked under BLOCK=1.
+ *
+ * Dependency wall: imports @mastra/* (legal only here), @autobroker/tools (the
+ * resolver + profile-dealer reads + assembleCloseoutTargets + closeAndSuppressDealer
+ * + the closeout-draft templates — the ONLY DB/side-effect paths), and the
+ * skill-local contracts. NO harness facade (zero-LLM), NO browser (email-only).
+ */
+
+import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod";
+
+import {
+  assembleCloseoutTargets as assembleCloseoutTargetsImpl,
+  buildCloseoutDraft,
+  closeAndSuppressDealer as closeAndSuppressDealerImpl,
+  getDb,
+  listProfileRows as listProfileRowsImpl,
+  renderCloseoutSubject,
+  resolveActiveProfile as resolveActiveProfileImpl,
+  type Approver,
+  type CloseoutDealerOutcome,
+  type CloseoutTarget,
+} from "@autobroker/tools";
+
+import {
+  BatchReviewResumeSchema,
+  BatchReviewSuspendSchema,
+  DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
+  DealerCloseoutEmailInputSchema,
+  DealerCloseoutEmailOutputSchema,
+  DealerCloseoutEmailStopError,
+  profileStopCode,
+} from "./dealerCloseoutEmailContracts.js";
+
+export { DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID };
+
+// ---------------------------------------------------------------------------
+// the internal post-suspend approver (the load-bearing gate call — verbatim X1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The post-suspend approver. The human ALREADY approved at the batch_review ①
+ * suspend; this Approver records that fact for the gate. The L1 fuse (inside
+ * sendAndRecord, reached through closeAndSuppressDealer) is the real floor under
+ * the harness — under BLOCK=1 it returns `blocked` (zero messages rows) so a fake
+ * send can never mint a real receipt. In a disarmed-fuse offline test the approve
+ * path runs the real draft-then-promote against the FAKE backend and the row is
+ * written. ONE module constant, reused by every closeout.
+ */
+const APPROVED: Approver = { async decide() { return true; } };
+
+// ---------------------------------------------------------------------------
+// dependency-injection seam (test-runner-guarded, mirroring the other skills)
+// ---------------------------------------------------------------------------
+
+/**
+ * The runtime collaborators the workflow steps call. Injectable so the offline
+ * tests drive the REAL flat Mastra workflow → REAL suspend/resume chain against a
+ * deterministic tmp DB, WITHOUT module mocks. X3 has NO LLM and NO browser, so the
+ * only injectable side-effect path is the atomic closeAndSuppressDealer (which in
+ * production reaches the real gated send + the local close+suppress txn).
+ */
+export interface DealerCloseoutEmailWorkflowDeps {
+  /** The typed three-branch profile resolver (tools layer; PIN-required use). */
+  resolveProfile: typeof resolveActiveProfileImpl;
+  /** All active profile rows (the pin-less STOP candidate list). */
+  listActiveProfiles: (db: ReturnType<typeof getDb>) => Record<string, unknown>[];
+  /** Read one profile row by id (resolved pin → load the row). */
+  readProfileById: (db: ReturnType<typeof getDb>, id: string) => Record<string, unknown> | null;
+  /** Assemble the addressable closeout targets (deterministic, read-only). */
+  assembleCloseoutTargets: typeof assembleCloseoutTargetsImpl;
+  /** The ONE atomic per-dealer unit: the gated send + the LOCAL close+suppress txn. */
+  closeAndSuppressDealer: typeof closeAndSuppressDealerImpl;
+  /** Flip the profile status to 'closed' on completion (a LOCAL state-only write,
+   *  not gated). */
+  closeProfileStatus: (db: ReturnType<typeof getDb>, id: string) => void;
+  /** The DB accessor the read/write closures run through (tools layer). */
+  getDb: typeof getDb;
+}
+
+const realDeps: DealerCloseoutEmailWorkflowDeps = {
+  resolveProfile: resolveActiveProfileImpl,
+  listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
+  readProfileById: (db, id) =>
+    (db.$client
+      .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
+      .get(id) as Record<string, unknown> | undefined) ?? null,
+  assembleCloseoutTargets: assembleCloseoutTargetsImpl,
+  closeAndSuppressDealer: closeAndSuppressDealerImpl,
+  closeProfileStatus: (db, id) => {
+    // State-only: the run's completion flips the profile to 'closed'. (This is the
+    // skill's own lifecycle transition — a plain status write, not the soft-delete
+    // close lifecycle with its audit/slot machinery.)
+    db.$client.prepare("UPDATE search_profiles SET status = 'closed' WHERE search_profile_id = ?").run(id);
+  },
+  getDb,
+};
+
+let injectedDeps: DealerCloseoutEmailWorkflowDeps | undefined;
+
+function deps(): DealerCloseoutEmailWorkflowDeps {
+  return injectedDeps ?? realDeps;
+}
+
+/** TEST-ONLY seam — refused outside a test runner (a production caller must never
+ *  redirect the resolver, the send path, or the DB write). */
+export function __setDealerCloseoutEmailDepsForTests(
+  partial: Partial<DealerCloseoutEmailWorkflowDeps>,
+): void {
+  if (process.env["VITEST"] === undefined && process.env["NODE_ENV"] !== "test") {
+    throw new Error(
+      "__setDealerCloseoutEmailDepsForTests is a test-only seam (refused outside a test runner)",
+    );
+  }
+  injectedDeps = { ...realDeps, ...partial };
+}
+
+/** Restore the real wiring between test cases. */
+export function __resetDealerCloseoutEmailDepsForTests(): void {
+  injectedDeps = undefined;
+}
+
+// ---------------------------------------------------------------------------
+// the threaded workflow state (each step's input == prior step's output)
+// ---------------------------------------------------------------------------
+
+/** One closeout target carried through the steps (card row + send inputs). Flat
+ *  plain-JSON (Mastra snapshots it) and LEAN. */
+const CloseoutTargetSchema = z.object({
+  dealer_id: z.string(),
+  dealer_name: z.string(),
+  /** The open thread to close, or null (a new top-level message; no row to flip). */
+  thread_id: z.string().nullable(),
+  /** The backend thread id the reply rides into (travels with thread_id). */
+  gmail_thread_id: z.string().nullable(),
+  /** The reply address resolved by the 4-rung ladder. */
+  reply_to: z.string(),
+  /** The contact display name (for an optional greeting). */
+  contact_name: z.string().nullable(),
+  /** The deterministic closeout body the draft step fills (null until drafted). */
+  body: z.string().nullable(),
+  /** The closeout subject the draft step fills (null until drafted). */
+  subject: z.string().nullable(),
+});
+type CloseoutTargetState = z.infer<typeof CloseoutTargetSchema>;
+
+/** The accumulating state threaded through the 7 steps. */
+const CloseoutStateSchema = z.object({
+  searchProfileId: z.string(),
+  /** The minimal message-template profile (drives the deterministic body/subject). */
+  messageProfile: z.object({
+    year: z.number().nullable(),
+    make: z.string().nullable(),
+    model: z.string().nullable(),
+  }),
+  /** The buyer follow-up email the closeout is sent from. */
+  followUpEmail: z.string().nullable(),
+  /** Terminal-declined flag (batch_review decline): every later step passes. */
+  declined: z.boolean(),
+  /** "SKIP ALL": the user skipped every row → the Phase-4 reset hand-off. */
+  skipAllReset: z.boolean(),
+  /** The addressable closeout targets (the card rows + send inputs). */
+  targets: z.array(CloseoutTargetSchema),
+  /** Dealers dropped for no resolvable reply address (count only, shown pre-gate). */
+  skippedNoAddress: z.number().int(),
+  /** The approved dealer ids from suspend ① (intersected with the card set). */
+  approvedDealerIds: z.array(z.string()).nullable(),
+  /** The threads flipped to 'closed' (the closeout receipt). */
+  closedThreadIds: z.array(z.string()),
+  /** How many fake sends were PROMOTED (0 under BLOCK=1 — the fuse blocked them). */
+  emailsSent: z.number().int(),
+});
+type CloseoutState = z.infer<typeof CloseoutStateSchema>;
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+/** Re-hydrate a typed state from a step's loosely-typed inputData. */
+function asState(inputData: unknown): CloseoutState {
+  return CloseoutStateSchema.parse(inputData);
+}
+
+/** Run `fn` against the SHARED tools-layer DB connection. */
+function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
+  return fn(deps().getDb());
+}
+
+/** "2026 Hyundai Tucson"-style label for the ask/pin stops. */
+function rowVehicleLabel(row: Record<string, unknown>): string {
+  return [row["year"], row["make"], row["model"], row["trim"]]
+    .filter((x) => x !== null && x !== undefined && x !== "")
+    .join(" ");
+}
+
+/** Map the tool's CloseoutTarget into the threaded state shape (snapshot-safe). */
+function targetStateFrom(t: CloseoutTarget): CloseoutTargetState {
+  return {
+    dealer_id: t.dealerId,
+    dealer_name: t.dealerName,
+    thread_id: t.threadId,
+    gmail_thread_id: t.gmailThreadId,
+    reply_to: t.replyTo,
+    contact_name: t.contactName,
+    body: null,
+    subject: null,
+  };
+}
+
+/** Rebuild the tool's CloseoutTarget from a threaded state row (for the send). */
+function toCloseoutTarget(t: CloseoutTargetState): CloseoutTarget {
+  return {
+    dealerId: t.dealer_id,
+    dealerName: t.dealer_name,
+    threadId: t.thread_id,
+    gmailThreadId: t.gmail_thread_id,
+    replyTo: t.reply_to,
+    contactName: t.contact_name,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// step 0 — resolveProfile (EXPLICIT-PIN REQUIRED; never infers newest)
+// ---------------------------------------------------------------------------
+
+const resolveProfileStep = createStep({
+  id: "resolveProfile",
+  inputSchema: DealerCloseoutEmailInputSchema,
+  outputSchema: CloseoutStateSchema,
+  execute: async ({ inputData }) => {
+    // EXPLICIT-PIN REQUIRED (this skill never infers, not even the single-active
+    // case — that is the thin edge of "pick newest" an exit skill must not take).
+    // A pin-less input STOPs by the generalized classifier.
+    if (inputData.search_profile_id === null) {
+      const active = withDb((db) => deps().listActiveProfiles(db));
+      const code = profileStopCode(active.length);
+      if (code === "no_active_profile") {
+        throw new DealerCloseoutEmailStopError(
+          "no_active_profile",
+          "No active search profile found — dealer_closeout_email needs one to know " +
+            "which dealers to close out. Run /search_profile_intake to create a " +
+            "profile, then re-run /dealer_closeout_email.",
+        );
+      }
+      const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
+      throw new DealerCloseoutEmailStopError(
+        code, // pin_required (1 active) | multiple_active_profiles (2+)
+        `Pin a search first: ${labels}. dealer_closeout_email only closes out a search ` +
+          "you have explicitly pinned — pick one from the Searches list, then re-run " +
+          "/dealer_closeout_email.",
+      );
+    }
+
+    // A supplied pin must still be active; a stale/closed/missing pin is rejected.
+    const resolved = withDb((db) =>
+      deps().resolveProfile(db, { threadPin: inputData.search_profile_id! }),
+    );
+    if (resolved.kind !== "pinned") {
+      throw new DealerCloseoutEmailStopError(
+        "pin_required",
+        "That pinned search is no longer active. Pick an active search from the " +
+          "Searches list and re-run /dealer_closeout_email.",
+      );
+    }
+
+    const row = withDb((db) => deps().readProfileById(db, resolved.profile.id)) ?? {};
+    const yearRaw = row["year"];
+    return {
+      searchProfileId: String(row["search_profile_id"] ?? resolved.profile.id),
+      messageProfile: {
+        year: typeof yearRaw === "number" ? yearRaw : null,
+        make: typeof row["make"] === "string" ? (row["make"] as string) : null,
+        model: typeof row["model"] === "string" ? (row["model"] as string) : null,
+      },
+      followUpEmail:
+        typeof row["follow_up_email"] === "string" ? (row["follow_up_email"] as string) : null,
+      declined: false,
+      skipAllReset: false,
+      targets: [],
+      skippedNoAddress: 0,
+      approvedDealerIds: null,
+      closedThreadIds: [],
+      emailsSent: 0,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 1 — assembleTargets (deterministic; idempotency floor + skip-no-address)
+// ---------------------------------------------------------------------------
+
+const assembleTargetsStep = createStep({
+  id: "assembleTargets",
+  inputSchema: CloseoutStateSchema,
+  outputSchema: CloseoutStateSchema,
+  execute: async ({ inputData }) => {
+    const state = asState(inputData);
+    // Bound dealers with an OPEN thread MINUS already-closeout-suppressed dealers
+    // (the idempotency floor: a 2nd run re-assembles zero already-closed targets).
+    // A dealer with no resolvable reply address is dropped + counted here.
+    const { targets, skippedNoAddress } = withDb((db) =>
+      deps().assembleCloseoutTargets(db, state.searchProfileId),
+    );
+    return {
+      ...state,
+      targets: targets.map(targetStateFrom),
+      skippedNoAddress,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 2 — draft (the deterministic closeout body + subject) [NO LLM]
+// ---------------------------------------------------------------------------
+
+const draftStep = createStep({
+  id: "draft",
+  inputSchema: CloseoutStateSchema,
+  outputSchema: CloseoutStateSchema,
+  execute: async ({ inputData }) => {
+    const state = asState(inputData);
+    if (state.declined) return state;
+
+    // The default body IS the sent body. There is no LLM — the template is fully
+    // deterministic; an optional EDIT (a future surface) re-asserts inside the
+    // atomic tool before the send.
+    const subject = renderCloseoutSubject(state.messageProfile);
+    const drafted = state.targets.map((t) => ({
+      ...t,
+      body: buildCloseoutDraft(state.messageProfile, { contactName: t.contact_name }),
+      subject,
+    }));
+    return { ...state, targets: drafted };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 3 — batchReview (SUSPEND ①; decline / SKIP ALL / approve branches)
+// ---------------------------------------------------------------------------
+
+/** The batch_review card question (fixed copy). */
+const BATCH_REVIEW_QUESTION = "Send closeout emails to these dealers?";
+
+const batchReviewStep = createStep({
+  id: "batchReview",
+  inputSchema: CloseoutStateSchema,
+  outputSchema: CloseoutStateSchema,
+  resumeSchema: BatchReviewResumeSchema,
+  suspendSchema: BatchReviewSuspendSchema,
+  execute: async ({ inputData, resumeData, suspend }) => {
+    const state = asState(inputData);
+    if (state.declined) return state;
+
+    // GRACEFUL EXIT: zero candidates → no card, no suspend, no error. The confirm
+    // step renders a `sent`-shape result with empty arrays.
+    if (state.targets.length === 0) {
+      return { ...state, approvedDealerIds: [] };
+    }
+
+    // FIRST PASS — the batch_review card (gate before prose). Nothing has been
+    // written and no send face has been reached.
+    if (resumeData === undefined) {
+      return (await suspend({
+        kind: "batch_review",
+        question: BATCH_REVIEW_QUESTION,
+        targets: state.targets.map((t) => ({
+          dealer_id: t.dealer_id,
+          name: t.dealer_name,
+          website: "",
+        })),
+        // The skipped-no-address count lives in the confirm summary, never a row.
+        skipped: [],
+        total_targets: state.targets.length,
+        total_in_radius: state.targets.length,
+      })) as never;
+    }
+
+    const resume = BatchReviewResumeSchema.parse(resumeData);
+    if (resume.action === "decline") {
+      return { ...state, declined: true };
+    }
+    // approve → the explicit id list intersected with the reviewed targets.
+    const targetIds = new Set(state.targets.map((t) => t.dealer_id));
+    const approved = [...new Set(resume.approved_dealer_ids)].filter((id) => targetIds.has(id));
+    // "SKIP ALL" — the user skipped every row, so the approved set resolves to ZERO
+    // reviewed targets. This is NOT a throw (X1 throws here): it is the typed
+    // `skip_all_reset` outcome, the Phase-4 pipeline_reset hand-off (call site
+    // stubbed — the workflow records the intent and stops cleanly).
+    if (approved.length === 0) {
+      return { ...state, skipAllReset: true };
+    }
+    return { ...state, approvedDealerIds: approved };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 4 — sendCloseClose (the atomic gated send + the LOCAL close+suppress)
+// ---------------------------------------------------------------------------
+
+const sendCloseCloseStep = createStep({
+  id: "sendCloseClose",
+  inputSchema: CloseoutStateSchema,
+  outputSchema: CloseoutStateSchema,
+  execute: async ({ inputData, runId }) => {
+    const state = asState(inputData);
+    if (state.declined || state.skipAllReset) return state; // pass-through (zero writes).
+
+    const approved = new Set(state.approvedDealerIds ?? []);
+    const ordered = state.targets.filter((t) => approved.has(t.dealer_id));
+
+    const closed: string[] = [];
+    let emailsSent = 0;
+    let shortCircuited = false;
+
+    for (const t of ordered) {
+      // A mid-batch short-circuit (a gate-declined send) halts the loop: trailing
+      // dealers write NOTHING (no send, no close, no suppress).
+      if (shortCircuited) continue;
+
+      const outcome: CloseoutDealerOutcome = await withDb((db) =>
+        deps().closeAndSuppressDealer({
+          db,
+          approver: APPROVED,
+          runId,
+          searchProfileId: state.searchProfileId,
+          target: toCloseoutTarget(t),
+          body: t.body ?? "",
+          subject: t.subject ?? "",
+          fromEmail: state.followUpEmail ?? "",
+        }),
+      );
+
+      if (outcome.kind === "short_circuit") {
+        shortCircuited = true;
+        continue;
+      }
+      // `closed`: the local close+suppress committed (whether the send went out or
+      // was fuse-blocked). The thread (if any) is now closed; count a PROMOTED send
+      // only when the fuse did NOT block it (BLOCK=1 → sendBlocked → emails_sent=0
+      // while closed_thread_ids is still non-empty).
+      if (t.thread_id !== null) closed.push(t.thread_id);
+      emailsSent += outcome.sendBlocked ? 0 : 1;
+    }
+
+    return { ...state, closedThreadIds: closed, emailsSent };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 5 — transition (search_profiles.status='closed' on completion) [state-only]
+// ---------------------------------------------------------------------------
+
+const transitionStep = createStep({
+  id: "transition",
+  inputSchema: CloseoutStateSchema,
+  outputSchema: CloseoutStateSchema,
+  execute: async ({ inputData }) => {
+    const state = asState(inputData);
+    // The profile flips to 'closed' ONLY when the run completed a real closeout.
+    // A decline / SKIP ALL / zero-closed run leaves the profile unchanged.
+    if (state.declined || state.skipAllReset || state.closedThreadIds.length === 0) {
+      return state;
+    }
+    withDb((db) => deps().closeProfileStatus(db, state.searchProfileId));
+    return state;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 6 — confirm (ZERO-LLM summary) [deterministic]
+// ---------------------------------------------------------------------------
+
+const confirmStep = createStep({
+  id: "confirm",
+  inputSchema: CloseoutStateSchema,
+  outputSchema: DealerCloseoutEmailOutputSchema,
+  execute: async ({ inputData }) => {
+    const state = asState(inputData);
+    if (state.declined) {
+      return { outcome: "declined" as const };
+    }
+    if (state.skipAllReset) {
+      return {
+        outcome: "skip_all_reset" as const,
+        search_profile_id: state.searchProfileId,
+        reset_requested: true as const,
+        summary: "Skipped all closeouts; pipeline reset requested.",
+      };
+    }
+
+    const closedCount = state.closedThreadIds.length;
+    const profileTransition: "closed" | "unchanged" = closedCount > 0 ? "closed" : "unchanged";
+    // emails_sent counts PROMOTED sends (0 under BLOCK=1 — the fuse blocked the
+    // send even though the local close landed); phrase it honestly.
+    const summary =
+      (closedCount === 0
+        ? "No dealers to close out"
+        : `Closed out ${closedCount} dealer(s); ${state.emailsSent} email(s) sent`) +
+      (state.skippedNoAddress > 0
+        ? `; ${state.skippedNoAddress} dealer(s) skipped (no reply address)`
+        : "") +
+      ".";
+
+    return {
+      outcome: "sent" as const,
+      resolution: "pinned" as const,
+      closed_thread_ids: state.closedThreadIds,
+      emails_sent: state.emailsSent,
+      profile_status_transition: profileTransition,
+      skipped_no_address: state.skippedNoAddress,
+      summary,
+      search_profile_id: state.searchProfileId,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// the flat workflow (7 steps, .then() chain, .commit())
+// ---------------------------------------------------------------------------
+
+export const dealerCloseoutEmailWorkflow = createWorkflow({
+  id: "dealer_closeout_email",
+  inputSchema: DealerCloseoutEmailInputSchema,
+  outputSchema: DealerCloseoutEmailOutputSchema,
+})
+  .then(resolveProfileStep)
+  .then(assembleTargetsStep)
+  .then(draftStep)
+  .then(batchReviewStep)
+  .then(sendCloseCloseStep)
+  .then(transitionStep)
+  .then(confirmStep)
+  .commit();
