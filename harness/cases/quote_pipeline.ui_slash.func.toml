@@ -1,0 +1,109 @@
+# harness/cases/quote_pipeline.ui_slash.func.toml — FUNCTIONAL lane: the
+# quote_pipeline (O1) ORCHESTRATOR fan-out + completion-record proof.
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the deterministic
+# DI stubs (NO live LLM, NO live geocode) and the test-only /__e2e/* routes. The
+# quote_pipeline_ready world has audit + compare work to do (2 unaudited quotes)
+# but NO un-extracted replies (extract satisfied) and a FRESH incentive cache
+# (scrape satisfied), so a /quote_pipeline run fans out ONLY the two zero-LLM
+# children — audit + compare — and lands `ok` WITHOUT ever touching a model.
+#
+#   step 1 (seed_and_pin, kind="ui"): install the quote_pipeline_ready world (1
+#     active Tucson profile + 1 bound dealer + 2 unaudited dealer_quotes + a FRESH
+#     manufacturer_incentives row + a targeted listing/thread) and PIN the profile
+#     through the REAL Searches popover (quote_pipeline is pin_required → the
+#     launch threads the pin as search_profile_id).
+#
+#   step 2 (pipeline_run, kind="skill"): "/quote_pipeline" via the REAL chat-rail
+#     slash. The orchestrator re-derives the four predicates over the live DB
+#     (extract=false, scrape=false, audit=true, compare=true), fans out the audit
+#     child (which UPSERTs quote_audits rows) and the compare child (pure read),
+#     then writes ONE audit_log completion row. Anchors:
+#       - run_status done                  (a completed pipeline is a `done` run)
+#       - driver_kind deepseek_apikey      (the child reply_extract policy label;
+#                                           this run never extracts, but the label
+#                                           is the constant default-provider lane)
+#       - no_external_mutation             (KEYSTONE — the fan-out reaches NO send;
+#                                           the only writes are local quote_audits
+#                                           + the one audit_log row)
+#       - cost_and_time optional=true      (no model call this run — empty ledger ok)
+#       - malformed_tool_call absent       (the orchestrator runs no LLM step)
+#       - table_min_rows audit_log         (the COMPLETION row landed: action
+#         scope=global min>=1               quote_pipeline.complete — the
+#                                           audit_log key carries a nullable
+#                                           search_profile_id, so the honest scope
+#                                           is global)
+#       - table_min_rows quote_audits      (the audit CHILD wrote: the 2 seeded
+#         scope=profile delta_min>=1        quotes start unaudited → ≥1 quote_audits
+#                                           row after the run, scoped to the pinned
+#                                           profile)
+
+[meta]
+id = "quote_pipeline_ui_slash_func"
+archetype = "B"
+skills = ["quote_pipeline"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "quote_pipeline_ready"
+purpose = "Seed the orchestrator-ready world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid SEL"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the slash run → the fan-out → the completion row ----------------
+
+[[steps]]
+id = "pipeline_run"
+skill = "quote_pipeline"
+purpose = "/quote_pipeline over the seeded world: audit + compare fan out, one completion row lands, zero external mutation."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# The ONE audit_log completion row landed (action quote_pipeline.complete). The
+# audit_log key carries a nullable search_profile_id, so the honest scope is global.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "audit_log"
+scope = "global"
+min = 1
+
+# The audit CHILD wrote quote_audits (≥1 of the 2 seeded unaudited quotes), proving
+# the fan-out actually composed the child — scoped to the pinned profile.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "quote_audits"
+scope = "profile"
+delta_min = 1

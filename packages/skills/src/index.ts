@@ -21,6 +21,7 @@ export {
   INVENTORY_COMPARE_SKILL_ID,
   QUOTE_AUDIT_SKILL_ID,
   QUOTE_COMPARE_SKILL_ID,
+  QUOTE_PIPELINE_SKILL_ID,
   getSkill,
 } from "./registry.js";
 export type {

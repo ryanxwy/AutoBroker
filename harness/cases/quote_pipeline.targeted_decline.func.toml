@@ -1,0 +1,102 @@
+# harness/cases/quote_pipeline.targeted_decline.func.toml — FUNCTIONAL lane: the
+# quote_pipeline (O1) TARGETED-VIN SEND keystone Δ=0 decline twin.
+#
+# Run via `pnpm ui:functional` (--fixture, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1,
+# NO live LLM). A target_listing_id input branches to the targeted-VIN OTD
+# sub-path (the fan-out is skipped): the orchestrator resolves the listing + its
+# inbound thread, builds the VIN-specific OTD ask, and SUSPENDS the sensitive SEND
+# approval BEFORE any outbound. A Decline must be terminal `declined` with ZERO
+# messages (no send) and ZERO dealer_quotes delta (no record write).
+#
+#   step 1 (seed_and_pin, kind="ui"): install quote_pipeline_ready (the targeted
+#     listing carries a VIN + an inbound thread/message on its dealer) + PIN the
+#     profile (pin_required).
+#
+#   step 2 (targeted_decline, kind="skill"): "/quote_pipeline target_listing_id=
+#     qp-listing-1" via the REAL chat-rail slash (target_listing_id rides as a
+#     slash key=value arg the parser coerces into the start body). The SEND
+#     approval renders on the gate-banner track → the driver clicks the REAL
+#     Decline button. Anchors:
+#       - run_status declined            (Decline = a `declined` terminal).
+#       - approval_gate                  (the SEND card rendered; decline answered it).
+#       - no_external_mutation           (KEYSTONE — the suspend precedes ANY send).
+#       - malformed_tool_call absent     (no LLM step).
+#       - table_min_rows messages        (messages Δ=0 EXACT — no fake-send draft on
+#         scope=profile delta_min 0 exact  a decline).
+#       - table_min_rows dealer_quotes   (dealer_quotes Δ=0 EXACT — no targeted
+#         scope=profile delta_min 0 exact  record write on a decline; the 2 seeded
+#                                          quotes are unchanged).
+
+[meta]
+id = "quote_pipeline_targeted_decline_func"
+archetype = "B"
+skills = ["quote_pipeline"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "quote_pipeline_ready"
+purpose = "Seed the orchestrator-ready world (targeted listing carries a VIN + inbound thread) and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid SEL"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the targeted slash → the SEND card → DECLINE (Δ=0) --------------
+
+[[steps]]
+id = "targeted_decline"
+skill = "quote_pipeline"
+purpose = "Decline at the REAL targeted-VIN SEND card — declined terminal, zero messages, zero dealer_quotes write."
+gate_policy = "deny_all"
+launch = "chat_slash"
+
+[steps.input_inline.slash_args]
+target_listing_id = "qp-listing-1"
+
+# The sensitive SEND approval renders on the gate-banner track, then Decline (the
+# never-hidden decline). The targeted SEND suspend rides kind:"approval".
+[[steps.resume]]
+on = "approval"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]       # aborted{user_declined} projects to `declined`.
+
+[[steps.anchors]]
+kind = "approval_gate"      # the SEND card rendered; the decline answered it.
+
+[[steps.anchors]]
+kind = "no_external_mutation"   # the suspend precedes ANY send → keystone clean.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# messages Δ=0 EXACT — no fake-send draft row on a decline.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "messages"
+scope = "profile"
+delta_min = 0
+exact = true
+
+# dealer_quotes Δ=0 EXACT — no targeted record write on a decline.
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_quotes"
+scope = "profile"
+delta_min = 0
+exact = true

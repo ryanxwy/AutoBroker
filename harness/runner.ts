@@ -1688,7 +1688,18 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         }
         await driver.pickProfileStopOption(label, stepMaxMs);
       } else {
-        await driver.typeInChatRail(`/${skill}`);
+        // chat_slash: a bare `/skill`, OR with input_inline.slash_args appended as
+        // key=value tokens (the parser coerces them to start-body args, e.g.
+        // quote_pipeline's target_listing_id / dry_run). Strings only — the slash
+        // grammar carries no nesting.
+        const slashArgs = step.inputInline?.["slash_args"];
+        let slashText = `/${skill}`;
+        if (slashArgs !== undefined && slashArgs !== null && typeof slashArgs === "object") {
+          for (const [k, v] of Object.entries(slashArgs as Record<string, unknown>)) {
+            slashText += ` ${k}=${String(v)}`;
+          }
+        }
+        await driver.typeInChatRail(slashText);
       }
       // A freeform start runs the prefill LLM call BEFORE the ack/navigation,
       // so the route wait gets the full step budget.
