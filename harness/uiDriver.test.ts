@@ -41,6 +41,10 @@ function fakeDriver(states: Record<string, FakeLocatorState> = {}): {
       isVisible: () => Promise.resolve(st.visible ?? false),
       isDisabled: () => Promise.resolve(st.disabled ?? false),
       textContent: () => Promise.resolve(st.text ?? null),
+      // recordDomState's "visible" expect auto-waits via waitFor; the fake
+      // resolves when scripted visible, rejects (the timeout twin) when not.
+      waitFor: () =>
+        st.visible ? Promise.resolve() : Promise.reject(new Error("not visible (fake timeout)")),
     };
     return {
       first: () => node,
