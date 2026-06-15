@@ -511,6 +511,11 @@ export {
   type UpsertAuditOutcome,
 } from "./quotes/auditPersist.js";
 export { flagCodesFromJson } from "./quotes/flags.js";
+export {
+  rankQuotesForProfile,
+  type QuoteRanking,
+  type CompareResult,
+} from "./quotes/compare.js";
 
 // Pure validators (post-validation + safety rules).
 export {

@@ -25,6 +25,7 @@ import type {
   DealerRow,
   InventoryCompareResult,
   ProfileList,
+  QuoteCompareResult,
   ThreadList,
 } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
@@ -32,6 +33,7 @@ import { Link } from "../router.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileEditPanel } from "./ProfileEditPanel.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
+import { QuoteCompare } from "./QuoteCompare.js";
 import { ThreadsSection } from "./ThreadsSection.js";
 
 /** The data kinds the Canvas's read views render — stable module-level literals
@@ -45,6 +47,10 @@ const THREAD_KINDS = ["threads", "messages"] as const;
 /** The Inventory candidates section refetches on a listings pulse (the
  *  inventory scans write that family; the ranker itself writes nothing). */
 const INVENTORY_KINDS = ["listings"] as const;
+/** The Quote compare section refetches on a quotes pulse (the quote_audit skill
+ *  writes that family — fresh audit flags should re-rank the panel; the compare
+ *  ranker itself writes nothing). */
+const QUOTE_KINDS = ["quotes"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -339,6 +345,11 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const quotes = useAsync<QuoteCompareResult>(
+    () => client.listProfileQuoteCompare(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
@@ -348,6 +359,7 @@ export function Canvas({
   useDataRefetch(DEALER_KINDS, dealers.refetch);
   useDataRefetch(THREAD_KINDS, threads.refetch);
   useDataRefetch(INVENTORY_KINDS, inventory.refetch);
+  useDataRefetch(QUOTE_KINDS, quotes.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -373,6 +385,7 @@ export function Canvas({
           <ProfileCard client={client} snapshot={active} onSaved={profiles.refetch} />
           <DealerTiles dealers={dealers} />
           <InventoryCandidates inventory={inventory} />
+          <QuoteCompare quotes={quotes} />
           <ThreadsSection
             threads={threads}
             dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}

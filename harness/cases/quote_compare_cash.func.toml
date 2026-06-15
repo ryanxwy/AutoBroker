@@ -1,0 +1,51 @@
+# harness/cases/quote_compare_cash.func.toml — FUNCTIONAL lane: the empty
+# quote-compare panel (a CASH profile → both buckets empty).
+#
+# The twin of quote_compare.func.toml: an active CASH profile with a cash-mode
+# quote. The cash gate leaves BOTH the finance and lease buckets empty regardless
+# of any quotes present, so the Canvas Quote compare section renders the empty
+# state with the verbatim "Compared 0 quotes." copy.
+#
+# A separate single-step case (not a second step of the populated case) because
+# each functional case owns one server+DB and apply-fixture is additive — two
+# compare worlds in one case would collide on the shared dealer/profile rows.
+#
+# WHY THIS ANCHOR IS MEANINGFUL: the empty state proves the cash gating short-
+# circuits to empty buckets even with a quote present (the ranker returns
+# finance:[] lease:[] for a cash preference). No budget number appears. Δ=0 by
+# construction (a runless kind="ui" step).
+
+[meta]
+id = "quote_compare_cash_func"
+archetype = "B"
+skills = ["quote_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "cash_empty_panel"
+kind = "ui"
+fixture_state = "quote_compare_cash_world"
+purpose = "A cash profile shows the empty compare state with the verbatim zero-quotes copy (both buckets empty despite a cash-mode quote)."
+
+# The cash world seeds a bound dealer; clicking its tile waits for the active
+# projection (incl. the Quote compare section) to mount.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-dealer-tile"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-compare"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-compare-empty"
+expect = "text"
+value = "Compared 0 quotes."

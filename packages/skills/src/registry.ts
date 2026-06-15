@@ -89,6 +89,10 @@ export const INVENTORY_COMPARE_SKILL_ID = "inventory_compare" as const;
  *  idempotent quote_audits upsert, zero-LLM). */
 export const QUOTE_AUDIT_SKILL_ID = "quote_audit" as const;
 
+/** The quote compare skill id (deterministic compare ranker; read-only,
+ *  zero-LLM, no suspend). */
+export const QUOTE_COMPARE_SKILL_ID = "quote_compare" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -119,14 +123,14 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "infer_ok",
   },
   {
-    id: "quote_compare",
+    id: QUOTE_COMPARE_SKILL_ID,
     slash: "/quote_compare",
     title: "Quote compare",
     summary: "Compare multiple dealer quotes side by side.",
     phase: 1,
     riskClass: "read_only",
-    status: "planned",
-    workflowId: null,
+    status: "implemented",
+    workflowId: QUOTE_COMPARE_SKILL_ID,
     inputs: ["quotes"],
     outputs: "comparison",
     profilePin: "infer_ok",

@@ -47,6 +47,10 @@ import {
   QUOTE_AUDIT_WORKFLOW_ID,
 } from "./quoteAudit.js";
 import {
+  quoteCompareWorkflow,
+  QUOTE_COMPARE_WORKFLOW_ID,
+} from "./quoteCompare.js";
+import {
   searchProfileIntakeWorkflow,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
 } from "./searchProfileIntake.js";
@@ -62,6 +66,7 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [DEALER_HYGIENE_WORKFLOW_ID]: dealerHygieneWorkflow as unknown as Workflow,
   [INVENTORY_COMPARE_WORKFLOW_ID]: inventoryCompareWorkflow as unknown as Workflow,
   [QUOTE_AUDIT_WORKFLOW_ID]: quoteAuditWorkflow as unknown as Workflow,
+  [QUOTE_COMPARE_WORKFLOW_ID]: quoteCompareWorkflow as unknown as Workflow,
 };
 
 /** The ids recoverOnBoot scans (the keys of REGISTERED_WORKFLOWS). */

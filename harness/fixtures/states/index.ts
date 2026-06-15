@@ -46,6 +46,7 @@ import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { multiActive } from "./multiActive.js";
 import { quoteAuditWorld } from "./quoteAuditWorld.js";
+import { quoteCompareCashWorld, quoteCompareWorld } from "./quoteCompareWorld.js";
 import { repliesArrived } from "./repliesArrived.js";
 
 /** One named deterministic world the functional lane can install. */
@@ -75,6 +76,8 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
   [quoteAuditWorld.id]: quoteAuditWorld,
+  [quoteCompareWorld.id]: quoteCompareWorld,
+  [quoteCompareCashWorld.id]: quoteCompareCashWorld,
   [repliesArrived.id]: repliesArrived,
 };
 

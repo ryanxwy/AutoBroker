@@ -340,6 +340,39 @@ export const InventoryCompareResultSchema = z
 export type InventoryCompareResult = z.infer<typeof InventoryCompareResultSchema>;
 
 // ---------------------------------------------------------------------------
+// Quote compare — GET /api/profiles/:id/quote-compare: the deterministic compare
+// ranker payload (finance + lease buckets, both always present, gated by the
+// profile's financing preference). Each ranked row carries OTD + the
+// preformatted APR/MF + down/DAS + monthly + the latest-audit flag codes; NO
+// budget anywhere. A tolerant (passthrough) shape keeps extra server fields.
+// ---------------------------------------------------------------------------
+
+export const QuoteCompareRowSchema = z
+  .object({
+    rank: z.number(),
+    dealer_id: z.string(),
+    dealer_name: z.string(),
+    otd_total: z.number().nullable(),
+    apr_or_mf: z.string(),
+    down_or_das: z.number().nullable(),
+    monthly: z.number().nullable(),
+    audit_flag_summary: z.array(z.string()),
+    financing_mode: z.string(),
+  })
+  .passthrough();
+export type QuoteCompareRow = z.infer<typeof QuoteCompareRowSchema>;
+
+export const QuoteCompareResultSchema = z
+  .object({
+    financingPreference: z.string().nullable(),
+    finance: z.array(QuoteCompareRowSchema),
+    lease: z.array(QuoteCompareRowSchema),
+    totalRanked: z.number(),
+  })
+  .passthrough();
+export type QuoteCompareResult = z.infer<typeof QuoteCompareResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Skills manifest — GET /api/skills. routes.ts:78-86 (SKILL_MANIFEST), returned
 // as a single-element array (routes.ts:279).
 // ---------------------------------------------------------------------------

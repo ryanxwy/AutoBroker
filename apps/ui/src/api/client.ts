@@ -38,6 +38,7 @@ import {
   KeyPresenceResponseSchema,
   KeyProbeResultSchema,
   InventoryCompareResultSchema,
+  QuoteCompareResultSchema,
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
@@ -57,6 +58,7 @@ import {
   type FormDecisionAck,
   type FormDecisionBody,
   type InventoryCompareResult,
+  type QuoteCompareResult,
   type KeyPresenceResponse,
   type KeyProbeResult,
   type Mode,
@@ -290,6 +292,18 @@ export class ApiClient {
       this.url(`/api/profiles/${encodeURIComponent(id)}/inventory-compare`),
     );
     return decode(res, InventoryCompareResultSchema);
+  }
+
+  /** GET /api/profiles/:id/quote-compare → the deterministic compare-ranker
+   *  payload (finance + lease buckets, gated by the profile's financing
+   *  preference) for one profile (read-only; 404 for a missing profile). The
+   *  Quote compare canvas section renders these — negotiated dealer quotes
+   *  ranked by OTD, never a budget number. */
+  async listProfileQuoteCompare(id: string): Promise<QuoteCompareResult> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/quote-compare`),
+    );
+    return decode(res, QuoteCompareResultSchema);
   }
 
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */

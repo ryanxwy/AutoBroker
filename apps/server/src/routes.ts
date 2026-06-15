@@ -47,6 +47,7 @@ import {
   listProfileThreadRows,
   listProfileMessageRows,
   rankInventoryForProfile,
+  rankQuotesForProfile,
   update as updateProfile,
   close as closeProfile,
   restore as restoreProfile,
@@ -557,6 +558,28 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         throw new RouteError("not_found", 404, `profile ${id} not found`);
       }
       return withDb((db) => rankInventoryForProfile(db, id));
+    },
+  );
+
+  // ---- GET /api/profiles/:id/quote-compare — read-only ranked quotes -------
+  // The Quote compare canvas section reads this; delegates DOWN into the
+  // tools-layer compare ranker closure (routes never open the product DB or run
+  // SQL — the SQLite invariant). The payload is the two mode buckets (finance +
+  // lease, both always present) gated by the profile's financing preference,
+  // each ranked by OTD, joined to the latest audit per quote. No budget anywhere.
+  app.get(
+    "/api/profiles/:id/quote-compare",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id } = req.params as { id: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      const result = withDb((db) => rankQuotesForProfile(db, id));
+      return {
+        ...result,
+        totalRanked: result.finance.length + result.lease.length,
+      };
     },
   );
 
