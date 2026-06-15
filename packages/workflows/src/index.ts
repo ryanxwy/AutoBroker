@@ -547,6 +547,49 @@ export {
   type QuoteCompareWorkflowDeps,
 } from "./quoteCompare.js";
 
+// The quote_pipeline skill contracts (Phase 4 / Wave O — the ORCHESTRATOR's typed
+// input/output, the targeted-VIN SEND suspend/resume vocabulary, the typed STOP
+// codes, and the audit_log completion record shape). Skill-local, single-use (see
+// the header rationale in the contracts file).
+export {
+  QUOTE_PIPELINE_WORKFLOW_ID,
+  PIPELINE_STEPS,
+  FINAL_STATES,
+  PIPELINE_RESOLUTIONS,
+  quotePipelineInputSchema,
+  quotePipelineOutputSchema,
+  quotePipelineCompletedSchema,
+  quotePipelineDeclinedSchema,
+  pipelineCompletionRecordSchema,
+  QuotePipelineStopError,
+  QuotePipelineSendSuspendSchema,
+  QuotePipelineSendResumeSchema,
+  type QuotePipelineInput,
+  type QuotePipelineOutput,
+  type QuotePipelineCompleted,
+  type QuotePipelineDeclined,
+  type PipelineCompletionRecord,
+  type PipelineStep,
+  type FinalState,
+  type PipelineResolution,
+  type QuotePipelineStopCode,
+  type QuotePipelineSendSuspend,
+  type QuotePipelineSendResume,
+} from "./quotePipelineContracts.js";
+
+// The quote_pipeline skill workflow (Phase 4 / Wave O — the ORCHESTRATOR: 5 flat
+// steps, ONE targeted-VIN SEND suspend [fake-send]; the fan-out composes the
+// EXISTING child skill workflows via mastra.getWorkflow(childId).createRun().start;
+// final_state/next_action are computed in CODE). Test-only deps seam exported
+// alongside (the child composer + the send/record path are injectable).
+export {
+  quotePipelineWorkflow,
+  __setQuotePipelineDepsForTests,
+  __resetQuotePipelineDepsForTests,
+  type QuotePipelineWorkflowDeps,
+  type ChildRunOutcome,
+} from "./quotePipeline.js";
+
 // The registered-workflows map for createMastraInstance({ workflows }) and the
 // ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {

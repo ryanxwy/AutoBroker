@@ -1,0 +1,97 @@
+# harness/cases/quote_pipeline.dry_run.func.toml — FUNCTIONAL lane: the
+# quote_pipeline (O1) DRY-RUN preview proof — Δ=0 (zero writes, zero child runs).
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots with the deterministic
+# DI stubs (NO live LLM). dry_run=true short-circuits the orchestrator BEFORE any
+# step body: it returns a `completed` would-run preview listing the applicable
+# steps and performs ZERO work — no child workflow is composed, and NO audit_log
+# completion row is written. The seeded world is left untouched (Δ=0).
+#
+#   step 1 (seed_and_pin, kind="ui"): install quote_pipeline_ready + PIN the
+#     profile (pin_required).
+#
+#   step 2 (pipeline_dry_run, kind="skill"): "/quote_pipeline dry_run=true" via the
+#     REAL chat-rail slash (the dry_run flag rides as a slash key=value arg the
+#     parser coerces into the start body). Anchors:
+#       - run_status done                  (a preview is a `done` run)
+#       - driver_kind deepseek_apikey      (the constant default-provider label)
+#       - no_external_mutation             (KEYSTONE — nothing outbound)
+#       - cost_and_time optional=true      (no model call — empty ledger ok)
+#       - malformed_tool_call absent       (no LLM step)
+#       - table_min_rows audit_log         (Δ=0: NO completion row — a dry run
+#         scope=global exact 0              writes nothing; the global count stays 0)
+#       - table_min_rows quote_audits      (Δ=0: the audit child never ran, so the
+#         scope=profile delta_min 0 exact   2 seeded quotes are still unaudited)
+
+[meta]
+id = "quote_pipeline_dry_run_func"
+archetype = "B"
+skills = ["quote_pipeline"]
+risk_group = "O"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: install the fixture world + pin the profile ---------------------
+
+[[steps]]
+id = "seed_and_pin"
+kind = "ui"
+fixture_state = "quote_pipeline_ready"
+purpose = "Seed the orchestrator-ready world and pin the active search (pin_required)."
+pin_label = "2026 Hyundai Tucson Hybrid SEL"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "topbar-searches"
+expect = "visible"
+
+# ---- step 2: the dry-run slash → the would-run preview (Δ=0) -----------------
+
+[[steps]]
+id = "pipeline_dry_run"
+skill = "quote_pipeline"
+purpose = "/quote_pipeline dry_run=true: a would-run preview, zero writes, zero child runs (Δ=0)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[steps.input_inline.slash_args]
+dry_run = "true"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# Δ=0: a dry run writes NO completion row (global count stays 0).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "audit_log"
+scope = "global"
+min = 0
+exact = true
+
+# Δ=0: the audit child never ran (the 2 seeded quotes stay unaudited).
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "quote_audits"
+scope = "profile"
+delta_min = 0
+exact = true

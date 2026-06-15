@@ -96,6 +96,11 @@ export const QUOTE_AUDIT_SKILL_ID = "quote_audit" as const;
  *  zero-LLM, no suspend). */
 export const QUOTE_COMPARE_SKILL_ID = "quote_compare" as const;
 
+/** The quote pipeline skill id (the Phase-4 orchestrator; pin_required; composes
+ *  reply-extract → incentive-scrape → audit → compare, or the targeted-VIN
+ *  OTD fake-send sub-path). */
+export const QUOTE_PIPELINE_SKILL_ID = "quote_pipeline" as const;
+
 /** All 17 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
@@ -250,15 +255,15 @@ export const SKILLS: readonly SkillDef[] = [
 
   // ---- Phase 4 · orchestration / report (compose + destructive-local) ----
   {
-    id: "quote_pipeline",
+    id: QUOTE_PIPELINE_SKILL_ID,
     slash: "/quote_pipeline",
     title: "Quote pipeline",
     summary: "Orchestrate the post-reply quote chain (reply extract → incentive scrape → audit → compare) over existing DB state.",
     phase: 4,
     riskClass: "local_write",
-    status: "planned",
-    workflowId: null,
-    inputs: ["profile_id"],
+    status: "implemented",
+    workflowId: QUOTE_PIPELINE_SKILL_ID,
+    inputs: ["profile_id", "target_listing_id", "dry_run"],
     outputs: "pipeline_report",
     profilePin: "pin_required",
   },

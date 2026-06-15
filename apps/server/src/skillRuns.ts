@@ -68,6 +68,7 @@ import {
   INVENTORY_SITE_SCAN_SKILL_ID,
   QUOTE_AUDIT_SKILL_ID,
   QUOTE_COMPARE_SKILL_ID,
+  QUOTE_PIPELINE_SKILL_ID,
   REPLY_EXTRACT_SKILL_ID,
 } from "@autobroker/skills";
 import {
@@ -88,6 +89,7 @@ import {
   PIPELINE_RESET_WORKFLOW_ID,
   QUOTE_AUDIT_WORKFLOW_ID,
   QUOTE_COMPARE_WORKFLOW_ID,
+  QUOTE_PIPELINE_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
@@ -99,6 +101,7 @@ import {
   OemFirstEncounterResumeSchema,
   PipelineResetResumeSchema,
   ContactFlipApprovalResumeSchema,
+  QuotePipelineSendResumeSchema,
   requestContactFlipForRun,
   type createMastraInstance,
 } from "@autobroker/workflows";
@@ -1607,6 +1610,108 @@ export const dealerReplyExtractDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
+// quote_pipeline (O1) — the Phase-4 ORCHESTRATOR descriptor (local_write; the
+// FINAL skill). It composes the child skill workflows over existing DB state, or
+// — when target_listing_id is supplied — runs the targeted-VIN OTD sub-path (one
+// fake-send through the L2 gate). The skill's only LLM touch is delegated to the
+// child reply_extract (the orchestrator runs no LLM step of its own), so
+// driver_kind DERIVES from policy("dealer_reply_extract") and flips in lock-step
+// with a registry-string provider swap (NOT the zero-LLM constant — a pipeline
+// run that extracts replies IS a live-LLM run through its child).
+//
+// ONE suspend kind: the targeted-VIN SEND approval ("targeted") — approve fires
+// the gated fake-send + records the quote; decline → terminal `declined` (zero
+// outbound, zero record write). The fan-out lane never suspends here (the
+// incentive_scrape OEM first-encounter ask is handled autonomously by the
+// orchestrator — see the SCRAPE-SUSPEND NOTE in quotePipeline.ts).
+// ===========================================================================
+
+/** The quote_pipeline start body fields. All optional with null defaults: a
+ *  pin-less input STOPs in the workflow (pin_required); dry_run + the single-store
+ *  target_listing_id default off; envelope fields ride the same body and are
+ *  ignored (non-strict object). */
+const QuotePipelineStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+  target_listing_id: z.string().nullable().optional(),
+  // slash key=value args arrive as strings; accept "true"/"false"/"1"/"0" too.
+  dry_run: z.union([z.boolean(), z.string()]).optional(),
+});
+
+/** The quote_pipeline workflow inputData shape. */
+interface QuotePipelineStartInput {
+  search_profile_id: string | null;
+  dry_run: boolean;
+  target_listing_id: string | null;
+}
+
+/** Coerce a slash-string / boolean dry_run into a boolean (default false). */
+function coerceDryRun(raw: boolean | string | undefined): boolean {
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "string") return raw === "true" || raw === "1";
+  return false;
+}
+
+/** The quote_pipeline descriptor. */
+export const quotePipelineDescriptor: RunDescriptor = {
+  skillId: QUOTE_PIPELINE_SKILL_ID,
+  workflowId: QUOTE_PIPELINE_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the child reply_extract useCase to —
+  // a pipeline run extracts dealer replies through that live-LLM child, so the
+  // label flips in lock-step with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("dealer_reply_extract").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): QuotePipelineStartInput {
+    const parsed = QuotePipelineStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return {
+      search_profile_id: parsed.data.search_profile_id ?? null,
+      dry_run: coerceDryRun(parsed.data.dry_run),
+      target_listing_id: parsed.data.target_listing_id ?? null,
+    };
+  },
+
+  // The ONE suspend is the targeted-VIN SEND approval on the "targeted" step: the
+  // approval card carries no content — accept → {action:"approve"} (fire the
+  // gated fake-send + record), decline/cancel → {action:"decline"} (terminal,
+  // zero outbound/zero record). The workflow re-validates with
+  // QuotePipelineSendResumeSchema, so this is the wire→typed translation only.
+  resume(
+    step: string,
+    decision: FormDecisionBody["decision"],
+    _suspendPayload: Record<string, unknown>,
+  ): { resumeData: unknown; ackBody: Record<string, unknown> } {
+    if (step !== "targeted") {
+      throw new FormDecisionError(
+        "unsupported_action",
+        400,
+        `no resume schema for suspended step '${step}'`,
+      );
+    }
+    const inner = decision.action === "accept" ? "approve" : "decline";
+    return {
+      resumeData: QuotePipelineSendResumeSchema.parse({ action: inner }),
+      ackBody: { action: decision.action, content: null },
+    };
+  },
+
+  // The workflow's logCompletion step templates the full deterministic summary —
+  // pass it through (declined runs never reach summaryText).
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Quote pipeline complete.";
+  },
+};
+
+// ===========================================================================
 // The descriptor registry + the skill-agnostic run service.
 // ===========================================================================
 
@@ -1625,6 +1730,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   inventoryCompareDescriptor,
   quoteAuditDescriptor,
   quoteCompareDescriptor,
+  quotePipelineDescriptor,
   dealerWebLeadSubmitDescriptor,
   negotiationFollowupDescriptor,
   dealerCloseoutEmailDescriptor,
@@ -1731,6 +1837,13 @@ function affectedKinds(workflowId: string): string[] {
       // the latest audit per quote and ranks in memory). The success pulse fires
       // with kinds:[] — the UI treats it as nothing-to-refetch.
       return [];
+    case QUOTE_PIPELINE_WORKFLOW_ID:
+      // The orchestrator's children write quote_audits (audit), dealer_quotes
+      // (reply-extract + the targeted-VIN record), manufacturer_incentives
+      // (scrape), inventory_listings (the targeted listing is re-touched), and
+      // messages (the targeted fake-send draft). Name the data families those
+      // surfaces refetch on.
+      return ["quotes", "incentives", "listings", "messages"];
     case DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID:
       // A submitted lead writes a lead_submissions row, may update a dealer's
       // contact_email, and an email fallback writes a (fake) messages row.

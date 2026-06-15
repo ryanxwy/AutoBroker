@@ -75,6 +75,10 @@ import {
   QUOTE_COMPARE_WORKFLOW_ID,
 } from "./quoteCompare.js";
 import {
+  quotePipelineWorkflow,
+  QUOTE_PIPELINE_WORKFLOW_ID,
+} from "./quotePipeline.js";
+import {
   searchProfileIntakeWorkflow,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
 } from "./searchProfileIntake.js";
@@ -94,6 +98,7 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [INVENTORY_COMPARE_WORKFLOW_ID]: inventoryCompareWorkflow as unknown as Workflow,
   [QUOTE_AUDIT_WORKFLOW_ID]: quoteAuditWorkflow as unknown as Workflow,
   [QUOTE_COMPARE_WORKFLOW_ID]: quoteCompareWorkflow as unknown as Workflow,
+  [QUOTE_PIPELINE_WORKFLOW_ID]: quotePipelineWorkflow as unknown as Workflow,
   [DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID]: dealerWebLeadSubmitWorkflow as unknown as Workflow,
   [NEGOTIATION_FOLLOWUP_WORKFLOW_ID]: negotiationFollowupWorkflow as unknown as Workflow,
   [DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID]: dealerCloseoutEmailWorkflow as unknown as Workflow,

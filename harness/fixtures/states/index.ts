@@ -54,6 +54,7 @@ import { leadSubmitReady } from "./leadSubmitReady.js";
 import { multiActive } from "./multiActive.js";
 import { quoteAuditWorld } from "./quoteAuditWorld.js";
 import { quoteCompareCashWorld, quoteCompareWorld } from "./quoteCompareWorld.js";
+import { quotePipelineReady } from "./quotePipelineReady.js";
 import { repliesArrived } from "./repliesArrived.js";
 
 /** One named deterministic world the functional lane can install. */
@@ -87,6 +88,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [quoteAuditWorld.id]: quoteAuditWorld,
   [quoteCompareWorld.id]: quoteCompareWorld,
   [quoteCompareCashWorld.id]: quoteCompareCashWorld,
+  [quotePipelineReady.id]: quotePipelineReady,
   [repliesArrived.id]: repliesArrived,
   [leadSubmitReady.id]: leadSubmitReady,
   [followupReady.id]: followupReady,

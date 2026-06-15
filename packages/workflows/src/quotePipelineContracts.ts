@@ -110,3 +110,66 @@ export const pipelineCompletionRecordSchema = z.object({
   next_action: z.string(),
 });
 export type PipelineCompletionRecord = z.infer<typeof pipelineCompletionRecordSchema>;
+
+// ---------------------------------------------------------------------------
+// typed STOP (the resolve step — pin_required three-branch + targeted aborts)
+// ---------------------------------------------------------------------------
+
+/**
+ * The typed STOP codes. The profile branch reuses the pin_required vocabulary
+ * (0 active → no_active_profile pointing at intake; exactly 1 → pin_required,
+ * never silently run; 2+ → multiple_active_profiles, ask by vehicle name). The
+ * targeted-VIN sub-path adds two defensive aborts (the listing/inbound guards
+ * resolveTargetedListing throws — surfaced as a STOP, never a crash).
+ */
+export type QuotePipelineStopCode =
+  | "pin_required"
+  | "no_active_profile"
+  | "multiple_active_profiles"
+  | "targeted_listing_not_found"
+  | "targeted_no_inbound_thread";
+
+/** Typed STOP from the workflow. The message is the user-facing wording — the
+ *  server surfaces it verbatim on the run's error frame. */
+export class QuotePipelineStopError extends Error {
+  readonly code: QuotePipelineStopCode;
+  constructor(code: QuotePipelineStopCode, message: string) {
+    super(message);
+    this.name = "QuotePipelineStopError";
+    this.code = code;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// the targeted-VIN SEND suspend / resume (the single HITL point — fake-send)
+// ---------------------------------------------------------------------------
+
+/**
+ * The targeted-VIN OTD SEND suspend payload (the spec_inline the banner-track
+ * approval card renders). kind/summary/sensitive are what the generic approval
+ * surface shows; the typed fields are the audit record of WHAT is being sent.
+ * The outbound OTD ask on ONE specific listing is a sensitive scope (it sends a
+ * real email — fake-send under the fuse), so the card renders the danger frame.
+ * IDs + short strings only; the payload stays well under the renderable bound.
+ */
+export const QuotePipelineSendSuspendSchema = z
+  .object({
+    kind: z.literal("approval"),
+    summary: z.string(),
+    sensitive: z.literal(true),
+    dealerId: z.string(),
+    listingId: z.string(),
+    vin: z.string(),
+    reason: z.literal("targeted_otd_send"),
+  })
+  .strict();
+export type QuotePipelineSendSuspend = z.infer<typeof QuotePipelineSendSuspendSchema>;
+
+/** The resume vocabulary for the targeted SEND suspend: approve (fire the gated
+ *  fake-send + record the quote) or decline (zero outbound, zero record write →
+ *  the `declined` output member). */
+export const QuotePipelineSendResumeSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("approve") }),
+  z.object({ action: z.literal("decline") }),
+]);
+export type QuotePipelineSendResume = z.infer<typeof QuotePipelineSendResumeSchema>;
