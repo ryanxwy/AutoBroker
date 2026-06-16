@@ -70,7 +70,7 @@ import {
 } from "@autobroker/tools";
 import type { SearchProfile } from "@autobroker/core";
 
-import { IMPLEMENTED_SKILLS, INTAKE_SKILL_ID } from "@autobroker/skills";
+import { IMPLEMENTED_SKILLS, INTAKE_SKILL_ID, SKILLS } from "@autobroker/skills";
 
 import {
   SkillRunService,
@@ -92,6 +92,31 @@ import {
   type RouterContext,
 } from "@autobroker/workflows";
 import type { SessionService, IntakeScopeNotice } from "./sessions.js";
+
+/** Skill ids whose `profilePin` posture is "pin_required": they must run against
+ *  an explicitly pinned search and the workflow STOPs "pin_required" when the
+ *  input carries no search_profile_id. The NL router and a normal slash launch
+ *  carry none, so without help they STOP even when the session IS pinned (only
+ *  the STOP-picker, which passes search_profile_id, worked). */
+const PIN_REQUIRED_SKILL_IDS: ReadonlySet<string> = new Set(
+  SKILLS.filter((s) => s.profilePin === "pin_required").map((s) => s.id),
+);
+
+/** Honor an EXPLICIT session pin at launch: thread the pinned search into a
+ *  pin_required skill's start body so it runs on that search instead of STOPping.
+ *  An explicit search_profile_id already on the body (the STOP-picker's pick)
+ *  always wins; infer_ok/exempt skills are untouched, so the profile-ASK
+ *  inference path is unchanged. Threading the user's own pin is NOT inference. */
+export function withSessionPin(
+  body: Record<string, unknown>,
+  skillId: string,
+  pinnedProfileId: string | null,
+): Record<string, unknown> {
+  if (pinnedProfileId === null) return body;
+  if (!PIN_REQUIRED_SKILL_IDS.has(skillId)) return body;
+  if (body["search_profile_id"] != null) return body;
+  return { ...body, search_profile_id: pinnedProfileId };
+}
 
 /** The headless start ENVELOPE: the skill id + the session linkage. The
  *  per-skill input fields (e.g. intake's input_mode/freeform_text/seed_fields)
@@ -326,11 +351,22 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       throw new RouteError("unknown_skill", 400, `unknown skill '${body.skill}'`);
     }
 
+    // A pinned session threads its pin into a pin_required skill's input — the UI
+    // sends no search_profile_id on a normal slash launch (only the STOP-picker
+    // does). Mirrors POST /api/route so both launch paths honor an explicit pin.
+    let slashPin: string | null = null;
+    if (body.session_id != null && body.session_id.length > 0) {
+      const session = await sessions.get(body.session_id);
+      slashPin = session?.pinned_profile_id ?? null;
+    }
+
     // Validate + shape the per-skill input BEFORE the session fork below, so a
     // bad body leaves no stray forked session behind.
     let input: unknown;
     try {
-      input = descriptor.buildInput(req.body as Record<string, unknown>);
+      input = descriptor.buildInput(
+        withSessionPin(req.body as Record<string, unknown>, body.skill, slashPin),
+      );
     } catch (err) {
       if (err instanceof FormDecisionError) throw fromFormDecisionError(err);
       throw err;
@@ -434,7 +470,13 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // owns validation). A throw → clarify (do NOT 400 the user into a dead end).
     let input: unknown;
     try {
-      input = descriptor.buildInput({ skill: decision.skillId, ...decision.inputData });
+      input = descriptor.buildInput(
+        withSessionPin(
+          { skill: decision.skillId, ...decision.inputData },
+          decision.skillId,
+          pinnedProfileId,
+        ),
+      );
     } catch {
       reply.code(200);
       return {
