@@ -4,7 +4,17 @@
 # default branch, deep-researches the root cause from the logs, reproduces the
 # failing gate locally, implements a fix, verifies it with the single green
 # gate (scripts/green.sh), self-reviews the diff, then commits & pushes the fix
-# to a branch and opens a PR (so CI re-runs and a human can merge).
+# to a branch and opens a PR for a human to merge.
+#
+# NOTE on the fix PR re-running CI: a PR/push made with the *default*
+# GITHUB_TOKEN will NOT trigger ci.yml (GitHub suppresses recursive workflow
+# runs from the default token). CI re-runs only when the action operates via
+# the installed Claude GitHub App token (set up in step 1 below), whose pushes
+# do trigger workflows. If CI does not re-run on the fix PR, that token wiring
+# is why — not the fix.
+#
+# NOTE on scheduling: `schedule` triggers fire only from the copy of this file
+# on the DEFAULT branch (main). It will not run from a feature branch.
 #
 # ── One-time setup required ────────────────────────────────────────────────
 #   1. Install the Claude GitHub App on this repo:  https://github.com/apps/claude
@@ -119,12 +129,19 @@ jobs:
               Re-read your own diff critically: correctness, scope creep, accidental
               changes, and any safety-invariant impact. Trim anything unrelated.
 
-            STEP 7 — Commit, push, open PR.
-              Create a branch  claude/ci-fix-<failed-run-id>  off the failing commit's
-              branch (main). Commit with a clear message using the repo convention
-              (phaseN/<skill>: ... when a skill is involved, otherwise a plain
-              descriptive ci-fix message). Push the branch and open a PR targeting
-              main, titled to name the gate that was failing, with a body containing:
-              the root-cause note, the fix summary, the link to the failed run, and
-              confirmation that `bash scripts/green.sh` passes locally. Do NOT push
-              directly to main. Do NOT merge the PR — leave it for human review.
+            STEP 7 — Commit, push, open PR (avoid duplicates).
+              FIRST check for an already-open fix PR for this failure:
+                gh pr list --state open --head-prefix is not supported, so list and
+                filter:  gh pr list --state open --json number,headRefName,title
+              If an open PR whose branch matches  claude/ci-fix-*  already targets
+              the same root cause / gate, push your additional commits to THAT
+              branch and add a brief update comment instead of opening a new PR.
+              Otherwise create a branch  claude/ci-fix-<failed-run-id>  off the
+              failing commit's branch (main). Commit with a clear message using the
+              repo convention (phaseN/<skill>: ... when a skill is involved,
+              otherwise a plain descriptive ci-fix message). Push the branch and
+              open a PR targeting main, titled to name the gate that was failing,
+              with a body containing: the root-cause note, the fix summary, the link
+              to the failed run, and confirmation that `bash scripts/green.sh`
+              passes locally. Do NOT push directly to main. Do NOT merge the PR —
+              leave it for human review.
