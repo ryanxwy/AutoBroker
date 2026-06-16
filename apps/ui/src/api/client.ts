@@ -45,6 +45,7 @@ import {
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
+  PurgeProfileAckSchema,
   RouteAckSchema,
   SaveKeyAckSchema,
   SessionListSchema,
@@ -72,6 +73,7 @@ import {
   type PatchSessionBody,
   type ProfileList,
   type ProfileRow,
+  type PurgeProfileAck,
   type RouteAck,
   type RouteRequestBody,
   type SecretKeyId,
@@ -285,6 +287,18 @@ export class ApiClient {
       { method: "POST" },
     );
     return decode(res, ProfileRowSchema);
+  }
+
+  /** POST /api/profiles/:id/purge → { ok, counts } — the IRREVERSIBLE hard-delete
+   *  (erases every local row scoped to the profile; not restorable, unlike
+   *  closeProfile). A missing profile → 404 not_found. The dashboard guards this
+   *  behind an explicit confirm modal. */
+  async purgeProfile(id: string): Promise<PurgeProfileAck> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/purge`),
+      { method: "POST" },
+    );
+    return decode(res, PurgeProfileAckSchema);
   }
 
   /** GET /api/profiles/:id/dealers → the dealer rows bound to one profile,

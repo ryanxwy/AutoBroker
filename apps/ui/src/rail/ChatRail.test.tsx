@@ -35,11 +35,17 @@ function renderRail(activeAwaiting: unknown | null) {
       scopeNotice={null}
       pinnedProfileId={null}
       pinLabel={null}
+      currentSessionId={null}
+      skills={[]}
+      hasActiveProfile={false}
+      deepseekReady={true}
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}
       onStartIntake={() => {}}
       onStopPick={() => {}}
+      onSelectSession={() => {}}
+      onRunSkill={() => {}}
     />,
   );
 }
@@ -52,10 +58,13 @@ describe("ChatRail — input disabled while a gate is pending", () => {
     r.unmount();
   });
 
-  it("leaves the input live when nothing is awaiting (activeAwaiting === null)", () => {
+  it("leaves the textarea live when nothing is awaiting (activeAwaiting === null)", () => {
     const r = renderRail(null);
+    // The gate is clear → the textarea is NOT gate-disabled (a real user can type).
+    // The Send button additionally requires non-empty text via the composer's own
+    // canSend logic (independent of the gate), so it stays disabled on this empty
+    // render — the gate's load-bearing control is the textarea, asserted here.
     expect((r.get("chat-input-textarea") as HTMLTextAreaElement).disabled).toBe(false);
-    expect((r.get("chat-send") as HTMLButtonElement).disabled).toBe(false);
     r.unmount();
   });
 });

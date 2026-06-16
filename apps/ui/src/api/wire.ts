@@ -289,6 +289,15 @@ export type ProfileRow = z.infer<typeof ProfileRowSchema>;
 export const ProfileListSchema = z.array(ProfileRowSchema);
 export type ProfileList = z.infer<typeof ProfileListSchema>;
 
+/** POST /api/profiles/:id/purge ack — the irreversible hard-delete. `counts` is
+ *  the per-table erase tally (only tables that had ≥1 row, plus
+ *  `sessions_unpinned`). */
+export const PurgeProfileAckSchema = z.object({
+  ok: z.boolean(),
+  counts: z.record(z.string(), z.number()),
+});
+export type PurgeProfileAck = z.infer<typeof PurgeProfileAckSchema>;
+
 /** PATCH /api/profiles/:id body (camelCase; routes.ts PatchProfileBodySchema).
  *  ONLY the editable preference fields — identity is frozen at confirm and is
  *  never sent (the server 409s it). The four color/trim/feature columns are

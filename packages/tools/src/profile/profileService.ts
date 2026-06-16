@@ -546,6 +546,152 @@ export function restore(db: Db, id: string, opts: { actor?: string; reason?: str
   return rowToProfile(updated);
 }
 
+// ---------------------------------------------------------------------------
+// purge — the HARD-DELETE (irreversible). Distinct from close() (soft-delete,
+// restorable): purge() erases every local row scoped to the profile.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every product table that carries a `search_profile_id` — the full set a hard
+ * purge erases. These names are a FIXED in-code allowlist (never user input), so
+ * interpolating them into the DELETE statement is injection-safe. Order does not
+ * matter: purge() defers FK checks to commit. Shared entities (e.g. `dealers`)
+ * are deliberately ABSENT — only the per-profile binding `profile_dealers` is
+ * profile-scoped. `audit_log` is included so the prior trail is erased; purge()
+ * then writes ONE tombstone row recording the erase.
+ */
+const PROFILE_SCOPED_TABLES = [
+  "audit_log",
+  "dealer_contacts",
+  "dealer_inventory_sources",
+  "dealer_quotes",
+  "inventory_listings",
+  "lead_submissions",
+  "message_analysis",
+  "message_claims",
+  "message_questions",
+  "messages",
+  "offers",
+  "pipeline_state",
+  "profile_dealers",
+  "quote_audits",
+  "skill_runs",
+  "thread_routing",
+  "thread_suppression",
+  "threads",
+  "fake_mailbox_messages",
+  "fake_mailbox_threads",
+] as const;
+
+/**
+ * Attachment children that DON'T carry a `search_profile_id` of their own — they
+ * reference their parent message by FK (ON DELETE no action). The profile-scoped
+ * parent delete (messages / fake_mailbox_messages) would orphan them; with FK
+ * checks deferred to commit that orphan is a commit-time violation that rolls the
+ * whole purge back. So delete them by their PARENT's profile scope. (table +
+ * parent are a FIXED in-code allowlist — not user input — so interpolation is
+ * injection-safe.) */
+const ATTACHMENT_CHILD_TABLES = [
+  { table: "message_attachments", parent: "messages" },
+  { table: "fake_mailbox_attachments", parent: "fake_mailbox_messages" },
+] as const;
+
+const UNPIN_SESSIONS =
+  "UPDATE sessions SET pinned_profile_id = NULL WHERE pinned_profile_id = ?";
+const DELETE_PROFILE_ROW = "DELETE FROM search_profiles WHERE search_profile_id = ?";
+
+export interface PurgeResult {
+  /** false → no such profile row existed (the route maps that to 404). */
+  deleted: boolean;
+  /** Per-table row counts erased (only tables that had ≥1 row), plus the
+   *  `sessions_unpinned` count — the payload of the tombstone audit row. */
+  counts: Record<string, number>;
+}
+
+/**
+ * HARD-DELETE a profile and every local row scoped to it — IRREVERSIBLE, no
+ * restore (the dashboard fronts this with an explicit confirm modal; close() is
+ * the recoverable path). Deletes each profile-scoped product table by
+ * search_profile_id, unbinds any session pinned to it, drops the search_profiles
+ * row, then writes ONE 'profile_purge' tombstone audit row carrying the per-table
+ * delete counts.
+ *
+ * The whole erase runs in a SINGLE transaction with PRAGMA defer_foreign_keys=ON
+ * so the inter-table FKs (messages→threads, offers→dealer_quotes, …) are checked
+ * only at commit — delete order is then irrelevant and the committed state is
+ * consistent. Shared entities (dealers) are untouched; only this profile's
+ * binding/child rows go. Returns deleted=false when no such profile exists.
+ */
+export function purge(
+  db: Db,
+  id: string,
+  opts: { actor?: string; reason?: string } = {},
+): PurgeResult {
+  const existing = db.$client.prepare(SELECT_BY_ID).get(id) as SearchProfileRow | undefined;
+  if (existing === undefined) return { deleted: false, counts: {} };
+
+  const counts: Record<string, number> = {};
+  const txn = db.$client.transaction(() => {
+    // Defer FK enforcement (openDb runs PRAGMA foreign_keys=ON) to commit so the
+    // cross-table delete order is irrelevant; the committed state is consistent.
+    db.$client.pragma("defer_foreign_keys = ON");
+    // Tolerate a partial-migration DB: a fixture that hand-applied only migration
+    // 0000 lacks the 0002 fake_mailbox_* tables (boot's ensureProductSchema skips
+    // the migrator when search_profiles already exists). Skip any absent table —
+    // a production DB always has the full set, a fixture only what it applied.
+    const present = new Set(
+      (
+        db.$client
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+          .all() as { name: string }[]
+      ).map((r) => r.name),
+    );
+    // Attachment children first (by their parent's profile scope) so the
+    // parent-message delete below doesn't orphan an attachment → commit-time FK
+    // violation → rollback. (Common case: a dealer reply with a PDF quote.)
+    for (const { table, parent } of ATTACHMENT_CHILD_TABLES) {
+      if (!present.has(table) || !present.has(parent)) continue;
+      const res = db.$client
+        .prepare(
+          `DELETE FROM ${table} WHERE message_id IN (SELECT message_id FROM ${parent} WHERE search_profile_id = ?)`,
+        )
+        .run(id);
+      if (res.changes > 0) counts[table] = res.changes;
+    }
+    for (const table of PROFILE_SCOPED_TABLES) {
+      if (!present.has(table)) continue;
+      // table is a fixed in-code allowlist entry (see PROFILE_SCOPED_TABLES) —
+      // not user input — so the interpolation is injection-safe.
+      const res = db.$client
+        .prepare(`DELETE FROM ${table} WHERE search_profile_id = ?`)
+        .run(id);
+      if (res.changes > 0) counts[table] = res.changes;
+    }
+    // Unbind any session pinned to this profile (sessions.pinned_profile_id FK).
+    if (present.has("sessions")) {
+      const unpinned = db.$client.prepare(UNPIN_SESSIONS).run(id);
+      if (unpinned.changes > 0) counts["sessions_unpinned"] = unpinned.changes;
+    }
+    // Drop the profile row itself.
+    db.$client.prepare(DELETE_PROFILE_ROW).run(id);
+    // The tombstone — the ONLY audit_log row left for this id (the prior trail
+    // was erased above). Records the erase + per-table counts for forensics.
+    writeAuditLog(db, {
+      action: AUDIT_ACTIONS.profilePurge,
+      actor: opts.actor ?? null,
+      targetTable: "search_profiles",
+      targetId: id,
+      searchProfileId: id,
+      reason: opts.reason ?? null,
+      oldValue: typeof existing.status === "string" ? existing.status : null,
+      newValue: "purged",
+      payloadJson: JSON.stringify(counts),
+    });
+  });
+  txn();
+  return { deleted: true, counts };
+}
+
 /**
  * Replace: supersede the old profile and create a new active successor, writing
  * audit_log action 'profile_replace'. Intake only needs the SIGNATURE + audit

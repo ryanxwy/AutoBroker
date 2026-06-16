@@ -53,6 +53,7 @@ import {
   update as updateProfile,
   close as closeProfile,
   restore as restoreProfile,
+  purge as purgeProfile,
   getKeyPresence,
   setKey,
   clearKey,
@@ -818,6 +819,21 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
     // Respond with the now-active snake_case row view.
     return withDb((db) => readProfileRow(db, id));
+  });
+
+  // ---- POST /api/profiles/:id/purge — HARD-DELETE (irreversible erase) ------
+  // Delegates to the tools-layer purge(), which erases EVERY local row scoped to
+  // the profile (deferred-FK cascade over the profile-scoped tables), unbinds any
+  // pinned session, drops the profile row, and writes a 'profile_purge' tombstone
+  // audit row. NOT recoverable (unlike the soft DELETE above → 'closed'/restore).
+  // A missing profile → 404. Returns { ok, counts } (per-table delete tallies).
+  app.post("/api/profiles/:id/purge", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const result = withDb((db) => purgeProfile(db, id, { actor: "dashboard" }));
+    if (!result.deleted) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    return { ok: true, counts: result.counts };
   });
 
   // ---- GET /api/skills — manifest of implemented skills --------------------

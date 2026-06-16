@@ -14,8 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../api/client.js";
 import { invalidate, resetDataRefetchForTests } from "../api/useDataChanged.js";
-import type { AsyncState } from "../api/useApi.js";
-import type { Mode } from "../api/wire.js";
 import { click, render } from "../test/render.js";
 import { TopBar } from "./TopBar.js";
 
@@ -62,14 +60,11 @@ function flush(): Promise<void> {
 const noop = (): void => {};
 const baseProps = {
   activeRunId: null,
-  mode: { kind: "loading" } as AsyncState<Mode>,
   pinnedProfileId: null,
-  deepseekReady: true,
   onStartIntake: noop,
-  onRunSkill: noop,
   onPin: noop,
   onUnpin: noop,
-  onSelectSession: noop,
+  onViewProfile: noop,
 };
 
 beforeEach(() => {

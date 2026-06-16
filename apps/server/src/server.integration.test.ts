@@ -808,3 +808,29 @@ describe("POST /api/profiles/:id/restore — bring a closed profile back active"
     expect(auditCount("profile_restore")).toBe(0);
   });
 });
+
+describe("POST /api/profiles/:id/purge — HARD-DELETE (irreversible)", () => {
+  it("erases the profile + writes the profile_purge tombstone; it drops from every list", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+
+    const res = await s.app.inject({ method: "POST", url: `/api/profiles/${id}/purge` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ ok: boolean }>().ok).toBe(true);
+    expect(auditCount("profile_purge")).toBe(1);
+
+    // Hard delete: gone from the active list AND not fetchable (unlike soft-close,
+    // which moves it to 'closed'). The prior intake audit was erased.
+    const active = await s.app.inject({ method: "GET", url: "/api/profiles?status=active" });
+    expect(active.json<unknown[]>()).toHaveLength(0);
+    const one = await s.app.inject({ method: "GET", url: `/api/profiles/${id}` });
+    expect(one.statusCode).toBe(404);
+  });
+
+  it("404 for a missing profile (no audit)", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const res = await s.app.inject({ method: "POST", url: "/api/profiles/nope/purge" });
+    expect(res.statusCode).toBe(404);
+    expect(auditCount("profile_purge")).toBe(0);
+  });
+});

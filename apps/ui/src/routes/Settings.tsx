@@ -13,7 +13,7 @@
 
 import type { ApiClient } from "../api/client.js";
 import type { AsyncState } from "../api/useApi.js";
-import type { EnvConfigResponse, KeyPresenceResponse } from "../api/wire.js";
+import type { EnvConfigResponse, KeyPresenceResponse, Mode } from "../api/wire.js";
 import { EnvPanel } from "../settings/EnvPanel.js";
 import { GmailCard } from "../settings/GmailCard.js";
 import { KeyRow } from "../settings/KeyRow.js";
@@ -29,9 +29,12 @@ export interface SettingsProps {
   env: AsyncState<EnvConfigResponse>;
   /** Refetch the env config after a setting write lands. */
   onEnvChanged: () => void;
+  /** The backend mode read App owns — its db/data-dir paths drive the
+   *  Diagnostics section (folded in from the old top-bar fold). */
+  mode: AsyncState<Mode>;
 }
 
-export function Settings({ client, presence, onChanged, env, onEnvChanged }: SettingsProps): JSX.Element {
+export function Settings({ client, presence, onChanged, env, onEnvChanged, mode }: SettingsProps): JSX.Element {
   const deepseekReady = presence.kind === "ok" && presence.data.deepseek.present;
 
   return (
@@ -80,6 +83,22 @@ export function Settings({ client, presence, onChanged, env, onEnvChanged }: Set
           <EnvPanel client={client} env={env} onChanged={onEnvChanged} />
         </>
       )}
+
+      {/* Diagnostics — the raw data-dir/db paths (folded in from the old top-bar
+          fold; plumbing detail, not user content). */}
+      <section data-testid="settings-diagnostics">
+        <h2>Diagnostics</h2>
+        {mode.kind === "ok" ? (
+          <dl className="diag-grid">
+            <dt>Product DB</dt>
+            <dd data-testid="diag-db-path">{mode.data.active_db}</dd>
+            <dt>Data dir</dt>
+            <dd>{mode.data.data_dir}</dd>
+          </dl>
+        ) : (
+          <p className="muted">Backend mode unavailable.</p>
+        )}
+      </section>
     </div>
   );
 }

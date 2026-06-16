@@ -15,8 +15,6 @@
  * binds the route to the run (stable run-view-id testid).
  */
 
-import { useRef, useState } from "react";
-
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
@@ -32,7 +30,6 @@ import type {
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
-import { ProfileEditPanel } from "./ProfileEditPanel.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { QuoteCompare } from "./QuoteCompare.js";
 import { Quotes } from "./Quotes.js";
@@ -67,6 +64,10 @@ export interface CanvasProps {
   /** Whether the required DeepSeek key is configured. When false, the start CTA
    *  is disabled and points to Settings (the first-run gate). */
   deepseekReady?: boolean;
+  /** Open the unified view/edit modal for the active profile. */
+  onEditProfile: (id: string, name: string) => void;
+  /** Open the irreversible hard-delete confirm for the active profile. */
+  onDeleteProfile: (id: string, name: string) => void;
 }
 
 function str(row: DealerRow, key: string): string | null {
@@ -126,19 +127,18 @@ function CanvasEmptyState({
 // ---------------------------------------------------------------------------
 
 function ProfileCard({
-  client,
   snapshot,
-  onSaved,
+  client,
+  onEditProfile,
+  onDeleteProfile,
 }: {
-  client: ApiClient;
   snapshot: ProfileSnapshot;
-  /** Invoked after a successful preference save — the host refetches the list
-   *  (the snapshot the read view renders comes from the refreshed profiles). */
-  onSaved: () => void;
+  client: ApiClient;
+  /** Open the unified view/edit modal for this profile. */
+  onEditProfile: (id: string, name: string) => void;
+  /** Open the irreversible hard-delete confirm for this profile. */
+  onDeleteProfile: (id: string, name: string) => void;
 }): JSX.Element {
-  const [editing, setEditing] = useState(false);
-  const editButtonRef = useRef<HTMLButtonElement>(null);
-
   const identity = [
     snapshot.year !== null ? String(snapshot.year) : null,
     snapshot.make,
@@ -146,89 +146,64 @@ function ProfileCard({
     snapshot.trim,
     formatLocation(snapshot.location),
   ].filter((c): c is string => c !== null && c !== "");
-
-  // Cancel/save both return focus to the Edit-preferences button (a11y).
-  const exitEdit = (): void => {
-    setEditing(false);
-    // Focus returns after the read view re-renders.
-    requestAnimationFrame(() => editButtonRef.current?.focus());
-  };
-  const handleSaved = (): void => {
-    onSaved();
-    exitEdit();
-  };
+  const name = vehicleLabel(snapshot) || "this search";
 
   return (
     <section className="card profile-card" data-testid="canvas-profile-card">
       <h2 data-testid="canvas-vehicle">{vehicleLabel(snapshot) || "Active search"}</h2>
 
-      {/* Frozen identity — display-only chips. In edit mode they dim + carry the
-          explicit lock affordance; they are NEVER inputs. */}
+      {/* Frozen identity — display-only chips (never inputs; identity freezes at
+          confirm — to change the vehicle, replace the search). */}
       <div className="chip-row" data-testid="profile-identity-frozen">
         <span className="chip-row-label">Identity</span>
         {identity.map((chip) => (
-          <span
-            className="mini-chip locked"
-            key={chip}
-            {...(editing
-              ? {
-                  "aria-disabled": true,
-                  title:
-                    "identity is frozen — use Replace (delete + recreate) to change the vehicle",
-                }
-              : {})}
-          >
-            {editing && <span aria-hidden="true">🔒</span>}
+          <span className="mini-chip locked" key={chip}>
             {chip}
           </span>
         ))}
         <span className="muted chip-note">frozen at confirm — to change, replace the search</span>
       </div>
 
-      {editing ? (
-        snapshot.id !== null ? (
-          <ProfileEditPanel
-            client={client}
-            profileId={snapshot.id}
-            onSaved={handleSaved}
-            onCancel={exitEdit}
-          />
-        ) : null
-      ) : (
-        <div className="chip-row">
-          <span className="chip-row-label">Preferences</span>
-          {snapshot.searchRadiusMiles !== null && (
-            <span className="mini-chip" data-testid="profile-pref-radius">
-              {snapshot.searchRadiusMiles} mi radius
-            </span>
-          )}
-          {snapshot.financingPreference !== null && (
-            <span className="mini-chip">financing · {snapshot.financingPreference}</span>
-          )}
-          {snapshot.phonePolicy !== "real" && <span className="mini-chip">fake-phone</span>}
-          {/* budget is a lock affordance ONLY — never a number, anywhere. */}
-          <span className="mini-chip budget-lock">budget · internal-only</span>
-          <span style={{ flex: 1 }} />
-          {snapshot.id !== null && (
-            <button
-              ref={editButtonRef}
-              type="button"
-              className="profile-edit-open"
-              data-testid="profile-edit-open"
-              aria-expanded={editing}
-              onClick={() => setEditing(true)}
-            >
-              Edit preferences
-            </button>
-          )}
-        </div>
-      )}
+      <div className="chip-row">
+        <span className="chip-row-label">Preferences</span>
+        {snapshot.searchRadiusMiles !== null && (
+          <span className="mini-chip" data-testid="profile-pref-radius">
+            {snapshot.searchRadiusMiles} mi radius
+          </span>
+        )}
+        {snapshot.financingPreference !== null && (
+          <span className="mini-chip">financing · {snapshot.financingPreference}</span>
+        )}
+        {snapshot.phonePolicy !== "real" && <span className="mini-chip">fake-phone</span>}
+        {/* budget is a lock affordance ONLY — never a number, anywhere. */}
+        <span className="mini-chip budget-lock">budget · internal-only</span>
+        <span style={{ flex: 1 }} />
+        {snapshot.id !== null && (
+          <button
+            type="button"
+            className="profile-edit-open"
+            data-testid="profile-edit-open"
+            onClick={() => onEditProfile(snapshot.id!, name)}
+          >
+            Edit preferences
+          </button>
+        )}
+      </div>
 
-      {/* Card foot — the soft-delete control, separated from the preferences by
-          a ledger rule. Only in the read view (never while editing). */}
-      {!editing && snapshot.id !== null && (
-        <div className="profile-card-foot">
+      {/* Card foot — removal controls behind a ledger rule. The recoverable soft
+          "Remove" (→ Closed searches) is the default; the irreversible
+          "Delete permanently" sits beside it, one click to the confirm modal. */}
+      {snapshot.id !== null && (
+        <div className="profile-card-foot profile-card-removal">
           <ProfileRemoveControl client={client} profileId={snapshot.id} />
+          <button
+            type="button"
+            className="btn-danger profile-hard-delete-open"
+            data-testid="profile-hard-delete-open"
+            onClick={() => onDeleteProfile(snapshot.id!, name)}
+          >
+            Delete permanently…
+          </button>
         </div>
       )}
     </section>
@@ -331,6 +306,8 @@ export function Canvas({
   onStartIntake,
   runId = null,
   deepseekReady = true,
+  onEditProfile,
+  onDeleteProfile,
 }: CanvasProps): JSX.Element {
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   const active: ProfileSnapshot | null =
@@ -395,7 +372,12 @@ export function Canvas({
       )}
       {active !== null && (
         <>
-          <ProfileCard client={client} snapshot={active} onSaved={profiles.refetch} />
+          <ProfileCard
+            client={client}
+            snapshot={active}
+            onEditProfile={onEditProfile}
+            onDeleteProfile={onDeleteProfile}
+          />
           <DealerTiles dealers={dealers} />
           <InventoryCandidates inventory={inventory} />
           <QuoteCompare quotes={quotes} />

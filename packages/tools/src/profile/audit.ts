@@ -30,6 +30,10 @@ export const AUDIT_ACTIONS = {
   profileClose: "profile_close",
   /** Restore: a closed profile returned to status='active'. */
   profileRestore: "profile_restore",
+  /** Hard-delete (irreversible): every local row scoped to the profile was
+   *  erased and the profile row dropped. The purge writes ONE such tombstone row
+   *  (carrying the per-table delete counts) AFTER erasing the prior trail. */
+  profilePurge: "profile_purge",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
