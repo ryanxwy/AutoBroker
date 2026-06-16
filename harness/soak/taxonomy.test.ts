@@ -132,14 +132,39 @@ describe("loadTaxonomy (the _base.toml seed)", () => {
     }
   });
 
-  it("every loaded scenario names only known assertion + judge ids", () => {
+  // The plan-0 BASE entries (surface-named below) use only the frozen union ids;
+  // the assertion + judge id spaces are OPEN by design (verdict.ts / taxonomy.ts
+  // module docs: "per-skill plans add their own ids without editing this loader or
+  // verdict.ts"), so per-skill scenario files (scenarios/<skill>.toml) legitimately
+  // carry their OWN assertion ids. This check pins the base seed to the frozen
+  // union; the always-on keystone + L1 floor + min-1 are asserted for ALL
+  // scenarios in the next test (the structural contract that IS closed).
+  const BASE_SCENARIO_IDS = new Set([
+    "cold_start_phrasing",
+    "profile_ask_branch",
+    "gate_decline_path",
+    "session_consistency_hazard",
+    "irreversible_send_fake",
+    "budget_redaction",
+    "malformed_extraction_f1",
+    "destructive_typed_confirm",
+    "full_e2e_journey",
+  ]);
+
+  it("the plan-0 BASE scenarios name only frozen-union assertion + judge ids", () => {
     for (const s of all) {
+      if (!BASE_SCENARIO_IDS.has(s.id)) continue; // per-skill ids are open by design
       for (const a of s.deterministicAssertions) {
         expect(DETERMINISTIC_ASSERTION_IDS as readonly string[]).toContain(a);
       }
       for (const d of s.judgeDims) {
         expect(JUDGE_DIM_IDS as readonly string[]).toContain(d);
       }
+    }
+  });
+
+  it("every loaded scenario names at least one deterministic assertion (open id space)", () => {
+    for (const s of all) {
       expect(s.deterministicAssertions.length).toBeGreaterThanOrEqual(1);
     }
   });
