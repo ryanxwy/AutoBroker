@@ -34,7 +34,7 @@ purpose = "An active profile with no pin: the Skills-popover Run for the pin_req
 
 [[steps.ui_actions]]
 verb = "click"
-testid = "topbar-skills"
+testid = "rail-skills-toggle"
 
 [[steps.anchors]]
 kind = "dom_state"

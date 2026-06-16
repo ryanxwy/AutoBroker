@@ -215,6 +215,29 @@ describe("generic verb layer (clickTestid / fillTestid / pressKey / reloadBrowse
   });
 });
 
+describe("openSkillsPopover (the rail Skills-tray <details> toggle)", () => {
+  const SEL = (id: string) => `[data-testid="${id}"]`;
+
+  it("clicks the toggle to OPEN the tray when the list is not yet visible", async () => {
+    const { driver, calls } = fakeDriver({ [SEL("skills-list")]: { visible: false } });
+    await driver.openSkillsPopover();
+    expect(calls).toContainEqual({ method: "click", args: ['[data-testid="rail-skills-toggle"]'] });
+    // and it settles on the list becoming visible.
+    expect(calls).toContainEqual({
+      method: "waitForSelector",
+      args: ['[data-testid="skills-list"]', { timeout: 20_000 }],
+    });
+  });
+
+  it("is idempotent: does NOT click the toggle when the tray is already open", async () => {
+    // The rail never unmounts, so a <details> left open by a prior step survives a
+    // client-side navigate; clicking again would CLOSE it.
+    const { driver, calls } = fakeDriver({ [SEL("skills-list")]: { visible: true } });
+    await driver.openSkillsPopover();
+    expect(calls).not.toContainEqual({ method: "click", args: ['[data-testid="rail-skills-toggle"]'] });
+  });
+});
+
 describe("hygiene_review verbs (the dealer_hygiene per-stage cleanup card)", () => {
   const SEL = (id: string) => `[data-testid="${id}"]`;
 

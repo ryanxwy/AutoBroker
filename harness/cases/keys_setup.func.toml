@@ -68,10 +68,10 @@ testid = "key-test-deepseek"
 verb = "click"
 testid = "key-test-result-deepseek"
 
-# Open the Skills popover (coexists with the /settings page) to assert the lock.
+# Open the rail Skills tray (coexists with the /settings page) to assert the lock.
 [[steps.ui_actions]]
 verb = "click"
-testid = "topbar-skills"
+testid = "rail-skills-toggle"
 
 # The first-run setup strip is visible (DeepSeek absent).
 [[steps.anchors]]
@@ -146,10 +146,10 @@ testid = "key-saved-deepseek"
 verb = "reload"
 testid = "app-main"
 
-# Open the Skills popover on the unlocked world (coexists with /settings).
+# Open the rail Skills tray on the unlocked world (coexists with /settings).
 [[steps.ui_actions]]
 verb = "click"
-testid = "topbar-skills"
+testid = "rail-skills-toggle"
 
 # DURABLE gate-clear: the setup strip is gone after the reload — presence was
 # re-read from the persisted keys file (it was visible in step 1's fresh world).

@@ -137,12 +137,12 @@ testid = "app-main"
 
 [[steps.ui_actions]]
 verb = "click"
-testid = "topbar-skills"
+testid = "rail-skills-toggle"
 
 [[steps.anchors]]
 kind = "dom_state"
 testid = "ledger-run-dealer_hygiene"
-expect = "visible"               # the popover renders the skill row after the reload.
+expect = "visible"               # the rail Skills tray renders the skill row after the reload.
 
 # ---- step 4: re-run → nothing_to_clean, no card, Δ=0 -------------------------
 

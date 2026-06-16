@@ -5,7 +5,7 @@
  * REAL built dashboard served by the SUT, and exposes the user-action verbs the
  * case resume scripts need: type into the chat rail, fill the rendered intake
  * form by its real widgets, click the real Submit/Cancel/override buttons,
- * launch a skill from the top-bar Skills popover's Run button, and wait for the
+ * launch a skill from the chat-rail Skills tray's Run button, and wait for the
  * turn's terminal rendering.
  *
  * Every verb acts through the DOM exactly as a non-technical user would —
@@ -18,8 +18,8 @@
  *
  * Selector surface: the committed stable data-testid set only
  * (chat-input-textarea / chat-send / intake-form / intake-field-<name> /
- * intake-submit / intake-decline / gate-force-override-* / topbar-skills /
- * skills-popover / ledger-run-<skill> (the popover row's Run button) /
+ * intake-submit / intake-decline / gate-force-override-* / rail-skills-toggle /
+ * skills-list / ledger-run-<skill> (the rail Skills-tray row's Run button) /
  * gate-banner / assistant-turn[data-status] / turn-zone-* / turn-declined /
  * turn-error / stop-card[data-stop-code] / stop-intake-cta / stop-pick-option /
  * turn-resolution[data-resolution] / batch-review-card / batch-row-<id> /
@@ -460,14 +460,19 @@ export class UiDriver {
     await this.page.click(tid("gate-force-override-decline"));
   }
 
-  /** Open the top-bar Skills popover: wait for the trigger to be visible, click
-   *  it, wait for the panel. The popover refetches profiles+skills on every
-   *  open, so a just-created profile flips the pin-gated Run buttons enabled
-   *  without any page navigation. */
+  /** Open the chat-rail Skills tray: wait for the (always-mounted) <details>
+   *  summary toggle, expand it if it isn't already open, then wait for the list.
+   *  The rail re-reads profiles+skills live, so a just-created profile flips the
+   *  pin-gated Run buttons enabled without any page navigation. Idempotent: the
+   *  rail never unmounts, so a <details> left open by a prior step survives a
+   *  client-side navigate — clicking again would CLOSE it, so we skip the click
+   *  when the list is already visible. */
   async openSkillsPopover(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
-    await this.page.waitForSelector(tid("topbar-skills"), { timeout: timeoutMs });
-    await this.page.click(tid("topbar-skills"));
-    await this.page.waitForSelector(tid("skills-popover"), { timeout: timeoutMs });
+    await this.page.waitForSelector(tid("rail-skills-toggle"), { timeout: timeoutMs });
+    if (!(await this.page.locator(tid("skills-list")).isVisible())) {
+      await this.page.click(tid("rail-skills-toggle"));
+    }
+    await this.page.waitForSelector(tid("skills-list"), { timeout: timeoutMs });
   }
 
   /** Launch a skill from the Skills popover's real Run button (waits for the

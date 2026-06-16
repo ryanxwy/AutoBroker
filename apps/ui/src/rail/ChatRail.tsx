@@ -160,7 +160,7 @@ export function ChatRail({
       {/* Skills tray — the in-context launcher, collapsed by default so the
           composer stays the resting focus. Reuses the SkillsPopoverList directory. */}
       <details className="rail-skills" data-testid="rail-skills">
-        <summary>Skills</summary>
+        <summary data-testid="rail-skills-toggle">Skills</summary>
         <div className="rail-skills-list">
           <SkillsPopoverList
             skills={skills}

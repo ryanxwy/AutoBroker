@@ -58,8 +58,8 @@ After a successful save:
   text "Connected — …" (the detail is the model-list response from DeepSeek).
 - The setup strip (`data-testid="settings-setup-strip"`) disappears — the
   required-key notice is gone.
-- Opening the Skills popover (`data-testid="topbar-skills"`) shows skill rows
-  instead of the "Add your DeepSeek key in Settings first." lock notice
+- Opening the chat-rail Skills tray (`data-testid="rail-skills-toggle"`) shows
+  skill rows instead of the "Add your DeepSeek key in Settings first." lock notice
   (`data-testid="skills-locked-notice"`).
 
 **Expected failure modes:**
@@ -178,7 +178,7 @@ environment variable never sees this dialog (deliberate boot target).
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `key-test-result-deepseek` shows `data-state="fail"` citing `401` or `Unauthorized` | Wrong or expired DeepSeek key | Re-paste the correct key and Test again |
-| Skills popover shows `data-testid="skills-locked-notice"` | DeepSeek key not configured | Complete Step 1 |
+| Chat-rail Skills tray shows `data-testid="skills-locked-notice"` | DeepSeek key not configured | Complete Step 1 |
 | `settings-setup-strip` still visible after saving | Save did not complete (check `key-error-deepseek`) | Fix the error and Save again |
 | Intake suspends at the location step with `GOOGLE_PLACES_API_KEY is not set` | No Google Places key configured | Complete Step 2 |
 | `key-test-result-google_places` shows `data-state="fail"` | Wrong key or Geocoding API not enabled | Check the GCP project and re-paste |
@@ -197,7 +197,7 @@ Work through this checklist in order:
 - [ ] `data-testid="key-test-result-deepseek"` shows `data-state="pass"` after
       clicking Test connection (Step 1).
 - [ ] `settings-setup-strip` is absent from the Settings page.
-- [ ] Skills popover shows runnable skill rows (no `skills-locked-notice`).
+- [ ] Chat-rail Skills tray shows runnable skill rows (no `skills-locked-notice`).
 - [ ] `data-testid="key-test-result-google_places"` shows `data-state="pass"`
       after clicking Test connection (Step 2).
 - [ ] Starting an intake search proceeds past the location step without a
