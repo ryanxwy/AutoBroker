@@ -1,0 +1,130 @@
+# Daily build-failure monitor.
+#
+# Runs every morning, scans recent FAILED runs of the `ci` workflow on the
+# default branch, deep-researches the root cause from the logs, reproduces the
+# failing gate locally, implements a fix, verifies it with the single green
+# gate (scripts/green.sh), self-reviews the diff, then commits & pushes the fix
+# to a branch and opens a PR (so CI re-runs and a human can merge).
+#
+# ── One-time setup required ────────────────────────────────────────────────
+#   1. Install the Claude GitHub App on this repo:  https://github.com/apps/claude
+#   2. Add repo secret  ANTHROPIC_API_KEY  (Settings ▸ Secrets ▸ Actions).
+#        Settings ▸ Secrets and variables ▸ Actions ▸ New repository secret.
+#   3. Allow Actions to create PRs: Settings ▸ Actions ▸ General ▸
+#        "Workflow permissions" ▸ enable "Allow GitHub Actions to create and
+#        approve pull requests".
+#
+# ── Scheduling note ────────────────────────────────────────────────────────
+#   GitHub cron is UTC-only and has no DST. 13:00 UTC = 06:00 Pacific during
+#   PDT (Mar–Nov); it drifts to 05:00 Pacific during PST (Nov–Mar). Adjust the
+#   cron to `0 14 * * *` over winter if you want a fixed 06:00 local.
+#
+# ── To push fixes straight to main instead of opening a PR ─────────────────
+#   Tell Claude so in the prompt below (replace the "open a PR" step). Direct
+#   pushes to a protected default branch are intentionally avoided here.
+name: build-failure-monitor
+
+on:
+  schedule:
+    - cron: "0 13 * * *" # 06:00 America/Los_Angeles during PDT (see note above)
+  workflow_dispatch: # allow manual runs for testing
+
+# Avoid overlapping runs if a previous triage is still going.
+concurrency:
+  group: build-failure-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create branches, commit & push fixes
+  pull-requests: write # open the fix PR
+  issues: write # comment / reference issues if needed
+  actions: read # read ci workflow run history + failed logs
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history so Claude can branch from any ref
+
+      # Mirror the ci.yml toolchain so Claude can reproduce gates locally.
+      - uses: pnpm/action-setup@v6 # version comes from package.json packageManager
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter @autobroker/harness exec playwright install --with-deps chromium
+
+      - name: Claude — triage & fix CI failures
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --model claude-sonnet-4-6
+            --max-turns 60
+            --allowedTools Bash,Edit,MultiEdit,Read,Write,Glob,Grep,WebFetch,WebSearch,TodoWrite,Task
+          prompt: |
+            You are the daily build-failure monitor for the AutoBroker (TS) monorepo.
+            Read CLAUDE.md first and respect every safety invariant in it — especially:
+            never weaken the L2 fail-closed gate or the no_external_mutation rule,
+            never set AUTOBROKER_TEST_AUTO_APPROVE, and keep the 3 irreversible
+            skills fake-send. Honor the five-layer one-way dependency wall.
+
+            GOAL: find and fix today's CI build failures, end-to-end and autonomously.
+
+            STEP 1 — Detect failures.
+              Use `gh` (the GITHUB_TOKEN is already configured) to inspect recent runs
+              of the `ci` workflow on the default branch:
+                gh run list --workflow=ci.yml --branch main --limit 15 \
+                  --json databaseId,headSha,conclusion,createdAt,event
+              Look for runs with conclusion "failure" from roughly the last 24h that
+              are NOT already superseded by a later passing run on the same or newer
+              commit. If the latest `ci` run on main is green (or there are no recent
+              failures), STOP NOW: print "No actionable CI failures." and do nothing
+              else — do not invent work, do not open a PR.
+
+            STEP 2 — Deep research the root cause.
+              For each actionable failed run, pull the failing logs:
+                gh run view <run-id> --log-failed
+              Identify exactly which gate failed (typecheck / test / check:strings /
+              lint:deps / db:check / ui:functional) and the precise error. Read the
+              relevant source, trace the failure to its true root cause (not the
+              symptom). Use WebSearch / context7 / WebFetch for unfamiliar library
+              or tooling errors. Write a short root-cause note before editing.
+
+            STEP 3 — Reproduce locally.
+              The toolchain is already installed. Reproduce the failure with the
+              narrowest command first (e.g. `pnpm typecheck`, `pnpm test`,
+              `pnpm lint:deps`, `pnpm db:check`, `pnpm ui:functional`). Confirm you
+              see the same failure before changing anything.
+
+            STEP 4 — Implement the fix.
+              Make the smallest correct change that addresses the root cause. Stay
+              inside the architecture: respect the layer wall, do not relax safety
+              gates or tests just to make them pass, and follow existing code style.
+              If the only "fix" would be to weaken a safety invariant or delete a
+              legitimate failing test, DO NOT do it — instead stop and open a PR /
+              issue comment that explains the situation and asks a human to decide.
+
+            STEP 5 — Verify.
+              Run the single authoritative gate:  bash scripts/green.sh
+              It must pass clean. If it surfaces further failures, fix them too and
+              re-run until green (or until you hit a safety boundary per step 4).
+
+            STEP 6 — Self code-review.
+              Re-read your own diff critically: correctness, scope creep, accidental
+              changes, and any safety-invariant impact. Trim anything unrelated.
+
+            STEP 7 — Commit, push, open PR.
+              Create a branch  claude/ci-fix-<failed-run-id>  off the failing commit's
+              branch (main). Commit with a clear message using the repo convention
+              (phaseN/<skill>: ... when a skill is involved, otherwise a plain
+              descriptive ci-fix message). Push the branch and open a PR targeting
+              main, titled to name the gate that was failing, with a body containing:
+              the root-cause note, the fix summary, the link to the failed run, and
+              confirmation that `bash scripts/green.sh` passes locally. Do NOT push
+              directly to main. Do NOT merge the PR — leave it for human review.
