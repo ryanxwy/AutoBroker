@@ -29,7 +29,7 @@
  * no provider client, no DB, no playwright, no @ai-sdk.
  */
 
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
@@ -235,21 +235,53 @@ export type ExecImpl = (
 
 const defaultExec: ExecImpl = (args, env, timeoutMs) =>
   new Promise<string>((resolve, reject) => {
-    execFile(
-      "claude",
-      args,
-      { env, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          reject(
-            new Error(
-              `claude -p spawn failed (${err.message}) — stderr: ${String(stderr).slice(0, 800)}`,
-            ),
-          );
-          return;
+    // spawn `claude` in its OWN process group (detached) so the timeout can SIGKILL
+    // the WHOLE tree. `claude -p` spawns helper subprocesses that keep stdout open;
+    // execFile's `timeout` only SIGTERMs the direct child, so a rate-limited/stuck
+    // claude can hang the callback indefinitely (observed live: a ~70-min hang past
+    // a 180s timeout). The negative-pid SIGKILL guarantees the spawn cannot outlive
+    // timeoutMs; we settle on the child's `exit` (fires even if a grandchild lingers
+    // on the pipe), never on stdout `close`.
+    const child = spawn("claude", args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let errOut = "";
+    let settled = false;
+    const killGroup = (): void => {
+      if (child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          /* group already gone */
         }
-        resolve(String(stdout));
-      },
+      }
+    };
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      killGroup();
+      finish(() => reject(new Error(`claude -p timed out after ${timeoutMs}ms (process group killed)`)));
+    }, timeoutMs);
+    child.stdout?.on("data", (d: Buffer) => {
+      out += d.toString();
+      if (out.length > 32 * 1024 * 1024) {
+        killGroup();
+        finish(() => reject(new Error("claude -p stdout exceeded 32MB")));
+      }
+    });
+    child.stderr?.on("data", (d: Buffer) => {
+      errOut += d.toString();
+    });
+    child.on("error", (e) => finish(() => reject(new Error(`claude -p spawn failed (${e.message})`))));
+    child.on("exit", (code) =>
+      finish(() =>
+        code === 0
+          ? resolve(out)
+          : reject(new Error(`claude -p exited ${code ?? "null"} — stderr: ${errOut.slice(0, 800)}`)),
+      ),
     );
   });
 

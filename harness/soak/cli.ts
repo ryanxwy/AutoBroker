@@ -4,6 +4,13 @@
  * Subcommands:
  *   soak run   --scenario <id>            — drive one scenario end-to-end.
  *   soak suite [--class <className>]      — iterate the taxonomy (a class, or all).
+ *   soak e2e   --mode nl|slash [--scenario <id>]
+ *                                         — drive the plan-3 full-journey
+ *                                           session-consistency journey in the given
+ *                                           mode (nl = the product NL router; slash =
+ *                                           the deterministic /skill path). A
+ *                                           --scenario picks ONE class; absent → the
+ *                                           whole sc_* taxonomy, sequentially.
  *   soak freeze --ledger <jsonl> --row <i> — minimize + emit a corpus case from a
  *                                            recorded failure.
  *   soak list                             — print the loaded taxonomy (coverage).
@@ -32,6 +39,10 @@ import {
 import { parseLedgerJsonl } from "./ledger.js";
 import { runScenario, soakRunRoot } from "./orchestrator.js";
 import {
+  driveSessionConsistencyJourney,
+  type DriveMode,
+} from "./skills/sessionConsistency.js";
+import {
   findScenario,
   loadTaxonomy,
   scenariosInClass,
@@ -39,17 +50,20 @@ import {
 } from "./taxonomy.js";
 
 interface SoakArgs {
-  command: "run" | "suite" | "freeze" | "list";
+  command: "run" | "suite" | "e2e" | "freeze" | "list";
   flags: Map<string, string>;
   bools: Set<string>;
 }
+
+/** The plan-3 session-consistency scenarios all carry the `sc_` id prefix. */
+const SESSION_CONSISTENCY_PREFIX = "sc_";
 
 function parseArgs(argv: string[]): SoakArgs {
   const tokens = argv.slice(2).filter((t) => t !== "--");
   const [cmd, ...rest] = tokens;
   const command = (cmd ?? "list") as SoakArgs["command"];
-  if (!["run", "suite", "freeze", "list"].includes(command)) {
-    fail(`unknown subcommand "${command}" (expected run|suite|freeze|list)`);
+  if (!["run", "suite", "e2e", "freeze", "list"].includes(command)) {
+    fail(`unknown subcommand "${command}" (expected run|suite|e2e|freeze|list)`);
   }
   const flags = new Map<string, string>();
   const bools = new Set<string>();
@@ -138,6 +152,55 @@ async function cmdSuite(args: SoakArgs): Promise<number> {
 }
 
 /**
+ * e2e: the plan-3 full-journey session-consistency lane. Drives the buyer through
+ * the WHOLE pinned-session pipeline in the given mode — `--mode nl` routes each
+ * turn through the product NL router (POST /api/route), `--mode slash` uses the
+ * deterministic /skill launch path. A `--scenario <id>` picks ONE sc_* class;
+ * absent → the whole sc_* taxonomy, sequentially (the subscription is rate-limited).
+ * Prints the verdict JSON per scenario. OAuth-only (the claude buyer needs the
+ * Keychain subscription; the SUT still gets DeepSeek from keys.json — see README).
+ */
+async function cmdE2e(args: SoakArgs): Promise<number> {
+  assertOauthOnly(process.env);
+  const modeRaw = args.flags.get("mode");
+  if (modeRaw !== "nl" && modeRaw !== "slash") {
+    fail("`soak e2e` requires --mode nl|slash");
+  }
+  const mode = modeRaw as DriveMode;
+  const all = loadTaxonomy();
+  const scenarioId = args.flags.get("scenario");
+  const scenarios: ScenarioClass[] =
+    scenarioId !== undefined
+      ? [findScenario(all, scenarioId)]
+      : all.filter((s) => s.id.startsWith(SESSION_CONSISTENCY_PREFIX));
+  if (scenarios.length === 0) {
+    fail(`no session-consistency scenarios${scenarioId ? ` matching "${scenarioId}"` : ` (prefix "${SESSION_CONSISTENCY_PREFIX}")`}`);
+  }
+  const headless = !args.bools.has("headed");
+  let worst = 0;
+  // Sequential — the subscription is rate-limited; pace one journey at a time.
+  for (const scenario of scenarios) {
+    const runRoot = soakRunRoot();
+    const result = await driveSessionConsistencyJourney({ scenario, mode, runRoot, headless });
+    console.log(
+      JSON.stringify({
+        soak: "e2e",
+        mode: result.mode,
+        scenario: result.scenarioId,
+        verdict: result.verdict.verdict,
+        status: result.verdict.status,
+        defect: result.verdict.defect,
+        routing: result.routingObservations.map((o) => ({ expected: o.expectedSkillId, routed: o.routedSkillId })),
+        ledger: result.ledgerPath,
+        claudeSessionId: result.buyerSessionId,
+      }),
+    );
+    if (result.verdict.verdict !== "GREEN") worst = 1;
+  }
+  return worst;
+}
+
+/**
  * freeze: minimize a recorded failure + emit a corpus case. Reads the ledger
  * jsonl, picks the row (by --row index, default the first FAILing row), and emits
  * a *.ui_*.toml the existing harness can run as a deterministic regression. The
@@ -210,6 +273,8 @@ export async function run(argv: string[]): Promise<number> {
       return cmdRun(args);
     case "suite":
       return cmdSuite(args);
+    case "e2e":
+      return cmdE2e(args);
     case "freeze":
       return cmdFreeze(args);
     case "list":

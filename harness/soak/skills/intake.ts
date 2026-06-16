@@ -36,7 +36,7 @@
 
 import { join } from "node:path";
 
-import { openReadHandleAt, type TableCounts } from "../../dbReads.js";
+import { openReadHandleAt, snapshotCounts, type TableCounts } from "../../dbReads.js";
 import type { Db } from "@autobroker/db";
 import { UiDriver } from "../../uiDriver.js";
 import { spawnClaudeAgent, type ClaudeAgentResult } from "../claudeAgent.js";
@@ -486,6 +486,17 @@ export async function driveIntakeScenario(opts: DriveIntakeOpts): Promise<DriveI
 
     // Keystone baseline BEFORE the first launch.
     const baseline = captureMutationBaseline();
+    // Table-count baseline BEFORE the launch — the prefill-never-persists pre-confirm
+    // delta reads against this (search_profiles/audit_log must stay Δ0 while the form
+    // is suspended). Captured off the isolated DB before any write.
+    const baselineCounts = (() => {
+      const { db, close } = openReadHandleAt(dbPath);
+      try {
+        return snapshotCounts(null, db);
+      } finally {
+        close();
+      }
+    })();
 
     // Type the generated freeform into the chat rail (cold-starts intake) and wait
     // for the rendered data_collection form (the prefill seed is captured off the
@@ -496,19 +507,49 @@ export async function driveIntakeScenario(opts: DriveIntakeOpts): Promise<DriveI
     await driver.typeInChatRail(buyer.generatedText);
     await driver.waitForIntakeForm(legTimeoutMs);
 
+    // N1 FIX: capture the OBSERVED data_collection seed off the suspend frame WHILE
+    // the form is still suspended (before any confirm/decline). The never-guess
+    // PII/budget red-line assertions score THIS seed; without it they would never
+    // run (the dormant false-pass the committed driver shipped — it pushed only the
+    // keystone + fuse and fed the judge a null seed).
+    const suspendedRunId = driver.currentRunId();
+    const seed: PrefillSeed =
+      suspendedRunId !== null ? await captureDataCollectionSeed(host.apiBase, suspendedRunId) : null;
+
     const trace = await captureIntakeTrace(driver, host.apiBase);
 
-    // The keystone, every scenario step (read-only DB scan delta vs baseline).
+    // The keystone, every scenario step (read-only DB scan delta vs baseline) +
+    // the intake red-lines THIS scenario declares (the N1 fix folds them into the
+    // verdict). The pre-confirm snapshot proves prefill-never-persists; the
+    // persisted-column read (null while still suspended — the human has not
+    // confirmed) feeds the never-guess-budget column half + fake-phone-default.
     const { db, close } = openReadHandleAt(dbPath);
     try {
       deterministic.push(assertNoExternalMutation({ db, baseline }));
+      const whileSuspended = snapshotCounts(null, db);
+      // Pre-confirm: no profile row is persisted yet (that IS prefill-never-persists),
+      // so the persisted-column reads are null here. The seed-based never-guess
+      // blockers + prefill-never-persists are fully answerable from the suspend
+      // frame; the column-half assertions (fake-phone-default, never-guess-budget
+      // column-half) are gated on a confirmed profile and stay the live e2e's job
+      // (scoreIntakeRedlines skips them when columns are null).
+      deterministic.push(
+        ...scoreIntakeRedlines({
+          scenario: opts.scenario,
+          seed,
+          persistedColumns: null,
+          before: baselineCounts,
+          whileSuspended,
+        }),
+      );
     } finally {
       close();
     }
 
     // The soft-dim judge (load-bearing for prefill quality ONLY). Activated when
-    // the scenario asks for it; the seed view is the SUT output it compares the
-    // buyer prose against. Deterministic red-lines remain authoritative.
+    // the scenario asks for it; the REAL captured seed (N1 fix — no longer a null
+    // placeholder) is the SUT output it compares the buyer prose against.
+    // Deterministic red-lines remain authoritative.
     const activeDims = (opts.scenario.judgeDims as JudgeDimId[]).filter((d) =>
       INTAKE_JUDGE_DIMS.includes(d),
     );
@@ -517,7 +558,7 @@ export async function driveIntakeScenario(opts: DriveIntakeOpts): Promise<DriveI
         judgePromptPath: JUDGE_PROMPT,
         scenarioIntent: opts.scenario.stresses,
         generatedText: buyer.generatedText,
-        sutOutput: buildIntakeJudgeSutOutput(null),
+        sutOutput: buildIntakeJudgeSutOutput(seed),
         activeDims,
       });
       judge = verdict.dims;
@@ -553,6 +594,89 @@ export async function driveIntakeScenario(opts: DriveIntakeOpts): Promise<DriveI
     if (driver !== null) await driver.close();
     await host.stop();
   }
+}
+
+/**
+ * Capture the data_collection suspend SEED off the run's SSE events (the
+ * `awaiting_user` frame carries `spec_inline.seed_fields` — what the prefill step
+ * emitted for human review). Returns the seed object, or null when no
+ * data_collection suspend was seen (a slash launch / a malformed-abort run). This
+ * is the OBSERVED seed the never-guess red-line assertions score — without it those
+ * assertions would never run (the N1 dormant false-pass). READ-ONLY (off the SSE
+ * replay; never a DB write).
+ */
+export async function captureDataCollectionSeed(
+  apiBase: string,
+  runId: string,
+): Promise<PrefillSeed> {
+  const { buildRunDetail } = await import("../../detail.js");
+  let events: ReadonlyArray<{ kind: string; payload: Record<string, unknown> }>;
+  try {
+    const detail = await buildRunDetail(apiBase, runId);
+    events = detail.events;
+  } catch {
+    return null;
+  }
+  for (const ev of events) {
+    if (ev.kind !== "awaiting_user") continue;
+    const spec = ev.payload["spec_inline"] as { kind?: unknown; seed_fields?: unknown } | undefined;
+    if (spec === undefined || spec.kind !== "data_collection") continue;
+    const seed = spec.seed_fields;
+    if (seed === null) return null;
+    if (typeof seed === "object") return seed as Record<string, unknown>;
+  }
+  return null;
+}
+
+/**
+ * Score the intake red-line + correctness assertions THIS scenario declares
+ * (driveIntakeScenario delegates here). Reading the OBSERVED data_collection seed +
+ * (when the profile is already confirmed) the persisted columns, this pushes exactly
+ * the assertions named in the scenario's deterministicAssertions set — so the
+ * never-guess PII/budget seed-half blockers + prefill-never-persists actually FOLD
+ * INTO the verdict (the N1 fix: they were never scored before — the committed driver
+ * pushed only the keystone + fuse and fed the judge a null seed, a dormant
+ * false-pass). Each is a pure function from already-read inputs.
+ *
+ * COLUMN GATE: the column-dependent halves (fake-phone-default, never-guess-budget
+ * COLUMN half) require a CONFIRMED profile row. Pre-confirm (`persistedColumns ===
+ * null` — the form is still suspended, nothing persisted, which is itself
+ * prefill-never-persists) those are SKIPPED so they never vacuously fail; they
+ * become scorable once the live e2e confirms the form and a row exists. The seed
+ * half of never-guess-budget is ALWAYS scored (it reads the seed, not a column).
+ */
+export function scoreIntakeRedlines(args: {
+  scenario: ScenarioClass;
+  seed: PrefillSeed;
+  persistedColumns: PersistedProfileColumns | null;
+  humanTypedBudget?: boolean;
+  before: TableCounts;
+  whileSuspended: TableCounts;
+}): DeterministicResult[] {
+  const wanted = new Set(args.scenario.deterministicAssertions);
+  const out: DeterministicResult[] = [];
+  // Seed-half blockers — ALWAYS answerable from the captured suspend seed.
+  if (wanted.has("intake_never_guess_email")) out.push(assertNeverGuessEmail(args.seed));
+  if (wanted.has("intake_never_guess_phone")) out.push(assertNeverGuessPhone(args.seed));
+  if (wanted.has("intake_never_guess_budget")) {
+    // Pre-confirm (null columns) the assertion scores the SEED leak only (a null
+    // persistedBudgetMax is clean); post-confirm it additionally checks the column.
+    out.push(
+      assertNeverGuessBudget({
+        seed: args.seed,
+        persistedBudgetMax: args.persistedColumns?.budgetMax ?? null,
+        ...(args.humanTypedBudget !== undefined ? { humanTypedBudget: args.humanTypedBudget } : {}),
+      }),
+    );
+  }
+  if (wanted.has("intake_prefill_never_persists")) {
+    out.push(assertPrefillNeverPersists({ before: args.before, whileSuspended: args.whileSuspended }));
+  }
+  // Column-dependent half — only once a profile row exists (post-confirm e2e).
+  if (wanted.has("intake_fake_phone_default") && args.persistedColumns !== null) {
+    out.push(assertFakePhoneDefault(args.persistedColumns));
+  }
+  return out;
 }
 
 /** Drain the intake run trace off the rail's current run (the cold-start started
