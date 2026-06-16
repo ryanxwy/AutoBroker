@@ -288,6 +288,9 @@ importers:
       '@autobroker/model':
         specifier: workspace:*
         version: link:../model
+      '@autobroker/skills':
+        specifier: workspace:*
+        version: link:../skills
       '@autobroker/tools':
         specifier: workspace:*
         version: link:../tools

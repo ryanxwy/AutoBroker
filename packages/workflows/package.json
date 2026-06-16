@@ -26,6 +26,7 @@
   "dependencies": {
     "@autobroker/core": "workspace:*",
     "@autobroker/model": "workspace:*",
+    "@autobroker/skills": "workspace:*",
     "@autobroker/tools": "workspace:*",
     "@mastra/core": "1.41.0",
     "@mastra/libsql": "1.12.1",

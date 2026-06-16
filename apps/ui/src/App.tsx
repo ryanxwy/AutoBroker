@@ -42,6 +42,7 @@ import type {
   IntakeScopeNotice,
   KeyPresenceResponse,
   Mode,
+  RouteAck,
   SkillManifest,
   SkillList,
   StartAck,
@@ -317,8 +318,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const startIntakeFresh = (): void => doLaunch({ kind: "slash" });
   // A ready slash for intake keeps the special launchIntake path (fresh-unpinned
   // fork); a ready slash for ANY other skill starts THAT skill generically with
-  // its parsed key=value args spread into the start body. Freeform stays
-  // intake-scoped (the ratified scope-notice behavior).
+  // its parsed key=value args spread into the start body. (Free-form prose is NOT
+  // handled here — it goes through onFreeform → the NL router, POST /api/route.)
   const onSlash = (skill: string, args: Record<string, string>): void => {
     const argText = Object.entries(args)
       .map(([k, v]) => ` ${k}=${v}`)
@@ -337,7 +338,51 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     }
     doLaunchSkill(skill, { search_profile_id: profileId });
   };
-  const onFreeform = (text: string): void => doLaunch({ kind: "freeform", freeformText: text }, text);
+  // Render a LOCAL clarify turn (no run, no SSE): the user's prose as a user turn
+  // + an assistant text turn carrying the router's reason, marked terminal so it
+  // renders calm (not an in-progress spinner). The router started NO run.
+  const renderClarifyTurn = (userText: string, reason: string): void => {
+    const id = `clarify-${Date.now()}`;
+    chat.messages = [
+      ...chat.messages,
+      { id: `${id}-u`, role: "user", parts: [{ type: "text", text: userText }] },
+      {
+        id,
+        role: "assistant",
+        parts: [
+          { type: "text", text: reason },
+          { type: "data-frame", id: `${id}-done`, data: { kind: "done", payload: {} } },
+        ],
+      },
+    ];
+    setActiveRunId(null);
+  };
+
+  // The NL skill-router dispatch (the core product feature): the freeform text is
+  // sent to POST /api/route; the LLM classifies it to a skill and either LAUNCHES
+  // it through the EXACT existing start path (→ bindAck+streamRun like today, so
+  // every gate stays downstream, button-only) or returns a CLARIFY (→ a local
+  // assistant turn, no run). The router NEVER pre-approves anything.
+  const onFreeform = (text: string): void => {
+    setLaunchError(null);
+    client
+      .route({ nl_input: text, session_id: sessionIdRef.current, from_session_id: sessionIdRef.current })
+      .then((ack: RouteAck) => {
+        if (ack.routing.kind === "launch" && ack.run_id !== undefined) {
+          const startAck: StartAck = {
+            run_id: ack.run_id,
+            session_id: ack.session_id ?? null,
+            scope_notice: ack.scope_notice ?? null,
+          };
+          bindAck(startAck, `/${ack.routing.skill_id}`, text);
+        } else if (ack.routing.kind === "clarify") {
+          renderClarifyTurn(text, ack.routing.reason);
+        }
+      })
+      .catch((err: unknown) => {
+        setLaunchError(err instanceof Error ? err.message : "Could not route your message.");
+      });
+  };
   // The Skills popover Run control — intake keeps its fork path, every other
   // (manifest-listed, implemented) skill starts generically.
   const onRunSkill = (skill: SkillManifest): void => {
@@ -489,6 +534,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           title={railTitle}
           turns={turns}
           activeRunId={activeRunId}
+          activeAwaiting={activeAwaiting}
           browserView={activeBrowserView}
           decision={decision}
           knownSkills={knownSkills}

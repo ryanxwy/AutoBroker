@@ -93,6 +93,14 @@ export const USE_CASES = [
    * structurally inapplicable. Routes to deepseek.chat.
    */
   "negotiation_followup",
+  /**
+   * NL skill-router: classify a free-form chat message into ONE of the 17
+   * skills / intake / none. A single emit_result tool carrying the flat
+   * ChatRouteEmitSchema (temp 0, thinking OFF) — never Output.object + tools on
+   * DeepSeek. The router only CHOOSES + LAUNCHES; every downstream gate stays
+   * load-bearing. Routes to deepseek.chat.
+   */
+  "chat_route",
   /** Cheap trivial probe used by the Phase 0 foundation exit criteria. */
   "foundation_probe",
   /**
@@ -146,6 +154,10 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Negotiation follow-up PROSE draft (NO tools, NO structured output — the
   // draftProse facade). #1244 is structurally inapplicable; deepseek.chat.
   negotiation_followup: "deepseek.chat",
+  // NL skill-router classify pass (single emit_result tool, temp 0, thinking
+  // OFF). Same DeepSeek emit_result discipline as the other classify useCases;
+  // a provider swap is a one-string edit here.
+  chat_route: "deepseek.chat",
   foundation_probe: "deepseek.cheap",
   // Routes to anthropic.chat (supportsOutputObjectWithTools:true) so the harness
   // takes the NATIVE output_object strategy. Swapping to "openai.chat" is a

@@ -2,13 +2,10 @@
  * launch — the intake launch orchestration. The intake entries (the canvas
  * empty-state CTA, the Searches popover "+ New search", and the Skills popover
  * Run on intake) all funnel through `launchIntake`, which forces a fresh unpinned
- * session (never inherit a stale pin) and POSTs the start. Two start surfaces:
- *
- *   - slash  (`/search_profile_intake`) → input_mode 'slash', form direct (no
- *     prefill step).
- *   - freeform (prose) → input_mode 'freeform' with freeform_text; the workflow's
- *     prefill step extracts a nullable subset to SEED the form. Extraction never
- *     writes the DB — the form still renders for human confirm.
+ * session (never inherit a stale pin) and POSTs the start in slash mode
+ * (input_mode 'slash', form direct). Free-form prose is no longer launched here —
+ * it goes through the NL router (POST /api/route), which classifies it and, when
+ * it picks intake, creates the freeform intake run server-side.
  *
  * The launch returns the StartAck (run_id + session_id + scope_notice); the caller
  * navigates to /runs/:run_id and the single SSE hook drives it from there.
@@ -20,10 +17,9 @@
 import { type ApiClient } from "./api/client.js";
 import { type StartAck } from "./api/wire.js";
 
-/** The two intake start surfaces. */
-export type LaunchMode =
-  | { kind: "slash"; seedFields?: Record<string, unknown> | null }
-  | { kind: "freeform"; freeformText: string };
+/** The intake start surface (slash mode). Free-form prose routes via the NL
+ *  router (POST /api/route), not here. */
+export type LaunchMode = { kind: "slash"; seedFields?: Record<string, unknown> | null };
 
 export interface LaunchArgs {
   mode: LaunchMode;
@@ -59,19 +55,9 @@ export async function launchSkill(
  *  nothing) — from_session_id is sent even when null so the server-side fork
  *  rule fires and the run lands in a durable session. */
 export async function launchIntake(client: ApiClient, args: LaunchArgs): Promise<StartAck> {
-  const base = {
+  return client.startRun({
     skill: "search_profile_intake" as const,
     from_session_id: args.fromSessionId ?? null,
-  };
-  if (args.mode.kind === "freeform") {
-    return client.startRun({
-      ...base,
-      input_mode: "freeform",
-      freeform_text: args.mode.freeformText,
-    });
-  }
-  return client.startRun({
-    ...base,
     input_mode: "slash",
     ...(args.mode.seedFields !== undefined ? { seed_fields: args.mode.seedFields } : {}),
   });

@@ -27,6 +27,10 @@ export function ChatInput({ knownSkills, disabled, onSlash, onFreeform }: ChatIn
   const candidates = parsed.kind === "typing" ? parsed.candidates : [];
 
   const submit = (): void => {
+    // Defense-in-depth: a disabled rail (a gate is pending) must never launch a
+    // run. The textarea/Send are already disabled; this makes the guard explicit
+    // and robust to future refactors (prose can never answer a gate).
+    if (disabled === true) return;
     if (text.trim() === "") return;
     const r = parseSlashCommand(text, knownSkills);
     if (r.kind === "ready") {

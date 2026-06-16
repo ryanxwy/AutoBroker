@@ -69,7 +69,7 @@ import {
 } from "@autobroker/tools";
 import type { SearchProfile } from "@autobroker/core";
 
-import { IMPLEMENTED_SKILLS } from "@autobroker/skills";
+import { IMPLEMENTED_SKILLS, INTAKE_SKILL_ID } from "@autobroker/skills";
 
 import {
   SkillRunService,
@@ -84,7 +84,12 @@ import {
   UiStreamTranslator,
   chunkFrame,
 } from "./streamV2.js";
-import { DuplicateRunIdError } from "@autobroker/workflows";
+import {
+  DuplicateRunIdError,
+  classifySkillFromText,
+  type RouteDecision,
+  type RouterContext,
+} from "@autobroker/workflows";
 import type { SessionService, IntakeScopeNotice } from "./sessions.js";
 
 /** The headless start ENVELOPE: the skill id + the session linkage. The
@@ -100,6 +105,16 @@ const StartBodySchema = z.object({
   session_id: z.string().nullable().optional(),
   /** The session intake was TRIGGERED from (slash/freeform). When pinned, the
    *  route forks a fresh unpinned session and carries an IntakeScopeNotice. */
+  from_session_id: z.string().nullable().optional(),
+});
+
+/** POST /api/route body — the NL skill-router request. `nl_input` is the user's
+ *  free-form chat message; the optional session linkage mirrors the start body
+ *  (a launch links the run to `session_id`, and intake forks from
+ *  `from_session_id`). */
+const RouteBodySchema = z.object({
+  nl_input: z.string().min(1),
+  session_id: z.string().nullable().optional(),
   from_session_id: z.string().nullable().optional(),
 });
 
@@ -197,6 +212,30 @@ export interface RouteDeps {
   skillRuns: SkillRunService;
   pubsub: RunPubSub;
   sessions: SessionService;
+}
+
+/** The NL-router classifier signature the route calls. The default is the real
+ *  workflows classifier (a live model call via harness.generate); the test seam
+ *  below swaps in a deterministic stub so the route wiring is proven offline. */
+type RouteClassifier = (nl: string, ctx: RouterContext) => Promise<RouteDecision>;
+
+/** The classifier the POST /api/route handler invokes — the real workflows
+ *  classifier by default. NEVER reassigned outside a test runner. */
+let routeClassifier: RouteClassifier = (nl, ctx) => classifySkillFromText(nl, ctx);
+
+/** TEST-ONLY seam: inject a deterministic classifier so the /api/route wiring
+ *  (buildInput → start → recordRun / intake fork) is exercised without a live
+ *  model. Refused outside a vitest/test runner. */
+export function __setRouteClassifierForTests(fn: RouteClassifier): void {
+  if (process.env["VITEST"] === undefined && process.env["NODE_ENV"] !== "test") {
+    throw new Error("__setRouteClassifierForTests is a test-only seam");
+  }
+  routeClassifier = fn;
+}
+
+/** TEST-ONLY: restore the real classifier. */
+export function __resetRouteClassifierForTests(): void {
+  routeClassifier = (nl, ctx) => classifySkillFromText(nl, ctx);
 }
 
 /** Map a service-layer FormDecisionError onto the route error envelope. */
@@ -330,6 +369,111 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       // as the forked session's first system part (non-skippable). null when the
       // fork came from an unpinned/absent source (nothing to confuse).
       return { run_id: runId, session_id: sessionId, scope_notice: scopeNotice };
+    } catch (err) {
+      if (err instanceof DuplicateRunIdError) {
+        throw new RouteError("duplicate_run_id", 409, err.message, {
+          extra: { run_id: err.runId },
+        });
+      }
+      throw err;
+    }
+  });
+
+  // ---- POST /api/route — the NL skill-router (the core product feature) ------
+  // An LLM reads the free-form chat message and routes it to ONE skill / intake /
+  // clarify. A LAUNCH goes through the EXACT same launch path as POST
+  // /api/skill-runs (descriptor.buildInput → forkForIntake → skillRuns.start →
+  // recordRun) — every gate stays downstream, button-only; the router NEVER
+  // pre-approves. A CLARIFY returns 200 with NO run started. The model call lives
+  // in the workflows classifier (via harness); this handler only orchestrates.
+  app.post("/api/route", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = parseBody(RouteBodySchema, req.body);
+
+    // Session context: the pinned profile (read off thread metadata) is forwarded
+    // to the classifier so it knows whether a search is in scope. The router NEVER
+    // infers a profile — the skill's own resolveScope gate is load-bearing.
+    let pinnedProfileId: string | null = null;
+    if (body.session_id != null && body.session_id.length > 0) {
+      const session = await sessions.get(body.session_id);
+      pinnedProfileId = session?.pinned_profile_id ?? null;
+    }
+
+    const ctx: RouterContext = {
+      pinnedProfileId,
+      ledger: {
+        runId: `route-${body.session_id ?? "anon"}-${Date.now()}`,
+        skill: "chat_route",
+        layer: "L2",
+        promptVersion: null,
+        schemaVersion: null,
+      },
+    };
+
+    const decision = await routeClassifier(body.nl_input, ctx);
+
+    // CLARIFY — no run started; the rail renders a local assistant clarify turn.
+    if (decision.kind === "clarify") {
+      reply.code(200);
+      return {
+        routing: { kind: "clarify", reason: decision.reason, candidates: decision.candidates },
+      };
+    }
+
+    // LAUNCH — the SAME path the start route runs. A defensive unknown skill (the
+    // enum should prevent it) degrades to clarify, never a 400 dead-end.
+    const descriptor = skillRuns.descriptorFor(decision.skillId);
+    if (descriptor === undefined) {
+      reply.code(200);
+      return {
+        routing: { kind: "clarify", reason: "I could not start that action.", candidates: [] },
+      };
+    }
+
+    // Build the per-skill input the SAME way the start route does (the descriptor
+    // owns validation). A throw → clarify (do NOT 400 the user into a dead end).
+    let input: unknown;
+    try {
+      input = descriptor.buildInput({ skill: decision.skillId, ...decision.inputData });
+    } catch {
+      reply.code(200);
+      return {
+        routing: { kind: "clarify", reason: "I could not start that action.", candidates: [] },
+      };
+    }
+
+    // INTAKE FORK — mirror the start route (307-310): intake never inherits a pin;
+    // a from_session_id forks a fresh unpinned session and carries the scope notice.
+    let sessionId: string | null = body.session_id ?? null;
+    let scopeNotice: IntakeScopeNotice | null = null;
+    if (decision.skillId === INTAKE_SKILL_ID && body.from_session_id !== undefined) {
+      const fork = await sessions.forkForIntake(body.from_session_id);
+      sessionId = fork.sessionId;
+      scopeNotice = fork.scopeNotice;
+    }
+
+    try {
+      const { runId } = await skillRuns.start({ skill: decision.skillId, input, sessionId });
+      if (sessionId !== null) {
+        try {
+          await sessions.recordRun(sessionId, runId);
+        } catch (err) {
+          console.warn(
+            `routes: failed to record run ${runId} on session ${sessionId}: ${String(err)}`,
+          );
+        }
+      }
+      reply.code(201);
+      return {
+        run_id: runId,
+        session_id: sessionId,
+        scope_notice: scopeNotice,
+        routing: {
+          kind: "launch",
+          skill_id: decision.skillId,
+          confidence: decision.confidence,
+          reason: decision.reason,
+        },
+      };
     } catch (err) {
       if (err instanceof DuplicateRunIdError) {
         throw new RouteError("duplicate_run_id", 409, err.message, {

@@ -45,6 +45,7 @@ import {
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
+  RouteAckSchema,
   SaveKeyAckSchema,
   SessionListSchema,
   SessionResponseSchema,
@@ -71,6 +72,8 @@ import {
   type PatchSessionBody,
   type ProfileList,
   type ProfileRow,
+  type RouteAck,
+  type RouteRequestBody,
   type SecretKeyId,
   type SessionList,
   type SessionResponse,
@@ -178,6 +181,21 @@ export class ApiClient {
       body: JSON.stringify(body),
     });
     return decode(res, StartAckSchema);
+  }
+
+  /** POST /api/route → the NL skill-router verdict (routes.ts). The LLM reads the
+   *  free-form chat message and either LAUNCHES a skill (201, run_id + routing
+   *  launch — the EXACT existing start path; every gate stays downstream) or
+   *  returns a CLARIFY (200, routing only, NO run). The App dispatches on
+   *  `routing.kind`: launch → bindAck+streamRun (today's path); clarify → a local
+   *  assistant clarify turn. */
+  async route(body: RouteRequestBody): Promise<RouteAck> {
+    const res = await this.fetchImpl(this.url("/api/route"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return decode(res, RouteAckSchema);
   }
 
   /** GET /api/skill-runs/:id → status summary (routes.ts:166 / intakeRuns.ts:547). */

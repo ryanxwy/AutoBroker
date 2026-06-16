@@ -610,3 +610,18 @@ export {
   SCOPE_NOTICE_METADATA_KEY,
   type RailSession,
 } from "./railMemory.js";
+
+// The NL skill-router (the core product feature) — the LLM classifier that reads
+// a free-form chat message and routes it to ONE of the 17 skills / intake /
+// clarify, then the app layer launches the LAUNCH verdict through the EXISTING
+// skillRuns.start path (every gate stays downstream, button-only). Imports
+// @autobroker/{core,model,skills} + the local harness ONLY (single emit_result +
+// Zod, #1244 fail-closed; every fail-closed branch → clarify).
+export {
+  classifySkillFromText,
+  buildRoutePrompt,
+  ChatRouteEmitSchema,
+  type RouteDecision,
+  type RouterContext,
+  type ChatRouteEmit,
+} from "./router.js";

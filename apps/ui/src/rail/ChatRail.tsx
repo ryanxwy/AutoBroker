@@ -29,6 +29,10 @@ export interface ChatRailProps {
   turns: TurnView[];
   /** The run currently driving the rail (its assistant turn is the live one). */
   activeRunId: string | null;
+  /** The active run's pending gate, if any. While a gate is pending the rail
+   *  input is DISABLED (hazard fix): a typed message cannot spawn a rogue run —
+   *  gates stay button-only. Null when nothing is awaiting. */
+  activeAwaiting: unknown | null;
   /** The LIVE browser activity for the active run's turn (App gates it to
    *  non-terminal — transient zone-4 trail + thumbnail), or null. */
   browserView: BrowserView | null;
@@ -56,6 +60,7 @@ export function ChatRail({
   title,
   turns,
   activeRunId,
+  activeAwaiting,
   browserView,
   decision,
   knownSkills,
@@ -115,7 +120,12 @@ export function ChatRail({
         )}
       </div>
 
-      <ChatInput knownSkills={knownSkills} onSlash={onSlash} onFreeform={onFreeform} />
+      <ChatInput
+        knownSkills={knownSkills}
+        disabled={activeAwaiting !== null}
+        onSlash={onSlash}
+        onFreeform={onFreeform}
+      />
     </aside>
   );
 }

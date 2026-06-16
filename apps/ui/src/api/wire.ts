@@ -191,6 +191,49 @@ export const StartAckSchema = z.object({
 });
 export type StartAck = z.infer<typeof StartAckSchema>;
 
+// ---------------------------------------------------------------------------
+// Route ack — POST /api/route (the NL skill-router). routes.ts returns a
+// discriminated `routing` field: a LAUNCH (201, alongside run_id/session_id/
+// scope_notice — the start-ack shape) or a CLARIFY (200, routing only, NO run).
+// The client decodes the discriminant and the App dispatches: launch →
+// bindAck+streamRun (today's path); clarify → a local assistant clarify turn.
+// ---------------------------------------------------------------------------
+
+/** The launch arm: the router chose a skill and the run is already started (the
+ *  EXACT existing skillRuns.start path; every gate stays downstream). */
+export const RouteLaunchSchema = z.object({
+  kind: z.literal("launch"),
+  skill_id: z.string(),
+  confidence: z.number(),
+  reason: z.string(),
+});
+
+/** The clarify arm: no run was started; the rail renders a local clarify turn
+ *  with the reason + candidate skill hints. */
+export const RouteClarifySchema = z.object({
+  kind: z.literal("clarify"),
+  reason: z.string(),
+  candidates: z.array(z.object({ skillId: z.string(), why: z.string() })),
+});
+
+/** The full POST /api/route response. A launch additionally carries the
+ *  start-ack fields (run_id/session_id/scope_notice); a clarify omits them. */
+export const RouteAckSchema = z.object({
+  run_id: z.string().optional(),
+  session_id: z.string().nullable().optional(),
+  scope_notice: IntakeScopeNoticeSchema.nullable().optional(),
+  routing: z.discriminatedUnion("kind", [RouteLaunchSchema, RouteClarifySchema]),
+});
+export type RouteAck = z.infer<typeof RouteAckSchema>;
+
+/** POST /api/route request body. `nl_input` is the user's free-form chat
+ *  message; the optional session linkage mirrors the start body. */
+export interface RouteRequestBody {
+  nl_input: string;
+  session_id?: string | null;
+  from_session_id?: string | null;
+}
+
 /** The headless start body — routes.ts:55-65 (StartBodySchema). snake_case is
  *  intentional (it matches the workflow input verbatim). `skill` is any
  *  registered RunDescriptor id (the server 400s unknown_skill otherwise); the
