@@ -8,6 +8,7 @@
     "harness": "node --import tsx/esm ./runner.ts",
     "functional": "node --import tsx/esm ./runner.ts case --fixture",
     "export-daily": "node --import tsx/esm ./export_daily.ts",
+    "soak": "node --import tsx/esm ./soak/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

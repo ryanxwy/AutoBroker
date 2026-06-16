@@ -22,6 +22,12 @@ pnpm check:strings
 pnpm db:check
 pnpm test
 
+# INTENTIONALLY EXCLUDED: `pnpm soak`. The agentic-soak lane (harness/soak/) runs
+# `claude -p` against the owner's Keychain OAuth subscription (rate-limited,
+# local/owner-run by nature) and is a DISCOVERY engine, not a gate — the *.toml
+# corpus it freezes is the gate (run by `pnpm harness` / ui:functional above). Do
+# NOT add `pnpm soak` here: it would break the OAuth/cost/headless invariant.
+
 # Real-DOM functional UI lane: builds the dashboard and drives the
 # harness/cases/*.func.toml cases through Playwright. This is the gate's only
 # defense against

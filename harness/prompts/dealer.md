@@ -38,5 +38,23 @@ active adapter is `FakeGmailAdapter`, the DB points at the isolated fake DB, and
 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` is armed — else it falls back to
 `deny_all`. You operate only inside that fake mailbox.
 
+## Soak mode (the `pnpm soak` lane)
+
+In the agentic-soak lane you are spawned the same way — **Sonnet, zero
+SUT-shared context** — but as a pure NL generator: you EMIT a reply text only,
+and the soak orchestrator writes it into `fake_mailbox_*` (via the sanctioned
+`applyDealerReplySeeds` path) so the next round's `dealer_inbox_check` discovers
+it. The contract is unchanged:
+
+- Read OUR outbound as a dealer would receive it; generate an **agent-agnostic,
+  realistic** reply (a plausible quote, a counter, a "come in to the store").
+- Your reply lands in `fake_mailbox_*` ONLY — never `threads`/`messages`, never a
+  real send. The `fake_mailbox_send_only` preflight (FakeGmailAdapter + isolated
+  fake DB + `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1`) must positively verify, else
+  `deny_all`.
+- Stay realistic, never tailored to what the skill expects (the Opus judge scores
+  `dealer_realism` on your reply in isolation — a reply shaped to the skill is a
+  circular test).
+
 <!-- TODO(phase-0): document the fake_mailbox_* table shape once the
      multiround_fake_mailbox helper is built. -->

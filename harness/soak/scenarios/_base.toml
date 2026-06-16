@@ -1,0 +1,108 @@
+# harness/soak/scenarios/_base.toml — the plan-0 SEED taxonomy.
+#
+# The 9 edge classes from plan-0 §"Scenario taxonomy" as concrete, loadable
+# entries — one entry per class. This base file proves the loader + verdict id
+# unions end-to-end. Per-skill soak plans ADD their own scenarios/<skill>.toml
+# (additive); they NEVER edit this file's entries (the loader's ScenarioClass
+# type is frozen in plan-0). Each entry names the deterministic_assertions it
+# must satisfy (tied to real dbReads tables/fields) + the judge_dims it activates
+# + the gate_verbs the orchestrator drives (HITL via buttons, never chat text).
+
+[[scenarios]]
+id = "cold_start_phrasing"
+surface = "search_profile_intake"
+class_name = "cold_start_phrasing"
+stresses = "intake_freeform_prefill extraction robustness; the form-still-renders-for-confirm invariant (prefill never persists)."
+buyer_model = "opus"
+dealer_needed = false
+deterministic_assertions = ["no_external_mutation", "l1_fuse_armed", "cost_and_time_attributable"]
+judge_dims = ["buyer_coherence", "extraction_quality"]
+gate_verbs = []
+
+[[scenarios]]
+id = "profile_ask_branch"
+surface = "dealer_geosearch"
+class_name = "profile_ask_branch"
+stresses = "profile-ASK three-branch (invariant #6): 0 -> STOP intake CTA, 2+ -> STOP picker by vehicle name, 1 -> run."
+buyer_model = "sonnet"
+dealer_needed = false
+deterministic_assertions = ["profile_ask_branch", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = []
+gate_verbs = ["profile_stop_pick", "profile_stop_intake_cta"]
+
+[[scenarios]]
+id = "gate_decline_path"
+surface = "dealer_geosearch"
+class_name = "gate_decline_path"
+stresses = "no_external_mutation keystone + zero-write-on-decline; L2 fail-closed single side-effect path; lead_submissions/messages delta=0."
+buyer_model = "sonnet"
+dealer_needed = false
+deterministic_assertions = ["gate_decline_zero_write", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = ["gate_render_clarity"]
+gate_verbs = ["batch_decline", "inbox_decline", "approval_deny", "hygiene_decline", "reset_cancel"]
+
+[[scenarios]]
+id = "session_consistency_hazard"
+surface = "search_profile_intake"
+class_name = "session_consistency_hazard"
+stresses = "the #1 session-consistency hazard: one pinned session = one thread = one profile; freeform/slash while suspended must not fork a second intake."
+buyer_model = "opus"
+dealer_needed = false
+deterministic_assertions = ["session_no_fork", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = []
+gate_verbs = []
+
+[[scenarios]]
+id = "irreversible_send_fake"
+surface = "dealer_web_lead_submit"
+class_name = "irreversible_send_fake"
+stresses = "the 3 irreversible skills stay fake-send; email_fallback browser.submit -> gmail.send forces a 2nd suspend re-confirm (invariant #8)."
+buyer_model = "sonnet"
+dealer_needed = false
+deterministic_assertions = ["irreversible_fake_send", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = ["gate_render_clarity"]
+gate_verbs = ["approval_approve", "approval_deny"]
+
+[[scenarios]]
+id = "budget_redaction"
+surface = "negotiation_followup"
+class_name = "budget_redaction"
+stresses = "communication never includes budget (_redact_budget, invariant #9): the stated budget_max must not appear in a drafted message body."
+buyer_model = "opus"
+dealer_needed = false
+deterministic_assertions = ["budget_redaction", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = ["budget_leak_paraphrase"]
+gate_verbs = ["approval_approve"]
+
+[[scenarios]]
+id = "malformed_extraction_f1"
+surface = "dealer_reply_extract"
+class_name = "malformed_extraction_f1"
+stresses = "#1244 fail-closed (invariant #4): finish_reason!=tool_calls -> fail closed; no prose-regex execution writing a quote row."
+buyer_model = "sonnet"
+dealer_needed = true
+deterministic_assertions = ["malformed_extraction_fail_closed", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = ["extraction_quality", "dealer_realism"]
+gate_verbs = []
+
+[[scenarios]]
+id = "destructive_typed_confirm"
+surface = "pipeline_reset"
+class_name = "destructive_typed_confirm"
+stresses = "destructive skills (invariant #10): no confirmation -> zero destruction; hygiene decline at ANY stage = zero writes (atomic)."
+buyer_model = "sonnet"
+dealer_needed = false
+deterministic_assertions = ["gate_decline_zero_write", "no_external_mutation", "l1_fuse_armed"]
+judge_dims = ["gate_render_clarity"]
+gate_verbs = ["reset_confirm", "reset_cancel", "hygiene_decline"]
+
+[[scenarios]]
+id = "full_e2e_journey"
+surface = "quote_pipeline"
+class_name = "full_e2e_journey"
+stresses = "intake -> geosearch -> site_scan -> inbox_check -> quote_pipeline -> lead_submit -> negotiation_followup as one pinned session; the 7 memory<->workflow consistency invariants end-to-end."
+buyer_model = "opus"
+dealer_needed = true
+deterministic_assertions = ["no_external_mutation", "l1_fuse_armed", "irreversible_fake_send", "cost_and_time_attributable"]
+judge_dims = ["buyer_coherence", "extraction_quality", "dealer_realism"]
+gate_verbs = ["batch_submit", "inbox_submit", "approval_approve"]

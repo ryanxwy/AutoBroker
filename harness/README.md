@@ -50,6 +50,35 @@ orchestration model.
       verify FakeGmailAdapter + isolated fake DB + `BLOCK_EXTERNAL_MUTATIONS=1`,
       else `deny_all`). Lands with the Phase-3 email service.
 
+## `soak/` — the agentic-soak lane (`pnpm soak`, NEVER green.sh)
+
+A SEPARATE lane beside the harness: an agentic discovery engine layered on the
+SAME substrate (serverHost boot + `uiDriver` DOM verbs + `dbReads` + `evaluator`
+semantics). It drives **`claude -p`** (the buyer/dealer/judge roles) against the
+machine's logged-in Claude **subscription** — the wrapper strips
+`ANTHROPIC_API_KEY`/`DEEPSEEK_API_KEY`/`OPENAI_API_KEY` from the child env so the
+CLI uses the **Keychain OAuth** path (no per-call api cost). It is **local /
+owner-run by nature** (Keychain OAuth + subscription rate limits) and **never
+joins `green.sh`/`ui:functional`/CI** (a one-line comment in `green.sh` guards
+against a future edit "helpfully" adding it).
+
+The discovery→freeze→corpus flow: the soak DISCOVERS (the claude buyer GENERATES
+freeform phrasing under a fixed, version-controlled scenario class; the
+orchestrator types it + drives the gate BUTTONS); a HYBRID verdict scores it
+(deterministic DB/state assertions over `dbReads` are authoritative; an Opus
+LLM-judge rules only the soft dims); on a deterministic failure `freezeToCorpus`
+MINIMIZES the input + emits a fixed `*.ui_*.toml` in the `cases.ts` grammar — and
+that frozen case is then a deterministic regression `pnpm harness` runs. **The
+soak discovers; the `*.toml` corpus is the gate.**
+
+Layout (`harness/soak/`): `claudeAgent.ts` (the OAuth spawn wrapper + stream-array
+parser), `taxonomy.ts` + `scenarios/*.toml` (the enumerable edge-class list),
+`orchestrator.ts` (the per-scenario drive loop — owns the ONE pinned browser),
+`verdict.ts` (the hybrid deterministic-assertion lib + Opus-judge wrapper),
+`ledger.ts` (the replayable run-ledger), `freezeToCorpus.ts` (the minimizer +
+emitter), `cli.ts` (`run`/`suite`/`freeze`/`list`). Roles: `prompts/buyer.md`,
+`prompts/judge.md`, and `prompts/dealer.md`'s soak-mode section.
+
 ## Safety (frozen invariants — never relaxed)
 
 - `no_external_mutation` is the non-negotiable keystone, checked on **every**
