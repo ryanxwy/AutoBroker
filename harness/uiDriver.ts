@@ -838,7 +838,7 @@ export class UiDriver {
   }
 
   /** pinProfileInSearches: the EXPLICIT pin verb — open the Searches popover,
-   *  find the profile row whose vehicle-label link text equals `label` (zero or
+   *  find the profile row whose vehicle-label title text equals `label` (zero or
    *  ambiguous matches fail LOUD, never by index), click its Pin control, wait
    *  for the row to flip to Unpin (the pin landed on the session), then close
    *  the popover. Sessions are never auto-pinned; this is the user action that
@@ -859,7 +859,9 @@ export class UiDriver {
     const matches: number[] = [];
     const seen: string[] = [];
     for (let i = 0; i < count; i += 1) {
-      const text = ((await rows.nth(i).locator("a").first().textContent()) ?? "").trim();
+      const text = (
+        (await rows.nth(i).locator('[data-testid^="searches-view-"]').first().textContent()) ?? ""
+      ).trim();
       seen.push(text);
       if (text === want) matches.push(i);
     }
