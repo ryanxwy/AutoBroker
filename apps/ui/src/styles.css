@@ -148,13 +148,17 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
 /* ---- app shell ---------------------------------------------------------- */
 .app-shell { display: flex; flex-direction: column; height: 100%; }
 
-/* ---- topbar (54px sticky panel strip) ----------------------------------- */
+/* ---- topbar (54px sticky panel strip) — THREE-ZONE grid ----------------- */
+/* Searches nav LEFT · brand+logo CENTER · utilities (gear) RIGHT. The
+   minmax(0,1fr) side columns let a long nav clip rather than shove the brand
+   off true-center, which space-between cannot guarantee. */
 .topbar {
   height: 54px;
   flex: 0 0 54px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
+  column-gap: 14px;
   padding: 0 18px;
   background: var(--panel);
   border-bottom: 1px solid var(--rule);
@@ -162,6 +166,20 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   top: 0;
   z-index: 60;
 }
+.topbar__left { justify-self: start; display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar__brand { justify-self: center; }
+.topbar__right { justify-self: end; display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+
+/* the brand mark + wordmark — a home link, centered. The orange Broker is the
+   only brand accent and the established logo. */
+.topbar .brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+}
+.topbar .brand-link:hover { text-decoration: none; }
+.topbar .brand-mark { display: block; color: var(--gate); flex: 0 0 auto; }
 .topbar .wordmark {
   font-family: var(--chrome-x);
   font-stretch: 125%;
@@ -172,7 +190,23 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   white-space: nowrap;
 }
 .topbar .wordmark b { color: var(--gate); }
-.topbar .spacer { flex: 1; }
+
+/* icon-only chrome button (the Settings gear) — a square ledger plate with a
+   monoline glyph; the accessible name lives in aria-label + the title tooltip. */
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+}
+.icon-btn:hover:not(:disabled) { background: var(--panel); box-shadow: var(--shadow); }
+.icon-btn svg { display: block; }
 
 /* live run pill — graphite blue, pulsing dot */
 .running-pill {
@@ -214,6 +248,30 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
 /* conversation mode: the rail takes the space, the canvas pane shrinks. */
 .app-body[data-layout="conversation"] .app-main { flex: 0 0 320px; min-width: 320px; }
 .app-body[data-layout="conversation"] .chat-rail { flex: 1; width: auto; }
+
+/* ---- rail resizer (the draggable seam) ---------------------------------- */
+/* A zero-footprint focusable separator straddling the rail's border-left: a
+   thin visible line, a 10px transparent hit strip (negative margin overlap). */
+.rail-resizer {
+  flex: 0 0 0px;
+  align-self: stretch;
+  width: 10px;
+  margin-inline: -5px;
+  z-index: 4;
+  cursor: col-resize;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.rail-resizer:hover {
+  background: linear-gradient(90deg, transparent 4px, var(--rule) 4px, var(--rule) 6px, transparent 6px);
+}
+.rail-resizer:focus-visible { outline: 2px solid var(--gate); outline-offset: -1px; }
+/* No fixed rail width to drag when the rail is flex:1 — hide the seam there. */
+.app-body[data-layout="conversation"] .rail-resizer { display: none; }
+/* Global cursor + no text-select for the whole drag (survives passing over pane
+   content). Set on <body> by the resizer's pointerdown. */
+body.resizing { cursor: col-resize; user-select: none; }
 
 .backend-banner {
   background: var(--stop-wash);
@@ -299,6 +357,18 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   transition: transform 0.18s;
 }
 .popover-wrap > button[aria-expanded="true"]::after { transform: rotate(180deg); }
+/* an icon-only popover trigger (the rail History clock) — caret-less square plate */
+.popover-wrap > button.icon-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  gap: 0;
+  border-radius: 7px;
+}
+.popover-wrap > button.icon-btn::after { content: none; }
+/* the rail History panel anchors to the rail's top-right (popover-panel is
+   right:0 already); cap its width so it fits inside the rail */
+.rail-header .popover-panel { min-width: 260px; max-width: min(340px, calc(100vw - 32px)); }
 
 @keyframes popIn {
   from { opacity: 0; transform: translateY(-5px); }
@@ -319,6 +389,9 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   box-shadow: var(--shadow-pop);
   animation: popIn 0.16s ease both;
 }
+/* a LEFT-zone trigger (the Searches nav) opens its panel left-aligned, so it
+   stays on-screen instead of extending off the left edge (right:0 default). */
+.topbar__left .popover-panel { left: 0; right: auto; }
 .popover-panel p { margin: 8px 14px; }
 .popover-panel > div > button.btn-primary { margin: 6px 14px 8px; }
 .popover-row {
@@ -732,6 +805,10 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   padding-top: 12px;
   border-top: 1px solid var(--rule-soft);
 }
+/* the removal row: soft "Remove" (recoverable) beside hard "Delete permanently" */
+.profile-card-removal { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.profile-card-removal .profile-remove { display: inline-flex; }
+.profile-hard-delete-open { font-size: 11px; padding: 5px 11px; }
 /* low-emphasis remove trigger; the inline confirm uses the shared gate-card */
 .profile-remove .profile-remove-open { font-size: 11px; padding: 5px 11px; }
 .profile-remove .gate-card { margin-top: 4px; animation: popIn 0.16s ease both; }
@@ -1075,34 +1152,62 @@ details.optional[open] summary { margin-bottom: 10px; }
 }
 .resume-banner button { padding: 5px 10px; font-size: 11px; }
 
-/* ---- chat input (composer) -------------------------------------------------- */
-.chat-input {
-  border-top: 1px solid var(--rule);
-  padding: 12px 14px;
+/* ---- chat input (composer) — Claude-style auto-grow, integrated Send -------- */
+.composer { border-top: 1px solid var(--rule); padding: 12px 14px; background: var(--panel); }
+.composer .composer-anchor { position: relative; }
+/* the rounded box that OWNS the look; the textarea inside is transparent */
+.composer-row {
   display: flex;
+  align-items: flex-end; /* pins Send to the last line as the box grows */
   gap: 8px;
-  background: var(--panel);
-}
-.chat-input textarea {
-  flex: 1;
-  resize: none;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--paper);
-  color: var(--ink);
   border: 1px solid var(--rule);
-  border-radius: 7px;
-  padding: 9px 12px;
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 7px 8px 7px 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.chat-input textarea::placeholder { color: var(--ink-mute); }
-.chat-input textarea:focus {
-  outline: none;
+.composer-row:focus-within {
   border-color: var(--gate);
   box-shadow: 0 0 0 2px rgba(232, 89, 12, 0.18);
 }
-.chat-input .btn-primary { align-self: flex-end; font-size: 11px; padding: 7px 12px; }
+.composer-input {
+  flex: 1 1 auto;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  padding: 4px 0;
+  box-sizing: border-box;
+  min-height: 22px;       /* exactly one line at rest */
+  max-height: 200px;      /* ~9 lines, then scroll */
+  overflow-y: hidden;
+  field-sizing: content;  /* modern CSS auto-grow (Chromium/Safari); JS fallback covers Firefox */
+}
+.composer-input::placeholder { color: var(--ink-mute); }
+/* round ledger-ink Send — the chat affirmative is INK (never safety-orange:
+   orange is reserved for approvals/irreversible side effects). */
+.composer-send {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-size: 15px;
+  line-height: 1;
+}
+.composer-send:hover:not(:disabled) { background: #000; }
+.composer-send:disabled { opacity: 0.4; cursor: not-allowed; }
+.composer .slash-unknown-hint { margin: 0 0 6px; }
 
 /* slash autocomplete — popover idiom rising from the composer */
 [data-testid="slash-autocomplete"] {
@@ -1415,6 +1520,135 @@ details.optional[open] summary { margin-bottom: 10px; }
 
 /* next actions — the deterministic serif feed */
 .digest-action-feed { margin-top: 4px; }
+
+/* ---- modal (portal dialog: profile-edit + hard-delete) ----------------------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(21, 23, 28, 0.32); /* ink scrim, not pure black */
+  animation: gateReveal 0.2s ease both;
+}
+.modal-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  box-shadow: var(--shadow-focus);
+  padding: 18px 20px;
+}
+.modal-dialog.danger { border-top: 3px solid var(--gate); } /* safety-orange cap */
+.modal-dialog > h2 { font-size: 16px; letter-spacing: -0.01em; }
+.modal-dialog .modal-foot { display: flex; align-items: center; gap: 9px; margin-top: 16px; }
+.modal-dialog .modal-foot .spacer { flex: 1; }
+/* the profile-edit panel inside the modal needs no entrance of its own. */
+.modal-dialog .profile-edit-panel { margin-top: 14px; padding-top: 0; border-top: 0; animation: none; }
+.hard-delete-consequence { font-family: var(--serif); font-size: 13px; line-height: 1.5; color: var(--ink); margin: 6px 0 0; }
+.hard-delete-consequence strong { font-weight: 700; }
+/* the edit modal's danger zone — set off by a ledger rule below the form */
+.profile-danger-zone { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
+.profile-danger-zone .btn-danger { font-size: 11px; padding: 5px 11px; }
+
+/* ---- rail skills tray (collapsible, above the composer) ----------------------- */
+.rail-skills { border-top: 1px solid var(--rule); background: var(--panel); }
+.rail-skills > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 9px 15px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.rail-skills > summary::-webkit-details-marker { display: none; }
+.rail-skills > summary::before { content: "▸ "; }
+.rail-skills[open] > summary::before { content: "▾ "; }
+.rail-skills-list { max-height: 38vh; overflow: auto; border-top: 1px solid var(--rule-soft); }
+
+/* ---- rail history (sessions) popover trigger + rows --------------------------- */
+.rail-history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--rule-soft);
+  transition: background 0.12s;
+}
+.rail-history-row:hover { background: var(--paper); }
+.rail-history-row[aria-current="true"] { background: var(--run-wash); border-left: 3px solid var(--run); padding-left: 11px; }
+.rail-history-row .rail-history-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.rail-history-row .rail-history-title:hover { box-shadow: none; }
+.rail-history-when { font-family: var(--mono); font-size: 9px; color: var(--ink-mute); white-space: nowrap; }
+
+/* ---- searches popover: far-left pin toggle + pinned-row weight/color ---------- */
+.searches-row { display: flex; align-items: center; gap: 9px; }
+.pin-toggle {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pin-toggle:hover:not(:disabled) { box-shadow: none; }
+.searches-row .pin-toggle svg { color: var(--ink-mute); transition: color 0.12s, opacity 0.12s; }
+/* quiet until hover/focus when unpinned… */
+.searches-row:not(:hover) .pin-toggle[aria-pressed="false"] svg { opacity: 0.28; }
+.searches-row .pin-toggle[aria-pressed="false"]:focus-visible svg { opacity: 1; }
+/* …filled + accent + always-on when pinned */
+.searches-row[data-pinned="true"] .pin-toggle svg { color: var(--run); opacity: 1; }
+.searches-row .searches-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.searches-row[data-pinned="true"] .searches-row-title { font-weight: 600; color: var(--run); }
+.searches-row .searches-row-view {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 4px 9px;
+}
+
+/* ---- settings: diagnostics section (folded in from the top bar) --------------- */
+.settings-page .diag-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.settings-page .diag-grid dt { color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9px; padding-top: 2px; }
+.settings-page .diag-grid dd { margin: 0; word-break: break-all; color: var(--ink-soft); }
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop { animation-duration: 0.01ms; }
+}
 
 /* ---- text utilities ---------------------------------------------------------- */
 .muted { color: var(--ink-soft); }

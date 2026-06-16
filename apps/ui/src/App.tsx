@@ -36,17 +36,19 @@ import { Chat, useChat } from "@ai-sdk/react";
 
 import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
-import { invalidate, useRefocusRefetch } from "./api/useDataChanged.js";
+import { invalidate, useDataRefetch, useRefocusRefetch } from "./api/useDataChanged.js";
 import type {
   EnvConfigResponse,
   IntakeScopeNotice,
   KeyPresenceResponse,
   Mode,
+  ProfileList,
   SkillManifest,
   SkillList,
   StartAck,
 } from "./api/wire.js";
 import { Canvas } from "./canvas/Canvas.js";
+import { HardDeleteModal, ProfileEditModal } from "./canvas/ProfileModals.js";
 import {
   EMPTY_BROWSER_VIEW,
   reduceBrowserView,
@@ -69,15 +71,25 @@ import { NotFound } from "./routes/NotFound.js";
 import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { Settings } from "./routes/Settings.js";
 import { navigate, useRoute } from "./router.js";
+import { RailResizer } from "./shell/RailResizer.js";
 import { Toast } from "./shell/Toast.js";
 import { TopBar } from "./shell/TopBar.js";
-import { useLayout } from "./store/layout.js";
+import { clampRailWidth, loadRailWidth, useLayout } from "./store/layout.js";
 
 // Pre-load fallback only: the live skill list comes from GET /api/skills
 // (knownSkills below). This literal is used until that fetch resolves; the UI
 // does not import @autobroker/skills (it would pull the manifest into the
 // browser bundle for no runtime gain — the server already serves it).
 const INTAKE_SKILL = "search_profile_intake";
+
+// Stable bus keys (module-level so useDataRefetch's effect deps don't churn).
+const PROFILE_KINDS = ["profiles"] as const;
+// After a hard purge, refetch the profile LIST + sessions only. The Canvas's
+// per-profile sub-resource reads (dealers/threads/quotes/…) are keyed on the
+// active profile id, so the list refetch re-derives the active profile and
+// cascades those automatically — invalidating them here too would race the
+// list update and refetch the just-deleted id (transient 404s).
+const PURGE_KINDS = ["profiles", "sessions"];
 
 export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.Element {
   const route = useRoute();
@@ -91,7 +103,42 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // The curated operational env vars — owned here (like presence) so the
   // Environment panel reflects a live value after a write with no reload.
   const env = useAsync<EnvConfigResponse>(() => client.getEnvConfig(), []);
+  // Active-profile presence drives the rail Skills tray readiness grouping (the
+  // top bar no longer owns the only profiles read).
+  const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
+  useDataRefetch(PROFILE_KINDS, profiles.refetch);
+  const hasActiveProfile = profiles.kind === "ok" && profiles.data.length > 0;
   const layoutMode = useLayout((s) => s.mode);
+
+  // ---- draggable rail width: own the --rail-width on the .app-body host ------
+  // RailResizer writes the CSS var imperatively during a drag; App sets the
+  // initial (persisted, re-clamped) value on mount and re-clamps on window resize
+  // so a width saved on a wide window can't starve the canvas on a narrow one.
+  const appBodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = appBodyRef.current;
+    if (el === null) return;
+    const applyClamped = (): void => {
+      const cw = el.clientWidth || window.innerWidth;
+      el.style.setProperty("--rail-width", `${clampRailWidth(loadRailWidth(), cw)}px`);
+    };
+    applyClamped();
+    window.addEventListener("resize", applyClamped);
+    return () => window.removeEventListener("resize", applyClamped);
+  }, []);
+
+  // ---- profile modals (view/edit + hard-delete), hosted here ----------------
+  const [profileModal, setProfileModal] = useState<
+    { kind: "edit" | "delete"; id: string; name: string } | null
+  >(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const closeProfileModal = (): void => {
+    setProfileModal(null);
+    setDeleteError(null);
+  };
+  const onViewProfile = (id: string, name: string): void => setProfileModal({ kind: "edit", id, name });
+  const onDeleteProfile = (id: string, name: string): void => setProfileModal({ kind: "delete", id, name });
 
   // First-run gate: on a fresh install (no DeepSeek key) land the owner on
   // Settings once, framing setup. Only redirect from the home route (a direct
@@ -220,6 +267,29 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       .catch((err: unknown) => {
         setLaunchError(err instanceof Error ? err.message : "Could not unpin the search.");
       });
+  };
+
+  // ---- hard delete (irreversible): purge the profile + everything scoped to it
+  const doPurge = (id: string): void => {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    client
+      .purgeProfile(id)
+      .then(() => {
+        // Refetch every family the purge touched; clear a now-dangling pin (the
+        // server already unbound the session) and leave a deleted profile's route.
+        invalidate(PURGE_KINDS);
+        if (id === pinnedProfileId) {
+          setPinnedProfileId(null);
+          setPinLabel(null);
+        }
+        setProfileModal(null);
+        if (route.name === "profile" && route.profileId === id) navigate("/");
+      })
+      .catch((err: unknown) => {
+        setDeleteError(err instanceof Error ? err.message : "delete failed");
+      })
+      .finally(() => setDeleteBusy(false));
   };
 
   const onSelectSession = (sessionId: string): void => {
@@ -419,14 +489,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       <TopBar
         client={client}
         activeRunId={activeRunId}
-        mode={mode}
         pinnedProfileId={pinnedProfileId}
-        deepseekReady={deepseekReady}
         onStartIntake={startIntakeFresh}
-        onRunSkill={onRunSkill}
         onPin={onPin}
         onUnpin={onUnpin}
-        onSelectSession={onSelectSession}
+        onViewProfile={onViewProfile}
       />
 
       {backendDown !== null && (
@@ -449,7 +516,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           banner-tracked gate precedes app-main and all prose in document order. */}
       <GateBannerHost awaiting={activeAwaiting} decision={decision} />
 
-      <div className="app-body" data-layout={layoutMode}>
+      <div className="app-body" data-layout={layoutMode} ref={appBodyRef}>
         <main className="app-main" data-testid="app-main">
           {launchError !== null && (
             <p className="danger-text" role="alert" data-testid="launch-error">
@@ -461,6 +528,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               client={client}
               onStartIntake={startIntakeFresh}
               deepseekReady={deepseekReady}
+              onEditProfile={onViewProfile}
+              onDeleteProfile={onDeleteProfile}
             />
           )}
           {route.name === "run" && (
@@ -469,6 +538,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               onStartIntake={startIntakeFresh}
               runId={route.runId}
               deepseekReady={deepseekReady}
+              onEditProfile={onViewProfile}
+              onDeleteProfile={onDeleteProfile}
             />
           )}
           {route.name === "profile" && <ProfileWorkspace client={client} profileId={route.profileId} />}
@@ -480,10 +551,15 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               onChanged={keyPresence.refetch}
               env={env}
               onEnvChanged={env.refetch}
+              mode={mode}
             />
           )}
           {route.name === "not_found" && <NotFound path={route.path} />}
         </main>
+
+        {/* The draggable seam — canvas-layout affordance only (CSS hides it in
+            conversation layout, where the rail is flex:1). */}
+        <RailResizer containerRef={appBodyRef} />
 
         <ChatRail
           title={railTitle}
@@ -496,13 +572,43 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           scopeNotice={scopeNotice}
           pinnedProfileId={pinnedProfileId}
           pinLabel={pinLabel}
+          currentSessionId={sessionIdRef.current}
+          skills={skills.kind === "ok" ? skills.data : []}
+          hasActiveProfile={hasActiveProfile}
+          deepseekReady={deepseekReady}
           onSlash={onSlash}
           onFreeform={onFreeform}
           onUnpin={onUnpin}
           onStartIntake={startIntakeFresh}
           onStopPick={onStopPick}
+          onSelectSession={onSelectSession}
+          onRunSkill={onRunSkill}
         />
       </div>
+
+      {/* Profile dialogs — the unified view/edit modal and the irreversible
+          hard-delete confirm (App owns the state so both Canvas and the Searches
+          list can open them). */}
+      {profileModal?.kind === "edit" && (
+        <ProfileEditModal
+          client={client}
+          profileId={profileModal.id}
+          name={profileModal.name}
+          open
+          onClose={closeProfileModal}
+          onDeleteRequest={() => setProfileModal({ kind: "delete", id: profileModal.id, name: profileModal.name })}
+        />
+      )}
+      {profileModal?.kind === "delete" && (
+        <HardDeleteModal
+          open
+          name={profileModal.name}
+          busy={deleteBusy}
+          error={deleteError}
+          onClose={closeProfileModal}
+          onConfirm={() => doPurge(profileModal.id)}
+        />
+      )}
     </div>
   );
 }

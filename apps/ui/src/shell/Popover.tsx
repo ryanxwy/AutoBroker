@@ -15,12 +15,25 @@ export interface PopoverProps {
   label: ReactNode;
   triggerTestId: string;
   panelTestId: string;
+  /** Extra class for the trigger button (e.g. "icon-btn" for an icon-only,
+   *  caret-less trigger). */
+  triggerClassName?: string;
+  /** Accessible name for an icon-only trigger (when `label` is not text). */
+  triggerLabel?: string;
   /** Fired on every open (the refetch hook). */
   onOpen?: () => void;
   children: ReactNode | ((close: () => void) => ReactNode);
 }
 
-export function Popover({ label, triggerTestId, panelTestId, onOpen, children }: PopoverProps): JSX.Element {
+export function Popover({
+  label,
+  triggerTestId,
+  panelTestId,
+  triggerClassName,
+  triggerLabel,
+  onOpen,
+  children,
+}: PopoverProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -49,7 +62,14 @@ export function Popover({ label, triggerTestId, panelTestId, onOpen, children }:
 
   return (
     <div className="popover-wrap" ref={wrapRef}>
-      <button type="button" data-testid={triggerTestId} aria-expanded={open} onClick={toggle}>
+      <button
+        type="button"
+        {...(triggerClassName !== undefined ? { className: triggerClassName } : {})}
+        {...(triggerLabel !== undefined ? { "aria-label": triggerLabel, title: triggerLabel } : {})}
+        data-testid={triggerTestId}
+        aria-expanded={open}
+        onClick={toggle}
+      >
         {label}
       </button>
       {open && (

@@ -275,8 +275,8 @@ describe("App — non-intake slash starts THAT skill", () => {
   });
 });
 
-describe("App — Skills popover launches implemented non-intake skills", () => {
-  it("open the popover → the enabled dealer_geosearch Run button starts a generic slash run", async () => {
+describe("App — Skills rail tray launches implemented non-intake skills", () => {
+  it("the enabled dealer_geosearch Run button (rail Skills tray) starts a generic slash run", async () => {
     const posted: Array<Record<string, unknown>> = [];
     // One active profile so the pin-gated Run button is enabled.
     const profiles = [{ search_profile_id: "prof-1", make: "Hyundai", model: "Tucson Hybrid", year: 2026 }];
@@ -284,20 +284,15 @@ describe("App — Skills popover launches implemented non-intake skills", () => 
     const r = render(<App client={client} />);
     await flush();
 
-    // The popover-open step: trigger visible → click → panel visible (the
-    // popover refetches profiles+skills on every open).
-    expect(r.query("skills-popover")).toBeNull();
-    click(r.get("topbar-skills"));
-    await flush(); // resolve the on-open refetch.
-    expect(r.query("skills-popover")).not.toBeNull();
-
+    // Skills now live in the rail tray (above the composer): the Run button is
+    // in the DOM directly — the <details> renders its children regardless of the
+    // collapsed/expanded state.
     const runBtn = r.get("ledger-run-dealer_geosearch") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(false);
     click(runBtn);
     await flush();
 
-    // The popover closed on Run, the POST fired, and the SPA navigated.
-    expect(r.query("skills-popover")).toBeNull();
+    // The POST fired and the SPA navigated.
     expect(posted).toHaveLength(1);
     expect(posted[0]!["skill"]).toBe("dealer_geosearch");
     expect(window.location.pathname).toBe("/runs/run-geo");
@@ -322,9 +317,10 @@ describe("App — pin threading on launches", () => {
   };
 
   async function enterPinnedSession(r: ReturnType<typeof render>): Promise<void> {
-    click(r.get("topbar-searches"));
+    // Session history moved into the rail's History popover (top-right corner).
+    click(r.get("rail-history"));
     await flush();
-    click(r.get("searches-session-sess-pin"));
+    click(r.get("rail-session-sess-pin"));
     await flush(); // hydrate pin from GET /api/sessions/:id.
   }
 
@@ -368,8 +364,7 @@ describe("App — pin threading on launches", () => {
     await flush();
     await enterPinnedSession(r);
 
-    click(r.get("topbar-skills"));
-    await flush();
+    // The rail Skills tray Run button (no popover open needed).
     click(r.get("ledger-run-dealer_geosearch"));
     await flush();
 
@@ -468,16 +463,16 @@ describe("App — session re-entry after a server restart (terminal recovery)", 
     const r = render(<App client={client} />);
     await flush();
 
-    // Open the Searches popover: the session row carries the terminal pill of
+    // Open the rail History popover: the session row carries the terminal pill of
     // ITS bound run (run-old → done), not a global latest-run guess.
-    click(r.get("topbar-searches"));
+    click(r.get("rail-history"));
     await flush();
     const pill = r.get("session-pill-sess-old");
     expect(pill.getAttribute("data-status")).toBe("done");
 
     // Enter the session: /stream-v2 404s (no live channel after restart), so
     // the status fallback synthesizes the terminal turn from durable storage.
-    click(r.get("searches-session-sess-old"));
+    click(r.get("rail-session-sess-old"));
     await flush();
     expect(window.location.pathname).toBe("/runs/run-old");
     expect(r.get("assistant-turn").getAttribute("data-status")).toBe("done");
@@ -647,13 +642,12 @@ describe("App — first-run gate (no DeepSeek key)", () => {
     r.unmount();
   });
 
-  it("the Skills popover is locked (every Run disabled + the Settings pointer) when DeepSeek is absent", async () => {
+  it("the Skills rail tray is locked (every Run disabled + the Settings pointer) when DeepSeek is absent", async () => {
     const client = new ApiClient({ fetchImpl: noDeepseekFetch() });
     const r = render(<App client={client} />);
     await flush();
 
-    click(r.get("topbar-skills"));
-    await flush();
+    // The rail Skills tray renders the locked directory directly (no open needed).
     expect(r.query("skills-locked-notice")).not.toBeNull();
     expect((r.get("ledger-run-search_profile_intake") as HTMLButtonElement).disabled).toBe(true);
     r.unmount();

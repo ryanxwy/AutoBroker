@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiClient } from "../api/client.js";
 import type { AsyncState } from "../api/useApi.js";
-import type { EnvConfigResponse, KeyPresenceResponse } from "../api/wire.js";
+import type { EnvConfigResponse, KeyPresenceResponse, Mode } from "../api/wire.js";
 import { render } from "../test/render.js";
 import { Settings } from "./Settings.js";
 
@@ -38,6 +38,16 @@ function env(): AsyncState<EnvConfigResponse> & { refetch: () => void; refreshin
   return { kind: "ok", data: { vars: [] }, refetch: () => {}, refreshing: false };
 }
 
+/** A resolved backend-mode read for the Diagnostics section. */
+function mode(): AsyncState<Mode> & { refetch: () => void; refreshing: boolean } {
+  return {
+    kind: "ok",
+    data: { active_db: "/tmp/autobroker.db", data_dir: "/tmp", demo: false },
+    refetch: () => {},
+    refreshing: false,
+  };
+}
+
 describe("Settings — keys panel", () => {
   it("renders all four key rows + the Gmail card", () => {
     const r = render(
@@ -47,6 +57,7 @@ describe("Settings — keys panel", () => {
         onChanged={() => {}}
         env={env()}
         onEnvChanged={() => {}}
+        mode={mode()}
       />,
     );
     expect(r.query("settings-page")).not.toBeNull();
@@ -66,6 +77,7 @@ describe("Settings — keys panel", () => {
         onChanged={() => {}}
         env={env()}
         onEnvChanged={() => {}}
+        mode={mode()}
       />,
     );
     expect(r.query("settings-setup-strip")).not.toBeNull();
@@ -80,6 +92,7 @@ describe("Settings — keys panel", () => {
         onChanged={() => {}}
         env={env()}
         onEnvChanged={() => {}}
+        mode={mode()}
       />,
     );
     expect(r.query("settings-setup-strip")).toBeNull();
