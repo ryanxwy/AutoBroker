@@ -150,9 +150,17 @@ await build({
   format: "cjs",
   target: "node22",
   external: ["better-sqlite3", "libsql", "playwright"],
-  // import.meta.url appears in two inlined server modules; both are inert in
-  // the bundle (the run-directly entry guard, and the ui-dist fallback that
-  // the always-set AUTOBROKER_UI_DIST env bypasses). Silence the noise.
+  // esbuild emits `import.meta` as empty in a CJS bundle, so `import.meta.url`
+  // is `undefined`. An EAGER `fileURLToPath(import.meta.url)` at module init
+  // (e.g. packages/db migrator's DEFAULT_MIGRATIONS_FOLDER) then throws and
+  // crashes the bundled server on boot. Shim import.meta.url to the bundle
+  // file's own URL so every such usage resolves to a real string. The resolved
+  // values are inert here anyway — boot applies migrations from bundle/drizzle
+  // directly (never migrate()), and AUTOBROKER_UI_DIST bypasses the ui-dist
+  // fallback — so only crash-avoidance matters.
+  banner: { js: "const __IMPORT_META_URL__ = require('node:url').pathToFileURL(__filename).href;" },
+  define: { "import.meta.url": "__IMPORT_META_URL__" },
+  // Other (non-.url) import.meta usages stay empty; silence that residual noise.
   logOverride: { "empty-import-meta": "silent" },
 });
 
