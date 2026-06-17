@@ -84,8 +84,8 @@ export function Incentives({ incentives }: IncentivesProps): JSX.Element {
       )}
       {incentives.kind === "ok" && incentives.data.length === 0 && (
         <p className="muted" data-testid="canvas-incentives-empty">
-          No incentives yet — run /incentive_scrape to capture manufacturer offers
-          for this vehicle.
+          No incentives yet — check for manufacturer rebates and offers on this
+          vehicle.
         </p>
       )}
       {incentives.kind === "ok" && incentives.data.length > 0 && (

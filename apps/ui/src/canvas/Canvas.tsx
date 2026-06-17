@@ -273,7 +273,7 @@ function DealerTiles({ dealers }: { dealers: AsyncState<DealerList> }): JSX.Elem
       )}
       {dealers.kind === "ok" && rows.length === 0 && (
         <p className="muted" data-testid="canvas-dealers-empty">
-          No dealers yet — run /dealer_geosearch to find dealers near you.
+          No dealers yet — search for dealers near you to get started.
         </p>
       )}
       {dealers.kind === "ok" && rows.length > 0 && (
@@ -322,7 +322,7 @@ function CanvasFeed({
   }
   const next: string[] =
     dealerCount === null || dealerCount === 0
-      ? ["Find dealers near you — run /dealer_geosearch."]
+      ? ["Find dealers near you to get started."]
       : ["Quotes land here as the email pipeline skills come online."];
 
   return (

@@ -209,6 +209,18 @@ function money0(value: number): string {
 // --------------------------------------------------------------------------- //
 
 function checkMathSanity(quote: AuditQuote): AuditFinding | null {
+  // Without an extracted sales-tax amount you cannot reconcile an out-the-door
+  // total: dealers routinely bundle tax into one combined "Title, tax & license
+  // (TT&L)" line that does not map cleanly to sales_tax, so a null here means
+  // "unknown tax", not "$0 tax". Treating it as 0 (as validateOfferMath does)
+  // makes well-formed quotes whose math IS correct report a bogus multi-thousand
+  // -dollar "doesn't reconcile" delta — and biases the buyer toward the least
+  // transparent dealer. The incompleteness is already surfaced by
+  // MISSING_BREAKDOWN, so skip MATH_SANITY (not_checked) when tax is absent and
+  // only fire it when all of selling price, tax, and OTD are present and still
+  // diverge — a real arithmetic error.
+  if (quote.sales_tax === null) return null;
+
   const fees: (number | NamedAmount)[] = [];
   for (const f of [
     quote.dealer_fee,
