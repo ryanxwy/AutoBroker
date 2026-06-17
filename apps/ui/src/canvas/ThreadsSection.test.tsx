@@ -3,14 +3,14 @@
  * ThreadsSection.test — the presentational Dealer-replies canvas section. Proves
  * the empty wait-state copy (the contacted-dealer count), the row rendering with
  * a quoted/replied classification chip, the loading + error states, and that no
- * raw id is surfaced.
+ * raw id is surfaced. Also proves pagination behaviour (10/page).
  */
 
 import { describe, expect, it } from "vitest";
 
 import type { AsyncState } from "../api/useApi.js";
-import { render } from "../test/render.js";
-import { ThreadsSection, type ThreadRowList } from "./ThreadsSection.js";
+import { click, render } from "../test/render.js";
+import { ThreadsSection, type ThreadRow, type ThreadRowList } from "./ThreadsSection.js";
 
 function ok(data: ThreadRowList): AsyncState<ThreadRowList> {
   return { kind: "ok", data };
@@ -98,5 +98,56 @@ describe("ThreadsSection — loading / error", () => {
     );
     const alert = container.querySelector('[role="alert"]');
     expect(alert!.textContent).toContain("boom");
+  });
+});
+
+/** Build N thread rows for pagination tests. */
+function makeThreads(n: number): ThreadRowList {
+  return Array.from({ length: n }, (_, i): ThreadRow => ({
+    thread_id: `t-${i + 1}`,
+    dealer_name: `Dealer ${i + 1}`,
+    subject: `Subject ${i + 1}`,
+    state: i % 2 === 0 ? "quoted" : "replied",
+    updated_at: new Date(Date.now() - i * 3_600_000).toISOString(),
+  }));
+}
+
+describe("ThreadsSection — pagination", () => {
+  it("renders only 10 rows and shows Pager when there are >10 threads", () => {
+    const threads = makeThreads(15);
+    const { container } = render(<ThreadsSection threads={ok(threads)} dealerCount={5} />);
+    const rows = container.querySelectorAll('[data-testid="canvas-thread-row"]');
+    expect(rows).toHaveLength(10);
+    const pager = container.querySelector('[data-testid="canvas-pager"]');
+    expect(pager).not.toBeNull();
+  });
+
+  it("navigates to the next page showing the remaining threads", () => {
+    const threads = makeThreads(15);
+    const { container } = render(<ThreadsSection threads={ok(threads)} dealerCount={5} />);
+    const nextBtn = container.querySelector('[data-testid="canvas-pager-next"]') as HTMLButtonElement;
+    expect(nextBtn).not.toBeNull();
+    click(nextBtn);
+    const rows = container.querySelectorAll('[data-testid="canvas-thread-row"]');
+    // 15 total, 10 on page 1, 5 on page 2
+    expect(rows).toHaveLength(5);
+  });
+
+  it("does NOT render a Pager when there are 10 or fewer threads", () => {
+    const threads = makeThreads(10);
+    const { container } = render(<ThreadsSection threads={ok(threads)} dealerCount={4} />);
+    // All 10 rows render
+    const rows = container.querySelectorAll('[data-testid="canvas-thread-row"]');
+    expect(rows).toHaveLength(10);
+    // Pager returns null (pageCount=1)
+    const pager = container.querySelector('[data-testid="canvas-pager"]');
+    expect(pager).toBeNull();
+  });
+
+  it("does NOT render a Pager for a single-page list (<10 threads)", () => {
+    const threads = makeThreads(3);
+    const { container } = render(<ThreadsSection threads={ok(threads)} dealerCount={2} />);
+    expect(container.querySelectorAll('[data-testid="canvas-thread-row"]')).toHaveLength(3);
+    expect(container.querySelector('[data-testid="canvas-pager"]')).toBeNull();
   });
 });

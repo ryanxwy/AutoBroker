@@ -17,6 +17,8 @@
  */
 
 import type { AsyncState } from "../api/useApi.js";
+import { Pager } from "./Pager.js";
+import { usePagedList } from "./usePagedList.js";
 
 /** One thread row the section renders. A local row type — the section never
  *  imports the wire schema (that lands when the route is wired). Extra server
@@ -85,7 +87,12 @@ export interface ThreadsSectionProps {
   dealerCount: number;
 }
 
+const PAGE_SIZE = 10;
+
 export function ThreadsSection({ threads, dealerCount }: ThreadsSectionProps): JSX.Element {
+  const allThreads = threads.kind === "ok" ? threads.data : [];
+  const pager = usePagedList(allThreads, PAGE_SIZE);
+
   return (
     <section data-testid="canvas-threads">
       <h2>Dealer replies</h2>
@@ -102,11 +109,25 @@ export function ThreadsSection({ threads, dealerCount }: ThreadsSectionProps): J
         </p>
       )}
       {threads.kind === "ok" && threads.data.length > 0 && (
-        <div className="tile-grid">
-          {threads.data.map((row) => (
-            <ThreadRowView key={row.thread_id} row={row} />
-          ))}
-        </div>
+        <>
+          <div className="tile-grid">
+            {pager.pageItems.map((row) => (
+              <ThreadRowView key={row.thread_id} row={row} />
+            ))}
+          </div>
+          <Pager
+            page={pager.page}
+            pageCount={pager.pageCount}
+            total={pager.total}
+            rangeStart={pager.rangeStart}
+            rangeEnd={pager.rangeEnd}
+            onPrev={pager.prev}
+            onNext={pager.next}
+            canPrev={pager.canPrev}
+            canNext={pager.canNext}
+            noun="replies"
+          />
+        </>
       )}
     </section>
   );
