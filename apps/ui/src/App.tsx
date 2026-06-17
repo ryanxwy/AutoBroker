@@ -406,6 +406,15 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       setLaunchError("Cannot re-launch: the stopped run carried no skill id.");
       return;
     }
+    // Persist the EXPLICIT pick to the session pin (same as the Searches-popover
+    // pin), so every subsequent pin_required skill in this conversation inherits
+    // it instead of re-prompting for the picker each time. Honoring an explicit
+    // user pick is NOT inference, so it respects the profile-ASK contract. The
+    // immediate run still carries search_profile_id explicitly below, so it does
+    // not depend on the (async) pin write landing first. (live-e2e 巡检 2026-06-16:
+    // the inline picker was transient while the popover pin persisted — this
+    // closes that inconsistency.)
+    onPin(profileId);
     doLaunchSkill(skill, { search_profile_id: profileId });
   };
   // Render a LOCAL clarify turn (no run, no SSE): the user's prose as a user turn

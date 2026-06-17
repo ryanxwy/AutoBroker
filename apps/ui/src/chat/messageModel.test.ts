@@ -176,6 +176,21 @@ describe("projectAssistantTurn — three-zone projection", () => {
     expect(profileStopCode(plain)).toBeNull();
   });
 
+  it("a QuotePipelineStopError pin_required classifies (renders the picker, not a raw error line)", () => {
+    const pin = projectAssistantTurn(
+      assistant([
+        frame("init", { skill: "quote_pipeline", driver_kind: "deepseek_apikey" }),
+        frame("error", {
+          reason: "Pin a search first: 2026 Hyundai Tucson Hybrid SEL.",
+          name: "QuotePipelineStopError",
+          code: "pin_required",
+        }),
+      ]),
+    );
+    expect(pin.skill).toBe("quote_pipeline");
+    expect(profileStopCode(pin)).toBe("pin_required");
+  });
+
   it("a text data-frame's metadata sets the resolution provenance", () => {
     const turn = projectAssistantTurn(
       assistant([

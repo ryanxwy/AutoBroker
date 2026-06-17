@@ -271,6 +271,11 @@ const PROFILE_STOP_ERROR_NAMES: ReadonlySet<string> = new Set([
   "DealerWebLeadSubmitStopError",
   "NegotiationFollowupStopError",
   "DealerCloseoutEmailStopError",
+  // The flagship orchestrator's pin-required STOP. Without it, a quote_pipeline
+  // STOP rendered as a raw error line with no inline picker — so a pure-NL user
+  // who had not pinned via the Searches popover hit a dead end (live-e2e 巡检
+  // 2026-06-16). Registering the name renders the same pin-picker card.
+  "QuotePipelineStopError",
 ]);
 
 /**

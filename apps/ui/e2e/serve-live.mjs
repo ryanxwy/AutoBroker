@@ -56,12 +56,16 @@ const INSERT_THREAD =
   "VALUES (?, ?, ?, 'replied', ?) ON CONFLICT(thread_id) DO NOTHING";
 const INSERT_MESSAGE =
   "INSERT INTO messages " +
-  "(message_id, thread_id, gmail_message_id, direction, sender, subject, body_text, " +
-  "received_at, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
-  "VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?, 'pending', NULL) " +
+  "(message_id, thread_id, gmail_message_id, direction, sender, sender_email, sender_name, " +
+  "subject, body_text, received_at, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
+  "VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, 'pending', NULL) " +
   "ON CONFLICT(message_id) DO NOTHING";
 let injectSeq = 0;
-const BASE_MS = 1_717_000_000_000;
+// ~2 days ago (not a fixed 2024 epoch): keeps replies INSIDE the negotiation
+// follow-up window (max 14d since the dealer's last reply) and reads as a fresh
+// inbox, so the nightly 巡检 can actually exercise negotiation_followup +
+// dealer_closeout_email drafts. Monotonic via injectSeq below.
+const BASE_MS = Date.now() - 2 * 24 * 60 * 60 * 1000;
 
 function injectDealerReplies(profileId, replies) {
   const adb = openDb();
@@ -107,8 +111,8 @@ function injectDealerReplies(profileId, replies) {
         }],
       });
       attachments += fakeResult.attachments;
-      if (insertMessage.run(messageId, threadId, gmailMessageId, reply.from, reply.subject,
-        reply.body, receivedAt, profileId).changes > 0) messages++;
+      if (insertMessage.run(messageId, threadId, gmailMessageId, reply.from, reply.from,
+        reply.dealerName, reply.subject, reply.body, receivedAt, profileId).changes > 0) messages++;
     }
     return { dealers, threads, messages, attachments };
   } finally {
