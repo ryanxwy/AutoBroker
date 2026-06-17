@@ -155,6 +155,18 @@ describe("MATH_SANITY", () => {
     const q = quote({ selling_price: null, sales_tax: 3000, doc_fee: 85, otd_total: 50000 });
     expect(codes(auditQuote(q, [], [], profile()))).not.toContain("MATH_SANITY");
   });
+
+  it("does not fire when sales tax is missing — a bundled TT&L line, not $0 tax", () => {
+    // selling price + doc fee present, OTD present, but tax bundled into a
+    // combined "Title, tax & license" line the extractor left null: the math
+    // cannot be reconciled, so MATH_SANITY must stay quiet (MISSING_BREAKDOWN
+    // covers the incompleteness) rather than report a bogus delta = the tax.
+    const q = quote({ selling_price: 33950, sales_tax: null, doc_fee: 150, otd_total: 37500 });
+    const c = codes(auditQuote(q, [], [], profile()));
+    expect(c).not.toContain("MATH_SANITY");
+    // …but the incompleteness is still surfaced — the signal is preserved.
+    expect(c).toContain("MISSING_BREAKDOWN");
+  });
 });
 
 // --------------------------------------------------------------------------- //
