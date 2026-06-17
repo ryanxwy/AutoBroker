@@ -372,6 +372,9 @@ export const QuoteRowSchema = z
     extractor_provider: z.string().nullable(),
     extraction_method: z.string().nullable(),
     quote_received_at: z.string().nullable(),
+    // Latest audit's flag codes (raw; [] when unaudited). Lets the raw foldout
+    // show pills for quotes the quote-compare buckets exclude (cash/unspecified).
+    audit_flag_summary: z.array(z.string()).default([]),
   })
   .passthrough();
 export type QuoteRow = z.infer<typeof QuoteRowSchema>;

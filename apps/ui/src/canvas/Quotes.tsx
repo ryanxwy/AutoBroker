@@ -7,15 +7,18 @@
  * (the extractor provider + method).
  *
  * DISTINCT FROM "Quote compare" (load-bearing): QuoteCompare shows the RANKED
- * finance/lease buckets (the deterministic compare ranker, gated by preference,
- * with audit pills); this section shows the raw extraction output for every mode
- * — a cash quote that the ranker's finance/lease buckets would omit still shows
- * here. The heading reads "Extracted quotes"; there is NO ranking + NO audit
- * pill here.
+ * finance/lease buckets (the deterministic compare ranker, gated by preference);
+ * this section shows the raw extraction output for every mode — a cash /
+ * unspecified quote that the ranker's finance/lease buckets would omit still
+ * shows here. The heading reads "Extracted quotes"; there is NO ranking. It DOES
+ * render each quote's audit flag pills (the same collapsed flags as the compare
+ * view) so a flagged off-mode quote — excluded from the ranked buckets — still
+ * surfaces its findings (e.g. MODE_MISMATCH / MISSING_BREAKDOWN) somewhere.
  *
  * Budget red line: a quote row renders the dealer name, the financing-mode chip,
- * the OTD (formatted dollars, no cents), and the provenance line — NEVER a
- * budget, NEVER a raw id (quote_id is the React key only). Presentational ONLY:
+ * the OTD (formatted dollars, no cents), the provenance line, and audit flag
+ * codes — NEVER a budget, NEVER a raw id (quote_id is the React key only).
+ * Presentational ONLY:
  * it takes its rows as a PROP (an AsyncState the host wires from the quotes
  * route) and knows nothing about the API client. LIGHT paper skin, mirroring the
  * threads + quote-compare + inventory-candidates sections.
@@ -23,6 +26,7 @@
 
 import type { AsyncState } from "../api/useApi.js";
 import type { QuoteList, QuoteRow } from "../api/wire.js";
+import { collapseAuditFlags } from "./auditFlags.js";
 
 /** A "$43,210" total label from a number (no cents noise), or null for a
  *  missing total. */
@@ -70,6 +74,19 @@ function QuoteRowView({ row }: { row: QuoteRow }): JSX.Element {
       {provenance !== "" && (
         <div className="t-status muted" data-testid="canvas-quote-provenance">
           {provenance}
+        </div>
+      )}
+      {row.audit_flag_summary.length > 0 && (
+        <div className="chip-row">
+          {collapseAuditFlags(row.audit_flag_summary).map((flag) => (
+            <span
+              className="mini-chip"
+              key={flag.code}
+              data-testid={`quote-audit-pill-${flag.code}`}
+            >
+              {flag.label}
+            </span>
+          ))}
         </div>
       )}
     </div>

@@ -42,6 +42,7 @@ function rawQuote(overrides: Partial<QuoteList[number]> = {}): QuoteList[number]
     extractor_provider: "deepseek",
     extraction_method: "ocr",
     quote_received_at: "2026-06-17T00:00:00.000Z",
+    audit_flag_summary: [],
     ...overrides,
   };
 }

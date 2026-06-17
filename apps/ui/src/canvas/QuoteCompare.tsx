@@ -24,32 +24,12 @@
 
 import type { AsyncState } from "../api/useApi.js";
 import type { QuoteCompareResult, QuoteCompareRow } from "../api/wire.js";
+import { collapseAuditFlags } from "./auditFlags.js";
 
 /** A "$44,540" total label from a number, or null for a missing total. */
 function dollarLabel(value: number | null): string | null {
   if (value === null) return null;
   return `$${Math.round(value).toLocaleString("en-US")}`;
-}
-
-/** Collapse the audit flag codes for display: one MISSING_REBATE per unapplied
- *  incentive is accurate but renders ~10 identical pills; fold them into a single
- *  "N rebates not applied" chip while keeping every DISTINCT flag (DOC_FEE_CAP,
- *  MISSING_BREAKDOWN, …) as its own pill. The collapsed chip keeps the
- *  MISSING_REBATE code (stable testid); distinct flags keep their order. */
-function collapseAuditFlags(codes: readonly string[]): { code: string; label: string }[] {
-  const out: { code: string; label: string }[] = [];
-  let rebates = 0;
-  for (const code of codes) {
-    if (code === "MISSING_REBATE") rebates += 1;
-    else out.push({ code, label: code });
-  }
-  if (rebates > 0) {
-    out.push({
-      code: "MISSING_REBATE",
-      label: rebates === 1 ? "1 rebate not applied" : `${rebates} rebates not applied`,
-    });
-  }
-  return out;
 }
 
 function QuoteRow({ row }: { row: QuoteCompareRow }): JSX.Element {
