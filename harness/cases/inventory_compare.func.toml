@@ -12,17 +12,29 @@
 # snapshots before==after with no run between, so a pure read panel reaches no
 # side effect).
 #
-#   step 1  inventory_listings world → the Inventory candidates section mounts;
-#           exactly THREE candidate rows survive the hard filters (the ordered
-#           row + the over-budget row are dropped); the top row shows a FULL
-#           17-char VIN + its stock number; the null-price row shows the
-#           "incomplete" badge; the null-stock row shows the em-dash.
+# FIXTURE COUNTS (inventoryListings fixture, authoritative):
+#   5 seeded listings → 2 dropped by hard filters (ordered + over-budget)
+#   = 3 surviving candidates (totalListings=3)
+#   Of those 3: only lst_strong (exact trim, in_stock, score ≥ 0.6) is
+#   recommended → recommendedCount=1
 #
-# WHY THESE ANCHORS ARE MEANINGFUL: the count=3 row anchor is a real cardinality
-# proof of the hard filters (5 seeded listings minus the ordered + over-budget
-# rows); the full-VIN + incomplete-badge + em-dash anchors prove the listings ≠
-# quotes display contract (full VIN, never-fabricated price/stock). No budget
-# number appears.
+#   step 1  default Recommended view: tally shows "1 recommended of 3 listings";
+#           1 candidate row visible (the Recommended filter default); full VIN
+#           + stock of lst_strong shown. Count=1 proves the Recommended default.
+#           The tally "1 of 3" proves both the recommendedCount and totalListings
+#           from the ranker. The All-filter → count=3 switch and the
+#           incomplete-badge / stock-missing assertions for the non-recommended
+#           candidates are covered by the InventoryCandidates unit tests
+#           (no func-lane runner primitive supports mid-step ui_action/anchor
+#           interleaving). No budget number appears.
+#
+# WHY THESE ANCHORS ARE MEANINGFUL:
+#   - tally "1 recommended of 3 listings" proves the ranker's cardinality (the
+#     recommended predicate: exact/near + in_stock/in_transit + score ≥ 0.6;
+#     only lst_strong qualifies; the near/SEL rows score below 0.6).
+#   - count=1 proves the default filter is Recommended (not All).
+#   - full VIN (17-char) + stock number of the recommended candidate prove the
+#     display invariant (never tail-only VIN, never fabricated stock).
 #
 # The kind="skill" zero-write + STOP-card proofs belong to the LIVE UI-lane
 # (chat-slash launches, not part of pnpm ui:functional) — like active_search,
@@ -40,17 +52,17 @@ input_mode = "slash"
 provider = "deepseek"
 lane = "ui"
 
-# ---- step 1: the populated rail (three candidates after the hard filters) -----
+# ---- step 1: Recommended filter default view -----------------------------------
 
 [[steps]]
-id = "ranked_rail"
+id = "recommended_rail"
 kind = "ui"
 fixture_state = "inventory_listings"
-purpose = "The Canvas Inventory candidates section ranks the seeded listings: 3 candidates survive the filters; full VIN, incomplete badge, em-dash stock all render."
+purpose = "Canvas Inventory section mounts with Recommended as the default filter (recommendedCount=1>0). Tally reads '1 recommended of 3 listings'. 1 candidate row visible (lst_strong). Full VIN + stock shown."
 
 # Open the Inventory tab — the candidates section lives behind it in the tabbed
 # workbench (the click both navigates AND waits for the section to mount before
-# the row-count + field anchors below).
+# the tally + row-count + field anchors below).
 [[steps.ui_actions]]
 verb = "click"
 testid = "canvas-tab-inventory"
@@ -60,41 +72,35 @@ kind = "dom_state"
 testid = "canvas-inventory-candidates"
 expect = "visible"
 
-# Exact match (NOT prefix): every row shares the identical testid
-# "inventory-candidate-row", and an exact selector excludes the
-# "canvas-inventory-candidates" section wrapper. Three rows = 5 seeded listings
-# minus the ordered + the over-budget rows (the hard-filter cardinality proof).
+# The tally proves the recommended/total cardinality: 1 recommended of the 3
+# surviving candidates (5 seeded - ordered - over-budget = 3 total;
+# only lst_strong satisfies the three-condition recommended predicate).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-tally"
+expect = "text"
+value = "1 recommended of 3 listings"
+
+# Default filter is Recommended (recommendedCount=1 > 0). Only lst_strong
+# is visible. count=1 is the Recommended-default cardinality proof.
 [[steps.anchors]]
 kind = "dom_state"
 testid = "inventory-candidate-row"
 expect = "count"
-count = 3
+count = 1
 match = "exact"
 
-# The FULL 17-char VIN is displayed (the listings display invariant). The
-# top-ranked row's VIN is the seeded full VIN.
+# The FULL 17-char VIN of lst_strong is displayed (the listings display
+# invariant). The VIN is the first-ranked recommended row's VIN.
 [[steps.anchors]]
 kind = "dom_state"
 testid = "inventory-candidate-vin"
 expect = "text"
 value = "KM8JBCAE3RU000042"
 
-# A NULL listed_price row renders the "incomplete" badge, never a fabricated number.
-[[steps.anchors]]
-kind = "dom_state"
-testid = "inventory-incomplete-badge"
-expect = "visible"
-
-# A present stock_number renders verbatim (the top-ranked row's stock).
+# A present stock number renders verbatim (the top-ranked row's stock).
 [[steps.anchors]]
 kind = "dom_state"
 testid = "inventory-stock"
 expect = "text"
 value = "STK-A1"
-
-# A NULL stock_number renders an em-dash (never fabricated) — its own testid so
-# the assertion is independent of which rank position the no-stock row lands in.
-[[steps.anchors]]
-kind = "dom_state"
-testid = "inventory-stock-missing"
-expect = "visible"

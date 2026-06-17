@@ -20,8 +20,12 @@
  * API client. LIGHT paper skin, mirroring the threads + dealer-tiles sections.
  */
 
+import { useMemo, useState } from "react";
+
 import type { AsyncState } from "../api/useApi.js";
 import type { InventoryCompareResult } from "../api/wire.js";
+import { Pager } from "./Pager.js";
+import { usePagedList } from "./usePagedList.js";
 
 /** One ranked candidate the section renders. Extra server fields are tolerated
  *  and ignored. */
@@ -39,6 +43,7 @@ export interface InventoryCandidate {
   distance_miles: number | null;
   reasons: string[];
   match_status: string;
+  recommended: boolean;
   [key: string]: unknown;
 }
 
@@ -60,6 +65,18 @@ function priceLabel(value: number | null): string | null {
 function distanceLabel(value: number | null): string | null {
   if (value === null) return null;
   return `${value.toFixed(1)} mi`;
+}
+
+/** A coarse "3 days ago" relative label from an ISO string. Degrades to "" when
+ *  the value is unparseable or null. */
+function relativeDate(value: string | null): string {
+  if (value === null || value.trim() === "") return "";
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return "";
+  const deltaDays = Math.floor((Date.now() - ms) / 86_400_000);
+  if (deltaDays <= 0) return "today";
+  if (deltaDays === 1) return "yesterday";
+  return `${deltaDays} days ago`;
 }
 
 function CandidateRow({ row }: { row: InventoryCandidate }): JSX.Element {
@@ -120,9 +137,36 @@ export interface InventoryCandidatesProps {
   inventory: AsyncState<InventoryCompareResult>;
 }
 
+const PAGE_SIZE = 12;
+
 export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JSX.Element {
-  const candidates =
+  const allCandidates =
     inventory.kind === "ok" ? (inventory.data.candidates as InventoryCandidate[]) : [];
+  const recommendedCount = inventory.kind === "ok" ? inventory.data.recommendedCount : 0;
+  const totalListings =
+    inventory.kind === "ok"
+      ? (inventory.data.totalListings ?? allCandidates.length)
+      : 0;
+  const scannedAtMax = inventory.kind === "ok" ? inventory.data.scannedAtMax : null;
+
+  // Default to "recommended" when there are any recommended candidates; else "all".
+  const [filter, setFilter] = useState<"recommended" | "all">(
+    () => (recommendedCount > 0 ? "recommended" : "all"),
+  );
+
+  // Re-compute the filtered list. A new array identity on every filter/candidate change
+  // ensures the pager auto-resets to page 1 (usePagedList watches the items reference).
+  const filtered = useMemo(() => {
+    if (filter === "recommended") {
+      return allCandidates.filter((c) => c.recommended);
+    }
+    return allCandidates;
+  }, [allCandidates, filter]);
+
+  const pager = usePagedList(filtered, PAGE_SIZE);
+
+  const scannedWhen = relativeDate(scannedAtMax);
+
   return (
     <section data-testid="canvas-inventory-candidates">
       <h2>Inventory candidates</h2>
@@ -132,17 +176,64 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
           Couldn&apos;t load inventory: {inventory.message}
         </p>
       )}
-      {inventory.kind === "ok" && candidates.length === 0 && (
+      {inventory.kind === "ok" && totalListings === 0 && (
         <p className="muted" data-testid="canvas-inventory-empty">
           Listed 0 inventory candidates (recommended: 0).
         </p>
       )}
-      {inventory.kind === "ok" && candidates.length > 0 && (
-        <div className="tile-grid">
-          {candidates.map((row) => (
-            <CandidateRow key={row.listing_id} row={row} />
-          ))}
-        </div>
+      {inventory.kind === "ok" && totalListings > 0 && (
+        <>
+          <div className="inventory-controls">
+            <div className="modeswitch">
+              <button
+                type="button"
+                className={filter === "recommended" ? "on" : undefined}
+                aria-pressed={filter === "recommended"}
+                data-testid="inventory-filter-recommended"
+                onClick={() => setFilter("recommended")}
+                disabled={recommendedCount === 0}
+              >
+                Recommended {recommendedCount}
+              </button>
+              <button
+                type="button"
+                className={filter === "all" ? "on" : undefined}
+                aria-pressed={filter === "all"}
+                data-testid="inventory-filter-all"
+                onClick={() => setFilter("all")}
+              >
+                All {totalListings}
+              </button>
+            </div>
+            <p className="inventory-tally" data-testid="inventory-tally">
+              {recommendedCount} recommended of {totalListings} listings
+              {scannedWhen !== "" && (
+                <span className="muted"> · scanned {scannedWhen}</span>
+              )}
+            </p>
+          </div>
+          {filter === "recommended" && recommendedCount === 0 ? (
+            <p className="muted">No recommended candidates — showing all</p>
+          ) : (
+            <div className="tile-grid">
+              {pager.pageItems.map((row) => (
+                <CandidateRow key={row.listing_id} row={row} />
+              ))}
+            </div>
+          )}
+          <Pager
+            page={pager.page}
+            pageCount={pager.pageCount}
+            total={pager.total}
+            rangeStart={pager.rangeStart}
+            rangeEnd={pager.rangeEnd}
+            onPrev={pager.prev}
+            onNext={pager.next}
+            canPrev={pager.canPrev}
+            canNext={pager.canNext}
+            noun="listings"
+          />
+        </>
       )}
     </section>
   );

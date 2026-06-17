@@ -832,6 +832,23 @@ body.resizing { cursor: col-resize; user-select: none; }
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   margin-top: 8px;
 }
+
+/* ---- inventory panel controls (filter segmented control + tally line) ------- */
+.inventory-controls {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.inventory-tally {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0;
+}
 .tile {
   background: var(--panel);
   border: 1px solid var(--rule);
