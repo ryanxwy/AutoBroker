@@ -682,6 +682,7 @@ const batchReviewStep = createStep({
         skipped: [],
         total_targets: drafts.length,
         total_in_radius: drafts.length,
+        submit_label: "Send approved follow-ups",
       })) as never;
     }
 

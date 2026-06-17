@@ -1351,9 +1351,10 @@ const confirmStep = createStep({
     let summary: string;
     if (state.totalPending === 0) {
       summary =
-        "No pending inventory links for this profile — links arrive from dealer " +
-        "reply extraction (or manual seeding). Nothing was opened and nothing " +
-        "was written.";
+        "No pending inventory links to scan. These are queued automatically from " +
+        "dealer email replies (via dealer_reply_extract) or manual seeding — not " +
+        "from a URL pasted into chat, so a pasted link is not picked up here. " +
+        "Nothing was opened and nothing was written.";
     } else if (approvedCount === 0) {
       summary =
         `All ${state.totalPending} pending link(s) were filtered before review ` +

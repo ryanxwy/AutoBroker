@@ -21,6 +21,7 @@ import { useDataRefetch } from "../api/useDataChanged.js";
 import type {
   DealerList,
   DealerRow,
+  DigestView,
   IncentiveList,
   InventoryCompareResult,
   ProfileList,
@@ -31,6 +32,7 @@ import type {
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { Incentives } from "./Incentives.js";
+import { TodaysDigest } from "./TodaysDigest.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { QuoteCompare } from "./QuoteCompare.js";
@@ -59,6 +61,9 @@ const QUOTE_KINDS = ["quotes"] as const;
 /** The Incentives section refetches on an incentives pulse (the incentive_scrape
  *  skill writes that family; the read projection itself writes nothing). */
 const INCENTIVE_KINDS = ["incentives"] as const;
+/** The Today's-digest card refetches on a digest pulse (the daily_digest skill
+ *  writes that family; the read projection itself writes nothing). */
+const DIGEST_KINDS = ["digest"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -230,7 +235,15 @@ function DealerTile({ row, rank }: { row: DealerRow; rank: number }): JSX.Elemen
         {distance !== null && <span className="muted">{distance.toFixed(1)} mi</span>}
       </div>
       {str(row, "address") !== null && <div className="t-addr">{str(row, "address")}</div>}
-      <div className="t-status">{str(row, "candidate_status") ?? "candidate"}</div>
+      <div className="t-status">
+        {str(row, "candidate_status") ?? "candidate"}
+        {(num(row, "lead_submission_count") ?? 0) > 0 && (
+          <span className="mini-chip" data-testid="dealer-lead-submitted">
+            {" "}
+            lead submitted
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -348,6 +361,11 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const digest = useAsync<DigestView>(
+    () => client.getDigest(activeId ?? null),
+    [activeId],
+    activeId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
@@ -361,6 +379,7 @@ export function Canvas({
   useDataRefetch(QUOTE_KINDS, quotes.refetch);
   useDataRefetch(QUOTE_KINDS, quotesRaw.refetch);
   useDataRefetch(INCENTIVE_KINDS, incentives.refetch);
+  useDataRefetch(DIGEST_KINDS, digest.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -389,6 +408,7 @@ export function Canvas({
             onEditProfile={onEditProfile}
             onDeleteProfile={onDeleteProfile}
           />
+          <TodaysDigest digest={digest} />
           <DealerTiles dealers={dealers} />
           <InventoryCandidates inventory={inventory} />
           <QuoteCompare quotes={quotes} />
