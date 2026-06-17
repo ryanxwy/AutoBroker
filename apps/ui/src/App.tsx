@@ -420,8 +420,26 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // Render a LOCAL clarify turn (no run, no SSE): the user's prose as a user turn
   // + an assistant text turn carrying the router's reason, marked terminal so it
   // renders calm (not an in-progress spinner). The router started NO run.
-  const renderClarifyTurn = (userText: string, reason: string): void => {
+  const renderClarifyTurn = (
+    userText: string,
+    reason: string,
+    suggestedSkill: string | null = null,
+  ): void => {
     const id = `clarify-${Date.now()}`;
+    // A sensitivity-downgrade clarify carries the detected skill so the turn can
+    // offer a button-only "Run it explicitly" launch (the launch still goes
+    // through doLaunchSkill → every pin/approval gate downstream; nothing is
+    // pre-approved). Dead-end clarifies (no suggested skill) carry no button.
+    const suggestPart =
+      suggestedSkill !== null
+        ? [
+            {
+              type: "data-frame" as const,
+              id: `${id}-suggest`,
+              data: { kind: "clarify_suggest", payload: { skill: suggestedSkill } },
+            },
+          ]
+        : [];
     chat.messages = [
       ...chat.messages,
       { id: `${id}-u`, role: "user", parts: [{ type: "text", text: userText }] },
@@ -430,6 +448,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         role: "assistant",
         parts: [
           { type: "text", text: reason },
+          ...suggestPart,
           { type: "data-frame", id: `${id}-done`, data: { kind: "done", payload: {} } },
         ],
       },
@@ -455,7 +474,9 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           };
           bindAck(startAck, `/${ack.routing.skill_id}`, text);
         } else if (ack.routing.kind === "clarify") {
-          renderClarifyTurn(text, ack.routing.reason);
+          // A sensitivity downgrade names the detected skill in candidates[0];
+          // surface it as a button-only "Run it explicitly" affordance.
+          renderClarifyTurn(text, ack.routing.reason, ack.routing.candidates?.[0]?.skillId ?? null);
         }
       })
       .catch((err: unknown) => {
@@ -638,6 +659,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           onStopPick={onStopPick}
           onSelectSession={onSelectSession}
           onRunSkill={onRunSkill}
+          onRunSuggested={(skill) => doLaunchSkill(skill)}
         />
       </div>
 

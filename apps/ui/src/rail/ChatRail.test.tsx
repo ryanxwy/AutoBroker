@@ -46,6 +46,7 @@ function renderRail(activeAwaiting: unknown | null) {
       onStopPick={() => {}}
       onSelectSession={() => {}}
       onRunSkill={() => {}}
+      onRunSuggested={() => {}}
     />,
   );
 }

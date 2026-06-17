@@ -78,6 +78,10 @@ export interface AssistantTurnView {
   /** Profile-resolution provenance off the terminal text frame's metadata
    *  (pinned | inferred_newest), or null when the skill carries none. */
   resolution: string | null;
+  /** When a sensitivity-downgrade clarify suggests a specific skill, the skill id
+   *  the "Run it explicitly" affordance launches (button-only, gates downstream);
+   *  null for ordinary turns and dead-end clarifies. */
+  suggestedSkill: string | null;
 }
 
 /** A rendered turn: a user message or a projected assistant run. */
@@ -129,6 +133,7 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
   let errorName: string | null = null;
   let errorCode: string | null = null;
   let resolution: string | null = null;
+  let suggestedSkill: string | null = null;
 
   for (const part of message.parts) {
     if (part.type === "text") {
@@ -210,6 +215,13 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
         awaitingUser = null;
         break;
       }
+      case "clarify_suggest": {
+        // A sensitivity-downgrade clarify carries the detected skill so the turn
+        // can offer a button-only "Run it explicitly" launch (gates downstream).
+        const sk = payload["skill"];
+        if (typeof sk === "string") suggestedSkill = sk;
+        break;
+      }
       default:
         // awaiting_permission / approval_* / reasoning_* / refusal / runs.* —
         // carried through but not rendered by the three-zone view (yet).
@@ -230,6 +242,7 @@ export function projectAssistantTurn(message: RunUIMessage): AssistantTurnView {
     errorName,
     errorCode,
     resolution,
+    suggestedSkill,
   };
 }
 

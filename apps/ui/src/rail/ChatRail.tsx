@@ -67,6 +67,8 @@ export interface ChatRailProps {
   onSelectSession: (sessionId: string) => void;
   /** Run a skill from the rail Skills tray. */
   onRunSkill: (skill: SkillManifest) => void;
+  /** Launch a clarify turn's suggested skill ("Run it explicitly"; gates downstream). */
+  onRunSuggested: (skill: string) => void;
 }
 
 export function ChatRail({
@@ -92,6 +94,7 @@ export function ChatRail({
   onStopPick,
   onSelectSession,
   onRunSkill,
+  onRunSuggested,
 }: ChatRailProps): JSX.Element {
   return (
     <aside className="chat-rail" id="chat-rail" data-testid="chat-rail" aria-label="Conversation">
@@ -145,6 +148,7 @@ export function ChatRail({
               client={client}
               onStartIntake={onStartIntake}
               onPickStopProfile={(profileId) => onStopPick(turn.turn.skill, profileId)}
+              onRunSuggested={onRunSuggested}
               browser={turn.id === activeRunId ? browserView : null}
             />
           ),
