@@ -48,6 +48,7 @@ import {
   listProfileMessageRows,
   buildDigestView,
   listProfileQuoteRows,
+  listProfileIncentiveRows,
   rankInventoryForProfile,
   rankQuotesForProfile,
   update as updateProfile,
@@ -759,6 +760,21 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }
     return withDb((db) => listProfileQuoteRows(db, id));
+  });
+
+  // ---- GET /api/profiles/:id/incentives — read-only mfr-incentive projection
+  // The Incentives canvas section reads this; delegates DOWN into the tools-layer
+  // closure (routes never open the product DB directly — the SQLite invariant).
+  // The incentive_scrape skill writes manufacturer_incentives keyed on the
+  // profile's (make, model, zip); the reader joins the profile's vehicle to that
+  // slice. Cash incentives only — never a budget, never a raw id rendered.
+  app.get("/api/profiles/:id/incentives", async (req: FastifyRequest, _reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const profile = withDb((db) => readProfileRow(db, id));
+    if (profile === null) {
+      throw new RouteError("not_found", 404, `profile ${id} not found`);
+    }
+    return withDb((db) => listProfileIncentiveRows(db, id));
   });
 
   // ---- GET /api/profiles/:id/inventory-compare — read-only ranked listings ---

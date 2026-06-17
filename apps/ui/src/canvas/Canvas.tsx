@@ -21,6 +21,7 @@ import { useDataRefetch } from "../api/useDataChanged.js";
 import type {
   DealerList,
   DealerRow,
+  IncentiveList,
   InventoryCompareResult,
   ProfileList,
   QuoteCompareResult,
@@ -29,6 +30,7 @@ import type {
 } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
+import { Incentives } from "./Incentives.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { QuoteCompare } from "./QuoteCompare.js";
@@ -54,6 +56,9 @@ const INVENTORY_KINDS = ["listings"] as const;
  *  quotes pulse (the quote_audit + dealer_reply_extract skills write that family;
  *  the compare ranker + the raw projection themselves write nothing). */
 const QUOTE_KINDS = ["quotes"] as const;
+/** The Incentives section refetches on an incentives pulse (the incentive_scrape
+ *  skill writes that family; the read projection itself writes nothing). */
+const INCENTIVE_KINDS = ["incentives"] as const;
 
 export interface CanvasProps {
   client: ApiClient;
@@ -338,6 +343,11 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const incentives = useAsync<IncentiveList>(
+    () => client.listProfileIncentives(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
@@ -350,6 +360,7 @@ export function Canvas({
   useDataRefetch(INVENTORY_KINDS, inventory.refetch);
   useDataRefetch(QUOTE_KINDS, quotes.refetch);
   useDataRefetch(QUOTE_KINDS, quotesRaw.refetch);
+  useDataRefetch(INCENTIVE_KINDS, incentives.refetch);
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -382,6 +393,7 @@ export function Canvas({
           <InventoryCandidates inventory={inventory} />
           <QuoteCompare quotes={quotes} />
           <Quotes quotes={quotesRaw} />
+          <Incentives incentives={incentives} />
           <ThreadsSection
             threads={threads}
             dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}

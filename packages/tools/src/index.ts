@@ -507,6 +507,7 @@ export {
   listProfileThreadRows,
   listProfileMessageRows,
   listProfileQuoteRows,
+  listProfileIncentiveRows,
   listProfileContactEmails,
   listProfileDealerDomains,
   readFirstLeadSubmitAtMs,
