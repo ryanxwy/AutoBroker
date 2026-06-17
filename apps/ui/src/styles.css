@@ -1678,6 +1678,7 @@ p.muted, span.muted { font-size: 0.95em; }
   border: 1px solid var(--rule);
   border-radius: 4px;
   color: var(--ink-soft);
+  cursor: pointer;
 }
 .canvas-pager button:hover:not(:disabled) { color: var(--ink); box-shadow: var(--shadow); }
 .canvas-pager button:disabled { opacity: 0.4; cursor: not-allowed; }

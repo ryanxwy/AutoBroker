@@ -7,7 +7,7 @@
  * No external deps — useState + useMemo + useEffect from "react" only.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 /** The full pagination state returned by usePagedList. */
 export interface PagedList<T> {
@@ -48,9 +48,12 @@ export function usePagedList<T>(items: T[], pageSize: number): PagedList<T> {
     setPageRaw(1);
   }, [items, pageSize]);
 
-  const setPage = (n: number): void => {
-    setPageRaw(Math.max(1, Math.min(pageCount, n)));
-  };
+  const setPage = useCallback(
+    (n: number): void => {
+      setPageRaw(Math.max(1, Math.min(pageCount, n)));
+    },
+    [pageCount],
+  );
 
   const pageItems = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -61,6 +64,14 @@ export function usePagedList<T>(items: T[], pageSize: number): PagedList<T> {
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
 
+  const prev = useCallback(() => {
+    if (page > 1) setPage(page - 1);
+  }, [page, setPage]);
+
+  const next = useCallback(() => {
+    if (page < pageCount) setPage(page + 1);
+  }, [page, pageCount, setPage]);
+
   return {
     page,
     pageCount,
@@ -69,8 +80,8 @@ export function usePagedList<T>(items: T[], pageSize: number): PagedList<T> {
     rangeStart,
     rangeEnd,
     setPage,
-    prev: () => setPage(page - 1),
-    next: () => setPage(page + 1),
+    prev,
+    next,
     canPrev: page > 1,
     canNext: page < pageCount,
   };
