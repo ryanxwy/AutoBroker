@@ -43,3 +43,6 @@ AGENTS.md
 
 # Cold-copied legacy SQLite for drizzle-kit pull (copy-not-share scratch)
 .cold-copy/
+
+# subagent-driven-development scratch handoff reports (never committed)
+.sdd-reports/
