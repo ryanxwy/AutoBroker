@@ -45,15 +45,26 @@ import {
 // dealer + profile-scoped thread + inbound 'pending' message + the fake-mailbox
 // body the FakeGmailAdapter reads. internalDateMs is globally monotonic via a
 // module counter so multi-round injections stay strictly increasing.
+// contact_email is the reply-target ladder's rung-4 fallback. Without it (and
+// without dealer_contacts / contact_id-bearing messages / lead_submissions for
+// these injected dealers) negotiation_followup + dealer_closeout_email resolve a
+// null reply target and silently report "no candidates" — so seed it from the
+// dealer's reply `from`, which IS their contact address, to make those drafts
+// actually exercisable by the nightly 巡检.
 const INSERT_DEALER =
-  "INSERT INTO dealers (dealer_id, name, website, country) VALUES (?, ?, ?, 'US') " +
-  "ON CONFLICT(dealer_id) DO NOTHING";
+  "INSERT INTO dealers (dealer_id, name, website, country, contact_email) VALUES (?, ?, ?, 'US', ?) " +
+  "ON CONFLICT(dealer_id) DO UPDATE SET contact_email = excluded.contact_email";
 const BIND_DEALER =
   "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'bound') " +
   "ON CONFLICT(search_profile_id, dealer_id) DO NOTHING";
+// gmail_thread_id must be set: dealer_closeout_email replies on the thread and
+// uses gmail_thread_id as the in_reply_to anchor — a null anchor with a non-null
+// thread_id trips the reply double-flag invariant (thread_flag_mismatch) and the
+// closeout send fails closed. A real ingested thread always carries it, so seed a
+// stable fake gmail thread id to keep closeout exercisable.
 const INSERT_THREAD =
-  "INSERT INTO threads (thread_id, dealer_id, subject, state, search_profile_id) " +
-  "VALUES (?, ?, ?, 'replied', ?) ON CONFLICT(thread_id) DO NOTHING";
+  "INSERT INTO threads (thread_id, dealer_id, subject, state, search_profile_id, gmail_thread_id) " +
+  "VALUES (?, ?, ?, 'replied', ?, ?) ON CONFLICT(thread_id) DO NOTHING";
 const INSERT_MESSAGE =
   "INSERT INTO messages " +
   "(message_id, thread_id, gmail_message_id, direction, sender, sender_email, sender_name, " +
@@ -83,9 +94,10 @@ function injectDealerReplies(profileId, replies) {
       const gmailMessageId = `live-gmsg-${slug}`;
       const internalDateMs = BASE_MS + injectSeq++;
       const receivedAt = new Date(internalDateMs).toISOString();
-      if (insertDealer.run(dealerId, reply.dealerName, reply.dealerWebsite).changes > 0) dealers++;
+      if (insertDealer.run(dealerId, reply.dealerName, reply.dealerWebsite, reply.from).changes > 0) dealers++;
       bindDealer.run(profileId, dealerId);
-      if (insertThread.run(threadId, dealerId, reply.subject, profileId).changes > 0) threads++;
+      if (insertThread.run(threadId, dealerId, reply.subject, profileId, `live-gthread-${slug}`).changes > 0)
+        threads++;
       const attachment = reply.attachment === null ? undefined : [{
         attachmentId: `live-att-${slug}`,
         filename: reply.attachment.filename,
@@ -141,7 +153,11 @@ const MIGRATION_FILES = migrationFilesInOrder();
 const PORT = Number(process.env.PORT ?? 8131);
 
 // --- isolation + safety floor (NEVER ~/.autobroker*; never auto-approve) ----
-const tmpDir = mkdtempSync(join(tmpdir(), "autobroker-live-e2e-"));
+// Default to a fresh throwaway dir per boot. AUTOBROKER_LIVE_E2E_REUSE_DIR lets a
+// restart reuse an already-seeded dir (paired with the idempotent migration guard
+// below) so a long 巡检 survives a server restart without re-seeding from scratch.
+const tmpDir =
+  process.env.AUTOBROKER_LIVE_E2E_REUSE_DIR ?? mkdtempSync(join(tmpdir(), "autobroker-live-e2e-"));
 process.env.AUTOBROKER_DATA_DIR = tmpDir;
 delete process.env.AUTOBROKER_DB;
 process.env.NODE_ENV = "test"; // arms the intake deps seam guard
@@ -153,10 +169,18 @@ process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
 
 const dbPath = join(tmpDir, "autobroker.db");
 const db = openDb();
-for (const file of MIGRATION_FILES) db.$client.exec(readFileSync(file, "utf8"));
-db.$client
-  .prepare("INSERT INTO accounts (account_id, email) VALUES (?, ?)")
-  .run("acct-live-e2e-1", "live-e2e@example.com");
+// A reused dir already carries the schema — re-running the (no-IF-NOT-EXISTS)
+// migration set would throw "table already exists". Apply only to a fresh DB.
+const alreadyMigrated =
+  db.$client
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'")
+    .get() !== undefined;
+if (!alreadyMigrated) {
+  for (const file of MIGRATION_FILES) db.$client.exec(readFileSync(file, "utf8"));
+  db.$client
+    .prepare("INSERT INTO accounts (account_id, email) VALUES (?, ?)")
+    .run("acct-live-e2e-1", "live-e2e@example.com");
+}
 db.$client.close();
 
 // --- geocoder stub ONLY (a fixed real location); harnessGenerate stays REAL ---
