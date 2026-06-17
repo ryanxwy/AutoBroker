@@ -45,6 +45,7 @@ import {
   Notification,
   powerMonitor,
   powerSaveBlocker,
+  shell,
   utilityProcess,
   type UtilityProcess,
 } from "electron";
@@ -412,6 +413,25 @@ async function createWindow(port: number): Promise<void> {
     height: 900,
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
+
+  const appOrigin = `http://127.0.0.1:${port}`;
+  // External links (e.g. an inventory card's "View listing" VDP href, target=_blank)
+  // must NEVER spawn a second sealed Electron window — hand http(s) URLs to the
+  // system browser instead. Same one-anchor implementation works in the browser
+  // (native new tab) and here.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  // Belt-and-suspenders: an off-origin full navigation (a bare external <a href>
+  // with no target) is cancelled and opened externally; same-origin SPA routing is
+  // untouched (this fires for full-page nav, not pushState/hash deep-links).
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (url.startsWith(appOrigin)) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });

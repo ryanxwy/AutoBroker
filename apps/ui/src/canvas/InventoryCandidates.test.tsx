@@ -31,6 +31,7 @@ function makeCandidate(
     model: string | null;
     trim: string | null;
     exterior_color: string | null;
+    listing_url: string | null;
     listed_price: number | null;
     msrp: number | null;
     inventory_status: string;
@@ -52,6 +53,7 @@ function makeCandidate(
     model: "Tucson Hybrid",
     trim: "Limited",
     exterior_color: "Shimmering Silver",
+    listing_url: "https://dealer.example.com/vdp/lst-1",
     listed_price: 44175,
     msrp: 46500,
     inventory_status: "in_stock",
@@ -247,6 +249,23 @@ describe("InventoryCandidates — candidate row fields", () => {
     const result = makeResult([makeCandidate({ reasons: ["trim_exact", "preferred_color"] })]);
     const { all } = render(<InventoryCandidates inventory={ok(result)} />);
     expect(all("inventory-reason-chip")).toHaveLength(2);
+  });
+
+  it("renders a 'View listing' link to the VDP when listing_url is present", () => {
+    const result = makeResult([makeCandidate({ listing_url: "https://dealer.test/vdp/42" })]);
+    const { query } = render(<InventoryCandidates inventory={ok(result)} />);
+    const link = query("inventory-listing-link");
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("https://dealer.test/vdp/42");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    // noopener severs window.opener (anti reverse-tabnabbing) on the browser path.
+    expect(link?.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("omits the 'View listing' link when listing_url is null", () => {
+    const result = makeResult([makeCandidate({ listing_url: null })]);
+    const { query } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(query("inventory-listing-link")).toBeNull();
   });
 });
 

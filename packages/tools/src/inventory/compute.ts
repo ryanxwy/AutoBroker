@@ -44,6 +44,9 @@ export interface RankedCandidate {
   model: string | null;
   trim: string | null;
   exterior_color: string | null;
+  /** The listing's own vehicle-detail-page (VDP) href, or null — lets the card
+   *  click through to the dealer's public stock page. A public URL, never budget. */
+  listing_url: string | null;
   listed_price: number | null;
   msrp: number | null;
   inventory_status: string;
@@ -135,6 +138,7 @@ function toCandidate(ranked: RankedRow): RankedCandidate {
     model: asString(listing["model"]),
     trim: asString(listing["trim"]),
     exterior_color: asString(listing["exterior_color"]),
+    listing_url: asString(listing["listing_url"]),
     listed_price: asNumber(listing["listed_price"]),
     msrp: asNumber(listing["msrp"]),
     // inventory_status / dealer_id are NOT NULL columns; default to "" defensively.
