@@ -421,6 +421,7 @@ const batchReviewStep = createStep({
         skipped: [],
         total_targets: state.targets.length,
         total_in_radius: state.targets.length,
+        submit_label: "Send closeout emails",
         // Closeout-only: surface the "Skip all & reset" action on the review card.
         // Empty approve-intersection → the skip_all_reset hand-off (NOT a throw).
         allow_skip_all: true,

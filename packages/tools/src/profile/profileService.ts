@@ -233,7 +233,12 @@ function buildProfile(
     resolvedAddress: coords.resolvedAddress ?? null,
     city: loc.city,
     state: loc.state,
-    postalCode: loc.postalCode,
+    // Prefer the GEOCODED postal (coords.postalCode) over the locally-parsed one
+    // — same precedence as synthPostal above. Without this a location_query that
+    // carries no zip (but geocodes to one) persisted a blank postal_code, which
+    // then broke incentive_scrape (missing_zip) and the incentive/audit reads
+    // that join on postal_code.
+    postalCode: coords.postalCode ?? loc.postalCode,
     country: loc.country,
     latitude: coords.latitude,
     longitude: coords.longitude,
@@ -405,13 +410,20 @@ export function listProfileRows(db: Db, status: string | undefined): Record<stri
  * profile_dealers), nearest-first with unknown distances last. Read-only
  * snake_case rows for the HTTP dealers view; `candidate_status`/`bound_at`
  * carry the per-profile binding state alongside the dealer columns.
+ * `lead_submission_count` is the per-(profile,dealer) count of SUBMITTED leads so
+ * the dealers surface can show a "lead submitted" signal (a submitted lead writes
+ * a lead_submissions row but does NOT mutate profile_dealers.status).
  */
 export function listProfileDealerRows(db: Db, profileId: string): Record<string, unknown>[] {
   return db.$client
     .prepare(
-      "SELECT d.*, pd.status AS candidate_status, pd.bound_at " +
+      "SELECT d.*, pd.status AS candidate_status, pd.bound_at, " +
+        "SUM(CASE WHEN ls.outcome = 'submitted' THEN 1 ELSE 0 END) AS lead_submission_count " +
         "FROM profile_dealers pd JOIN dealers d ON d.dealer_id = pd.dealer_id " +
+        "LEFT JOIN lead_submissions ls ON ls.dealer_id = d.dealer_id " +
+        "AND ls.search_profile_id = pd.search_profile_id " +
         "WHERE pd.search_profile_id = ? " +
+        "GROUP BY d.dealer_id " +
         "ORDER BY d.distance_miles IS NULL, d.distance_miles",
     )
     .all(profileId) as Record<string, unknown>[];

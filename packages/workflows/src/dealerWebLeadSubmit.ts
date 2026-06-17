@@ -1101,6 +1101,7 @@ const batchReviewStep = createStep({
         skipped: [], // X1's filtered-out counts live in the confirm, never as a row.
         total_targets: eligible.length,
         total_in_radius: eligible.length,
+        submit_label: "Submit leads to approved dealers",
       })) as never;
     }
 

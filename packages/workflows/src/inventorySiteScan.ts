@@ -539,6 +539,11 @@ export const BatchReviewSuspendSchema = z.object({
   // emitter, so no other batch_review payload changes and the button never
   // renders there. Backward-compatible (no other suspend gains a field).
   allow_skip_all: z.boolean().optional(),
+  // The primary submit button's label. lead-submit/closeout/negotiation set their
+  // own send verb so the reused card reads correctly; absent ⇒ the inventory-scan
+  // default ("Scan approved dealers") in the card. OPTIONAL, backward-compatible
+  // (like allow_skip_all above — no other emitter changes).
+  submit_label: z.string().optional(),
 });
 export type BatchReviewSuspend = z.infer<typeof BatchReviewSuspendSchema>;
 

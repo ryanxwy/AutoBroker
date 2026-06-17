@@ -33,6 +33,10 @@ export interface BatchReviewSpec {
   /** Opt-in (closeout-only): render a "Skip all & reset" action. Absent/false on
    *  every other batch_review payload → that button never renders there. */
   allowSkipAll: boolean;
+  /** The primary submit button's label. Absent ⇒ the inventory-scan verb;
+   *  lead-submit/closeout/negotiation set their own send verb so the same card
+   *  reads correctly for every gate (the question is already payload-driven). */
+  submitLabel?: string;
 }
 
 /** Defensively read a batch_review spec_inline off the wire. Returns null on a
@@ -71,6 +75,8 @@ export function readBatchReviewSpec(spec: Record<string, unknown>): BatchReviewS
     totalTargets,
     totalInRadius,
     allowSkipAll,
+    submitLabel:
+      typeof spec["submit_label"] === "string" ? spec["submit_label"] : "Scan approved dealers",
   };
 }
 
@@ -199,7 +205,7 @@ export function BatchReviewCard({
           disabled={!canSubmit}
           onClick={() => onApprove(approvedIds)}
         >
-          Scan approved dealers
+          {spec.submitLabel ?? "Scan approved dealers"}
         </button>
         <button
           type="button"

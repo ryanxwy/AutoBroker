@@ -1821,9 +1821,15 @@ function affectedKinds(workflowId: string): string[] {
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
     case PIPELINE_RESET_WORKFLOW_ID:
-      // A full wipe — everything is gone, so refetch every projection back to
-      // empty-home.
-      return ["profiles", "sessions", "dealers", "listings", "incentives", "quotes", "digest"];
+      // A full wipe — every search is gone. Pulse profiles/sessions (+digest):
+      // the active-profile list refetches to empty and the Canvas unmounts every
+      // per-profile section on its own. We deliberately DROP the per-profile data
+      // families (dealers/listings/quotes/incentives) that 404 on a deleted
+      // profile — pulsing them would make those sections refetch the now-DELETED
+      // id (a burst of 404s) before the profile-list refetch unmounts them.
+      // `digest` stays: GET /api/digest returns an EMPTY view (not 404) for a
+      // gone profile, so the standalone /digest page still refreshes harmlessly.
+      return ["profiles", "sessions", "digest"];
     case INVENTORY_COMPARE_WORKFLOW_ID:
       // Pure read: the ranker writes NOTHING (no match_score column, no row
       // mutation). The success pulse fires with kinds:[] — the UI treats it as
