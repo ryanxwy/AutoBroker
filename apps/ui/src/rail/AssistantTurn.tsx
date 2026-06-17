@@ -34,6 +34,10 @@ export interface AssistantTurnProps {
   onStartIntake: () => void;
   /** Re-launch this turn's skill pinned to the picked profile (a NEW run). */
   onPickStopProfile: (profileId: string) => void;
+  /** Launch the clarify turn's suggested skill (the "Run it explicitly"
+   *  affordance for a sensitivity-downgrade clarify; button-only, gates
+   *  downstream — identical to a slash/Skills-tray launch). */
+  onRunSuggested?: (skill: string) => void;
   /** The LIVE browser activity view for the ACTIVE turn (transient — App
    *  passes null for every other turn and after terminal; never from parts). */
   browser?: BrowserView | null;
@@ -56,6 +60,7 @@ export function AssistantTurn({
   client,
   onStartIntake,
   onPickStopProfile,
+  onRunSuggested,
   browser = null,
 }: AssistantTurnProps): JSX.Element {
   // The rail renders only rail-tracked gate kinds (gateTrack is the single
@@ -91,6 +96,20 @@ export function AssistantTurn({
         <div className="zone-text" data-testid="turn-zone-text">
           {turn.text}
         </div>
+      )}
+
+      {/* Sensitivity-downgrade clarify: a button-only "Run it explicitly" launch
+          of the detected skill. It goes through the normal launch path, so every
+          pin/approval gate still renders downstream — nothing is pre-approved. */}
+      {turn.suggestedSkill !== null && onRunSuggested !== undefined && (
+        <button
+          type="button"
+          className="btn-secondary"
+          data-testid="clarify-run-explicit"
+          onClick={() => onRunSuggested(turn.suggestedSkill!)}
+        >
+          Run it explicitly
+        </button>
       )}
 
       {turn.status === "declined" && (

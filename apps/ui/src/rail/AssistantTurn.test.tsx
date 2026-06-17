@@ -28,6 +28,7 @@ function turnState(overrides: Partial<AssistantTurnView>): AssistantTurnView {
     errorName: null,
     errorCode: null,
     resolution: null,
+    suggestedSkill: null,
     ...overrides,
   };
 }
@@ -238,6 +239,37 @@ describe("AssistantTurn — typed STOP cards + resolution provenance", () => {
     const r = render(<AssistantTurn turn={turn} submitting={false} onDecision={() => {}} {...stopProps()} />);
     const tag = r.get("turn-resolution");
     expect(tag.getAttribute("data-resolution")).toBe("pinned");
+    r.unmount();
+  });
+
+  it("a sensitivity-clarify turn renders a 'Run it explicitly' button that launches the suggested skill", () => {
+    const onRunSuggested = vi.fn();
+    const turn = turnState({
+      status: "done",
+      awaitingUser: null,
+      text: "That looks like a sensitive action (dealer_web_lead_submit). Please run it explicitly so you can confirm it.",
+      suggestedSkill: "dealer_web_lead_submit",
+    });
+    const r = render(
+      <AssistantTurn
+        turn={turn}
+        submitting={false}
+        onDecision={() => {}}
+        {...stopProps()}
+        onRunSuggested={onRunSuggested}
+      />,
+    );
+    click(r.get("clarify-run-explicit"));
+    expect(onRunSuggested).toHaveBeenCalledWith("dealer_web_lead_submit");
+    r.unmount();
+  });
+
+  it("an ordinary turn (no suggested skill) renders no run-explicitly button", () => {
+    const turn = turnState({ status: "done", awaitingUser: null, text: "Done." });
+    const r = render(
+      <AssistantTurn turn={turn} submitting={false} onDecision={() => {}} {...stopProps()} onRunSuggested={() => {}} />,
+    );
+    expect(r.query("clarify-run-explicit")).toBeNull();
     r.unmount();
   });
 });
