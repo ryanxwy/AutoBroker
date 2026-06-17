@@ -54,6 +54,8 @@ export const RankedCandidateSchema = z
     model: z.string().nullable(),
     trim: z.string().nullable(),
     exterior_color: z.string().nullable(),
+    /** Public VDP href (or null) — the card's "View listing" click-through target. */
+    listing_url: z.string().nullable(),
     listed_price: z.number().nullable(),
     msrp: z.number().nullable(),
     inventory_status: z.string(),

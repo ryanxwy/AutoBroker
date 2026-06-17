@@ -38,6 +38,8 @@ export interface InventoryCandidate {
   model: string | null;
   trim: string | null;
   exterior_color: string | null;
+  /** Public VDP href (or null) — the card's "View listing" click-through target. */
+  listing_url: string | null;
   listed_price: number | null;
   dealer_name: string | null;
   distance_miles: number | null;
@@ -118,6 +120,19 @@ function CandidateRow({ row }: { row: InventoryCandidate }): JSX.Element {
           <span className="muted"> · {row.dealer_name}</span>
         )}
         {distance !== null && <span className="muted"> · {distance}</span>}
+        {typeof row.listing_url === "string" && row.listing_url !== "" && (
+          <>
+            {" · "}
+            <a
+              href={row.listing_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="inventory-listing-link"
+            >
+              View listing ↗
+            </a>
+          </>
+        )}
       </div>
       {row.reasons.length > 0 && (
         <div className="chip-row">
