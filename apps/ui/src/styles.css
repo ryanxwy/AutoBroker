@@ -1654,3 +1654,30 @@ details.optional[open] summary { margin-bottom: 10px; }
 .muted { color: var(--ink-soft); }
 p.muted, span.muted { font-size: 0.95em; }
 .danger-text { color: var(--stop); }
+
+/* ---- canvas pager — mono micro-cap ledger bar -------------------------------- */
+.canvas-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+.canvas-pager-range {
+  letter-spacing: 0.04em;
+}
+.canvas-pager button {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink-soft);
+}
+.canvas-pager button:hover:not(:disabled) { color: var(--ink); box-shadow: var(--shadow); }
+.canvas-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
