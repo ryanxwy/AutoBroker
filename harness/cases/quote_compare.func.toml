@@ -43,11 +43,12 @@ kind = "ui"
 fixture_state = "quote_compare_world"
 purpose = "The Canvas Quote compare section ranks the seeded quotes: both buckets render (finance 3 rows incl. a NULL-OTD incomplete, lease 2 rows); the APR_MARKUP pill + the incomplete badge render."
 
-# Click the first compare row (a plain, non-navigating tile) to wait for the
-# section to mount before the bucket + field anchors below.
+# Open the Quotes tab — the Quote compare section lives behind it (the click
+# both navigates AND waits for the section to mount before the bucket + field
+# anchors below).
 [[steps.ui_actions]]
 verb = "click"
-testid = "quote-compare-row"
+testid = "canvas-tab-quotes"
 
 [[steps.anchors]]
 kind = "dom_state"

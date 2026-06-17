@@ -575,6 +575,12 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
     const r = render(<App client={client} />);
     await flush();
 
+    // The dealer tiles live behind the Dealers tab now — open it so the tiles
+    // render (the dealers read is unconditional, so the badge/refetch stay live
+    // regardless of the active tab).
+    click(r.get("canvas-tab-dealers"));
+    await flush();
+
     // One dealer tile from the initial mount fetch.
     expect(r.all("canvas-dealer-tile")).toHaveLength(1);
     const dealerGetsAfterMount = dealerGets;
@@ -587,6 +593,13 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
     await flush();
     const stream = MockStream.instances[0]!;
     stream.emit({ type: "start", messageId: "run-dc" });
+    await flush();
+
+    // The launch navigated home→/runs/:id, which remounts Canvas as a separate
+    // element (tab state resets to overview) — reopen the Dealers tab on the run
+    // view so the tiles render for the post-pulse assertion below.
+    click(r.get("canvas-tab-dealers"));
+    await flush();
 
     // The data.changed pulse (a persisted data-frame) → onData → invalidate
     // (['dealers']) → the Canvas dealer view refetches IN PLACE (no reload).

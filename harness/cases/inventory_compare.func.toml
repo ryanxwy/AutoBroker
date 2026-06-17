@@ -48,11 +48,12 @@ kind = "ui"
 fixture_state = "inventory_listings"
 purpose = "The Canvas Inventory candidates section ranks the seeded listings: 3 candidates survive the filters; full VIN, incomplete badge, em-dash stock all render."
 
-# Click the first candidate row (a plain, non-navigating tile) to wait for the
-# section to mount before the row-count + field anchors below.
+# Open the Inventory tab — the candidates section lives behind it in the tabbed
+# workbench (the click both navigates AND waits for the section to mount before
+# the row-count + field anchors below).
 [[steps.ui_actions]]
 verb = "click"
-testid = "inventory-candidate-row"
+testid = "canvas-tab-inventory"
 
 [[steps.anchors]]
 kind = "dom_state"

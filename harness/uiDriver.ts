@@ -31,7 +31,11 @@
  * hygiene-skip-<id> / hygiene-select-all / hygiene-counter / hygiene-submit /
  * hygiene-decline / topbar-searches / searches-popover /
  * searches-row-<profileId> / searches-pin-<profileId> /
- * searches-unpin-<profileId>).
+ * searches-unpin-<profileId> / canvas-summary / canvas-tabs /
+ * canvas-tab-<key> (overview|dealers|inventory|quotes|replies|incentives — the
+ * workbench tab strip; a domain's section testids render ONLY once its tab is
+ * clicked, so a func case clicks canvas-tab-<domain> before touching them) /
+ * canvas-panel-<key>).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
  * imports `playwright` to drive the test browser (the dependency-cruiser rule

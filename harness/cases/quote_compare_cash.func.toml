@@ -33,11 +33,11 @@ kind = "ui"
 fixture_state = "quote_compare_cash_world"
 purpose = "A cash profile shows the empty compare state with the verbatim zero-quotes copy (both buckets empty despite a cash-mode quote)."
 
-# The cash world seeds a bound dealer; clicking its tile waits for the active
-# projection (incl. the Quote compare section) to mount.
+# Open the Quotes tab — the Quote compare section lives behind it (the click
+# both navigates AND waits for the empty compare state to mount).
 [[steps.ui_actions]]
 verb = "click"
-testid = "canvas-dealer-tile"
+testid = "canvas-tab-quotes"
 
 [[steps.anchors]]
 kind = "dom_state"

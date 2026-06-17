@@ -51,11 +51,11 @@ kind = "ui"
 fixture_state = "dealer_reply_extract_retry_world"
 purpose = "A failed extraction lights the per-thread extract-failed badge; the manual retry button is GONE (recovery is automatic + same-provider, not a user affordance)."
 
-# Click a bound dealer tile to wait for the active projection (incl. the Threads
-# section) to mount before the anchors below.
+# Open the Replies tab — the Threads section (with the extract-failed badge)
+# lives behind it (the click both navigates AND waits for the section to mount).
 [[steps.ui_actions]]
 verb = "click"
-testid = "canvas-dealer-tile"
+testid = "canvas-tab-replies"
 
 # The per-thread extract-failed badge is lit (there is a failure to recover).
 [[steps.anchors]]
@@ -110,9 +110,11 @@ purpose = "The failed message recovered to 'succeeded' — the extract-failed ba
 verb = "reload"
 testid = "canvas-dealer-tile"
 
+# After the reload the tab resets to overview — reopen the Replies tab (the
+# Threads section, where the badge WOULD render) before the absence anchor below.
 [[steps.ui_actions]]
 verb = "click"
-testid = "canvas-dealer-tile"
+testid = "canvas-tab-replies"
 
 # The badge cleared — the message is no longer 'failed'.
 [[steps.anchors]]

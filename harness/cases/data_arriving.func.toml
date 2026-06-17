@@ -54,6 +54,14 @@ value = "/search_profile_intake"
 verb = "click"
 testid = "chat-send"
 
+# The launch navigated to /runs/:id (Canvas remounts → tab resets to overview).
+# Open the Dealers tab on the run view so the dealer tiles are mounted BEFORE the
+# grow+pulse below — the 2→3 growth can then only come from the data.changed
+# refetch (no reload, no remount between the change and the assert).
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-dealers"
+
 # After the ui_actions open the run stream, grow the data (bind a 3rd dealer)
 # WITHOUT a reload, then emit the pulse onto the open run channel.
 [steps.data_arriving]

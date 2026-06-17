@@ -34,11 +34,11 @@ kind = "ui"
 fixture_state = "active_search"
 purpose = "An active profile with no listings shows the empty rail with the verbatim zero-candidates sentinel."
 
-# The active_search fixture seeds dealer tiles; clicking one waits for the active
-# projection (incl. the Inventory candidates section) to mount.
+# Open the Inventory tab — the candidates section lives behind it in the tabbed
+# workbench (the click both navigates AND waits for the empty rail to mount).
 [[steps.ui_actions]]
 verb = "click"
-testid = "canvas-dealer-tile"
+testid = "canvas-tab-inventory"
 
 [[steps.anchors]]
 kind = "dom_state"

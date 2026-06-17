@@ -34,12 +34,13 @@ kind = "ui"
 fixture_state = "active_search"
 purpose = "The Canvas projects the active search: profile card + vehicle label + two dealer tiles; the Searches popover lists the one active search."
 
-# Wait for the dealer tiles to load (the tile is a plain, non-navigating div, so
-# clicking the first one is a safe wait for it to mount), then open the Searches
-# popover so its row list mounts before the row-count anchor below.
+# Open the Dealers tab — the dealer-tiles section lives behind it in the tabbed
+# workbench (clicking the tab both navigates AND waits for the tiles to mount),
+# then open the Searches popover so its row list mounts before the row-count
+# anchor below.
 [[steps.ui_actions]]
 verb = "click"
-testid = "canvas-dealer-tile"
+testid = "canvas-tab-dealers"
 
 [[steps.ui_actions]]
 verb = "click"

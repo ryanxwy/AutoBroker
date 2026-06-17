@@ -1683,19 +1683,28 @@ p.muted, span.muted { font-size: 0.95em; }
 .canvas-pager button:hover:not(:disabled) { color: var(--ink); box-shadow: var(--shadow); }
 .canvas-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ---- canvas summary bento header (sticky, folds digest headline + tallies) -- */
-.canvas-summary {
+/* ---- canvas sticky header (summary + tab strip stick together) --------------
+ * The wrapper owns stickiness for BOTH the summary and the tab strip so they
+ * never double-stick. ProfileCard sits above it and scrolls away; the topbar is
+ * z-index 60 and lives OUTSIDE app-main, so 20 here is safe. */
+.canvas-stickyhead {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 20;
   background: var(--panel);
   border-bottom: 1px solid var(--rule);
+  margin-bottom: 12px;
+}
+
+/* ---- canvas summary bento header (folds digest headline + tallies) ---------- */
+.canvas-summary {
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule-soft);
   padding: 10px 16px 8px;
   display: flex;
   align-items: baseline;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
 }
 .canvas-summary-hero {
   display: inline-flex;
@@ -1764,4 +1773,59 @@ p.muted, span.muted { font-size: 0.95em; }
   font-style: italic;
   font-size: 12px;
   color: var(--ink-mute);
+}
+
+/* ---- canvas tab strip — segmented ledger control (the .modeswitch idiom) ----
+ * Sits inside .canvas-stickyhead, directly under the summary. Mono micro-cap
+ * labels, --ink active fill, --rule dividers; the live count rides as a tiny
+ * mono pill. */
+.canvas-tabs {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  overflow-x: auto;
+}
+.canvas-tabs button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: 8px 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.canvas-tabs button + button { border-left: 1px solid var(--rule); }
+.canvas-tabs button:hover:not(.on) { color: var(--ink); }
+.canvas-tabs button.on { background: var(--ink); color: var(--panel); }
+.canvas-tabs button.on:hover { color: var(--panel); }
+.canvas-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  border-radius: 8px;
+  background: var(--rule);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.canvas-tabs button.on .canvas-tab-badge {
+  background: var(--panel);
+  color: var(--ink);
 }

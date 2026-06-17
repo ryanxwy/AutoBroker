@@ -15,6 +15,8 @@
  * binds the route to the run (stable run-view-id testid).
  */
 
+import { useState } from "react";
+
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
@@ -31,6 +33,7 @@ import type {
 } from "../api/wire.js";
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
+import { CanvasTabs } from "./CanvasTabs.js";
 import { Incentives } from "./Incentives.js";
 import { ProfileSummary } from "./ProfileSummary.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
@@ -316,6 +319,41 @@ function CanvasFeed({
 }
 
 // ---------------------------------------------------------------------------
+// overview panel — the calm orientation tab (the feed + deterministic
+// next-actions). It surfaces NO quote/OTD numbers — the best OTD lives in the
+// sticky summary, so each number keeps a single home (no redundancy).
+// ---------------------------------------------------------------------------
+
+function OverviewPanel({
+  snapshot,
+  dealerCount,
+  digest,
+}: {
+  snapshot: ProfileSnapshot;
+  dealerCount: number | null;
+  digest: AsyncState<DigestView>;
+}): JSX.Element {
+  const nextActions = digest.kind === "ok" ? digest.data.nextActions : [];
+  return (
+    <>
+      <CanvasFeed snapshot={snapshot} dealerCount={dealerCount} />
+      {nextActions.length > 0 && (
+        <section className="card" data-testid="canvas-next-actions">
+          <h2>Next actions</h2>
+          <ul>
+            {nextActions.map((a) => (
+              <li className="muted" key={`${a.kind}-${a.profileId}`}>
+                {a.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // bestOtd derivation — lowest non-null otd_total across quote-compare rows
 // ---------------------------------------------------------------------------
 
@@ -346,6 +384,9 @@ function deriveBestOtd(
 // the canvas
 // ---------------------------------------------------------------------------
 
+/** The workbench tabs — one domain per tab; "overview" is the default landing. */
+type TabKey = "overview" | "dealers" | "inventory" | "quotes" | "replies" | "incentives";
+
 export function Canvas({
   client,
   onStartIntake,
@@ -354,6 +395,7 @@ export function Canvas({
   onEditProfile,
   onDeleteProfile,
 }: CanvasProps): JSX.Element {
+  const [tab, setTab] = useState<TabKey>("overview");
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   const active: ProfileSnapshot | null =
     profiles.kind === "ok" && profiles.data.length > 0 ? toSnapshot(profiles.data[0]!) : null;
@@ -433,35 +475,74 @@ export function Canvas({
       )}
       {active !== null && (
         <>
+          {/* Context header — ProfileCard scrolls away ABOVE the sticky region. */}
           <ProfileCard
             client={client}
             snapshot={active}
             onEditProfile={onEditProfile}
             onDeleteProfile={onDeleteProfile}
           />
-          <ProfileSummary
-            bestOtd={deriveBestOtd(quotes, digest)}
-            dealerCount={dealers.kind === "ok" ? dealers.data.length : null}
-            quoteCount={quotesRaw.kind === "ok" ? quotesRaw.data.length : null}
-            threadCount={threads.kind === "ok" ? threads.data.length : null}
-            needsReplyCount={digestProfile?.needsResponseCount ?? null}
-            inventoryRecommended={inventory.kind === "ok" ? inventory.data.recommendedCount : null}
-            inventoryTotal={inventory.kind === "ok" ? inventory.data.totalListings : null}
-            headline={digest.kind === "ok" ? digest.data.headline : null}
-          />
-          <DealerTiles dealers={dealers} />
-          <InventoryCandidates inventory={inventory} />
-          <QuoteCompare quotes={quotes} />
-          <Quotes quotes={quotesRaw} />
-          <Incentives incentives={incentives} />
-          <ThreadsSection
-            threads={threads}
-            dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}
-          />
-          <CanvasFeed
-            snapshot={active}
-            dealerCount={dealers.kind === "ok" ? dealers.data.length : null}
-          />
+
+          {/* Sticky header region — the summary + the tab strip stick together
+              below the topbar; only ONE owner of stickiness (the wrapper). */}
+          <div className="canvas-stickyhead">
+            <ProfileSummary
+              bestOtd={deriveBestOtd(quotes, digest)}
+              dealerCount={dealers.kind === "ok" ? dealers.data.length : null}
+              quoteCount={quotesRaw.kind === "ok" ? quotesRaw.data.length : null}
+              threadCount={threads.kind === "ok" ? threads.data.length : null}
+              needsReplyCount={digestProfile?.needsResponseCount ?? null}
+              inventoryRecommended={inventory.kind === "ok" ? inventory.data.recommendedCount : null}
+              inventoryTotal={inventory.kind === "ok" ? inventory.data.totalListings : null}
+              headline={digest.kind === "ok" ? digest.data.headline : null}
+            />
+            <CanvasTabs
+              active={tab}
+              onSelect={(k) => setTab(k as TabKey)}
+              tabs={[
+                { key: "overview", label: "Overview", count: null },
+                { key: "dealers", label: "Dealers", count: dealers.kind === "ok" ? dealers.data.length : null },
+                {
+                  key: "inventory",
+                  label: "Inventory",
+                  count: inventory.kind === "ok" ? inventory.data.candidates.length : null,
+                },
+                { key: "quotes", label: "Quotes", count: quotesRaw.kind === "ok" ? quotesRaw.data.length : null },
+                { key: "replies", label: "Replies", count: threads.kind === "ok" ? threads.data.length : null },
+                {
+                  key: "incentives",
+                  label: "Incentives",
+                  count: incentives.kind === "ok" ? incentives.data.length : null,
+                },
+              ]}
+            />
+          </div>
+
+          {/* Only the active tab's panel renders below the sticky header. */}
+          <div role="tabpanel" data-testid={`canvas-panel-${tab}`}>
+            {tab === "overview" && (
+              <OverviewPanel
+                snapshot={active}
+                dealerCount={dealers.kind === "ok" ? dealers.data.length : null}
+                digest={digest}
+              />
+            )}
+            {tab === "dealers" && <DealerTiles dealers={dealers} />}
+            {tab === "inventory" && <InventoryCandidates inventory={inventory} />}
+            {tab === "quotes" && (
+              <>
+                <QuoteCompare quotes={quotes} />
+                <Quotes quotes={quotesRaw} />
+              </>
+            )}
+            {tab === "replies" && (
+              <ThreadsSection
+                threads={threads}
+                dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}
+              />
+            )}
+            {tab === "incentives" && <Incentives incentives={incentives} />}
+          </div>
         </>
       )}
       {profiles.kind === "error" && (
