@@ -91,6 +91,26 @@ describe("Quotes — rows", () => {
   });
 });
 
+describe("Quotes — embedded prop", () => {
+  it("renders the h2 heading by default (embedded=false)", () => {
+    const { container } = render(<Quotes quotes={ok([])} />);
+    const h2 = container.querySelector("h2");
+    expect(h2).not.toBeNull();
+    expect(h2!.textContent).toBe("Extracted quotes");
+  });
+
+  it("suppresses the h2 heading when embedded=true", () => {
+    const { container } = render(<Quotes quotes={ok([])} embedded />);
+    expect(container.querySelector("h2")).toBeNull();
+  });
+
+  it("still renders canvas-quotes section and all content when embedded=true", () => {
+    const { container } = render(<Quotes quotes={ok([])} embedded />);
+    expect(container.querySelector('[data-testid="canvas-quotes"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="canvas-quotes-empty"]')).not.toBeNull();
+  });
+});
+
 describe("Quotes — loading / error", () => {
   it("renders a loading line", () => {
     const { container } = render(<Quotes quotes={{ kind: "loading" }} />);

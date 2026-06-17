@@ -32,13 +32,17 @@ lane = "ui"
 id = "empty_quotes_panel"
 kind = "ui"
 fixture_state = "active_search"
-purpose = "An active profile with no extracted quotes shows the Extracted-quotes empty state with the verbatim zero-quotes copy."
+purpose = "An active profile with no extracted quotes shows the Extracted-quotes empty state with the verbatim zero-quotes copy — behind the raw-extractions foldout."
 
-# Open the Quotes tab — the Extracted-quotes section lives behind it (the click
-# both navigates AND waits for the empty section to mount).
+# Open the Quotes tab — the tab click navigates AND waits for the panel to mount.
 [[steps.ui_actions]]
 verb = "click"
 testid = "canvas-tab-quotes"
+
+# Expand the collapsed raw-extractions foldout to reveal the canvas-quotes section.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-quotes-foldout"
 
 [[steps.anchors]]
 kind = "dom_state"

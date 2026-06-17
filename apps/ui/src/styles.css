@@ -1846,3 +1846,22 @@ p.muted, span.muted { font-size: 0.95em; }
   background: var(--panel);
   color: var(--ink);
 }
+
+/* ---- quotes tab — raw-extractions foldout ---------------------------------- */
+.quotes-rawfold {
+  margin-top: 18px;
+}
+.quotes-rawfold > summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: 2px 0;
+}
+.quotes-rawfold > summary::-webkit-details-marker { display: none; }
+.quotes-rawfold > summary::before { content: "▸ "; }
+.quotes-rawfold[open] > summary::before { content: "▾ "; }
+.quotes-rawfold[open] > summary { margin-bottom: 10px; }

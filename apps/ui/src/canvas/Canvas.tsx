@@ -38,8 +38,7 @@ import { Incentives } from "./Incentives.js";
 import { ProfileSummary } from "./ProfileSummary.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
-import { QuoteCompare } from "./QuoteCompare.js";
-import { Quotes } from "./Quotes.js";
+import { QuotesPanel } from "./QuotesPanel.js";
 import { ThreadsSection } from "./ThreadsSection.js";
 
 /** The data kinds the Canvas's read views render — stable module-level literals
@@ -530,10 +529,7 @@ export function Canvas({
             {tab === "dealers" && <DealerTiles dealers={dealers} />}
             {tab === "inventory" && <InventoryCandidates inventory={inventory} />}
             {tab === "quotes" && (
-              <>
-                <QuoteCompare quotes={quotes} />
-                <Quotes quotes={quotesRaw} />
-              </>
+              <QuotesPanel quotes={quotes} quotesRaw={quotesRaw} />
             )}
             {tab === "replies" && (
               <ThreadsSection

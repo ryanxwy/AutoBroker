@@ -45,18 +45,26 @@ lane = "ui"
 # dealer_reply_extract.ui_retry over the failed-extraction world.
 
 # ---- step 1: the populated raw-quotes section (Quotes tab) ----------------------
+# NOTE: the raw Extracted-quotes section is now behind a collapsed foldout
+# (canvas-quotes-foldout) inside the Quotes tab. The test clicks the tab first
+# to navigate, then clicks the foldout summary to expand the raw section before
+# asserting canvas-quotes and canvas-quote-row.
 
 [[steps]]
 id = "extracted_quotes_panel"
 kind = "ui"
 fixture_state = "dealer_reply_extract_world"
-purpose = "The Canvas Extracted-quotes section (Quotes tab) renders 3 raw quote rows across modes (finance + lease + cash)."
+purpose = "The Canvas Extracted-quotes section (Quotes tab) renders 3 raw quote rows across modes (finance + lease + cash) — behind the raw-extractions foldout."
 
-# Open the Quotes tab — the Extracted-quotes section lives behind it (the click
-# both navigates AND waits for the section to mount before the anchors below).
+# Open the Quotes tab — the tab click navigates AND waits for the panel to mount.
 [[steps.ui_actions]]
 verb = "click"
 testid = "canvas-tab-quotes"
+
+# Expand the collapsed raw-extractions foldout to reveal the canvas-quotes section.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-quotes-foldout"
 
 [[steps.anchors]]
 kind = "dom_state"

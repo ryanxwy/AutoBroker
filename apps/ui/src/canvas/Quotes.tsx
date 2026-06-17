@@ -80,12 +80,15 @@ export interface QuotesProps {
   /** The profile's raw extracted-quote rows (the host wires this from the quotes
    *  route). */
   quotes: AsyncState<QuoteList>;
+  /** When true, suppress the <h2> heading (the foldout <summary> acts as the
+   *  heading). Default false — standalone renders the heading as usual. */
+  embedded?: boolean;
 }
 
-export function Quotes({ quotes }: QuotesProps): JSX.Element {
+export function Quotes({ quotes, embedded = false }: QuotesProps): JSX.Element {
   return (
     <section data-testid="canvas-quotes">
-      <h2>Extracted quotes</h2>
+      {!embedded && <h2>Extracted quotes</h2>}
       {quotes.kind === "loading" && <p className="muted">Loading quotes…</p>}
       {quotes.kind === "error" && (
         <p className="danger-text" role="alert">
