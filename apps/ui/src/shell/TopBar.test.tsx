@@ -59,7 +59,7 @@ function flush(): Promise<void> {
 
 const noop = (): void => {};
 const baseProps = {
-  activeRunId: null,
+  runActive: false,
   pinnedProfileId: null,
   onStartIntake: noop,
   onPin: noop,

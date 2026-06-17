@@ -542,7 +542,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       <Toast />
       <TopBar
         client={client}
-        activeRunId={activeRunId}
+        runActive={activeRunId !== null && !activeTurnTerminal}
         pinnedProfileId={pinnedProfileId}
         onStartIntake={startIntakeFresh}
         onPin={onPin}
