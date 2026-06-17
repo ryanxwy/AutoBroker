@@ -35,11 +35,13 @@ import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "
 import { Link } from "../router.js";
 import { CanvasTabs } from "./CanvasTabs.js";
 import { Incentives } from "./Incentives.js";
+import { Pager } from "./Pager.js";
 import { ProfileSummary } from "./ProfileSummary.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { QuotesPanel } from "./QuotesPanel.js";
 import { ThreadsSection } from "./ThreadsSection.js";
+import { usePagedList } from "./usePagedList.js";
 
 /** The data kinds the Canvas's read views render — stable module-level literals
  *  so useDataRefetch re-registers only when the refetch identity (not the array
@@ -250,7 +252,16 @@ function DealerTile({ row, rank }: { row: DealerRow; rank: number }): JSX.Elemen
   );
 }
 
+// A stable module-level empty list so usePagedList's items reference is stable
+// while dealers are loading/errored (avoids a page reset on every render).
+const NO_DEALERS: DealerList = [];
+const DEALER_PAGE_SIZE = 12;
+
 function DealerTiles({ dealers }: { dealers: AsyncState<DealerList> }): JSX.Element {
+  const rows = dealers.kind === "ok" ? dealers.data : NO_DEALERS;
+  // A metro at the 125mi default can surface 30+ dealers — paginate like the
+  // Inventory/Replies tabs so the list stays scannable for a non-technical buyer.
+  const pager = usePagedList(rows, DEALER_PAGE_SIZE);
   return (
     <section data-testid="canvas-dealer-tiles">
       <h2>Dealers</h2>
@@ -260,17 +271,35 @@ function DealerTiles({ dealers }: { dealers: AsyncState<DealerList> }): JSX.Elem
           Couldn&apos;t load dealers: {dealers.message}
         </p>
       )}
-      {dealers.kind === "ok" && dealers.data.length === 0 && (
+      {dealers.kind === "ok" && rows.length === 0 && (
         <p className="muted" data-testid="canvas-dealers-empty">
           No dealers yet — run /dealer_geosearch to find dealers near you.
         </p>
       )}
-      {dealers.kind === "ok" && dealers.data.length > 0 && (
-        <div className="tile-grid">
-          {dealers.data.map((row, i) => (
-            <DealerTile key={str(row, "dealer_id") ?? String(i)} row={row} rank={i + 1} />
-          ))}
-        </div>
+      {dealers.kind === "ok" && rows.length > 0 && (
+        <>
+          <div className="tile-grid">
+            {pager.pageItems.map((row, i) => (
+              <DealerTile
+                key={str(row, "dealer_id") ?? String(pager.rangeStart + i)}
+                row={row}
+                rank={pager.rangeStart + i}
+              />
+            ))}
+          </div>
+          <Pager
+            page={pager.page}
+            pageCount={pager.pageCount}
+            total={pager.total}
+            rangeStart={pager.rangeStart}
+            rangeEnd={pager.rangeEnd}
+            onPrev={pager.prev}
+            onNext={pager.next}
+            canPrev={pager.canPrev}
+            canNext={pager.canNext}
+            noun="dealers"
+          />
+        </>
       )}
     </section>
   );
