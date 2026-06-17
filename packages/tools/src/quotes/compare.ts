@@ -215,9 +215,15 @@ export function rankQuotesForProfile(db: Db, profileId: string): CompareResult {
   const leaseRows: Record<string, unknown>[] = [];
   for (const row of rows) {
     const mode = row["financing_mode"];
-    if (mode === "finance") financeRows.push(row);
-    else if (mode === "lease") leaseRows.push(row);
-    // cash / unspecified-mode quotes belong to neither bucket.
+    // A quote's OTD total is the drive-off price — mode-agnostic. So a quote the
+    // dealer left 'unspecified', or one that quotes an OTD while labeled 'cash',
+    // is still comparable to a finance deal and belongs in the finance view; an
+    // 'unspecified' quote is comparable to a lease too. Only the OPPOSITE explicit
+    // mode is excluded (a lease payment is not an OTD total, and vice-versa). This
+    // keeps "compare all my quotes" honest instead of hiding off-mode OTD quotes
+    // behind a label — the live 巡检 saw 3 of 4 real dealer quotes vanish here.
+    if (mode === "finance" || mode === "unspecified" || mode === "cash") financeRows.push(row);
+    if (mode === "lease" || mode === "unspecified") leaseRows.push(row);
   }
 
   if (preference === "finance") {

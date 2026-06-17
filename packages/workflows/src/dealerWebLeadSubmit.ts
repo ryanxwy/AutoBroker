@@ -274,40 +274,81 @@ export async function scoutOneWithSession(deps: {
   return { ...base, contactEmail: harvestedEmail };
 }
 
+/** Max dealers scouted at once. The scout is pure read-only (navigate + snapshot
+ *  + a benign contact_email upsert) and holds NO Approver — no submit/send face is
+ *  reachable from here, so running several dealers in parallel is SAFE: there is no
+ *  shared mutable state, each dealer opens its OWN isolated browser context, and the
+ *  per-dealer slow-path is the 15s NAV + 4s network-idle wait. The cap keeps us from
+ *  spawning 13–21 chromium contexts at once (RAM/FD pressure on slow, bot-protected
+ *  real dealer sites) while still cutting the wall-clock to ~ceil(N/4)·per-dealer. */
+const SCOUT_CONCURRENCY = 4;
+
+/**
+ * A tiny inline bounded-concurrency map (no new dependency): run `fn` over `items`
+ * with at most `limit` in flight, writing each result into a pre-sized array AT ITS
+ * INPUT INDEX so the output order EXACTLY mirrors the input — completion order never
+ * leaks into the result. A fixed pool of `limit` workers pulls the next free index
+ * off a shared cursor; each worker awaits its task before taking another, so no more
+ * than `limit` run concurrently.
+ */
+export async function boundedConcurrentMap<T, R>(
+  items: ReadonlyArray<T>,
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]!, index);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
 /**
  * The production scout boundary: ONE isolated read-only browser PER dealer
- * (named so trace files never collide), each scouted via scoutOneWithSession.
- * The whole browser tree tears down in withBrowserContext's own finally. A
- * throwing dealer degrades to a no-form/no-email outcome — it never kills the
- * batch. Holds NO Approver and reaches NO mutating face. Offline tests inject a
- * stub through the deps seam.
+ * (named so trace files never collide), each scouted via scoutOneWithSession,
+ * now run with bounded concurrency (SCOUT_CONCURRENCY) — see that constant for
+ * why parallelizing the scout is safe. Output order mirrors input order so the
+ * downstream batch stays deterministic. The whole browser tree tears down in
+ * withBrowserContext's own finally. A throwing dealer degrades to a
+ * no-form/no-email outcome — it never kills the batch. Holds NO Approver and
+ * reaches NO mutating face. Offline tests inject a stub through the deps seam.
  */
 async function scoutFormsImpl(args: ScoutFormsArgs): Promise<ScoutOutcome[]> {
-  const outcomes: ScoutOutcome[] = [];
-  for (const dealer of args.dealers) {
-    try {
-      const outcome = await withBrowserContext(
+  const outcomes = await boundedConcurrentMap(
+    args.dealers,
+    SCOUT_CONCURRENCY,
+    (dealer) =>
+      withBrowserContext(
         `${args.runId}-leadscout-${dealer.dealerId}`,
         { emitter: args.emitter },
         (session) => scoutOneWithSession({ session, emitter: args.emitter, dealer }),
-      );
-      outcomes.push(outcome);
-    } catch {
-      // Per-dealer isolation: a dead scout is a no-form/no-email outcome (it is
-      // dropped as unreachable downstream), never a batch-killing throw.
-      outcomes.push({
-        dealerId: dealer.dealerId,
-        name: dealer.name,
-        website: dealer.website,
-        form: null,
-        platform: "custom",
-        fieldMap: null,
-        formSnapshot: null,
-        contactEmail: null,
-        captcha: false,
-      });
-    }
-  }
+      ).catch(
+        // Per-dealer isolation: a dead scout is a no-form/no-email outcome (it is
+        // dropped as unreachable downstream), never a batch-killing throw.
+        (): ScoutOutcome => ({
+          dealerId: dealer.dealerId,
+          name: dealer.name,
+          website: dealer.website,
+          form: null,
+          platform: "custom",
+          fieldMap: null,
+          formSnapshot: null,
+          contactEmail: null,
+          captcha: false,
+        }),
+      ),
+  );
+  // Progress signal: a single end-of-scout summary so the UI turn shows that the
+  // (now-parallel) pre-gate scout actually ran, instead of sitting on "RUNNING".
+  // Same emitter channel as scout_probe_blocked / scout_captcha_form above.
+  args.emitter.action("scout_complete", `Scouted ${outcomes.length} dealers`);
   return outcomes;
 }
 

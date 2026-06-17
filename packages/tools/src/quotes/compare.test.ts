@@ -215,6 +215,30 @@ describe("rankQuotesForProfile", () => {
     expect(result.lease).toEqual([]);
   });
 
+  it("finance pref → off-mode OTD quotes (unspecified / cash) still compare", () => {
+    // The live 巡检 saw 3 of 4 real dealer quotes vanish from the compare because
+    // the extractor classified OTD-bearing quotes as 'cash'/'unspecified'. An OTD
+    // total is the mode-agnostic drive-off price, so these belong in the finance
+    // view; only an explicit 'lease' (a payment, not an OTD) is excluded.
+    insertProfile(PROFILE, "finance");
+    insertDealer("d-A", "Alpha");
+    insertDealer("d-B", "Bravo");
+    insertDealer("d-C", "Charlie");
+    insertDealer("d-D", "Delta");
+    insertQuote({ quoteId: "f-A", dealerId: "d-A", mode: "finance", otdTotal: 37500 });
+    insertQuote({ quoteId: "u-B", dealerId: "d-B", mode: "unspecified", otdTotal: 36900 });
+    insertQuote({ quoteId: "c-C", dealerId: "d-C", mode: "cash", otdTotal: 38200 });
+    insertQuote({ quoteId: "l-D", dealerId: "d-D", mode: "lease", otdTotal: 35000, mf: 0.0012 });
+
+    const result = rankQuotesForProfile(db, PROFILE);
+    // All three OTD quotes appear in the finance view, ranked by OTD; the explicit
+    // lease quote is excluded (a lease payment is not an OTD total), and the
+    // finance-preference path returns no lease bucket.
+    expect(result.finance.map((q) => q.dealer_id)).toEqual(["d-B", "d-A", "d-C"]);
+    expect(result.finance.map((q) => q.financing_mode)).toEqual(["unspecified", "finance", "cash"]);
+    expect(result.lease).toEqual([]);
+  });
+
   it("audit flag join → latest audit's two codes decoded in order", () => {
     insertProfile(PROFILE, "finance");
     insertDealer("d-A", "Alpha Hyundai");
