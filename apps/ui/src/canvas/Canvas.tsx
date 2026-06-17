@@ -32,7 +32,7 @@ import type {
 import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { Incentives } from "./Incentives.js";
-import { TodaysDigest } from "./TodaysDigest.js";
+import { ProfileSummary } from "./ProfileSummary.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { QuoteCompare } from "./QuoteCompare.js";
@@ -61,7 +61,7 @@ const QUOTE_KINDS = ["quotes"] as const;
 /** The Incentives section refetches on an incentives pulse (the incentive_scrape
  *  skill writes that family; the read projection itself writes nothing). */
 const INCENTIVE_KINDS = ["incentives"] as const;
-/** The Today's-digest card refetches on a digest pulse (the daily_digest skill
+/** The summary header refetches on a digest pulse (the daily_digest skill
  *  writes that family; the read projection itself writes nothing). */
 const DIGEST_KINDS = ["digest"] as const;
 
@@ -316,6 +316,33 @@ function CanvasFeed({
 }
 
 // ---------------------------------------------------------------------------
+// bestOtd derivation — lowest non-null otd_total across quote-compare rows
+// ---------------------------------------------------------------------------
+
+/** Derive the best (lowest) OTD from the quote-compare ranker result, falling
+ *  back to the digest profile's bestOtd, then null. */
+function deriveBestOtd(
+  quotes: AsyncState<QuoteCompareResult>,
+  digest: AsyncState<DigestView>,
+): number | null {
+  // Primary: scan all finance + lease rows from the compare ranker.
+  if (quotes.kind === "ok") {
+    const candidates: number[] = [
+      ...quotes.data.finance.map((r) => r.otd_total),
+      ...quotes.data.lease.map((r) => r.otd_total),
+    ].filter((v): v is number => v !== null);
+    if (candidates.length > 0) {
+      return Math.min(...candidates);
+    }
+  }
+  // Fallback: digest profile bestOtd.
+  if (digest.kind === "ok" && digest.data.profiles.length > 0) {
+    return digest.data.profiles[0]!.bestOtd;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // the canvas
 // ---------------------------------------------------------------------------
 
@@ -381,6 +408,10 @@ export function Canvas({
   useDataRefetch(INCENTIVE_KINDS, incentives.refetch);
   useDataRefetch(DIGEST_KINDS, digest.refetch);
 
+  // Scalar inputs for the summary bento header.
+  const digestProfile =
+    digest.kind === "ok" && digest.data.profiles.length > 0 ? digest.data.profiles[0]! : null;
+
   return (
     <div className="canvas" data-testid="canvas">
       {runId !== null && (
@@ -408,7 +439,16 @@ export function Canvas({
             onEditProfile={onEditProfile}
             onDeleteProfile={onDeleteProfile}
           />
-          <TodaysDigest digest={digest} />
+          <ProfileSummary
+            bestOtd={deriveBestOtd(quotes, digest)}
+            dealerCount={dealers.kind === "ok" ? dealers.data.length : null}
+            quoteCount={quotesRaw.kind === "ok" ? quotesRaw.data.length : null}
+            threadCount={threads.kind === "ok" ? threads.data.length : null}
+            needsReplyCount={digestProfile?.needsResponseCount ?? null}
+            inventoryRecommended={inventory.kind === "ok" ? inventory.data.recommendedCount : null}
+            inventoryTotal={inventory.kind === "ok" ? inventory.data.totalListings : null}
+            headline={digest.kind === "ok" ? digest.data.headline : null}
+          />
           <DealerTiles dealers={dealers} />
           <InventoryCandidates inventory={inventory} />
           <QuoteCompare quotes={quotes} />

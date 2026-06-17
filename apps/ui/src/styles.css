@@ -1682,3 +1682,86 @@ p.muted, span.muted { font-size: 0.95em; }
 }
 .canvas-pager button:hover:not(:disabled) { color: var(--ink); box-shadow: var(--shadow); }
 .canvas-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- canvas summary bento header (sticky, folds digest headline + tallies) -- */
+.canvas-summary {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+  padding: 10px 16px 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.canvas-summary-hero {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.canvas-summary-hero .canvas-summary-num {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--go);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.canvas-summary-hero .canvas-summary-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.canvas-summary-tiles {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.canvas-summary-tile {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.canvas-summary-tile .canvas-summary-num {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.canvas-summary-tile .canvas-summary-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.canvas-summary-chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: none;
+  background: var(--gate-wash);
+  color: var(--gate);
+  border: 1px solid var(--gate-line);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.canvas-summary-headline {
+  width: 100%;
+  margin: 2px 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--ink-mute);
+}
