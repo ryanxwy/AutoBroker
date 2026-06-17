@@ -427,7 +427,13 @@ async function createWindow(port: number): Promise<void> {
   // with no target) is cancelled and opened externally; same-origin SPA routing is
   // untouched (this fires for full-page nav, not pushState/hash deep-links).
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (url.startsWith(appOrigin)) return;
+    let sameOrigin = false;
+    try {
+      sameOrigin = new URL(url).origin === appOrigin; // exact origin, not a prefix
+    } catch {
+      sameOrigin = false; // unparseable URL → treat as off-origin
+    }
+    if (sameOrigin) return; // same-origin SPA navigation stays in-app
     event.preventDefault();
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
   });
