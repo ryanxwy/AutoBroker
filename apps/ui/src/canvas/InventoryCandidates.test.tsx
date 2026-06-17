@@ -100,6 +100,16 @@ describe("InventoryCandidates — empty state", () => {
     );
   });
 
+  it("renders an actionable hint when totalListings is 0", () => {
+    const { query } = render(
+      <InventoryCandidates
+        inventory={ok(makeResult([], { totalListings: 0, recommendedCount: 0 }))}
+      />,
+    );
+    expect(query("inventory-empty-hint")).not.toBeNull();
+    expect(query("inventory-empty-hint")!.textContent).toContain("run a site scan");
+  });
+
   it("does not render the filter or tally when totalListings is 0", () => {
     const { query } = render(
       <InventoryCandidates
