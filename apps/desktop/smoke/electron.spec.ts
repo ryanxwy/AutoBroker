@@ -142,7 +142,9 @@ describe("shared window (S1, S2, S6, S7)", () => {
 
   it("S2: SPA really renders (root populated, shell landmarks present)", async () => {
     await page.waitForSelector('[data-testid="app-main"]', { timeout: 30_000 });
-    await page.waitForSelector('[data-testid="topbar-diagnostics"]', { timeout: 30_000 });
+    // topbar-settings is the stable topbar landmark (the old topbar-diagnostics
+    // testid was removed from the UI; this assertion just needs a shell landmark).
+    await page.waitForSelector('[data-testid="topbar-settings"]', { timeout: 30_000 });
     const rootChildren = await page.evaluate(() => document.getElementById("root")?.childElementCount ?? 0);
     expect(rootChildren).toBeGreaterThan(0);
   });
