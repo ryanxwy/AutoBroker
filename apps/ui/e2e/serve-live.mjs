@@ -71,6 +71,19 @@ const INSERT_MESSAGE =
   "subject, body_text, received_at, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
   "VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, 'pending', NULL) " +
   "ON CONFLICT(message_id) DO NOTHING";
+// Parameterized-direction message insert (the hygiene CRM seed needs an OUTBOUND
+// sibling message; INSERT_MESSAGE above hardcodes 'inbound').
+const INSERT_MSG_DIR =
+  "INSERT INTO messages (message_id, thread_id, direction, sender_email, subject, body_text, " +
+  "received_at, search_profile_id, quote_extraction_status) " +
+  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending') ON CONFLICT(message_id) DO NOTHING";
+// message_analysis row marking an inbound message as suppressible CRM noise — the
+// table dealer_hygiene's 5b CRM-only detector reads (is_current=1 + a suppressible
+// intent like 'nurture'); the existing inject_replies route never writes it, which
+// is exactly why hygiene found nothing to clean in the 巡检.
+const INSERT_ANALYSIS =
+  "INSERT INTO message_analysis (analysis_id, message_id, analysis_version, is_current, intent, search_profile_id) " +
+  "VALUES (?, ?, 1, 1, ?, ?) ON CONFLICT(analysis_id) DO NOTHING";
 let injectSeq = 0;
 // ~2 days ago (not a fixed 2024 epoch): keeps replies INSIDE the negotiation
 // follow-up window (max 14d since the dealer's last reply) and reads as a fresh
@@ -127,6 +140,49 @@ function injectDealerReplies(profileId, replies) {
         reply.dealerName, reply.subject, reply.body, receivedAt, profileId).changes > 0) messages++;
     }
     return { dealers, threads, messages, attachments };
+  } finally {
+    adb.$client.close();
+  }
+}
+
+// Seed CRM-only threads so dealer_hygiene's 3-stage destructive gate is
+// exercisable. Per dealer, the 5b "CRM-only" detector fires when a dealer has
+// (a) a real OUTBOUND conversation thread AND (b) a separate inbound-only thread
+// whose only current message_analysis intent is suppressible CRM noise (nurture/
+// marketing/…) with no quote/pricing intent and no offers row. So per dealer we
+// insert: an outbound sibling thread+message + an inbound CRM thread+message +
+// a message_analysis(intent='nurture') on the inbound message. No quotes/offers
+// (those would disqualify the thread).
+function injectCrmThreads(profileId, dealers) {
+  const adb = openDb();
+  try {
+    const insertDealer = adb.$client.prepare(INSERT_DEALER);
+    const bindDealer = adb.$client.prepare(BIND_DEALER);
+    const insertThread = adb.$client.prepare(INSERT_THREAD);
+    const insertMsgDir = adb.$client.prepare(INSERT_MSG_DIR);
+    const insertAnalysis = adb.$client.prepare(INSERT_ANALYSIS);
+    let threads = 0, analyses = 0;
+    for (const d of dealers) {
+      const slug = `${profileId}-${randomUUID().slice(0, 8)}`;
+      const dealerId = `crm-dealer-${slug}`;
+      const outThreadId = `crm-out-${slug}`;
+      const crmThreadId = `crm-in-${slug}`;
+      const nowIso = new Date(BASE_MS + injectSeq++).toISOString();
+      insertDealer.run(dealerId, d.dealerName, "https://crm.example.com", "sales@crm.example.com");
+      bindDealer.run(profileId, dealerId);
+      // (a) the real outbound conversation thread (satisfies the EXISTS clause).
+      insertThread.run(outThreadId, dealerId, "Your inquiry", profileId, `crm-gthread-out-${slug}`);
+      insertMsgDir.run(`crm-msg-out-${slug}`, outThreadId, "outbound", "buyer@example.com",
+        "Your inquiry", "Following up on the Tucson.", nowIso, profileId);
+      // (b) the inbound-only CRM-noise thread that hygiene should flag.
+      if (insertThread.run(crmThreadId, dealerId, d.subject ?? "This week's specials!", profileId,
+        `crm-gthread-in-${slug}`).changes > 0) threads++;
+      insertMsgDir.run(`crm-msg-in-${slug}`, crmThreadId, "inbound", d.from ?? "noreply@crm.example.com",
+        d.subject ?? "This week's specials!", d.body ?? "Huge savings this weekend — visit us!", nowIso, profileId);
+      if (insertAnalysis.run(`crm-an-${slug}`, `crm-msg-in-${slug}`, d.intent ?? "nurture", profileId).changes > 0)
+        analyses++;
+    }
+    return { dealers: dealers.length, crmThreads: threads, analyses };
   } finally {
     adb.$client.close();
   }
@@ -223,6 +279,26 @@ built.app.post("/__e2e/inject_replies", async (req, reply) => {
   return { ok: true, applied };
 });
 
+built.app.post("/__e2e/inject_crm_threads", async (req, reply) => {
+  const body = req.body ?? {};
+  const profileId = body.profileId;
+  const dealers = Array.isArray(body.dealers) ? body.dealers : [];
+  if (typeof profileId !== "string" || dealers.length === 0) {
+    reply.code(400);
+    return { ok: false, error: "profileId + non-empty dealers[] required" };
+  }
+  const normalized = dealers.map((d) => ({
+    dealerName: String(d.dealerName ?? "CRM Dealer"),
+    from: String(d.from ?? "noreply@crm.example.com"),
+    subject: String(d.subject ?? "This week's specials!"),
+    body: String(d.body ?? "Huge savings this weekend — visit us!"),
+    intent: typeof d.intent === "string" ? d.intent : "nurture",
+  }));
+  const applied = injectCrmThreads(profileId, normalized);
+  reply.code(200);
+  return { ok: true, applied };
+});
+
 built.app.get("/__e2e/audit", async (req, reply) => {
   const action = (req.query ?? {}).action;
   const adb = openDb();
@@ -242,7 +318,7 @@ built.app.get("/__e2e/audit", async (req, reply) => {
 const ALLOWED_TABLES = new Set([
   "dealer_quotes", "quote_audits", "messages", "dealers", "profile_dealers",
   "threads", "search_profiles", "lead_submissions", "manufacturer_incentives",
-  "inventory_listings", "audit_log", "fake_mailbox_messages",
+  "inventory_listings", "audit_log", "fake_mailbox_messages", "message_analysis",
 ]);
 built.app.get("/__e2e/rows", async (req, reply) => {
   const table = (req.query ?? {}).table;
