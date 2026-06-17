@@ -52,6 +52,7 @@ import {
 
 import { createMastraInstance } from "./mastra.js";
 import {
+  boundedConcurrentMap,
   dealerWebLeadSubmitWorkflow,
   DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
   submitOneWithSession,
@@ -840,5 +841,114 @@ describe("submitOneWithSession — the gated wiring (fake BrowserSession)", () =
     await expect(submitOneWithSession(submitArgs(fx.session))).rejects.toThrow("playwright timeout");
     // The gate was reached (the approver was handed in) before the real failure.
     expect(fx.submitCalls.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case 8 — boundedConcurrentMap: the scout's bounded-concurrency runner
+//
+// The scout was serialized (one read-only browser per dealer, NAV+idle waits)
+// → ~4min on a 13–21 dealer batch. It now runs the SAME per-dealer work with a
+// concurrency cap. These prove the runner (a) preserves INPUT ORDER regardless
+// of completion order, (b) never runs more than `limit` tasks at once, and
+// (c) still visits EVERY item — so the faster scout is behaviorally identical
+// (same dealers, same outcomes, same order) to the old serial loop.
+// ---------------------------------------------------------------------------
+
+/** A controllable async task: resolves after `delayMs`, recording start/end. */
+function deferredAfter(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+describe("boundedConcurrentMap — the scout's bounded-concurrency runner", () => {
+  it("preserves input order even when later items finish first", async () => {
+    // Item i resolves after a delay that is LONGER for earlier items, so completion
+    // order is the reverse of input order — yet the result must mirror input order.
+    const items = [0, 1, 2, 3, 4, 5];
+    const out = await boundedConcurrentMap(items, 4, async (item) => {
+      await deferredAfter((items.length - item) * 5);
+      return item * 10;
+    });
+    expect(out).toEqual([0, 10, 20, 30, 40, 50]);
+  });
+
+  it("never exceeds the concurrency limit and visits every item", async () => {
+    const items = Array.from({ length: 11 }, (_, i) => i);
+    let active = 0;
+    let peak = 0;
+    const visited: number[] = [];
+    const out = await boundedConcurrentMap(items, 4, async (item, index) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      visited.push(item);
+      await deferredAfter(3);
+      active -= 1;
+      return index;
+    });
+    // Bounded: at most 4 in flight at the peak.
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(peak).toBe(4);
+    // Complete: every item ran exactly once; output is the index map in order.
+    expect([...visited].sort((a, b) => a - b)).toEqual(items);
+    expect(out).toEqual(items);
+  });
+
+  it("a single item runs (limit clamps to item count, no empty-pool hang)", async () => {
+    const out = await boundedConcurrentMap(["only"], 4, async (item) => item.toUpperCase());
+    expect(out).toEqual(["ONLY"]);
+  });
+
+  it("an empty input resolves to an empty array without spawning a worker", async () => {
+    let calls = 0;
+    const out = await boundedConcurrentMap<number, number>([], 4, async (item) => {
+      calls += 1;
+      return item;
+    });
+    expect(out).toEqual([]);
+    expect(calls).toBe(0);
+  });
+
+  it("models the scout: per-dealer outcomes stay aligned to input dealer order", async () => {
+    // Mirrors scoutFormsImpl's per-dealer fn shape: a throwing dealer degrades to
+    // a no-form/no-email ScoutOutcome (never a batch-killing throw), and the result
+    // for each dealer lands at that dealer's input index.
+    const dealers = [
+      { dealerId: "d-a", name: "A", website: "https://a.example" },
+      { dealerId: "d-b", name: "B", website: "https://b.example" }, // this one "throws"
+      { dealerId: "d-c", name: "C", website: "https://c.example" },
+    ];
+    const outcomes = await boundedConcurrentMap(dealers, 4, (dealer) =>
+      (async (): Promise<ScoutOutcome> => {
+        if (dealer.dealerId === "d-b") throw new Error("dead scout");
+        return {
+          dealerId: dealer.dealerId,
+          name: dealer.name,
+          website: dealer.website,
+          form: { url: `${dealer.website}/contact`, submitSelector: "" },
+          platform: "custom",
+          fieldMap: null,
+          formSnapshot: null,
+          contactEmail: null,
+          captcha: false,
+        };
+      })().catch(
+        (): ScoutOutcome => ({
+          dealerId: dealer.dealerId,
+          name: dealer.name,
+          website: dealer.website,
+          form: null,
+          platform: "custom",
+          fieldMap: null,
+          formSnapshot: null,
+          contactEmail: null,
+          captcha: false,
+        }),
+      ),
+    );
+    // Order preserved: outcome[i] is dealer[i]; the thrower is a no-form outcome.
+    expect(outcomes.map((o) => o.dealerId)).toEqual(["d-a", "d-b", "d-c"]);
+    expect(outcomes[0]!.form).not.toBeNull();
+    expect(outcomes[1]!.form).toBeNull(); // d-b degraded, still in its slot
+    expect(outcomes[2]!.form).not.toBeNull();
   });
 });
