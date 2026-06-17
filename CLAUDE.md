@@ -200,3 +200,14 @@ mark the commit body `[fake-send]` until Phase 5 acceptance is GREEN.
 Solo project. Work on `main`; no feature branches or PRs by default. Stage
 explicit paths, leave unrelated worktree changes alone, never force-push. Keep
 destructive/irreversible external actions behind the approval rules above.
+
+**Definition of done (every task).** Finish each task in this end state, no
+exceptions: all work committed and pushed; the work merged into `main` (a no-op
+when working directly on `main`, a real merge when a worktree/branch was used);
+and the local `main` fast-forwarded so it is **aligned with `origin/main`**
+(`git rev-list --left-right --count HEAD...origin/main` reads `0  0`). Never
+leave a task with uncommitted/unpushed work, work stranded on a worktree/branch
+that never reached `main`, or a local `main` out of sync with the remote. This
+is the standing instruction — it supersedes any "don't push/merge without an
+explicit go" default. The force-push ban, explicit-path staging, and the
+destructive-action approval gates above still apply.
