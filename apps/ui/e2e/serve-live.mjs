@@ -8,8 +8,10 @@
  *   - DeepSeek is REAL: we do NOT pin a dummy key, so boot's loadDotEnvKeys
  *     loads DEEPSEEK_API_KEY from .env and every LLM step (intake trim-verify,
  *     dealer_reply_extract, negotiation drafts) talks to the real provider.
- *   - The geocoder is STILL stubbed (resolveLocation → a fixed real location):
- *     the Places key has no Geocoding entitlement, so a live geocode blocks.
+ *   - The geocoder is a query-HONORING fixture map (resolveLocation → the metro
+ *     allowlist's real coords): the Places key has no Geocoding entitlement (a
+ *     live geocode blocks) and the 巡检 stays hermetic, yet ANY allowlist city
+ *     resolves — so the buyer-brain can search any metro (brand+city), not Irvine.
  *   - Safety floor armed: AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 (fake-send) +
  *     AUTOBROKER_GMAIL_BACKEND=fake. AUTOBROKER_TEST_AUTO_APPROVE is NEVER set.
  *
@@ -18,6 +20,9 @@
  *        from,subject,body,attachment?}] } → applyDealerReplySeeds (the tested
  *        harness seeder: bound dealer + thread + inbound 'pending' message +
  *        fake-mailbox body) so the dashboard's email skills have a real corpus.
+ *        Echoes applied.threadIds[] so the dealer-brain can post in-thread counters.
+ *   POST /__e2e/inject_reply_to_thread { threadId, from, subject, body } → append a
+ *        dealer COUNTER into an existing thread (live multi-round negotiation).
  *   GET  /__e2e/audit?action=  → count audit_log rows (verification).
  *   GET  /__e2e/rows?table=    → count rows in an allow-listed table (verification).
  *
@@ -99,6 +104,9 @@ function injectDealerReplies(profileId, replies) {
     const insertThread = adb.$client.prepare(INSERT_THREAD);
     const insertMessage = adb.$client.prepare(INSERT_MESSAGE);
     let dealers = 0, threads = 0, messages = 0, attachments = 0;
+    // Echo each seeded thread so the dealer-brain can post an in-thread COUNTER
+    // (round 2+) via /__e2e/inject_reply_to_thread — multi-round live negotiation.
+    const threadIds = [];
     for (const reply of replies) {
       const slug = `${profileId}-${randomUUID().slice(0, 8)}`;
       const dealerId = `live-dealer-${slug}`;
@@ -111,6 +119,7 @@ function injectDealerReplies(profileId, replies) {
       bindDealer.run(profileId, dealerId);
       if (insertThread.run(threadId, dealerId, reply.subject, profileId, `live-gthread-${slug}`).changes > 0)
         threads++;
+      threadIds.push({ dealerName: reply.dealerName, from: reply.from, threadId });
       const attachment = reply.attachment === null ? undefined : [{
         attachmentId: `live-att-${slug}`,
         filename: reply.attachment.filename,
@@ -139,7 +148,57 @@ function injectDealerReplies(profileId, replies) {
       if (insertMessage.run(messageId, threadId, gmailMessageId, reply.from, reply.from,
         reply.dealerName, reply.subject, reply.body, receivedAt, profileId).changes > 0) messages++;
     }
-    return { dealers, threads, messages, attachments };
+    return { dealers, threads, messages, attachments, threadIds };
+  } finally {
+    adb.$client.close();
+  }
+}
+
+// Append a NEW inbound message into an EXISTING thread (a dealer's COUNTER in a
+// live multi-round negotiation), instead of minting a fresh thread the way
+// injectDealerReplies does. Looks up the thread's profile, writes one inbound
+// 'pending' message on the SAME thread_id + appends into the same fake-mailbox
+// thread (fake-${threadId}), reusing the monotonic injectSeq clock so the round-2
+// timestamp stays strictly after round-1 (the watermark invariant). dealer_reply_
+// extract then re-extracts the new pending message → a revised dealer_quotes row,
+// so negotiation_followup/dealer_closeout act on the dealer's updated OTD.
+function injectReplyToThread(threadId, reply) {
+  const adb = openDb();
+  try {
+    const row = adb.$client
+      .prepare("SELECT search_profile_id AS profileId FROM threads WHERE thread_id = ?")
+      .get(threadId);
+    if (row === undefined || row.profileId === null) {
+      return { ok: false, error: "unknown threadId (call inject_replies first)" };
+    }
+    const profileId = row.profileId;
+    const slug = `${profileId}-${randomUUID().slice(0, 8)}`;
+    const messageId = `live-msg-${slug}`;
+    const gmailMessageId = `live-gmsg-${slug}`;
+    const internalDateMs = BASE_MS + injectSeq++;
+    const receivedAt = new Date(internalDateMs).toISOString();
+    seedFakeMailbox({
+      db: adb,
+      threads: [{
+        threadId: `fake-${threadId}`, // same fake thread → a 2+-message conversation
+        subject: reply.subject,
+        searchProfileId: profileId,
+        messages: [{
+          messageId: gmailMessageId,
+          direction: "inbound",
+          from: reply.from,
+          to: "buyer@example.com",
+          subject: reply.subject,
+          bodyText: reply.body,
+          internalDateMs,
+        }],
+      }],
+    });
+    const changed = adb.$client.prepare(INSERT_MESSAGE).run(
+      messageId, threadId, gmailMessageId, reply.from, reply.from,
+      reply.dealerName, reply.subject, reply.body, receivedAt, profileId,
+    ).changes;
+    return { ok: true, threadId, messageId, messages: changed };
   } finally {
     adb.$client.close();
   }
@@ -239,17 +298,50 @@ if (!alreadyMigrated) {
 }
 db.$client.close();
 
-// --- geocoder stub ONLY (a fixed real location); harnessGenerate stays REAL ---
-const RESOLVED = {
-  kind: "resolved",
-  location: {
-    lat: 33.6695, lng: -117.7669,
-    formattedAddress: "Irvine, CA 92602, USA",
-    postalCode: "92602",
-  },
-  traceSpans: [],
-};
-const resolveLocationStub = async () => RESOLVED;
+// --- geocoder: a query-HONORING metro fixture map (NOT a live geocode) --------
+// The Places key has NO Geocoding entitlement (a live geocode blocks), and an
+// unattended nightly 巡检 should stay hermetic anyway. So instead of pinning ONE
+// city we map the curated brand+city allowlist's metros → real coords: the typed
+// location_query is matched by a 5-digit ZIP first, then a city-name substring,
+// falling back to Irvine. This lets the buyer-brain search ANY allowlist metro
+// (brand+city randomization) deterministically, with no external dependency.
+// Keep these ZIPs/cities in lock-step with the loop prompt's metro allowlist.
+// harnessGenerate stays REAL (live DeepSeek for intake too).
+const METRO_FIXTURES = [
+  { zip: "92602", city: "irvine",        lat: 33.6695, lng: -117.7669, addr: "Irvine, CA 92602, USA" },
+  { zip: "90012", city: "los angeles",   lat: 34.0537, lng: -118.2428, addr: "Los Angeles, CA 90012, USA" },
+  { zip: "92101", city: "san diego",     lat: 32.7174, lng: -117.1628, addr: "San Diego, CA 92101, USA" },
+  { zip: "75201", city: "dallas",        lat: 32.7876, lng: -96.7990,  addr: "Dallas, TX 75201, USA" },
+  { zip: "77002", city: "houston",       lat: 29.7589, lng: -95.3677,  addr: "Houston, TX 77002, USA" },
+  { zip: "78701", city: "austin",        lat: 30.2700, lng: -97.7426,  addr: "Austin, TX 78701, USA" },
+  { zip: "85004", city: "phoenix",       lat: 33.4515, lng: -112.0700, addr: "Phoenix, AZ 85004, USA" },
+  { zip: "80202", city: "denver",        lat: 39.7491, lng: -104.9966, addr: "Denver, CO 80202, USA" },
+  { zip: "98101", city: "seattle",       lat: 47.6109, lng: -122.3340, addr: "Seattle, WA 98101, USA" },
+  { zip: "97204", city: "portland",      lat: 45.5183, lng: -122.6750, addr: "Portland, OR 97204, USA" },
+  { zip: "60601", city: "chicago",       lat: 41.8855, lng: -87.6217,  addr: "Chicago, IL 60601, USA" },
+  { zip: "30303", city: "atlanta",       lat: 33.7528, lng: -84.3915,  addr: "Atlanta, GA 30303, USA" },
+  { zip: "33130", city: "miami",         lat: 25.7660, lng: -80.1960,  addr: "Miami, FL 33130, USA" },
+  { zip: "33602", city: "tampa",         lat: 27.9517, lng: -82.4588,  addr: "Tampa, FL 33602, USA" },
+  { zip: "28202", city: "charlotte",     lat: 35.2272, lng: -80.8431,  addr: "Charlotte, NC 28202, USA" },
+  { zip: "37203", city: "nashville",     lat: 36.1534, lng: -86.7920,  addr: "Nashville, TN 37203, USA" },
+  { zip: "10007", city: "new york",      lat: 40.7136, lng: -74.0089,  addr: "New York, NY 10007, USA" },
+  { zip: "19107", city: "philadelphia",  lat: 39.9510, lng: -75.1605,  addr: "Philadelphia, PA 19107, USA" },
+  { zip: "02110", city: "boston",        lat: 42.3573, lng: -71.0540,  addr: "Boston, MA 02110, USA" },
+];
+function resolveMetro(query) {
+  const q = String(query ?? "").toLowerCase();
+  const zip = q.match(/\b\d{5}\b/)?.[0] ?? null;
+  const hit =
+    (zip !== null ? METRO_FIXTURES.find((m) => m.zip === zip) : undefined) ??
+    METRO_FIXTURES.find((m) => q.includes(m.city)) ??
+    METRO_FIXTURES[0];
+  return {
+    kind: "resolved",
+    location: { lat: hit.lat, lng: hit.lng, formattedAddress: hit.addr, postalCode: hit.zip },
+    traceSpans: [],
+  };
+}
+const resolveLocationStub = async (query) => resolveMetro(query);
 
 resetMastraForTests();
 resetRuntimeGlueForTests();
@@ -297,6 +389,24 @@ built.app.post("/__e2e/inject_crm_threads", async (req, reply) => {
   const applied = injectCrmThreads(profileId, normalized);
   reply.code(200);
   return { ok: true, applied };
+});
+
+// Append a dealer's COUNTER into an existing thread (live multi-round negotiation).
+// The threadId comes from inject_replies' echoed `applied.threadIds[].threadId`.
+built.app.post("/__e2e/inject_reply_to_thread", async (req, reply) => {
+  const body = req.body ?? {};
+  if (typeof body.threadId !== "string" || typeof body.body !== "string" || body.body.length === 0) {
+    reply.code(400);
+    return { ok: false, error: "threadId + non-empty body required" };
+  }
+  const applied = injectReplyToThread(body.threadId, {
+    from: String(body.from ?? "sales@dealer.example.com"),
+    subject: String(body.subject ?? "Re: your inquiry"),
+    body: body.body,
+    dealerName: String(body.dealerName ?? "Dealer"),
+  });
+  reply.code(applied.ok ? 200 : 400);
+  return applied;
 });
 
 built.app.get("/__e2e/audit", async (req, reply) => {
