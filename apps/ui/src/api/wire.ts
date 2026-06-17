@@ -410,7 +410,8 @@ export type IncentiveList = z.infer<typeof IncentiveListSchema>;
 // quotes: these are public-website inventory candidates ranked against the
 // profile, never negotiated out-the-door quotes. A passthrough candidate row
 // keeps extra server fields tolerated; the panel reads the named columns it
-// knows (full vin, stock_number, price, match_status chip, rank reasons).
+// knows (full vin, stock_number, price, match_status chip, rank reasons,
+// recommended flag).
 // ---------------------------------------------------------------------------
 
 export const InventoryCandidateRowSchema = z
@@ -432,6 +433,9 @@ export const InventoryCandidateRowSchema = z
     score: z.number(),
     reasons: z.array(z.string()),
     match_status: z.string(),
+    /** true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
+     *  Set by the ranker as the SINGLE source; never re-derived on the client. */
+    recommended: z.boolean(),
   })
   .passthrough();
 export type InventoryCandidateRow = z.infer<typeof InventoryCandidateRowSchema>;

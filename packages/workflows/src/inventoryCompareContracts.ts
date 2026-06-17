@@ -63,6 +63,10 @@ export const RankedCandidateSchema = z
     score: z.number(),
     reasons: z.array(z.string()),
     match_status: z.enum(["exact", "near", "mismatch", "unknown"]),
+    /** true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
+     *  The SINGLE source of the recommended predicate (set by the ranker; never
+     *  re-derived downstream). */
+    recommended: z.boolean(),
   })
   .strict();
 export type RankedCandidate = z.infer<typeof RankedCandidateSchema>;

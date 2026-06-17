@@ -32,6 +32,8 @@ const RECOMMENDED_MIN_SCORE = 0.6;
  * tail-only); `stock_number` is null when the listing carries none (the rail
  * renders an em-dash). `inventory_status` / `dealer_id` are NOT NULL columns.
  * `match_status` is recomputed at rank time, never persisted.
+ * `recommended` is the SINGLE source of the three-condition predicate:
+ * true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
  */
 export interface RankedCandidate {
   listing_id: string;
@@ -51,6 +53,10 @@ export interface RankedCandidate {
   score: number;
   reasons: string[];
   match_status: "exact" | "near" | "mismatch" | "unknown";
+  /** true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
+   *  The SINGLE source of the recommended predicate; never re-derived from the three
+   *  individual fields downstream. */
+  recommended: boolean;
 }
 
 /** The result of ranking one profile's live inventory. */
@@ -112,6 +118,14 @@ function buildMatchCtx(profileRow: Record<string, unknown>): ProfileMatchCtx {
 /** Map a ranked row + its source listing to the flat RankedCandidate. */
 function toCandidate(ranked: RankedRow): RankedCandidate {
   const listing = ranked.listing;
+  const match_status = ranked.match_status as RankedCandidate["match_status"];
+  const inventory_status = asString(listing["inventory_status"]) ?? "";
+  const score = ranked.score;
+  // Compute the recommended flag here — the SINGLE source so count and flags agree.
+  const recommended =
+    RECOMMENDED_MATCH_STATUSES.has(match_status) &&
+    RECOMMENDED_INVENTORY_STATUSES.has(inventory_status) &&
+    score >= RECOMMENDED_MIN_SCORE;
   return {
     listing_id: ranked.listing_id,
     vin: asString(listing["vin"]),
@@ -124,24 +138,15 @@ function toCandidate(ranked: RankedRow): RankedCandidate {
     listed_price: asNumber(listing["listed_price"]),
     msrp: asNumber(listing["msrp"]),
     // inventory_status / dealer_id are NOT NULL columns; default to "" defensively.
-    inventory_status: asString(listing["inventory_status"]) ?? "",
+    inventory_status,
     dealer_id: asString(listing["dealer_id"]) ?? "",
     dealer_name: asString(listing["dealer_name"]),
     distance_miles: asNumber(listing["distance_miles"]),
-    score: ranked.score,
+    score,
     reasons: ranked.reasons,
-    match_status: ranked.match_status as RankedCandidate["match_status"],
+    match_status,
+    recommended,
   };
-}
-
-/** True when a candidate is "recommended": match exact/near, inventory
- *  in_stock/in_transit, score >= 0.6. */
-function isRecommended(c: RankedCandidate): boolean {
-  return (
-    RECOMMENDED_MATCH_STATUSES.has(c.match_status) &&
-    RECOMMENDED_INVENTORY_STATUSES.has(c.inventory_status) &&
-    c.score >= RECOMMENDED_MIN_SCORE
-  );
 }
 
 const SELECT_PROFILE = "SELECT * FROM search_profiles WHERE search_profile_id = ?";
@@ -176,7 +181,8 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     }
   }
 
-  const recommendedCount = candidates.filter(isRecommended).length;
+  // Derive the count from the per-candidate flag — count and flags can never disagree.
+  const recommendedCount = candidates.filter((c) => c.recommended).length;
 
   return {
     candidates,

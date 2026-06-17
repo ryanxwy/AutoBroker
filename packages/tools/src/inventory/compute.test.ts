@@ -208,12 +208,18 @@ describe("rankInventoryForProfile", () => {
     expect(strong.score).toBeGreaterThanOrEqual(0.6);
     expect(strong.reasons).toContain("trim_exact");
     expect(strong.reasons).toContain("preferred_color");
+    // The per-candidate recommended flag is true for the strong candidate.
+    expect(strong.recommended).toBe(true);
 
     const mismatch = candidates.find((c) => c.listing_id === "lst_mismatch")!;
     expect(mismatch.match_status).toBe("mismatch");
+    // The per-candidate recommended flag is false for the mismatch.
+    expect(mismatch.recommended).toBe(false);
 
     // Only the strong candidate satisfies all three recommended conditions.
     expect(recommendedCount).toBe(1);
+    // recommendedCount equals the count of candidates with recommended === true.
+    expect(candidates.filter((c) => c.recommended).length).toBe(recommendedCount);
   });
 
   it("does not recommend an in_transit-only / out-of-stock listing below the inventory-status set", () => {
@@ -228,9 +234,11 @@ describe("rankInventoryForProfile", () => {
       inventoryStatus: "sold",
     });
 
-    const { recommendedCount, totalListings } = rankInventoryForProfile(db, PROFILE_ID);
+    const { candidates, recommendedCount, totalListings } = rankInventoryForProfile(db, PROFILE_ID);
     expect(totalListings).toBe(1);
     expect(recommendedCount).toBe(0);
+    // The per-candidate flag also reflects false.
+    expect(candidates[0]!.recommended).toBe(false);
   });
 
   it("reports the max last_seen_at over the candidates as scannedAtMax", () => {
