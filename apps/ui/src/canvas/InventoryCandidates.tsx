@@ -177,9 +177,14 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
         </p>
       )}
       {inventory.kind === "ok" && totalListings === 0 && (
-        <p className="muted" data-testid="canvas-inventory-empty">
-          Listed 0 inventory candidates (recommended: 0).
-        </p>
+        <>
+          <p className="muted" data-testid="canvas-inventory-empty">
+            Listed 0 inventory candidates (recommended: 0).
+          </p>
+          <p className="muted" data-testid="inventory-empty-hint">
+            No inventory yet — run a site scan to find matching cars on dealer lots.
+          </p>
+        </>
       )}
       {inventory.kind === "ok" && totalListings > 0 && (
         <>
