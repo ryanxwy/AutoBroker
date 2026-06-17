@@ -42,6 +42,7 @@ import {
   InventoryCompareResultSchema,
   QuoteCompareResultSchema,
   QuoteListSchema,
+  IncentiveListSchema,
   ModeSchema,
   ProfileListSchema,
   ProfileRowSchema,
@@ -66,6 +67,7 @@ import {
   type InventoryCompareResult,
   type QuoteCompareResult,
   type QuoteList,
+  type IncentiveList,
   type KeyPresenceResponse,
   type KeyProbeResult,
   type Mode,
@@ -352,6 +354,18 @@ export class ApiClient {
       this.url(`/api/profiles/${encodeURIComponent(id)}/quotes`),
     );
     return decode(res, QuoteListSchema);
+  }
+
+  /** GET /api/profiles/:id/incentives → the manufacturer cash-incentive rows
+   *  scraped for the profile's vehicle (make/model/zip slice), freshest first
+   *  (read-only projection; 404 for a missing profile). The Incentives canvas
+   *  section renders these — program type, cash amount, eligibility, expiry and
+   *  source provenance, never a budget. */
+  async listProfileIncentives(id: string): Promise<IncentiveList> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/incentives`),
+    );
+    return decode(res, IncentiveListSchema);
   }
 
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */

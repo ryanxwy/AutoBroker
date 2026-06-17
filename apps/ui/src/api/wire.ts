@@ -380,6 +380,31 @@ export const QuoteListSchema = z.array(QuoteRowSchema);
 export type QuoteList = z.infer<typeof QuoteListSchema>;
 
 // ---------------------------------------------------------------------------
+// Incentives — GET /api/profiles/:id/incentives: the manufacturer cash
+// incentives scraped for the profile's vehicle (make/model/zip slice), freshest
+// first. The Incentives canvas section renders these — the program type, the
+// cash amount, the eligibility, the expiry, and a source-url provenance line.
+// id is the React key only (never rendered); NO budget anywhere. A tolerant
+// (passthrough) shape keeps extra server fields.
+// ---------------------------------------------------------------------------
+
+export const IncentiveRowSchema = z
+  .object({
+    id: z.number(),
+    type: z.string().nullable(),
+    amount: z.number().nullable(),
+    expires: z.string().nullable(),
+    eligibility: z.string().nullable(),
+    scrape_source_url: z.string().nullable(),
+    scraped_at: z.string().nullable(),
+  })
+  .passthrough();
+export type IncentiveRow = z.infer<typeof IncentiveRowSchema>;
+
+export const IncentiveListSchema = z.array(IncentiveRowSchema);
+export type IncentiveList = z.infer<typeof IncentiveListSchema>;
+
+// ---------------------------------------------------------------------------
 // Inventory candidates — GET /api/profiles/:id/inventory-compare: the
 // deterministic ranker payload (candidates + header tallies). Listings ≠
 // quotes: these are public-website inventory candidates ranked against the

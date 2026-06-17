@@ -63,6 +63,35 @@ export function listProfileQuoteRows(db: Db, profileId: string): Record<string, 
 }
 
 /**
+ * The manufacturer incentives scraped for one profile's vehicle, freshest first
+ * (scraped_at, then soonest-expiring). snake_case rows for the HTTP view — the
+ * cash-incentive projection the Incentives Canvas section renders. Read-only.
+ *
+ * The manufacturer_incentives table is keyed on (make, model, zip), not on a
+ * search_profile_id, so the profile scope is a join to the profile's own
+ * make/model/postal_code — make/model match case-insensitively (stored casing
+ * varies across scrapes), zip stays exact (mirroring the persist writer + the
+ * audit slice reader). A profile with no postal_code matches nothing.
+ *
+ * Budget red line: id is projected as the React key only (never rendered); the
+ * row carries the program type, cash amount, eligibility, expiry and the source
+ * url provenance — NEVER a budget.
+ */
+export function listProfileIncentiveRows(db: Db, profileId: string): Record<string, unknown>[] {
+  return db.$client
+    .prepare(
+      "SELECT i.id, i.type, i.amount, i.expires, i.eligibility, " +
+        "i.scrape_source_url, i.scraped_at " +
+        "FROM manufacturer_incentives i " +
+        "JOIN search_profiles p ON p.search_profile_id = ? " +
+        "WHERE LOWER(i.make) = LOWER(p.make) AND LOWER(i.model) = LOWER(p.model) " +
+        "AND i.zip = p.postal_code " +
+        "ORDER BY i.scraped_at DESC, i.expires ASC, i.id",
+    )
+    .all(profileId) as Record<string, unknown>[];
+}
+
+/**
  * The set of gmail_thread_ids already suppressed (any scope/action) — the sweep
  * reads this BEFORE the approval gate so an already-suppressed thread is never
  * re-surfaced as a fresh hit. Read-only.
