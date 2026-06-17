@@ -353,30 +353,34 @@ function OverviewPanel({
 }
 
 // ---------------------------------------------------------------------------
-// bestOtd derivation — lowest non-null otd_total across quote-compare rows
+// bestOtd derivation — lowest non-null otd_total across digest + quote-compare rows
 // ---------------------------------------------------------------------------
 
-/** Derive the best (lowest) OTD from the quote-compare ranker result, falling
- *  back to the digest profile's bestOtd, then null. */
+/** Derive the best (lowest) OTD across ALL quotes. The compare ranker buckets by
+ *  deal-type (finance/lease) and drops 'unspecified'-mode quotes, so its rows are
+ *  only a SUBSET — the digest's bestOtd is the server-computed min over every
+ *  quote. Take the min of BOTH so the headline metric never under-reports the
+ *  cheapest deal (live-e2e 巡检: the bento showed $37,684 while the digest line
+ *  right beside it said the lowest OTD was $36,900, an unspecified-mode quote the
+ *  compare buckets excluded). */
 function deriveBestOtd(
   quotes: AsyncState<QuoteCompareResult>,
   digest: AsyncState<DigestView>,
 ): number | null {
-  // Primary: scan all finance + lease rows from the compare ranker.
+  const candidates: number[] = [];
+  // The all-quotes min (includes deal-types the compare ranker buckets out).
+  if (digest.kind === "ok" && digest.data.profiles.length > 0) {
+    const d = digest.data.profiles[0]!.bestOtd;
+    if (d !== null) candidates.push(d);
+  }
+  // The compare-ranker finance + lease rows (a subset; kept so a fresh compare
+  // still drives the metric before the next digest recompute).
   if (quotes.kind === "ok") {
-    const candidates: number[] = [
-      ...quotes.data.finance.map((r) => r.otd_total),
-      ...quotes.data.lease.map((r) => r.otd_total),
-    ].filter((v): v is number => v !== null);
-    if (candidates.length > 0) {
-      return Math.min(...candidates);
+    for (const r of [...quotes.data.finance, ...quotes.data.lease]) {
+      if (r.otd_total !== null) candidates.push(r.otd_total);
     }
   }
-  // Fallback: digest profile bestOtd.
-  if (digest.kind === "ok" && digest.data.profiles.length > 0) {
-    return digest.data.profiles[0]!.bestOtd;
-  }
-  return null;
+  return candidates.length > 0 ? Math.min(...candidates) : null;
 }
 
 // ---------------------------------------------------------------------------
