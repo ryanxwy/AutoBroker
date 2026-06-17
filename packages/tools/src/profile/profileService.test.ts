@@ -153,7 +153,7 @@ describe("create — exactly 1 row + 1 audit, persist discipline", () => {
     expect(row.status).toBe("active");
     expect(row.brand).toBe("Toyota"); // brand = make
     expect(row.location).toBe("Irvine, CA 92614"); // location = location_query
-    expect(row.search_radius_miles).toBe(25); // default
+    expect(row.search_radius_miles).toBe(125); // default (wide metro net)
     expect(row.country).toBe("US");
     expect(row.military_first_responder).toBe(0);
     expect(row.current_brand_owner).toBe(0);

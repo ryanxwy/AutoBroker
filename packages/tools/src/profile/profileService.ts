@@ -228,7 +228,10 @@ function buildProfile(
     model: input.model,
     trim: input.trim,
     budgetMax: input.budget_max,
-    searchRadiusMiles: input.search_radius_miles ?? 25,
+    // Default to a WIDE 125mi radius when the buyer doesn't specify one: a new-car
+    // shopper casts a wide net (dealers ship/trade across a metro), and the live
+    // 巡检 searches whole metros. An explicit smaller radius still wins.
+    searchRadiusMiles: input.search_radius_miles ?? 125,
     locationQuery: input.location_query,
     resolvedAddress: coords.resolvedAddress ?? null,
     city: loc.city,
