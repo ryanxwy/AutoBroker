@@ -18,7 +18,12 @@ real provider — so it is user-invoked only.
    It applies the migrations and exposes **control routes OUTSIDE `/api`** (the
    product wall is untouched) — confirm the current set by reading the top of
    `serve-live.mjs`; today they are:
-   - `POST /__e2e/inject_replies` — seed dealer replies for a profile.
+   - `POST /__e2e/inject_replies` — seed dealer replies for a profile. Echoes
+     `applied.threadIds[]` (`{dealerName, from, threadId}`) so a live dealer-brain
+     can target an existing thread for a multi-round counter.
+   - `POST /__e2e/inject_reply_to_thread` — append a dealer COUNTER (a new inbound
+     reply, re-arming extraction) into an existing `threadId` from the line above.
+     This is what makes live multi-round negotiation → closeout exercisable.
    - `POST /__e2e/inject_crm_threads` — seed CRM-only threads (writes
      `message_analysis`) so **`dealer_hygiene`'s 3-stage gate is exercisable**.
      Call this BEFORE inspecting `dealer_hygiene`, or it has nothing to triage.

@@ -160,8 +160,9 @@ function injectDealerReplies(profileId, replies) {
 // 'pending' message on the SAME thread_id + appends into the same fake-mailbox
 // thread (fake-${threadId}), reusing the monotonic injectSeq clock so the round-2
 // timestamp stays strictly after round-1 (the watermark invariant). dealer_reply_
-// extract then re-extracts the new pending message → a revised dealer_quotes row,
-// so negotiation_followup/dealer_closeout act on the dealer's updated OTD.
+// extract then re-extracts the new pending message → a NEW dealer_quotes row
+// carrying the revised OTD (keyed by the fresh gmail_message_id; the latest quote
+// wins downstream), so negotiation_followup/dealer_closeout act on the updated OTD.
 function injectReplyToThread(threadId, reply) {
   const adb = openDb();
   try {
