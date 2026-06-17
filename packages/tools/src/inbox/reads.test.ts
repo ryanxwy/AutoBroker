@@ -154,6 +154,9 @@ describe("listProfileQuoteRows", () => {
     expect(rows[0]!["otd_total"]).toBe(39500);
     expect(rows[0]!["extractor_provider"]).toBe("deepseek");
     expect(rows[0]!["extraction_method"]).toBe("ocr");
+    // Unaudited quotes carry an empty audit_flag_summary (always a list, never
+    // null) so the raw foldout renders no pills for them.
+    expect(rows[0]!["audit_flag_summary"]).toEqual([]);
     // The profile B quote never surfaces under A (profile scoping).
     expect(rows.map((r) => r["quote_id"])).not.toContain("q-other");
   });

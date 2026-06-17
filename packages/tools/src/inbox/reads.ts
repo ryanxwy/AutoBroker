@@ -13,6 +13,7 @@
 import type { Db } from "@autobroker/db";
 
 import { hostStem } from "./discovery.js";
+import { flagCodesFromJson } from "../quotes/flags.js";
 
 /**
  * The threads bound to one profile, joined to the dealer for its display name,
@@ -46,20 +47,33 @@ export function listProfileThreadRows(db: Db, profileId: string): Record<string,
  * cash/unspecified, distinct from the ranked quote-compare buckets). Read-only.
  *
  * Budget red line: quote_id is projected as the React key only (never rendered);
- * the row carries the dealer, mode, prices, format, intent and provenance —
- * NEVER a budget.
+ * the row carries the dealer, mode, prices, format, intent, provenance and the
+ * latest audit's flag codes — NEVER a budget.
+ *
+ * audit_flag_summary: the codes from the latest quote_audits row per quote (same
+ * correlated-latest join the quote-compare ranker uses), so a flagged quote that
+ * the ranker buckets out (cash/unspecified mode) still surfaces its audit pills
+ * in the raw foldout instead of being silently un-flagged.
  */
 export function listProfileQuoteRows(db: Db, profileId: string): Record<string, unknown>[] {
-  return db.$client
+  const rows = db.$client
     .prepare(
       "SELECT q.quote_id, q.financing_mode, q.otd_total, q.selling_price, q.vin, " +
         "q.quote_format, q.intent, q.extractor_provider, q.extraction_method, " +
-        "q.quote_received_at, d.name AS dealer_name " +
+        "q.quote_received_at, d.name AS dealer_name, qa.flags_json AS flags_json " +
         "FROM dealer_quotes q LEFT JOIN dealers d ON d.dealer_id = q.dealer_id " +
+        "LEFT JOIN quote_audits qa ON qa.audit_id = ( " +
+        "  SELECT qa2.audit_id FROM quote_audits qa2 WHERE qa2.dealer_quote_id = q.quote_id " +
+        "  ORDER BY qa2.audited_at DESC, qa2.audit_id DESC LIMIT 1 " +
+        ") " +
         "WHERE q.search_profile_id = ? " +
         "ORDER BY q.quote_received_at DESC, q.extracted_at DESC, q.quote_id",
     )
     .all(profileId) as Record<string, unknown>[];
+  return rows.map(({ flags_json, ...rest }) => ({
+    ...rest,
+    audit_flag_summary: flagCodesFromJson(flags_json),
+  }));
 }
 
 /**

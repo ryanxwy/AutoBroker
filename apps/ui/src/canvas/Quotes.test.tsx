@@ -31,6 +31,7 @@ function quote(over: Partial<QuoteList[number]>): QuoteList[number] {
     extractor_provider: "deepseek",
     extraction_method: "ocr",
     quote_received_at: "2026-06-12T10:00:00.000Z",
+    audit_flag_summary: [],
     ...over,
   };
 }
@@ -66,6 +67,29 @@ describe("Quotes — rows", () => {
     expect([...otds].map((c) => c.textContent)).toEqual(["$39,500", "$43,210"]);
     const provenance = container.querySelector('[data-testid="canvas-quote-provenance"]');
     expect(provenance!.textContent).toBe("via deepseek · ocr");
+  });
+
+  it("renders audit flag pills for a flagged off-mode quote (collapsing MISSING_REBATE)", () => {
+    const { container } = render(
+      <Quotes
+        quotes={ok([
+          quote({
+            quote_id: "q-cash",
+            financing_mode: "unspecified",
+            audit_flag_summary: ["MODE_MISMATCH", "MISSING_BREAKDOWN", "MISSING_REBATE"],
+          }),
+        ])}
+      />,
+    );
+    expect(container.querySelector('[data-testid="quote-audit-pill-MODE_MISMATCH"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="quote-audit-pill-MISSING_BREAKDOWN"]')).not.toBeNull();
+    const rebate = container.querySelector('[data-testid="quote-audit-pill-MISSING_REBATE"]');
+    expect(rebate!.textContent).toBe("1 rebate not applied");
+  });
+
+  it("renders no audit chip-row for an unflagged quote", () => {
+    const { container } = render(<Quotes quotes={ok([quote({ audit_flag_summary: [] })])} />);
+    expect(container.querySelector('[data-testid^="quote-audit-pill-"]')).toBeNull();
   });
 
   it("renders the incomplete badge for a null OTD (never a fabricated number)", () => {
