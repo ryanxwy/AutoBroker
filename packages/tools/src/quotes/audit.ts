@@ -309,7 +309,13 @@ function checkMissingRebate(
     appliedStrings.push(String((r as NamedAmount).name ?? "").toLowerCase());
   }
 
-  const flags: AuditFinding[] = [];
+  // A manufacturer publishes many customer_cash (etc.) variants for one make —
+  // different ZIP/term/trim slices — but they are mutually EXCLUSIVE, not
+  // stackable: a buyer applies at most one rebate per type. Emitting one finding
+  // per incentive row over-states the missed savings (e.g. "10 rebates not
+  // applied" summing to ~$38k). Collapse to the single best (highest) unapplied
+  // amount per rebate TYPE, and note how many variants exist.
+  const bestByType = new Map<string, { amount: number; count: number }>();
   for (const inc of incentives) {
     if ((inc.make ?? "").toLowerCase() !== profileMake) continue;
     const incEligibility = (inc.eligibility ?? "").toLowerCase();
@@ -317,10 +323,18 @@ function checkMissingRebate(
     const incType = (inc.type ?? "").toLowerCase();
     if (incType && appliedStrings.some((s) => s && s.includes(incType))) continue;
     const amount = inc.amount ?? 0;
+    const prev = bestByType.get(incType);
+    if (prev === undefined) bestByType.set(incType, { amount, count: 1 });
+    else bestByType.set(incType, { amount: Math.max(prev.amount, amount), count: prev.count + 1 });
+  }
+
+  const flags: AuditFinding[] = [];
+  for (const [incType, { amount, count }] of bestByType) {
+    const variantNote = count > 1 ? ` (best of ${count} ${incType} offers — not stackable)` : "";
     flags.push(
       finding(
         "MISSING_REBATE",
-        `Quote does not apply $${money0(amount)} ${incType} rebate (eligibility: ${incEligibility}).`,
+        `Quote does not apply the $${money0(amount)} ${incType} rebate${variantNote}.`,
         `Ask dealer to apply the $${money0(amount)} ${incType} rebate — confirm eligibility documentation if required.`,
       ),
     );

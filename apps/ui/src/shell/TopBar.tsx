@@ -34,7 +34,10 @@ const PROFILE_KINDS = ["profiles"] as const;
 
 export interface TopBarProps {
   client: ApiClient;
-  activeRunId: string | null;
+  /** True only while the active run is genuinely in-flight (not terminal). Drives
+   *  the pulsing "run active" pill — it must clear when the run reaches done/error,
+   *  not linger for the rest of the session. */
+  runActive: boolean;
   /** The current session's TRUE pin (hydrated by App), or null. */
   pinnedProfileId: string | null;
   onStartIntake: () => void;
@@ -48,7 +51,7 @@ export interface TopBarProps {
 
 export function TopBar({
   client,
-  activeRunId,
+  runActive,
   pinnedProfileId,
   onStartIntake,
   onPin,
@@ -149,7 +152,7 @@ export function TopBar({
             )}
           </Popover>
         </nav>
-        {activeRunId !== null && (
+        {runActive && (
           <span className="running-pill" data-testid="running-pill">
             <span className="pulse" aria-hidden="true" />
             run active
