@@ -8,6 +8,7 @@
  */
 
 import type { KeyboardEvent } from "react";
+import { useCallback, useRef } from "react";
 
 export interface CanvasTab {
   key: string;
@@ -23,26 +24,48 @@ export interface CanvasTabsProps {
 }
 
 export function CanvasTabs({ tabs, active, onSelect }: CanvasTabsProps): JSX.Element {
-  // Roving keyboard nav: ArrowLeft/ArrowRight move the selection across tabs.
+  // Ref map: key → button element, used to move DOM focus on arrow-key nav.
+  const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const setRef = useCallback((key: string) => (el: HTMLButtonElement | null) => {
+    if (el) {
+      buttonRefs.current.set(key, el);
+    } else {
+      buttonRefs.current.delete(key);
+    }
+  }, []);
+
+  // Roving keyboard nav: ArrowLeft/ArrowRight move the selection across tabs
+  // and synchronously focus the newly-selected button (selection-follows-focus).
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     const i = tabs.findIndex((t) => t.key === active);
     if (i === -1) return;
     const next = e.key === "ArrowRight" ? (i + 1) % tabs.length : (i - 1 + tabs.length) % tabs.length;
     e.preventDefault();
-    onSelect(tabs[next]!.key);
+    const nextKey = tabs[next]!.key;
+    onSelect(nextKey);
+    buttonRefs.current.get(nextKey)?.focus();
   };
 
   return (
-    <div className="canvas-tabs" role="tablist" data-testid="canvas-tabs" onKeyDown={onKeyDown}>
+    <div
+      className="canvas-tabs"
+      role="tablist"
+      aria-label="Workbench sections"
+      data-testid="canvas-tabs"
+      onKeyDown={onKeyDown}
+    >
       {tabs.map((tab) => {
         const selected = tab.key === active;
         return (
           <button
             type="button"
             key={tab.key}
+            ref={setRef(tab.key)}
+            id={`canvas-tab-${tab.key}-tab`}
             role="tab"
             aria-selected={selected}
+            aria-controls={`canvas-panel-${tab.key}`}
             tabIndex={selected ? 0 : -1}
             className={selected ? "on" : undefined}
             data-testid={`canvas-tab-${tab.key}`}

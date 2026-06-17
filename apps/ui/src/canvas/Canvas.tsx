@@ -518,7 +518,12 @@ export function Canvas({
           </div>
 
           {/* Only the active tab's panel renders below the sticky header. */}
-          <div role="tabpanel" data-testid={`canvas-panel-${tab}`}>
+          <div
+            role="tabpanel"
+            id={`canvas-panel-${tab}`}
+            aria-labelledby={`canvas-tab-${tab}-tab`}
+            data-testid={`canvas-panel-${tab}`}
+          >
             {tab === "overview" && (
               <OverviewPanel
                 snapshot={active}

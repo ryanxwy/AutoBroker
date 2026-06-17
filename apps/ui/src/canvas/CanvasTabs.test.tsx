@@ -81,3 +81,34 @@ describe("CanvasTabs — keyboard roving", () => {
     expect(onSelect).toHaveBeenCalledWith("quotes");
   });
 });
+
+describe("CanvasTabs — ARIA wiring", () => {
+  it("tablist has an accessible name", () => {
+    const { get } = render(<CanvasTabs tabs={tabs()} active="overview" onSelect={() => {}} />);
+    expect(get("canvas-tabs").getAttribute("aria-label")).toBe("Workbench sections");
+  });
+
+  it("each tab button has a stable id and aria-controls pointing at its panel", () => {
+    const { get } = render(<CanvasTabs tabs={tabs()} active="overview" onSelect={() => {}} />);
+    for (const tab of tabs()) {
+      const btn = get(`canvas-tab-${tab.key}`);
+      expect(btn.id).toBe(`canvas-tab-${tab.key}-tab`);
+      expect(btn.getAttribute("aria-controls")).toBe(`canvas-panel-${tab.key}`);
+    }
+  });
+
+  it("ArrowRight selection moves DOM focus to the next tab button", () => {
+    const onSelect = vi.fn((key: string) => key); // capture the selected key
+    const { get } = render(<CanvasTabs tabs={tabs()} active="overview" onSelect={onSelect} />);
+    // focus the active tab first so the element is in the document
+    get("canvas-tab-overview").focus();
+    act(() => {
+      get("canvas-tabs").dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(onSelect).toHaveBeenCalledWith("dealers");
+    // The dealers button should now be the focused element.
+    expect(document.activeElement).toBe(get("canvas-tab-dealers"));
+  });
+});
