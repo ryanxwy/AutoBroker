@@ -22,7 +22,6 @@ import { useAsync, type AsyncState } from "../api/useApi.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
 import type {
   DealerList,
-  DealerRow,
   DigestView,
   IncentiveList,
   InventoryCompareResult,
@@ -41,14 +40,13 @@ import {
 } from "../home/profileView.js";
 import { Link } from "../router.js";
 import { CanvasTabs } from "./CanvasTabs.js";
+import { DealerTiles } from "./DealerTiles.js";
 import { Incentives } from "./Incentives.js";
-import { Pager } from "./Pager.js";
 import { ProfileSummary } from "./ProfileSummary.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
 import { QuotesPanel } from "./QuotesPanel.js";
 import { ThreadsSection } from "./ThreadsSection.js";
-import { usePagedList } from "./usePagedList.js";
 
 /** The data kinds the Canvas's read views render — stable module-level literals
  *  so useDataRefetch re-registers only when the refetch identity (not the array
@@ -89,15 +87,6 @@ export interface CanvasProps {
   onEditProfile: (id: string, name: string) => void;
   /** Open the irreversible hard-delete confirm for the active profile. */
   onDeleteProfile: (id: string, name: string) => void;
-}
-
-function str(row: DealerRow, key: string): string | null {
-  const v = row[key];
-  return typeof v === "string" && v.trim() !== "" ? v : null;
-}
-function num(row: DealerRow, key: string): number | null {
-  const v = row[key];
-  return typeof v === "number" ? v : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,87 +215,6 @@ function ProfileCard({
             Delete permanently…
           </button>
         </div>
-      )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// dealer tiles — materialized from profile_dealers rows
-// ---------------------------------------------------------------------------
-
-function DealerTile({ row, rank }: { row: DealerRow; rank: number }): JSX.Element {
-  const distance = num(row, "distance_miles");
-  return (
-    <div className="tile" data-testid="canvas-dealer-tile">
-      <div className="t-head">
-        <span>
-          {rank}. {str(row, "name") ?? "Unknown dealer"}
-        </span>
-        {distance !== null && <span className="muted">{distance.toFixed(1)} mi</span>}
-      </div>
-      {str(row, "address") !== null && <div className="t-addr">{str(row, "address")}</div>}
-      <div className="t-status">
-        {str(row, "candidate_status") ?? "candidate"}
-        {(num(row, "lead_submission_count") ?? 0) > 0 && (
-          <span className="mini-chip" data-testid="dealer-lead-submitted">
-            {" "}
-            lead submitted
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// A stable module-level empty list so usePagedList's items reference is stable
-// while dealers are loading/errored (avoids a page reset on every render).
-const NO_DEALERS: DealerList = [];
-const DEALER_PAGE_SIZE = 12;
-
-function DealerTiles({ dealers }: { dealers: AsyncState<DealerList> }): JSX.Element {
-  const rows = dealers.kind === "ok" ? dealers.data : NO_DEALERS;
-  // A metro at the 125mi default can surface 30+ dealers — paginate like the
-  // Inventory/Replies tabs so the list stays scannable for a non-technical buyer.
-  const pager = usePagedList(rows, DEALER_PAGE_SIZE);
-  return (
-    <section data-testid="canvas-dealer-tiles">
-      <h2>Dealers</h2>
-      {dealers.kind === "loading" && <p className="muted">Loading dealers…</p>}
-      {dealers.kind === "error" && (
-        <p className="danger-text" role="alert">
-          Couldn&apos;t load dealers: {dealers.message}
-        </p>
-      )}
-      {dealers.kind === "ok" && rows.length === 0 && (
-        <p className="muted" data-testid="canvas-dealers-empty">
-          No dealers yet — search for dealers near you to get started.
-        </p>
-      )}
-      {dealers.kind === "ok" && rows.length > 0 && (
-        <>
-          <div className="tile-grid">
-            {pager.pageItems.map((row, i) => (
-              <DealerTile
-                key={str(row, "dealer_id") ?? String(pager.rangeStart + i)}
-                row={row}
-                rank={pager.rangeStart + i}
-              />
-            ))}
-          </div>
-          <Pager
-            page={pager.page}
-            pageCount={pager.pageCount}
-            total={pager.total}
-            rangeStart={pager.rangeStart}
-            rangeEnd={pager.rangeEnd}
-            onPrev={pager.prev}
-            onNext={pager.next}
-            canPrev={pager.canPrev}
-            canNext={pager.canNext}
-            noun="dealers"
-          />
-        </>
       )}
     </section>
   );

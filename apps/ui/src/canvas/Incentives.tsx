@@ -19,26 +19,40 @@
  * mirroring the threads + quotes + inventory-candidates sections.
  */
 
+import { useState } from "react";
+
 import type { AsyncState } from "../api/useApi.js";
 import type { IncentiveList, IncentiveRow } from "../api/wire.js";
+import { ClickableTile } from "./ClickableTile.js";
+import { IncentiveDetailModal } from "./IncentiveDetailModal.js";
 
 /** A "$2,500" cash label from a number (no cents noise), or null for a missing
  *  amount. */
-function dollarLabel(value: number | null): string | null {
+export function dollarLabel(value: number | null): string | null {
   if (value === null) return null;
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
 /** The "expires 2026-07-31" line from a raw expiry, dropping a missing one. */
-function expiryLine(expires: string | null): string {
+export function expiryLine(expires: string | null): string {
   return expires !== null && expires !== "" ? `expires ${expires}` : "";
 }
 
-function IncentiveRowView({ row }: { row: IncentiveRow }): JSX.Element {
+function IncentiveRowView({
+  row,
+  onActivate,
+}: {
+  row: IncentiveRow;
+  onActivate: () => void;
+}): JSX.Element {
   const amount = dollarLabel(row.amount);
   const expiry = expiryLine(row.expires);
   return (
-    <div className="tile" data-testid="canvas-incentive-row">
+    <ClickableTile
+      testid="canvas-incentive-row"
+      ariaLabel={`View details for ${row.type ?? "Incentive"}`}
+      onActivate={onActivate}
+    >
       <div className="t-head">
         <span data-testid="canvas-incentive-type">{row.type ?? "Incentive"}</span>
         {amount !== null && (
@@ -62,7 +76,7 @@ function IncentiveRowView({ row }: { row: IncentiveRow }): JSX.Element {
           via {row.scrape_source_url}
         </div>
       )}
-    </div>
+    </ClickableTile>
   );
 }
 
@@ -73,6 +87,8 @@ export interface IncentivesProps {
 }
 
 export function Incentives({ incentives }: IncentivesProps): JSX.Element {
+  // The incentive whose read-only detail modal is open (null = closed).
+  const [detail, setDetail] = useState<IncentiveRow | null>(null);
   return (
     <section data-testid="canvas-incentives">
       <h2>Incentives</h2>
@@ -91,10 +107,11 @@ export function Incentives({ incentives }: IncentivesProps): JSX.Element {
       {incentives.kind === "ok" && incentives.data.length > 0 && (
         <div className="tile-grid">
           {incentives.data.map((row) => (
-            <IncentiveRowView key={row.id} row={row} />
+            <IncentiveRowView key={row.id} row={row} onActivate={() => setDetail(row)} />
           ))}
         </div>
       )}
+      <IncentiveDetailModal row={detail} onClose={() => setDetail(null)} />
     </section>
   );
 }
