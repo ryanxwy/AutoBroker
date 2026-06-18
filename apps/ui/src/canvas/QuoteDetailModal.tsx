@@ -239,7 +239,7 @@ export function QuoteDetailModal({
           </div>
         )}
 
-        {(hasSource || (fetchUrl !== null && (docUrl !== null || docLoading))) && (
+        {(hasSource || docUrl !== null) && (
           <div className="quote-detail-source" data-testid="quote-detail-source-email">
             <h3 className="quote-detail-h3">Source email</h3>
             {fetchUrl !== null && docUrl !== null && (
@@ -257,6 +257,7 @@ export function QuoteDetailModal({
                     data-testid="quote-source-pdf"
                     type="application/pdf"
                     src={docUrl}
+                    aria-label="Original quote document (PDF)"
                     style={{ width: "100%", height: 420 }}
                   />
                 )}

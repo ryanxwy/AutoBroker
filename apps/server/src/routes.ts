@@ -307,10 +307,16 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
 }
 
 /** Sanitize a filename for a Content-Disposition header: strip the double quote
- *  that delimits the value and any CR/LF (header-injection guard), collapse the
- *  rest to a safe ASCII subset, and fall back to a generic name when empty. */
+ *  that delimits the value and any CR/LF (header-injection guard), neutralize the
+ *  `;`/`=` parameter delimiters (defense-in-depth — no bogus disposition param can
+ *  ride inside the quoted value), collapse the rest to a safe ASCII subset, and
+ *  fall back to a generic name when empty. */
 export function sanitizeFilename(name: string): string {
-  const cleaned = name.replace(/["\r\n]/g, "").replace(/[^\x20-\x7e]/g, "_").trim();
+  const cleaned = name
+    .replace(/["\r\n]/g, "")
+    .replace(/[;=]/g, "_")
+    .replace(/[^\x20-\x7e]/g, "_")
+    .trim();
   return cleaned === "" ? "source" : cleaned;
 }
 

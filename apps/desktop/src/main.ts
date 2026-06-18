@@ -417,7 +417,10 @@ async function createWindow(port: number): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+    // plugins:true enables Chromium's built-in PDF viewer so the quote
+    // source-document <embed type="application/pdf"> renders in-app (the desktop
+    // shell, like the browser, shows the original PDF quote inline).
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true },
   });
 
   const appOrigin = `http://127.0.0.1:${port}`;

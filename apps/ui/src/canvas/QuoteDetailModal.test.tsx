@@ -306,6 +306,46 @@ describe("QuoteDetailModal — original source document embed", () => {
     unmount();
   });
 
+  it("renders NO source-email section at all when a doomed fetch has no email body (no header flash)", async () => {
+    // Slow 404 — resolves after we assert, so the section must NOT mount in the
+    // interim loading window (no empty "Source email" header + loading flash).
+    let resolve404: () => void = () => {};
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((res) => {
+          resolve404 = () => res({ ok: false, status: 404, blob: async () => new Blob([]) });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:never"),
+      revokeObjectURL: vi.fn(),
+    } as unknown as typeof URL);
+
+    const { unmount } = render(
+      <QuoteDetailModal
+        // No email subject/body → hasSource is false; only the (doomed) doc could mount it.
+        row={quote({ quote_format: "image", source_subject: null, source_body_text: null })}
+        sourceDocUrl="/api/profiles/p1/quotes/q-detail-1/source"
+        onClose={() => {}}
+      />,
+    );
+    await flush();
+
+    // While the fetch is still in flight, nothing is shown — no header, no loading line.
+    expect(document.body.querySelector('[data-testid="quote-detail-source-email"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="quote-source-loading"]')).toBeNull();
+
+    resolve404();
+    await flush();
+
+    // After the 404 resolves there is still nothing to show.
+    expect(document.body.querySelector('[data-testid="quote-detail-source-email"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="quote-source-image"]')).toBeNull();
+    unmount();
+  });
+
   it("does not fetch and renders no embed when quote_format is text (kind null)", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
