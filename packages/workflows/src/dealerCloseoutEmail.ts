@@ -487,12 +487,14 @@ const sendCloseCloseStep = createStep({
         shortCircuited = true;
         continue;
       }
-      // `closed`: the local close+suppress committed (whether the send went out or
-      // was fuse-blocked). The thread (if any) is now closed; count a PROMOTED send
-      // only when the fuse did NOT block it (BLOCK=1 → sendBlocked → emails_sent=0
-      // while closed_thread_ids is still non-empty).
+      // `closed`: the local close+suppress committed and the send was approved +
+      // attempted (a gate decline takes the short_circuit path above). Count the
+      // send regardless of whether the L1 fuse blocked it — under BLOCK=1 the send
+      // is a fake (fuse-blocked) send, which we still report as "sent", consistent
+      // with negotiation_followup (a buyer reading "0 sent" otherwise thinks no
+      // closeout went out). No real outbound is created either way.
       if (t.thread_id !== null) closed.push(t.thread_id);
-      emailsSent += outcome.sendBlocked ? 0 : 1;
+      emailsSent += 1;
     }
 
     return { ...state, closedThreadIds: closed, emailsSent };
@@ -548,8 +550,8 @@ const confirmStep = createStep({
 
     const closedCount = state.closedThreadIds.length;
     const profileTransition: "closed" | "unchanged" = closedCount > 0 ? "closed" : "unchanged";
-    // emails_sent counts PROMOTED sends (0 under BLOCK=1 — the fuse blocked the
-    // send even though the local close landed); phrase it honestly.
+    // emails_sent counts every approved+attempted closeout send (fake under
+    // BLOCK=1), consistent with negotiation_followup's "sent N".
     const summary =
       (closedCount === 0
         ? "No dealers to close out"

@@ -163,6 +163,10 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
       ? (inventory.data.totalListings ?? allCandidates.length)
       : 0;
   const scannedAtMax = inventory.kind === "ok" ? inventory.data.scannedAtMax : null;
+  // Scan provenance: distinguishes "a scan ran, found 0" from "never scanned"
+  // so the empty-state doesn't tell a user who just scanned to scan again.
+  const sourcesScanned = inventory.kind === "ok" ? (inventory.data.sourcesScanned ?? 0) : 0;
+  const sourcesBlocked = inventory.kind === "ok" ? (inventory.data.sourcesBlocked ?? 0) : 0;
 
   // Default to "recommended" when there are any recommended candidates; else "all".
   const [filter, setFilter] = useState<"recommended" | "all">(
@@ -197,7 +201,13 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
             Listed 0 inventory candidates (recommended: 0).
           </p>
           <p className="muted" data-testid="inventory-empty-hint">
-            No inventory yet — run a site scan to find matching cars on dealer lots.
+            {sourcesScanned > 0
+              ? `Your last scan of ${sourcesScanned} dealer site${sourcesScanned === 1 ? "" : "s"} found no matching cars in stock` +
+                (sourcesBlocked > 0
+                  ? ` (${sourcesBlocked} site${sourcesBlocked === 1 ? "" : "s"} blocked automated scanning)`
+                  : "") +
+                ". Try widening the trim, or check back later."
+              : "No inventory yet — run a site scan to find matching cars on dealer lots."}
           </p>
         </>
       )}

@@ -32,6 +32,7 @@ import {
   restore,
   listProfileRows,
   parseLocation,
+  stateFromFormattedAddress,
   synthProfileId,
   type ResolvedCoordinates,
 } from "./profileService.js";
@@ -548,5 +549,18 @@ describe("parseLocation", () => {
     expect(parseLocation("near the airport")).toEqual({
       city: null, state: null, postalCode: null, country: "US",
     });
+  });
+});
+
+describe("stateFromFormattedAddress (A4: DOC_FEE_CAP needs a state even when the typed query omits it)", () => {
+  it("extracts the 2-letter state from a Google-style formatted address", () => {
+    expect(stateFromFormattedAddress("Seattle, WA 98101, USA")).toBe("WA");
+    expect(stateFromFormattedAddress("Irvine, CA 92614, USA")).toBe("CA");
+    expect(stateFromFormattedAddress("123 Main St, New York, NY 10007, USA")).toBe("NY");
+  });
+  it("returns null when no 'ST ZIP' tail is present", () => {
+    expect(stateFromFormattedAddress(null)).toBeNull();
+    expect(stateFromFormattedAddress(undefined)).toBeNull();
+    expect(stateFromFormattedAddress("Seattle")).toBeNull();
   });
 });

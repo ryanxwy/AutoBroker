@@ -122,6 +122,8 @@ const QuoteCompareStateSchema = z.object({
   finance: z.array(QuoteRankingSchema).nullable(),
   /** Lease bucket (after step 1); null until then. */
   lease: z.array(QuoteRankingSchema).nullable(),
+  /** Cash bucket (after step 1); null until then. */
+  cash: z.array(QuoteRankingSchema).nullable(),
 });
 type QuoteCompareState = z.infer<typeof QuoteCompareStateSchema>;
 
@@ -193,6 +195,7 @@ const resolveProfileStep = createStep({
       financingPreference: null,
       finance: null,
       lease: null,
+      cash: null,
     };
   },
 });
@@ -213,6 +216,7 @@ const rankQuotesStep = createStep({
       financingPreference: result.financingPreference,
       finance: result.finance,
       lease: result.lease,
+      cash: result.cash,
     };
   },
 });
@@ -229,13 +233,14 @@ const confirmStep = createStep({
     const state = asState(inputData);
     const finance = state.finance ?? [];
     const lease = state.lease ?? [];
-    const totalRanked = finance.length + lease.length;
+    const cash = state.cash ?? [];
+    const totalRanked = finance.length + lease.length + cash.length;
 
     // The deterministic terminal sentence — total + per-bucket counts, NEVER a
     // budget number.
     const summary =
       `Compared ${totalRanked} quotes ` +
-      `(finance: ${finance.length}, lease: ${lease.length}).`;
+      `(finance: ${finance.length}, lease: ${lease.length}, cash: ${cash.length}).`;
 
     return {
       outcome: "compared" as const,
@@ -244,6 +249,7 @@ const confirmStep = createStep({
       financingPreference: state.financingPreference,
       finance,
       lease,
+      cash,
       totalRanked,
       summary,
     };

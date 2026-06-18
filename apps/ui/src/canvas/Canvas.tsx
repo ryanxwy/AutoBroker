@@ -402,10 +402,12 @@ function deriveBestOtd(
     const d = digest.data.profiles[0]!.bestOtd;
     if (d !== null) candidates.push(d);
   }
-  // The compare-ranker finance + lease rows (a subset; kept so a fresh compare
-  // still drives the metric before the next digest recompute).
+  // The compare-ranker finance + lease + cash rows (a subset; kept so a fresh
+  // compare still drives the metric before the next digest recompute). Cash is
+  // included so a cash-preference buyer (whose quotes route ONLY into the cash
+  // bucket) doesn't under-report Best-OTD here.
   if (quotes.kind === "ok") {
-    for (const r of [...quotes.data.finance, ...quotes.data.lease]) {
+    for (const r of [...quotes.data.finance, ...quotes.data.lease, ...(quotes.data.cash ?? [])]) {
       if (r.otd_total !== null) candidates.push(r.otd_total);
     }
   }

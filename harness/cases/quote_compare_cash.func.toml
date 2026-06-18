@@ -1,18 +1,19 @@
-# harness/cases/quote_compare_cash.func.toml — FUNCTIONAL lane: the empty
-# quote-compare panel (a CASH profile → both buckets empty).
+# harness/cases/quote_compare_cash.func.toml — FUNCTIONAL lane: the CASH
+# quote-compare bucket (a CASH profile → cash quotes ranked by OTD).
 #
 # The twin of quote_compare.func.toml: an active CASH profile with a cash-mode
-# quote. The cash gate leaves BOTH the finance and lease buckets empty regardless
-# of any quotes present, so the Canvas Quote compare section renders the empty
-# state with the verbatim "Compared 0 quotes." copy.
+# quote. A cash buyer's quotes are OTD totals, so the ranker now puts them in a
+# dedicated Cash bucket (finance + lease stay empty) — the Canvas Quote compare
+# section renders the Cash bucket. (Previously the cash gate short-circuited to
+# empty buckets, so a cash buyer got "Compared 0 quotes" despite having quotes —
+# a real bug surfaced by the live 巡检.)
 #
 # A separate single-step case (not a second step of the populated case) because
 # each functional case owns one server+DB and apply-fixture is additive — two
 # compare worlds in one case would collide on the shared dealer/profile rows.
 #
-# WHY THIS ANCHOR IS MEANINGFUL: the empty state proves the cash gating short-
-# circuits to empty buckets even with a quote present (the ranker returns
-# finance:[] lease:[] for a cash preference). No budget number appears. Δ=0 by
+# WHY THIS ANCHOR IS MEANINGFUL: it proves a cash buyer's quotes are compared
+# (the Cash bucket renders) rather than dropped. No budget number appears. Δ=0 by
 # construction (a runless kind="ui" step).
 
 [meta]
@@ -31,10 +32,10 @@ lane = "ui"
 id = "cash_empty_panel"
 kind = "ui"
 fixture_state = "quote_compare_cash_world"
-purpose = "A cash profile shows the empty compare state with the verbatim zero-quotes copy (both buckets empty despite a cash-mode quote)."
+purpose = "A cash profile ranks its cash-mode quote in the Cash bucket (finance + lease empty) — a cash buyer's quotes are compared, not dropped."
 
 # Open the Quotes tab — the Quote compare section lives behind it (the click
-# both navigates AND waits for the empty compare state to mount).
+# both navigates AND waits for the Cash compare bucket to mount).
 [[steps.ui_actions]]
 verb = "click"
 testid = "canvas-tab-quotes"
@@ -46,6 +47,5 @@ expect = "visible"
 
 [[steps.anchors]]
 kind = "dom_state"
-testid = "quote-compare-empty"
-expect = "text"
-value = "Compared 0 quotes."
+testid = "quote-compare-cash"
+expect = "visible"

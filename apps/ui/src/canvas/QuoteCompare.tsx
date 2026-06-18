@@ -108,13 +108,15 @@ export interface QuoteCompareProps {
 export function QuoteCompare({ quotes }: QuoteCompareProps): JSX.Element {
   const finance = quotes.kind === "ok" ? quotes.data.finance : [];
   const lease = quotes.kind === "ok" ? quotes.data.lease : [];
-  const totalRanked = finance.length + lease.length;
+  const cash = quotes.kind === "ok" ? (quotes.data.cash ?? []) : [];
+  const totalRanked = finance.length + lease.length + cash.length;
   // Which buckets are in scope is driven by which the payload populated: a
-  // finance-only / lease-only preference leaves the other list empty AND
+  // finance-only / lease-only / cash-only preference leaves the others empty AND
   // off-scope, so a non-empty list is the signal a bucket should render. When
-  // BOTH are empty (cash / no quotes), the empty state stands in.
+  // ALL are empty (no quotes), the empty state stands in.
   const showFinance = finance.length > 0;
   const showLease = lease.length > 0;
+  const showCash = cash.length > 0;
 
   return (
     <section data-testid="quote-compare">
@@ -136,6 +138,7 @@ export function QuoteCompare({ quotes }: QuoteCompareProps): JSX.Element {
             <Bucket testid="quote-compare-finance" title="Finance" rows={finance} />
           )}
           {showLease && <Bucket testid="quote-compare-lease" title="Lease" rows={lease} />}
+          {showCash && <Bucket testid="quote-compare-cash" title="Cash" rows={cash} />}
         </div>
       )}
     </section>
