@@ -26,8 +26,10 @@ module.exports = {
     // browser, so it lives OUTSIDE the layered src/ wall — like a .test file).
     // apps/desktop/smoke = the Electron shell's deterministic Playwright smoke
     // suite (same test-infrastructure carve-out); apps/desktop/bundle = the
-    // generated self-contained server bundle (gitignored build artifact).
-    exclude: { path: "/dist/|apps/ui/e2e/|apps/desktop/(smoke|bundle)/" },
+    // generated self-contained server bundle, and apps/desktop/release = the
+    // electron-builder packaged output (which re-embeds that bundle) — both are
+    // gitignored build artifacts, not layered source.
+    exclude: { path: "/dist/|apps/ui/e2e/|apps/desktop/(smoke|bundle|release)/" },
   },
   forbidden: [
     // ---- layer DAG: lower layers must not reach up -------------------------
