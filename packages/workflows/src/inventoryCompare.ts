@@ -228,10 +228,16 @@ const renderStep = createStep({
     const candidates = state.candidates ?? [];
 
     // The deterministic terminal sentence — candidate count + recommended count,
-    // NEVER a budget number.
+    // NEVER a budget number. With nothing scanned yet, a bare "Listed 0" reads as
+    // a dead end (the live 巡检 hit this when a buyer asked "what's in stock?" and
+    // the router chose compare over a scan), so point to the next step in plain
+    // words — no slash command, no jargon.
     const summary =
-      `Listed ${state.totalListings} inventory candidates ` +
-      `(recommended: ${state.recommendedCount}).`;
+      state.totalListings === 0
+        ? "No inventory to compare yet — no dealer sites have been scanned. " +
+          "Scan the dealers' inventory to see what they have in stock."
+        : `Listed ${state.totalListings} inventory candidates ` +
+          `(recommended: ${state.recommendedCount}).`;
 
     return {
       outcome: "ranked" as const,

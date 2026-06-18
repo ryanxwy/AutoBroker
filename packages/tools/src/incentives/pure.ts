@@ -300,4 +300,17 @@ export const OEM_SEED_SOURCES: Readonly<Record<string, { urlTemplate: string }>>
   hyundai: {
     urlTemplate: "https://www.hyundaiusa.com/us/en/offers",
   },
+  // Toyota + Honda national current-offers hubs. Param-free (the stable kind the
+  // cold isolated capture reads without destabilizing), US .com (classifyOemHost
+  // passes), and live-verified by the nightly 巡检's own incentive_scrape cold
+  // capture — the real headless browser reaches these even where a plain fetch is
+  // 403'd. Like Hyundai, the capture may surface mostly an MSRP/offers grid (a
+  // valid empty result is honest); the point is the brand is now a recognized
+  // source instead of an immediate no_oem_source for two of the most-shopped makes.
+  toyota: {
+    urlTemplate: "https://www.toyota.com/deals-incentives/",
+  },
+  honda: {
+    urlTemplate: "https://automobiles.honda.com/offers",
+  },
 };
