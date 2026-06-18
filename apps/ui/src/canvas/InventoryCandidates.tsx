@@ -25,6 +25,7 @@ import { useMemo, useState } from "react";
 import type { AsyncState } from "../api/useApi.js";
 import type { InventoryCompareResult } from "../api/wire.js";
 import { ClickableTile } from "./ClickableTile.js";
+import { distanceLabel, dollarLabel, relativeDate } from "./format.js";
 import { InventoryDetailModal } from "./InventoryDetailModal.js";
 import { Pager } from "./Pager.js";
 import { usePagedList } from "./usePagedList.js";
@@ -61,30 +62,6 @@ export function vehicleHeader(c: InventoryCandidate): string {
     .join(" ");
 }
 
-/** A "$44,175" price label from a number, or null for a missing price. */
-export function priceLabel(value: number | null): string | null {
-  if (value === null) return null;
-  return `$${Math.round(value).toLocaleString("en-US")}`;
-}
-
-/** A "5.2 mi" distance label, or null when unknown. */
-export function distanceLabel(value: number | null): string | null {
-  if (value === null) return null;
-  return `${value.toFixed(1)} mi`;
-}
-
-/** A coarse "3 days ago" relative label from an ISO string. Degrades to "" when
- *  the value is unparseable or null. */
-function relativeDate(value: string | null): string {
-  if (value === null || value.trim() === "") return "";
-  const ms = Date.parse(value);
-  if (Number.isNaN(ms)) return "";
-  const deltaDays = Math.floor((Date.now() - ms) / 86_400_000);
-  if (deltaDays <= 0) return "today";
-  if (deltaDays === 1) return "yesterday";
-  return `${deltaDays} days ago`;
-}
-
 function CandidateRow({
   row,
   onActivate,
@@ -93,7 +70,7 @@ function CandidateRow({
   onActivate: () => void;
 }): JSX.Element {
   const header = vehicleHeader(row) || "Inventory listing";
-  const price = priceLabel(row.listed_price);
+  const price = dollarLabel(row.listed_price);
   const distance = distanceLabel(row.distance_miles);
   return (
     <ClickableTile

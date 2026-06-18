@@ -19,40 +19,8 @@ import { useId } from "react";
 import type { QuoteRow } from "../api/wire.js";
 import { Modal } from "../shell/Modal.js";
 import { collapseAuditFlags } from "./auditFlags.js";
-
-/** A "$43,210" total label from a number (no cents noise), or null for a missing
- *  value (so the row is omitted). */
-function dollarLabel(value: number | null): string | null {
-  if (value === null) return null;
-  return `$${Math.round(value).toLocaleString("en-US")}`;
-}
-
-/** A "Jun 12, 2026" date label from an ISO string, or null when absent/unparsable. */
-function dateLabel(value: string | null): string | null {
-  if (value === null || value === "") return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-}
-
-/** One label/value row — omitted entirely when `value` is null/empty. */
-function DetailRow({
-  label,
-  value,
-  emphasize = false,
-}: {
-  label: string;
-  value: string | null;
-  emphasize?: boolean;
-}): JSX.Element | null {
-  if (value === null || value === "") return null;
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{emphasize ? <strong>{value}</strong> : value}</dd>
-    </>
-  );
-}
+import { DetailRow } from "./DetailRow.js";
+import { dateLabel, dollarLabel } from "./format.js";
 
 export function QuoteDetailModal({
   row,

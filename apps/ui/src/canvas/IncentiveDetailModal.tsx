@@ -16,18 +16,8 @@ import { useId } from "react";
 
 import type { IncentiveRow } from "../api/wire.js";
 import { Modal } from "../shell/Modal.js";
-import { dollarLabel, expiryLine } from "./Incentives.js";
-
-/** One label/value row — omitted entirely when `value` is null/empty. */
-function DetailRow({ label, value }: { label: string; value: string | null }): JSX.Element | null {
-  if (value === null || value === "") return null;
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
-  );
-}
+import { DetailRow } from "./DetailRow.js";
+import { dollarLabel, expiryLine } from "./format.js";
 
 export function IncentiveDetailModal({
   row,

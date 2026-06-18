@@ -15,28 +15,8 @@ import { useId } from "react";
 
 import type { DealerRow } from "../api/wire.js";
 import { Modal } from "../shell/Modal.js";
-
-/** Read a named string column off the open dealer record (null when absent/blank). */
-function str(row: DealerRow, key: string): string | null {
-  const v = row[key];
-  return typeof v === "string" && v.trim() !== "" ? v : null;
-}
-/** Read a named numeric column off the open dealer record (null when absent). */
-function num(row: DealerRow, key: string): number | null {
-  const v = row[key];
-  return typeof v === "number" ? v : null;
-}
-
-/** One label/value row — omitted entirely when `value` is null/empty. */
-function DetailRow({ label, value }: { label: string; value: string | null }): JSX.Element | null {
-  if (value === null || value === "") return null;
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
-  );
-}
+import { num, str } from "./dealerFields.js";
+import { DetailRow } from "./DetailRow.js";
 
 export function DealerDetailModal({
   row,

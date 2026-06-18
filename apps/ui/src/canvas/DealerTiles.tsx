@@ -19,19 +19,9 @@ import type { AsyncState } from "../api/useApi.js";
 import type { DealerList, DealerRow } from "../api/wire.js";
 import { ClickableTile } from "./ClickableTile.js";
 import { DealerDetailModal } from "./DealerDetailModal.js";
+import { num, str } from "./dealerFields.js";
 import { Pager } from "./Pager.js";
 import { usePagedList } from "./usePagedList.js";
-
-/** Read a named string column off the open dealer record (null when absent/blank). */
-function str(row: DealerRow, key: string): string | null {
-  const v = row[key];
-  return typeof v === "string" && v.trim() !== "" ? v : null;
-}
-/** Read a named numeric column off the open dealer record (null when absent). */
-function num(row: DealerRow, key: string): number | null {
-  const v = row[key];
-  return typeof v === "number" ? v : null;
-}
 
 function DealerTile({
   row,

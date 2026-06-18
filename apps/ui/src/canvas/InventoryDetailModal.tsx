@@ -16,23 +16,9 @@
 import { useId } from "react";
 
 import { Modal } from "../shell/Modal.js";
-import {
-  type InventoryCandidate,
-  distanceLabel,
-  priceLabel,
-  vehicleHeader,
-} from "./InventoryCandidates.js";
-
-/** One label/value row — omitted entirely when `value` is null/empty. */
-function DetailRow({ label, value }: { label: string; value: string | null }): JSX.Element | null {
-  if (value === null || value === "") return null;
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
-  );
-}
+import { DetailRow } from "./DetailRow.js";
+import { distanceLabel, dollarLabel } from "./format.js";
+import { type InventoryCandidate, vehicleHeader } from "./InventoryCandidates.js";
 
 export function InventoryDetailModal({
   row,
@@ -53,11 +39,11 @@ export function InventoryDetailModal({
   }
 
   const header = vehicleHeader(row) || "Inventory listing";
-  const listed = priceLabel(row.listed_price);
-  const msrp = priceLabel(row.msrp);
+  const listed = dollarLabel(row.listed_price);
+  const msrp = dollarLabel(row.msrp);
   const belowMsrp =
     row.msrp !== null && row.listed_price !== null && row.msrp > row.listed_price
-      ? priceLabel(row.msrp - row.listed_price)
+      ? dollarLabel(row.msrp - row.listed_price)
       : null;
   const distance = distanceLabel(row.distance_miles);
   // Only ever link to an http(s) VDP — the same external-link discipline the

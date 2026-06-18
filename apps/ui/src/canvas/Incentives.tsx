@@ -24,19 +24,8 @@ import { useState } from "react";
 import type { AsyncState } from "../api/useApi.js";
 import type { IncentiveList, IncentiveRow } from "../api/wire.js";
 import { ClickableTile } from "./ClickableTile.js";
+import { dollarLabel, expiryLine } from "./format.js";
 import { IncentiveDetailModal } from "./IncentiveDetailModal.js";
-
-/** A "$2,500" cash label from a number (no cents noise), or null for a missing
- *  amount. */
-export function dollarLabel(value: number | null): string | null {
-  if (value === null) return null;
-  return `$${Math.round(value).toLocaleString("en-US")}`;
-}
-
-/** The "expires 2026-07-31" line from a raw expiry, dropping a missing one. */
-export function expiryLine(expires: string | null): string {
-  return expires !== null && expires !== "" ? `expires ${expires}` : "";
-}
 
 function IncentiveRowView({
   row,

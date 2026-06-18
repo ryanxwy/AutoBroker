@@ -28,13 +28,7 @@ import type { AsyncState } from "../api/useApi.js";
 import type { QuoteList, QuoteRow } from "../api/wire.js";
 import { collapseAuditFlags } from "./auditFlags.js";
 import { ClickableTile } from "./ClickableTile.js";
-
-/** A "$43,210" total label from a number (no cents noise), or null for a
- *  missing total. */
-function dollarLabel(value: number | null): string | null {
-  if (value === null) return null;
-  return `$${Math.round(value).toLocaleString("en-US")}`;
-}
+import { dollarLabel } from "./format.js";
 
 /** The provenance line — "via deepseek · ocr", dropping any missing part. An
  *  all-missing provenance yields "" (the line is then omitted). */

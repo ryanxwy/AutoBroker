@@ -26,12 +26,7 @@ import type { AsyncState } from "../api/useApi.js";
 import type { QuoteCompareResult, QuoteCompareRow } from "../api/wire.js";
 import { collapseAuditFlags } from "./auditFlags.js";
 import { ClickableTile } from "./ClickableTile.js";
-
-/** A "$44,540" total label from a number, or null for a missing total. */
-function dollarLabel(value: number | null): string | null {
-  if (value === null) return null;
-  return `$${Math.round(value).toLocaleString("en-US")}`;
-}
+import { dollarLabel } from "./format.js";
 
 function QuoteRow({
   row,
