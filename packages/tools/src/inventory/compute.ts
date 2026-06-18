@@ -64,7 +64,8 @@ export interface RankedCandidate {
 
 /** The result of ranking one profile's live inventory. */
 export interface RankInventoryResult {
-  /** Ranked candidates, score DESC then listing_id ASC (post-filter). */
+  /** Ranked candidates, match tier (exact/near before mismatch/unknown) then
+   *  score DESC then listing_id ASC (post-filter). */
   candidates: RankedCandidate[];
   /** The newest `last_seen_at` over the candidates (ISO string), or null when
    *  there are no candidates / none carry a usable value. */

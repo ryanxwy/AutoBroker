@@ -25,6 +25,19 @@ const PRICE_CLIP_MAX = 0.2; // clip ((listed - floor) / floor) at 0.20
 const NO_COLOR_PREFERENCE = "no preference"; // sentinel (lowercased)
 const OTHER_COLOR_SCORE = 0.2; // non-preferred / missing-color color score
 
+/** Primary sort tier by match_status — on-model candidates (exact/near) rank
+ *  ABOVE off-model ones (mismatch/unknown) regardless of how near or cheap a
+ *  wrong-model listing is. Lower = higher priority. The four-axis score has no
+ *  model axis (trim_off is 0.0 for BOTH a wrong-model car and a wrong-trim
+ *  on-model car), so without this tier a nearby cheap Corolla could outrank a
+ *  RAV4 the buyer actually searched for. */
+const MATCH_TIER: Record<string, number> = {
+  exact: 0,
+  near: 1,
+  mismatch: 2,
+  unknown: 3,
+};
+
 // ---------------------------------------------------------------------------
 // Shapes
 // ---------------------------------------------------------------------------
@@ -262,8 +275,8 @@ export function applyFilters(
 /**
  * Filter → median → score → sort. `dealerDistances` maps dealer_id → miles (or
  * null); a row whose dealer is missing from the map falls to the neutral
- * distance branch. Sorted score DESC, then listing_id ASC (plain string
- * compare), stable.
+ * distance branch. Sorted by match tier (exact/near before mismatch/unknown),
+ * then score DESC, then listing_id ASC (plain string compare), stable.
  */
 export function rankListings(
   ctx: ProfileMatchCtx,
@@ -283,9 +296,11 @@ export function rankListings(
     return scoreListing(ctx, row, dist, medianLp);
   });
 
-  // score DESC, then listing_id ASC (plain string <). Array.sort is stable.
+  // match tier first (on-model exact/near above off-model mismatch/unknown),
+  // then score DESC, then listing_id ASC (plain string <). Array.sort is stable.
   scored.sort(
     (a, b) =>
+      (MATCH_TIER[a.match_status] ?? 9) - (MATCH_TIER[b.match_status] ?? 9) ||
       b.score - a.score ||
       (a.listing_id < b.listing_id ? -1 : a.listing_id > b.listing_id ? 1 : 0),
   );

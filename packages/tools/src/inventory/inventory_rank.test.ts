@@ -3,8 +3,9 @@
  *
  * Pure-function tests, no DB. Freezes the four-axis scoring math (trim / price /
  * color / distance), the hard pre-scoring filters (drop ordered, drop
- * over-budget), the median fallback for a missing MSRP, the descending sort with
- * a listing_id ASC tiebreak, and the rank-time match_status recompute.
+ * over-budget), the median fallback for a missing MSRP, the match-tier-then-
+ * descending-score sort with a listing_id ASC tiebreak, and the rank-time
+ * match_status recompute.
  */
 
 import { describe, expect, it } from "vitest";
@@ -295,6 +296,41 @@ describe("rankListings", () => {
     expect(result[0]!.listing_id).toBe("lst_good");
     expect(result[1]!.listing_id).toBe("lst_meh");
     expect(result[0]!.score).toBeGreaterThanOrEqual(result[1]!.score);
+  });
+
+  it("ranks an on-model near-match above a nearer, cheaper off-model mismatch", () => {
+    // The on-model car (Tucson, off-trim → near) is far and at MSRP, so its
+    // four-axis SCORE is low. The off-model car (Santa Fe → mismatch) is at the
+    // door and cheap with a preferred color, so it OUTSCORES the near-match.
+    // The match-tier primary sort must still surface the on-model car first —
+    // a buyer who searched a Tucson must not see a Santa Fe ranked above it.
+    const onModelNear = listing({
+      listing_id: "lst_tucson_se",
+      dealer_id: "d_far",
+      model: "Tucson",
+      trim: "SE", // off-trim, not in acceptable → near (model matches, trim off)
+      exterior_color: "Atomic Tangerine", // non-preferred
+      msrp: 40000.0,
+      listed_price: 40000.0, // at MSRP → weak price axis
+    });
+    const offModelMismatch = listing({
+      listing_id: "lst_santafe",
+      dealer_id: "d_near",
+      model: "Santa Fe", // different model → mismatch
+      trim: "Limited",
+      exterior_color: "Shimmering Silver", // preferred
+      msrp: 40000.0,
+      listed_price: 36000.0, // cheap → strong price axis
+    });
+    const result = rankListings(ctx(), [offModelMismatch, onModelNear], {
+      d_far: 25.0, // at radius → distance score 0
+      d_near: 0.0, // at the door → distance score 1
+    });
+    expect(result[0]!.match_status).toBe("near");
+    expect(result[0]!.listing_id).toBe("lst_tucson_se");
+    expect(result[1]!.match_status).toBe("mismatch");
+    // The mismatch genuinely scores higher; only the tier keeps it second.
+    expect(result[1]!.score).toBeGreaterThan(result[0]!.score);
   });
 
   it("breaks ties by listing_id ASC (stable)", () => {
