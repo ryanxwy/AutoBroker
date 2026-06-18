@@ -1,0 +1,79 @@
+# harness/cases/quote_source_doc.func.toml — FUNCTIONAL lane: the "click a quote
+# card → embed the dealer's ORIGINAL source document" proof, end-to-end and
+# offline. A buyer who wants to double-check the numbers opens an extracted-quote
+# card; when the quote was read from an image/PDF the QuoteDetailModal re-fetches
+# the dealer's original document (GET …/quotes/:quoteId/source) and embeds it.
+#
+# This case proves the WHOLE chain on the offline lane (no live LLM):
+#   fixture seeds an active profile + a bound dealer + ONE image quote whose
+#   source_gmail_message_id points at a fake-mailbox message carrying a decodable
+#   PNG attachment → open the Quotes tab → expand the raw "Extracted quotes"
+#   foldout → click the quote card → the modal fetches /source, the route re-reads
+#   the PNG bytes through the (fake) Gmail adapter (fake_mailbox_attachments), and
+#   the modal embeds it as <img data-testid="quote-source-image">.
+#
+# WHY a dedicated case (not a 2nd step elsewhere): a kind="ui" step needs its own
+# fixture_state (apply-fixture is additive), and this is a single DOM-mutation
+# chain — three sequential clicks (tab → foldout summary → card) then the dialog
+# anchors, no mid-step interleaving. The async /source fetch → blob → <img> render
+# resolves against the local route; the dom_state visibility anchor auto-waits.
+#
+# WHY THESE ANCHORS ARE MEANINGFUL: modal-dialog visible proves the card click
+# reached the portal detail view; quote-source-image visible proves the modal
+# fetched /source, the route resolved the fake message + its PNG via the adapter,
+# and the bytes rendered as an <img> — the original-source embed, end-to-end.
+#
+# Δ=0 BY CONSTRUCTION: a modal + an idempotent read-only GET reach no side effect;
+# no run sits between the before/after snapshots. No budget number appears.
+
+[meta]
+id = "quote_source_doc_func"
+archetype = "B"
+skills = ["dealer_reply_extract"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: open the Quotes tab → expand the raw foldout → click the quote card
+#              → the detail modal embeds the dealer's original PNG -----------------
+
+[[steps]]
+id = "quote_source_embed"
+kind = "ui"
+fixture_state = "quote_source_doc"
+purpose = "Open the Quotes tab, expand the raw Extracted-quotes foldout, click the seeded image quote card; the QuoteDetailModal fetches /source and embeds the dealer's original PNG (quote-source-image)."
+
+# Open the Quotes tab (mounts + waits for the panel), expand the raw foldout
+# <details> (its rows render once open), then click the single image quote card to
+# open its detail modal. Three sequential clicks in one ui_actions chain — the
+# dialog + embed anchors are scored after all three.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-quotes"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-quotes-foldout"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-quote-row"
+
+# The portal dialog (shell/Modal variant="dialog", createPortal → document.body)
+# is open — the whole-card click reached the read-only detail view.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "modal-dialog"
+expect = "visible"
+
+# The original-source embed renders — proves the modal fetched /source, the route
+# re-read the PNG via the fake Gmail adapter (fake_mailbox_attachments), and the
+# bytes rendered as an <img>. This is the end-to-end source-document proof.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "quote-source-image"
+expect = "visible"
