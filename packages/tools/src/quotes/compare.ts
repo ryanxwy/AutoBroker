@@ -54,6 +54,10 @@ export interface CompareResult {
   financingPreference: string | null;
   finance: QuoteRanking[];
   lease: QuoteRanking[];
+  /** Cash quotes ranked by OTD. Populated for a cash-preference buyer (whose
+   *  quotes are all OTD totals, not payments). Empty for finance/lease/undecided,
+   *  where cash quotes already ride along as off-mode rows inside the finance view. */
+  cash: QuoteRanking[];
 }
 
 // ---------------------------------------------------------------------------
@@ -203,16 +207,16 @@ function rankOneMode(rows: Record<string, unknown>[]): QuoteRanking[] {
 export function rankQuotesForProfile(db: Db, profileId: string): CompareResult {
   const preference = loadFinancingPreference(db, profileId);
 
-  // Cash + missing-profile/NULL preference: both lists stay empty (cash compare
-  // uses a separate OTD-only path not surfaced here).
-  if (preference === "cash" || preference === null) {
-    return { financingPreference: preference, finance: [], lease: [] };
+  // Missing-profile / NULL preference: nothing to rank against.
+  if (preference === null) {
+    return { financingPreference: preference, finance: [], lease: [], cash: [] };
   }
 
   const rows = db.$client.prepare(RANK_SQL).all(profileId) as Record<string, unknown>[];
 
   const financeRows: Record<string, unknown>[] = [];
   const leaseRows: Record<string, unknown>[] = [];
+  const cashRows: Record<string, unknown>[] = [];
   for (const row of rows) {
     const mode = row["financing_mode"];
     // A quote's OTD total is the drive-off price — mode-agnostic. So a quote the
@@ -224,18 +228,28 @@ export function rankQuotesForProfile(db: Db, profileId: string): CompareResult {
     // behind a label — the live 巡检 saw 3 of 4 real dealer quotes vanish here.
     if (mode === "finance" || mode === "unspecified" || mode === "cash") financeRows.push(row);
     if (mode === "lease" || mode === "unspecified") leaseRows.push(row);
+    // Cash bucket: cash + unspecified quotes are OTD-comparable for a cash buyer.
+    if (mode === "cash" || mode === "unspecified") cashRows.push(row);
   }
 
+  if (preference === "cash") {
+    // A cash buyer's quotes are OTD totals — rank them so "compare my quotes"
+    // returns a best pick instead of an empty result (the live 巡检 saw a cash
+    // buyer get "Compared 0" while the same data ranked fine for lease/finance).
+    return { financingPreference: preference, finance: [], lease: [], cash: rankOneMode(cashRows) };
+  }
   if (preference === "finance") {
-    return { financingPreference: preference, finance: rankOneMode(financeRows), lease: [] };
+    return { financingPreference: preference, finance: rankOneMode(financeRows), lease: [], cash: [] };
   }
   if (preference === "lease") {
-    return { financingPreference: preference, finance: [], lease: rankOneMode(leaseRows) };
+    return { financingPreference: preference, finance: [], lease: rankOneMode(leaseRows), cash: [] };
   }
-  // undecided (or any other unrecognized non-cash value) → both lists.
+  // undecided (or any other unrecognized non-cash value) → finance + lease (cash
+  // already surfaces inside finance as an off-mode row).
   return {
     financingPreference: preference,
     finance: rankOneMode(financeRows),
     lease: rankOneMode(leaseRows),
+    cash: [],
   };
 }

@@ -73,6 +73,13 @@ export interface RankInventoryResult {
   totalListings: number;
   /** Candidates satisfying the three-condition recommended predicate. */
   recommendedCount: number;
+  /** # of dealer_inventory_sources rows with last_status='scanned' for this
+   *  profile — i.e. dealer sites a site_scan actually reached. >0 distinguishes
+   *  "a scan ran and found 0" from "no scan has ever run" in the empty-state copy. */
+  sourcesScanned: number;
+  /** # of dealer_inventory_sources rows with last_status='blocked' (sites that
+   *  blocked automated scanning). */
+  sourcesBlocked: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,8 +173,29 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     | Record<string, unknown>
     | undefined;
   if (profileRow === undefined) {
-    return { candidates: [], scannedAtMax: null, totalListings: 0, recommendedCount: 0 };
+    return {
+      candidates: [],
+      scannedAtMax: null,
+      totalListings: 0,
+      recommendedCount: 0,
+      sourcesScanned: 0,
+      sourcesBlocked: 0,
+    };
   }
+
+  // Scan provenance: how many dealer sites a site_scan actually reached vs were
+  // blocked. Lets the empty-state distinguish "scan ran, found 0" from "never
+  // scanned" (read-only; dealer_inventory_sources is written only by site_scan).
+  const sourceTally = db.$client
+    .prepare(
+      "SELECT " +
+        "SUM(CASE WHEN last_status = 'scanned' THEN 1 ELSE 0 END) AS scanned, " +
+        "SUM(CASE WHEN last_status = 'blocked' THEN 1 ELSE 0 END) AS blocked " +
+        "FROM dealer_inventory_sources WHERE search_profile_id = ?",
+    )
+    .get(profileId) as { scanned: number | null; blocked: number | null } | undefined;
+  const sourcesScanned = Number(sourceTally?.scanned ?? 0);
+  const sourcesBlocked = Number(sourceTally?.blocked ?? 0);
 
   const ctx = buildMatchCtx(profileRow);
   const { listings, dealerDistances } = listListingsForProfile(db, profileId);
@@ -193,5 +221,7 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     scannedAtMax,
     totalListings: candidates.length,
     recommendedCount,
+    sourcesScanned,
+    sourcesBlocked,
   };
 }

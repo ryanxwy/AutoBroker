@@ -112,6 +112,18 @@ export function parseLocation(locationQuery: string | null): ParsedLocation {
   return base;
 }
 
+// Pull the 2-letter US state out of a Google-style formatted address tail,
+// e.g. "Seattle, WA 98101, USA" -> "WA". The geocoder reliably carries the
+// state here even when the user's typed query omits it ("Seattle 98101"), so
+// this is preferred over parseLocation's typed-query parse when persisting the
+// state column (otherwise state-keyed audits like DOC_FEE_CAP silently skip).
+const STATE_FROM_FORMATTED = /,\s*([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/;
+export function stateFromFormattedAddress(addr: string | null | undefined): string | null {
+  if (!addr) return null;
+  const m = STATE_FROM_FORMATTED.exec(addr);
+  return m ? m[1]! : null;
+}
+
 // ---------------------------------------------------------------------------
 // synth id — deterministic, double-fire safe
 // ---------------------------------------------------------------------------
@@ -235,7 +247,12 @@ function buildProfile(
     locationQuery: input.location_query,
     resolvedAddress: coords.resolvedAddress ?? null,
     city: loc.city,
-    state: loc.state,
+    // Prefer the state parsed from the GEOCODED formatted address over the
+    // typed-query parse: a query like "Seattle 98101" (no state abbreviation)
+    // leaves loc.state null, but the resolved address ("Seattle, WA 98101, USA")
+    // carries it. Without this, state="" and DOC_FEE_CAP/state-keyed audits
+    // never fire even in capped states (WA/CA/NY).
+    state: stateFromFormattedAddress(coords.resolvedAddress) ?? loc.state,
     // Prefer the GEOCODED postal (coords.postalCode) over the locally-parsed one
     // — same precedence as synthPostal above. Without this a location_query that
     // carries no zip (but geocodes to one) persisted a blank postal_code, which

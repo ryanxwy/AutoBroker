@@ -15,9 +15,10 @@
  *     The case asserts: both buckets visible, the finance/lease row counts, a
  *     decoded audit-flag pill, and the incomplete badge (the NULL-OTD row).
  *
- *   quote_compare_cash_world (financing_preference='cash') — BOTH buckets empty:
+ *   quote_compare_cash_world (financing_preference='cash') — cash bucket ranked:
  *     - 1 bound dealer, 1 cash-mode quote
- *     The case asserts: the quote-compare-empty state ("Compared 0 quotes.").
+ *     The case asserts: the Cash bucket renders (quote-compare-cash) — a cash
+ *     buyer's OTD quotes are compared, not dropped.
  *
  * USED BY: quote_compare.func.toml (undecided) + quote_compare_cash.func.toml
  * (cash) — runless kind="ui" render steps (Δ=0 by construction; a pure read
@@ -179,13 +180,14 @@ export const quoteCompareWorld: FixtureState = {
   },
 };
 
-/** The cash world — both buckets empty. */
+/** The cash world — finance + lease empty, cash bucket ranked. */
 export const quoteCompareCashWorld: FixtureState = {
   id: "quote_compare_cash_world",
   seed: (db: Db) => {
     const c = db.$client;
 
-    // The active CASH profile → the ranker returns BOTH buckets empty.
+    // The active CASH profile → the ranker ranks cash quotes in the cash bucket
+    // (finance + lease empty).
     c.prepare(
       "INSERT INTO search_profiles " +
         "(search_profile_id, year, make, model, trim, search_radius_miles, location_query, city, " +
@@ -201,7 +203,7 @@ export const quoteCompareCashWorld: FixtureState = {
       "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'bound')",
     ).run(CASH_PROFILE_ID, CASH_DEALER);
 
-    // A cash-mode quote — the cash gate leaves both buckets empty regardless.
+    // A cash-mode quote — ranked in the cash bucket for a cash buyer.
     insertQuote(c, CASH_PROFILE_ID, {
       quoteId: "c-cash",
       dealerId: CASH_DEALER,

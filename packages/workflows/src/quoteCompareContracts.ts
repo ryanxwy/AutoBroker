@@ -78,7 +78,10 @@ export const QuoteCompareOutputSchema = z
     financingPreference: z.string().nullable(),
     finance: z.array(QuoteRankingSchema),
     lease: z.array(QuoteRankingSchema),
-    /** finance.length + lease.length — the total ranked across both buckets. */
+    /** Cash quotes ranked by OTD (populated for a cash-preference buyer; empty
+     *  otherwise — cash rides inside finance as an off-mode row there). */
+    cash: z.array(QuoteRankingSchema),
+    /** finance.length + lease.length + cash.length — the total ranked. */
     totalRanked: z.number().int(),
     /** The deterministic terminal sentence (no budget number anywhere). */
     summary: z.string(),

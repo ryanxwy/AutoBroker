@@ -451,6 +451,10 @@ export const InventoryCompareResultSchema = z
     scannedAtMax: z.string().nullable(),
     totalListings: z.number(),
     recommendedCount: z.number(),
+    // Scan provenance (optional for tolerance): dealer sites a site_scan reached
+    // vs blocked. Drives the "scanned, found 0" vs "never scanned" empty-state.
+    sourcesScanned: z.number().optional(),
+    sourcesBlocked: z.number().optional(),
   })
   .passthrough();
 export type InventoryCompareResult = z.infer<typeof InventoryCompareResultSchema>;
@@ -483,6 +487,9 @@ export const QuoteCompareResultSchema = z
     financingPreference: z.string().nullable(),
     finance: z.array(QuoteCompareRowSchema),
     lease: z.array(QuoteCompareRowSchema),
+    /** Cash quotes ranked by OTD (populated for a cash-preference buyer; empty
+     *  otherwise). Optional for tolerance of older payloads. */
+    cash: z.array(QuoteCompareRowSchema).optional(),
     totalRanked: z.number(),
   })
   .passthrough();

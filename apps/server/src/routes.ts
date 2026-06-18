@@ -811,7 +811,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       const result = withDb((db) => rankQuotesForProfile(db, id));
       return {
         ...result,
-        totalRanked: result.finance.length + result.lease.length,
+        totalRanked: result.finance.length + result.lease.length + result.cash.length,
       };
     },
   );

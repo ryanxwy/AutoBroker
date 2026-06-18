@@ -118,6 +118,10 @@ const InventoryCompareStateSchema = z.object({
   scannedAtMax: z.string().nullable(),
   totalListings: z.number().int(),
   recommendedCount: z.number().int(),
+  /** Scan provenance (from dealer_inventory_sources): dealers a site_scan
+   *  reached vs blocked. Lets the empty-state distinguish scanned-0 from never-scanned. */
+  sourcesScanned: z.number().int(),
+  sourcesBlocked: z.number().int(),
 });
 type InventoryCompareState = z.infer<typeof InventoryCompareStateSchema>;
 
@@ -190,6 +194,8 @@ const resolveProfileStep = createStep({
       scannedAtMax: null,
       totalListings: 0,
       recommendedCount: 0,
+      sourcesScanned: 0,
+      sourcesBlocked: 0,
     };
   },
 });
@@ -211,6 +217,8 @@ const computeRankingStep = createStep({
       scannedAtMax: ranked.scannedAtMax,
       totalListings: ranked.totalListings,
       recommendedCount: ranked.recommendedCount,
+      sourcesScanned: ranked.sourcesScanned,
+      sourcesBlocked: ranked.sourcesBlocked,
     };
   },
 });
@@ -234,8 +242,16 @@ const renderStep = createStep({
     // words — no slash command, no jargon.
     const summary =
       state.totalListings === 0
-        ? "No inventory to compare yet — no dealer sites have been scanned. " +
-          "Scan the dealers' inventory to see what they have in stock."
+        ? state.sourcesScanned > 0
+          ? // A scan ran but matched nothing — say so, don't tell them to scan again.
+            `Your last scan of ${state.sourcesScanned} dealer site(s) found no matching ` +
+            `vehicles in stock` +
+            (state.sourcesBlocked > 0
+              ? ` (${state.sourcesBlocked} site(s) blocked automated scanning)`
+              : "") +
+            ". Try widening the trim, or check back later."
+          : "No inventory to compare yet — no dealer sites have been scanned. " +
+            "Scan the dealers' inventory to see what they have in stock."
         : `Listed ${state.totalListings} inventory candidates ` +
           `(recommended: ${state.recommendedCount}).`;
 

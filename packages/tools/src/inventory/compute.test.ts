@@ -258,6 +258,8 @@ describe("rankInventoryForProfile", () => {
       scannedAtMax: null,
       totalListings: 0,
       recommendedCount: 0,
+      sourcesScanned: 0,
+      sourcesBlocked: 0,
     });
   });
 });

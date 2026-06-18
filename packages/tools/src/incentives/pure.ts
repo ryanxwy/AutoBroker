@@ -271,10 +271,16 @@ export function isLikelyUsZip(zip: string | null): boolean {
 // the per-brand OEM seed candidate table
 // ---------------------------------------------------------------------------
 
+/** Colloquial make → canonical OEM brand key. Buyers commonly type "Chevy"
+ *  for Chevrolet; without this the seed/registry lookup misses entirely. */
+const BRAND_ALIASES: Readonly<Record<string, string>> = { chevy: "chevrolet" };
+
 /** Brand key normalization for BOTH the seed table and the file registry:
- *  lowercased, trimmed, internal whitespace collapsed to one space. */
+ *  lowercased, trimmed, internal whitespace collapsed to one space, then
+ *  aliased to the canonical OEM brand (e.g. "chevy" -> "chevrolet"). */
 export function normalizeIncentiveBrand(make: string): string {
-  return make.trim().toLowerCase().replace(/\s+/g, " ");
+  const base = make.trim().toLowerCase().replace(/\s+/g, " ");
+  return BRAND_ALIASES[base] ?? base;
 }
 
 /**
@@ -312,5 +318,14 @@ export const OEM_SEED_SOURCES: Readonly<Record<string, { urlTemplate: string }>>
   },
   honda: {
     urlTemplate: "https://automobiles.honda.com/offers",
+  },
+  // Chevrolet national current-offers hub. Same pattern as Toyota/Honda:
+  // param-free, US .com (classifyOemHost passes), trusted host the repo already
+  // recognizes (inventory_site_scan treats chevrolet.com as the Chevrolet OEM
+  // site). Keyed "chevrolet" with a "chevy"->"chevrolet" alias above so the
+  // common colloquial make resolves. Live cold-capture verified by the nightly
+  // 巡检; an all-MSRP grid is a valid empty result.
+  chevrolet: {
+    urlTemplate: "https://www.chevrolet.com/deals",
   },
 };

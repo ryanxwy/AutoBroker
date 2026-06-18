@@ -254,6 +254,12 @@ describe("normalizeIncentiveBrand", () => {
     expect(normalizeIncentiveBrand("  Hyundai ")).toBe("hyundai");
     expect(normalizeIncentiveBrand("Land   Rover")).toBe("land rover");
   });
+  it("aliases the colloquial 'Chevy' to the canonical 'chevrolet' (A3)", () => {
+    expect(normalizeIncentiveBrand("Chevy")).toBe("chevrolet");
+    expect(normalizeIncentiveBrand("  chevy ")).toBe("chevrolet");
+    // canonical key is a fixed point (only the colloquial alias maps)
+    expect(normalizeIncentiveBrand("Chevrolet")).toBe("chevrolet");
+  });
 });
 
 describe("OEM_SEED_SOURCES (the table stays honest by construction)", () => {

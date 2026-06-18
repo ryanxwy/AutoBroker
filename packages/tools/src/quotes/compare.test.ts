@@ -2,7 +2,7 @@
  * L1 DB tests — the quote-compare ranker. Freezes:
  *   - undecided populates BOTH buckets, ranked OTD ASC, finance vs lease tagged;
  *   - finance / lease preference populates one bucket (stray off-mode hidden);
- *   - cash + profile-missing/NULL preference → both empty;
+ *   - cash preference ranks the cash bucket (finance/lease empty); profile-missing/NULL → all empty;
  *   - the audit-flag join decodes the latest audit's codes;
  *   - latest-audit-per-quote = (audited_at DESC, audit_id DESC) LIMIT 1 — the
  *     same-timestamp AND different-date cases both pick v2, no duplicate row;
@@ -300,13 +300,18 @@ describe("rankQuotesForProfile", () => {
     expect(result.lease.map((q) => q.dealer_id)).toEqual(["d-B", "d-A"]);
   });
 
-  it("cash pref → both empty even with a cash-mode quote", () => {
+  it("cash pref → cash bucket ranked by OTD (finance/lease empty)", () => {
     insertProfile(PROFILE, "cash");
     insertDealer("d-A", "Alpha Hyundai");
+    insertDealer("d-B", "Beta Hyundai");
     insertQuote({ quoteId: "c-A", dealerId: "d-A", mode: "cash", otdTotal: 41000 });
+    insertQuote({ quoteId: "c-B", dealerId: "d-B", mode: "cash", otdTotal: 39500 });
     const result = rankQuotesForProfile(db, PROFILE);
     expect(result.finance).toEqual([]);
     expect(result.lease).toEqual([]);
+    // A cash buyer's OTD quotes are now ranked (was an empty result, a real bug).
+    expect(result.cash).toHaveLength(2);
+    expect(result.cash.map((q) => q.dealer_id)).toEqual(["d-B", "d-A"]); // lowest OTD first
   });
 
   it("profile-not-found → both empty (preference null)", () => {

@@ -704,9 +704,11 @@ describe("dealer_closeout_email — the REAL closeAndSuppressDealer under BLOCK=
       closed_thread_ids: string[];
       profile_status_transition: string;
     };
-    // The fuse blocked the network send → ZERO promoted sends, but the local
-    // close+suppress still committed on approve.
-    expect(out.emails_sent).toBe(0);
+    // The fuse blocked the NETWORK send, but the approved+attempted send is
+    // counted as a (fake) send — consistent with negotiation_followup's "sent N"
+    // (a buyer reading "0 sent" otherwise thinks no closeout went out). The local
+    // close+suppress still committed on approve; no real outbound exists.
+    expect(out.emails_sent).toBe(1);
     expect(out.closed_thread_ids).toEqual([THREAD_A]);
     expect(out.profile_status_transition).toBe("closed");
 

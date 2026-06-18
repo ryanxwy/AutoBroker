@@ -167,6 +167,7 @@ interface CompareOut {
   financingPreference: string | null;
   finance: Array<{ rank: number; dealer_id: string; otd_total: number | null; apr_or_mf: string }>;
   lease: Array<{ rank: number; dealer_id: string; apr_or_mf: string }>;
+  cash: Array<{ rank: number; dealer_id: string; otd_total: number | null; apr_or_mf: string }>;
   totalRanked: number;
   summary: string;
 }
@@ -207,7 +208,7 @@ describe("quote_compare — read-only three-branch + gating", () => {
     expect(out.finance[0]!.apr_or_mf).toBe("7.9%");
     expect(out.lease[0]!.apr_or_mf).toBe("MF 0.00120");
     expect(out.totalRanked).toBe(3);
-    expect(out.summary).toBe("Compared 3 quotes (finance: 2, lease: 1).");
+    expect(out.summary).toBe("Compared 3 quotes (finance: 2, lease: 1, cash: 0).");
   });
 
   it("runs 'pinned' when a valid pin is supplied", async () => {
@@ -234,7 +235,7 @@ describe("quote_compare — read-only three-branch + gating", () => {
     const out = result.result as CompareOut;
     expect(out.finance).toHaveLength(1);
     expect(out.lease).toEqual([]);
-    expect(out.summary).toBe("Compared 1 quotes (finance: 1, lease: 0).");
+    expect(out.summary).toBe("Compared 1 quotes (finance: 1, lease: 0, cash: 0).");
   });
 
   it("lease pref → lease bucket only (stray finance hidden)", async () => {
@@ -250,18 +251,23 @@ describe("quote_compare — read-only three-branch + gating", () => {
     expect(out.lease).toHaveLength(1);
   });
 
-  it("cash pref → both buckets empty", async () => {
+  it("cash pref → cash bucket ranked by OTD (finance/lease empty)", async () => {
     seedProfile({ preference: "cash" });
     seedDealer("d-A", "Alpha Hyundai");
+    seedDealer("d-B", "Beta Hyundai");
     seedQuote({ quoteId: "c-A", dealerId: "d-A", mode: "cash", otdTotal: 41000 });
+    seedQuote({ quoteId: "c-B", dealerId: "d-B", mode: "cash", otdTotal: 39500 });
     const { result } = await startRun("qcmp-cash-1", null);
     expect(result.status).toBe("success");
     if (result.status !== "success") return;
     const out = result.result as CompareOut;
     expect(out.finance).toEqual([]);
     expect(out.lease).toEqual([]);
-    expect(out.totalRanked).toBe(0);
-    expect(out.summary).toBe("Compared 0 quotes (finance: 0, lease: 0).");
+    // A cash buyer's OTD quotes are now compared (was an empty result, a real bug).
+    expect(out.cash).toHaveLength(2);
+    expect(out.cash[0]!.otd_total).toBe(39500); // lowest OTD ranks first
+    expect(out.totalRanked).toBe(2);
+    expect(out.summary).toBe("Compared 2 quotes (finance: 0, lease: 0, cash: 2).");
   });
 
   it("NULL otd_total sorts last within a bucket", async () => {
