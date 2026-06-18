@@ -135,6 +135,21 @@ if (!existsSync(dbPath)) {
   }
 }
 
+// DOUBLE-BOOT TRAP -- do not remove. apps/server/index.ts ends with an entry
+// guard that calls main() when import.meta.url equals
+// pathToFileURL(process.argv[1]).href -- meant to auto-start ONLY when index.js
+// is run directly (the dev path). In THIS bundle that guard fires too: esbuild
+// inlines index.ts here, the banner shims import.meta.url to
+// pathToFileURL(__filename).href (the server.cjs URL), and the utilityProcess
+// runs server.cjs, so process.argv[1] is also server.cjs -- the guard's
+// equality is TRUE and it auto-fires main(). Combined with the explicit main()
+// below, that boots the HTTP server + scheduler TWICE (two listen ports, two
+// armed schedulers, two recovery passes). Blank argv[1] so the inlined guard
+// stays FALSE; this wrapper's explicit main() is then the single, deterministic
+// boot path. (Leave the import.meta.url shim a valid string -- packages/db's
+// migrator does an eager fileURLToPath on it.)
+process.argv[1] = "";
+
 const { main } = require("./index.js");
 main().catch((err) => {
   console.error(err);
