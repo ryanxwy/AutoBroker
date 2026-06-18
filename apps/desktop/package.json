@@ -1,6 +1,6 @@
 {
   "name": "@autobroker/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Layer 5 (app) — dev-solo Electron shell: a thin main process that forks the self-contained server bundle (bundle/server.cjs) as a utilityProcess and loads the built SPA over localhost HTTP/SSE. Zero business logic, zero IPC, no preload. Electron pinned to 41 (ABI 145) — the newest major with official better-sqlite3 prebuilds; re-run the bump-gate in scripts/bundle.mjs before any bump.",
   "type": "module",
@@ -11,10 +11,13 @@
     "bundle": "node scripts/bundle.mjs",
     "start": "electron .",
     "smoke": "vitest run --config vitest.smoke.config.ts",
-    "clean": "rm -rf dist bundle *.tsbuildinfo"
+    "pack": "node scripts/bundle.mjs && electron-builder --dir",
+    "dist": "node scripts/bundle.mjs && electron-builder",
+    "clean": "rm -rf dist bundle release *.tsbuildinfo"
   },
   "devDependencies": {
     "electron": "41",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "playwright": "^1.48.0",
     "typescript": "^5.6.0",

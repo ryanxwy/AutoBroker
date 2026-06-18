@@ -53,7 +53,13 @@ import {
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist
 const desktopDir = resolve(here, "..");
 const repoRoot = resolve(desktopDir, "..", "..");
-const bundleDir = join(desktopDir, "bundle");
+// Packaged (electron-builder): bundle/ ships verbatim as extraResources under
+// Contents/Resources/bundle, on a real filesystem path so the forked
+// server.cjs can dlopen its native .node addons (asar cannot dlopen). Dev
+// (`electron .`): bundle/ sits next to the launcher. Everything downstream —
+// fork target, AUTOBROKER_UI_DIST, the drizzle path inside server.cjs — keys
+// off this one dir, so the dev/packaged branch lives here alone.
+const bundleDir = app.isPackaged ? join(process.resourcesPath, "bundle") : join(desktopDir, "bundle");
 
 /** KEY=VALUE lines; '#' comments and blanks skipped; optional surrounding quotes. */
 function parseDotEnv(path: string): Record<string, string> {

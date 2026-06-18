@@ -1,0 +1,91 @@
+# electron-builder — AutoBroker desktop P0 (local, UNSIGNED packaged build).
+#
+# Signing/notarization (P1), auto-update (P2) and the release CI matrix (P3) are
+# OUT OF SCOPE here. P0 only proves the app PACKAGES and BOOTS: the forked
+# bundle/server.cjs starts, the Electron-ABI better-sqlite3 .node loads, the
+# drizzle migrations apply, and the SPA renders.
+#
+# WHY bundle/ ships as extraResources (not files+asarUnpack):
+# scripts/bundle.mjs already assembles a self-contained server world in
+# apps/desktop/bundle/ — server.cjs (esbuild CJS) plus ui-dist/, drizzle/, and a
+# node_modules subset carrying the Electron-ABI native addons (better-sqlite3,
+# @libsql/*). The forked utilityProcess requires those .node binaries at
+# runtime, and dlopen cannot load a .node from inside an asar archive. Copying
+# the whole bundle/ verbatim into the app's Resources/ (extraResources) puts
+# every byte on a real filesystem path, so the fork's require() resolution and
+# dlopen both "just work" with zero asar path-rewriting — the simplest, most
+# reliable shape for P0. main.ts resolves the packaged bundle at
+# process.resourcesPath/bundle. (files+asar+asarUnpack for **/*.node is the
+# alternative, but it leaves drizzle/ inside asar and the libsql loader's
+# runtime-resolved binary fragile; extraResources avoids all of that.)
+#
+# Only the compiled Electron main (dist/**) + package.json go into the asar.
+
+appId: com.autobroker.desktop
+productName: AutoBroker
+
+directories:
+  buildResources: build      # icon.icns / icon.ico / icon.png live here
+  output: release            # packaged output (gitignored, never committed)
+
+# Inside the asar: just the compiled main process. The renderer + server live
+# in bundle/ (shipped as extraResources below).
+files:
+  - dist/**
+  - package.json
+
+# Ship the pre-assembled bundle verbatim into Contents/Resources/bundle. The
+# native .node addons (better-sqlite3, @libsql/*) stay on a real filesystem path
+# (no asar), so the forked server can dlopen them.
+#
+# Two entries are needed: electron-builder applies a hard default `node_modules`
+# ignore to any FILTERED extraResources directory copy, so the first entry omits
+# bundle/node_modules and the second copies it explicitly (a from-path that *is*
+# node_modules is not subject to the nested-node_modules default ignore).
+#
+# Playwright is NOT excluded: server.cjs eagerly initializes the playwright
+# module at boot (the browser tool registry), so dropping it crashes the server
+# with "Cannot find module 'playwright'". The cost is small — the package is
+# ~5 MB and does NOT bundle Chromium (browsers cache under ~/.cache/ms-playwright,
+# never inside the package), so it is not the size risk the roadmap feared.
+extraResources:
+  - from: bundle
+    to: bundle
+    filter:
+      - "**/*"
+  - from: bundle/node_modules
+    to: bundle/node_modules
+    filter:
+      - "**/*"
+      - "!.cache/**"
+
+# bundle.mjs already installed the native deps for the pinned Electron ABI.
+# Do NOT let electron-builder rebuild them against the system Node ABI.
+npmRebuild: false
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dir            # unpacked .app — the P0 launch-verification target
+    - target: dmg            # drag-to-Applications installer
+  # P0 is unsigned: skip auto-discovery of a signing identity so the build does
+  # not fail when no Developer ID cert is present. (Equivalent to running with
+  # CSC_IDENTITY_AUTO_DISCOVERY=false.) Signing/notarization is P1.
+  identity: null
+
+# Declared for completeness — built only on their native OS (not on this Mac).
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Productivity
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
