@@ -63,6 +63,19 @@ General heuristics (non-tech-user tuned; a miss is usually MED unless it blocks 
 10. **No budget ever leaks.** The buyer's internal budget must never render as a
     number on any surface (it may show only as the "internal-only" lock chip). If
     you ever see a budget figure, that's a BLOCKER (and a safety-invariant breach).
+11. **Progress is visible on slow work.** Any skill that can run > ~45s (site_scan,
+    incentive_scrape, lead_submit scout) must show moving per-step progress, not a
+    static "RUNNING" — a multi-minute silent state reads as frozen to a non-tech
+    buyer. MED; HIGH if it's a common path with no other signal. Fixing the progress
+    surface is the loop's step-4 backlog item, not frontend-taste's job.
+12. **Multi-round negotiation history is legible.** When a thread accrues counter
+    rounds (v2 two-sided negotiation), the thread tile must surface round count or an
+    OTD-delta chip — not flatten N rounds into one undifferentiated row. MED.
+    Surfacing the trajectory is the loop's step-4 backlog item, not frontend-taste's job.
+13. **Multiple active objects are reachable.** If two search profiles are active,
+    both must be reachable from the main surface — a buyer must never have a search
+    they created silently hidden behind `[0]`. MED→HIGH if it traps the buyer.
+    Adding a profile switcher is the loop's step-4 backlog item, not frontend-taste's job.
 
 ## Severity rubric
 
