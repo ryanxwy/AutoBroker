@@ -3,6 +3,12 @@
 Loaded at step 2.5 only. Make and record four decisions: **metro, vehicle,
 finance mode, persona**. Log them before PASS-A begins.
 
+**`--light` mode (pin-or-bootstrap):** if serve-live already has a profile, PIN
+it and skip the random pick. If its DB is empty (a fresh serve-live has 0
+profiles — nothing to pin), do a **minimal intake first to bootstrap ONE
+profile** (a quick metro+vehicle+persona pick below + a manually-typed email);
+this also exercises the intake skill live. Either way, log the picks.
+
 ---
 
 ## 1. Metro — MUST be in METRO_FIXTURES

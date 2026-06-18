@@ -15,14 +15,19 @@ MCP, calls the paid DeepSeek provider, dispatches subagents, and (full mode) mer
 
 ## Mode
 
-If invoked `--light` / "light sweep" / "manual inspection": run steps **{0, 2, 2.5
-pin-existing, 3 two-pass, 6 report}** — SKIP dealer-brain (3.5), the backlog state
-machine (4), Electron sync (4.5), and integrate (7). Light **verifies and reports
-only**: NO fix-merge, NO plan-repo auto-commit. Light needs **no fresh worktree/build
+If invoked `--light` / "light sweep" / "manual inspection": run a BOUNDED inspection —
+steps **{0, 2, 2.5 pin-or-bootstrap, 3 two-pass, 4 resolve-findings, 6 report}** — SKIP
+the live dealer-brain negotiation (3.5) and Electron sync (4.5), and don't require the
+full random brand-pick / deep 17-skill build. Light needs **no fresh worktree/build
 (step 1)** — run step 2 against your existing checkout's (or an already-running)
-serve-live. It reads this spine + `references/harness-boundaries.md` +
-`references/skill-pipeline.md` (+ optional `references/reporting.md` for shape).
-Otherwise (bare `/e2e-loop`, nightly `/loop`): run the FULL path 0→8.
+serve-live; **if its DB is empty (nothing to pin), do a minimal intake first to
+bootstrap one profile** (this also exercises intake live), or point --light at an
+already-populated server. **Light still closes the loop:** any finding it surfaces is
+RESOLVED via the step-4 S0–S6 machine (fix→review→green→fresh live re-verify→merge)
+before it finishes — a --light run, like a full run, ends with an **empty backlog**. It
+reads this spine + `references/harness-boundaries.md` + `references/skill-pipeline.md` +
+`references/backlog-state-machine.md` (+ `references/reporting.md`). Otherwise (bare
+`/e2e-loop`, nightly `/loop`): run the FULL path 0→8.
 
 ## Feasibility gate (fail-closed, FIRST — do this before anything)
 
@@ -79,8 +84,12 @@ blocks a merge.
 
 ## Self-check (every round, before declaring done)
 
-- The report's "本轮新 backlog" section is **empty** OR every entry is tagged
-  `live-verified, no-code-change` — verify with a grep, not a rhetorical question.
+- **The run does not end with unresolved findings** (this holds in `--light` too):
+  every finding/backlog item this round is RESOLVED — fixed through the step-4 S0–S6
+  machine (research → fix-in-worktree → fresh-context review APPROVE + safety SAFE →
+  `RUN_UI_FUNCTIONAL=1` green → fresh live re-verify → merge) OR given a written
+  `live-verified, no-code-change` ruling. The report's "本轮新 backlog" section is then
+  **empty** — verify with a grep, not a rhetorical question.
 - All 6 cross-session artifacts written (report, live-status box, memory file +
   pointer, git commit, telemetry export, marker handled).
 - `.claude/.e2e-loop-active` removed (on done AND on any abort).
