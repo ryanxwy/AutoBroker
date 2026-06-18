@@ -118,7 +118,7 @@ describe("listProfileThreadRows — extract_failed flag", () => {
 
 describe("listProfileQuoteRows", () => {
   /** Seed a 'succeeded'-extraction message (CHECK requires a non-null intent)
-   *  plus its dealer_quote for a profile. */
+   *  carrying the source email + its dealer_quote (price stack) for a profile. */
   function insertQuote(
     quoteId: string,
     profile: string,
@@ -129,14 +129,25 @@ describe("listProfileQuoteRows", () => {
     const c = db.$client;
     const messageId = `qm-${quoteId}`;
     c.prepare(
-      "INSERT INTO messages (message_id, thread_id, direction, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
-        "VALUES (?, NULL, 'inbound', ?, 'succeeded', 'quote')",
-    ).run(messageId, profile);
+      "INSERT INTO messages (message_id, thread_id, direction, sender_name, sender_email, subject, body_text, received_at, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
+        "VALUES (?, NULL, 'inbound', ?, ?, ?, ?, ?, ?, 'succeeded', 'quote')",
+    ).run(
+      messageId,
+      `Rep ${quoteId}`,
+      `rep-${quoteId}@dealer.com`,
+      `Your ${quoteId} quote`,
+      `Body of ${quoteId}`,
+      receivedAt,
+      profile,
+    );
     c.prepare(
       "INSERT INTO dealer_quotes " +
         "(quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, financing_mode, " +
-        " otd_total, selling_price, vin, quote_format, intent, extractor_provider, extraction_method, quote_received_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'otd', 'quote', 'deepseek', 'ocr', ?)",
+        " otd_total, selling_price, vin, msrp, doc_fee, sales_tax, finance_apr, lease_money_factor, " +
+        " inventory_status, confidence, quote_expires_at, quote_format, intent, extractor_provider, " +
+        " extraction_method, quote_received_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 45000, 85, 3200, 6.9, 0.0012, 'in_stock', 0.91, " +
+        " '2026-06-30T00:00:00.000Z', 'otd', 'quote', 'deepseek', 'ocr', ?)",
     ).run(quoteId, DEALER, messageId, `g-${quoteId}`, profile, mode, otd, otd, "VIN123", receivedAt);
   }
 
@@ -159,6 +170,50 @@ describe("listProfileQuoteRows", () => {
     expect(rows[0]!["audit_flag_summary"]).toEqual([]);
     // The profile B quote never surfaces under A (profile scoping).
     expect(rows.map((r) => r["quote_id"])).not.toContain("q-other");
+  });
+
+  it("returns the full price stack + finance/lease terms + meta for the detail modal", () => {
+    insertQuote("q-stack", PROFILE_A, "finance", 41000, "2026-06-12T10:00:00.000Z");
+    const row = listProfileQuoteRows(db, PROFILE_A)[0]!;
+    // Price stack.
+    expect(row["msrp"]).toBe(45000);
+    expect(row["doc_fee"]).toBe(85);
+    expect(row["sales_tax"]).toBe(3200);
+    // Finance + lease term columns are both projected (null off-mode, present here).
+    expect(row["finance_apr"]).toBe(6.9);
+    expect(row["lease_money_factor"]).toBe(0.0012);
+    // Meta the modal shows.
+    expect(row["confidence"]).toBe(0.91);
+    expect(row["inventory_status"]).toBe("in_stock");
+    expect(row["quote_expires_at"]).toBe("2026-06-30T00:00:00.000Z");
+  });
+
+  it("attaches the source email (subject/body/sender/received-at) and never the message join key", () => {
+    insertQuote("q-src", PROFILE_A, "finance", 41000, "2026-06-12T10:00:00.000Z");
+    const row = listProfileQuoteRows(db, PROFILE_A)[0]!;
+    expect(row["source_subject"]).toBe("Your q-src quote");
+    expect(row["source_body_text"]).toBe("Body of q-src");
+    expect(row["source_received_at"]).toBe("2026-06-12T10:00:00.000Z");
+    // COALESCE(sender_name, sender_email) → the name when present.
+    expect(row["source_sender"]).toBe("Rep q-src");
+    // The message FK is a join key only — never projected as a renderable field
+    // (id red line).
+    expect(row["message_id"]).toBeUndefined();
+    expect(row["source_gmail_message_id"]).toBeUndefined();
+  });
+
+  it("source_sender falls back to sender_email when sender_name is NULL", () => {
+    const c = db.$client;
+    c.prepare(
+      "INSERT INTO messages (message_id, thread_id, direction, sender_email, subject, received_at, search_profile_id, quote_extraction_status, quote_extraction_intent) " +
+        "VALUES ('qm-noname', NULL, 'inbound', 'noname@dealer.com', 'No-name quote', '2026-06-12T10:00:00.000Z', ?, 'succeeded', 'quote')",
+    ).run(PROFILE_A);
+    c.prepare(
+      "INSERT INTO dealer_quotes (quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, financing_mode, otd_total, quote_received_at) " +
+        "VALUES ('q-noname', ?, 'qm-noname', 'g-noname', ?, 'finance', 41000, '2026-06-12T10:00:00.000Z')",
+    ).run(DEALER, PROFILE_A);
+    const row = listProfileQuoteRows(db, PROFILE_A)[0]!;
+    expect(row["source_sender"]).toBe("noname@dealer.com");
   });
 
   it("returns [] for a profile with no quotes", () => {

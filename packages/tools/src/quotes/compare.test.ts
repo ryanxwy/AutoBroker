@@ -183,6 +183,10 @@ describe("rankQuotesForProfile", () => {
     expect(result.lease).toHaveLength(2);
     expect(result.finance.map((q) => q.dealer_id)).toEqual(["d-B", "d-A", "d-C"]);
     expect(result.finance.map((q) => q.rank)).toEqual([1, 2, 3]);
+    // quote_id rides each ranked row (the detail-modal lookup key), aligned to
+    // the OTD ranking.
+    expect(result.finance.map((q) => q.quote_id)).toEqual(["f-B", "f-A", "f-C"]);
+    expect(result.lease.map((q) => q.quote_id)).toEqual(["l-B", "l-A"]);
     expect(result.finance[0]!.apr_or_mf).toBe("7.9%");
     expect(result.finance[0]!.dealer_name).toBe("Bravo Hyundai");
     expect(result.lease.map((q) => q.dealer_id)).toEqual(["d-B", "d-A"]);

@@ -47,8 +47,10 @@ export function listProfileThreadRows(db: Db, profileId: string): Record<string,
  * cash/unspecified, distinct from the ranked quote-compare buckets). Read-only.
  *
  * Budget red line: quote_id is projected as the React key only (never rendered);
- * the row carries the dealer, mode, prices, format, intent, provenance and the
- * latest audit's flag codes — NEVER a budget.
+ * the row carries the dealer, mode, the full price stack + finance/lease terms,
+ * format, intent, provenance, the latest audit's flag codes and the source email
+ * (subject/body/sender/received-at) — NEVER a budget. The message FK
+ * (q.message_id) is a JOIN KEY only and is NOT projected (id red line).
  *
  * audit_flag_summary: the codes from the latest quote_audits row per quote (same
  * correlated-latest join the quote-compare ranker uses), so a flagged quote that
@@ -60,8 +62,26 @@ export function listProfileQuoteRows(db: Db, profileId: string): Record<string, 
     .prepare(
       "SELECT q.quote_id, q.financing_mode, q.otd_total, q.selling_price, q.vin, " +
         "q.quote_format, q.intent, q.extractor_provider, q.extraction_method, " +
-        "q.quote_received_at, d.name AS dealer_name, qa.flags_json AS flags_json " +
+        "q.quote_received_at, q.quote_expires_at, q.confidence, q.inventory_status, " +
+        // full price stack
+        "q.msrp, q.dealer_discount, q.doc_fee, q.dealer_fee, q.sales_tax, q.dmv_fees, " +
+        "q.title_fee, q.registration_fee, q.license_fee, q.other_fees_json, q.rebates_json, " +
+        "q.add_ons_json, " +
+        // finance terms
+        "q.finance_apr, q.finance_term_months, q.finance_down_payment, " +
+        "q.finance_monthly_payment, q.finance_amount_financed, " +
+        // lease terms
+        "q.lease_term_months, q.lease_money_factor, q.lease_residual_pct, " +
+        "q.lease_residual_value, q.lease_due_at_signing, q.lease_monthly_payment, " +
+        "q.lease_miles_per_year, q.lease_acquisition_fee, q.lease_disposition_fee, " +
+        "q.lease_cap_cost_gross, q.lease_cap_cost_adjusted, q.lease_rent_charge, " +
+        // source email (m.message_id is the join key only — never projected)
+        "m.subject AS source_subject, m.body_text AS source_body_text, " +
+        "m.received_at AS source_received_at, " +
+        "COALESCE(m.sender_name, m.sender_email) AS source_sender, " +
+        "d.name AS dealer_name, qa.flags_json AS flags_json " +
         "FROM dealer_quotes q LEFT JOIN dealers d ON d.dealer_id = q.dealer_id " +
+        "LEFT JOIN messages m ON m.message_id = q.message_id " +
         "LEFT JOIN quote_audits qa ON qa.audit_id = ( " +
         "  SELECT qa2.audit_id FROM quote_audits qa2 WHERE qa2.dealer_quote_id = q.quote_id " +
         "  ORDER BY qa2.audited_at DESC, qa2.audit_id DESC LIMIT 1 " +

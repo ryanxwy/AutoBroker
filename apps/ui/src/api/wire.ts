@@ -372,6 +372,48 @@ export const QuoteRowSchema = z
     extractor_provider: z.string().nullable(),
     extraction_method: z.string().nullable(),
     quote_received_at: z.string().nullable(),
+    quote_expires_at: z.string().nullable(),
+    confidence: z.number().nullable(),
+    inventory_status: z.string().nullable(),
+    // Full price stack (money numerics; *_json carry the structured side-detail
+    // as raw text — the detail modal renders the breakdown line items from these).
+    msrp: z.number().nullable(),
+    dealer_discount: z.number().nullable(),
+    doc_fee: z.number().nullable(),
+    dealer_fee: z.number().nullable(),
+    sales_tax: z.number().nullable(),
+    dmv_fees: z.number().nullable(),
+    title_fee: z.number().nullable(),
+    registration_fee: z.number().nullable(),
+    license_fee: z.number().nullable(),
+    other_fees_json: z.string().nullable(),
+    rebates_json: z.string().nullable(),
+    add_ons_json: z.string().nullable(),
+    // Finance terms.
+    finance_apr: z.number().nullable(),
+    finance_term_months: z.number().nullable(),
+    finance_down_payment: z.number().nullable(),
+    finance_monthly_payment: z.number().nullable(),
+    finance_amount_financed: z.number().nullable(),
+    // Lease terms.
+    lease_term_months: z.number().nullable(),
+    lease_money_factor: z.number().nullable(),
+    lease_residual_pct: z.number().nullable(),
+    lease_residual_value: z.number().nullable(),
+    lease_due_at_signing: z.number().nullable(),
+    lease_monthly_payment: z.number().nullable(),
+    lease_miles_per_year: z.number().nullable(),
+    lease_acquisition_fee: z.number().nullable(),
+    lease_disposition_fee: z.number().nullable(),
+    lease_cap_cost_gross: z.number().nullable(),
+    lease_cap_cost_adjusted: z.number().nullable(),
+    lease_rent_charge: z.number().nullable(),
+    // Source email (the quote's originating message; the message_id join key is
+    // NOT projected — id red line). The detail modal shows the email it came from.
+    source_subject: z.string().nullable(),
+    source_body_text: z.string().nullable(),
+    source_sender: z.string().nullable(),
+    source_received_at: z.string().nullable(),
     // Latest audit's flag codes (raw; [] when unaudited). Lets the raw foldout
     // show pills for quotes the quote-compare buckets exclude (cash/unspecified).
     audit_flag_summary: z.array(z.string()).default([]),
@@ -470,6 +512,9 @@ export type InventoryCompareResult = z.infer<typeof InventoryCompareResultSchema
 export const QuoteCompareRowSchema = z
   .object({
     rank: z.number(),
+    // The underlying dealer_quotes row id — the detail-modal lookup key (matches
+    // a QuoteRow.quote_id from /quotes); the React key, never rendered.
+    quote_id: z.string(),
     dealer_id: z.string(),
     dealer_name: z.string(),
     otd_total: z.number().nullable(),

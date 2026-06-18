@@ -36,6 +36,7 @@ import { flagCodesFromJson } from "./flags.js";
  */
 export interface QuoteRanking {
   rank: number;
+  quote_id: string;
   dealer_id: string;
   dealer_name: string;
   otd_total: number | null;
@@ -186,6 +187,7 @@ function rankOneMode(rows: Record<string, unknown>[]): QuoteRanking[] {
 
   return ordered.map(({ row }, idx) => ({
     rank: idx + 1,
+    quote_id: asStringOrEmpty(row["quote_id"]),
     dealer_id: asStringOrEmpty(row["dealer_id"]),
     dealer_name: asStringOrEmpty(row["dealer_name"] ?? row["dealer_id"]),
     otd_total: asNumber(row["otd_total"]),
