@@ -514,6 +514,12 @@ export {
   listSuppressedGmailThreadIds,
   listIngestedGmailMessageIds,
 } from "./inbox/reads.js";
+export {
+  readQuoteSourceDoc,
+  type ReadQuoteSourceDocArgs,
+  type ReadQuoteSourceDocOpts,
+  type QuoteSourceDoc,
+} from "./inbox/quoteSourceDoc.js";
 
 // dealer_reply_extract deterministic core — the pure per-message quote-class +
 // price/intent/body-parse classifiers, the attachment fallback tree over the

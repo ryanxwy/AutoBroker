@@ -49,6 +49,7 @@ import {
   buildDigestView,
   listProfileQuoteRows,
   listProfileIncentiveRows,
+  readQuoteSourceDoc,
   rankInventoryForProfile,
   rankQuotesForProfile,
   update as updateProfile,
@@ -303,6 +304,14 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
     });
   }
   return parsed.data;
+}
+
+/** Sanitize a filename for a Content-Disposition header: strip the double quote
+ *  that delimits the value and any CR/LF (header-injection guard), collapse the
+ *  rest to a safe ASCII subset, and fall back to a generic name when empty. */
+export function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(/["\r\n]/g, "").replace(/[^\x20-\x7e]/g, "_").trim();
+  return cleaned === "" ? "source" : cleaned;
 }
 
 /** Run fn against the SHARED tools DB connection (getDb — one cached handle
@@ -761,6 +770,31 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
     return withDb((db) => listProfileQuoteRows(db, id));
   });
+
+  // ---- GET /api/profiles/:id/quotes/:quoteId/source — stream the source doc ---
+  // "Show the document this quote came from": the tools reader re-fetches the
+  // dealer-sent PDF/image ON DEMAND through the gmail adapter (nothing persisted)
+  // and we stream the bytes back inline. Delegates DOWN into the tools-layer
+  // closure (routes never open the product DB or call the adapter directly — the
+  // SQLite invariant). The reader is read-only and NEVER throws: a missing quote /
+  // attachment, an oversized blob, or a transient adapter failure → null → 404.
+  app.get(
+    "/api/profiles/:id/quotes/:quoteId/source",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const { id, quoteId } = req.params as { id: string; quoteId: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      const doc = await withDb((db) => readQuoteSourceDoc(db, { profileId: id, quoteId }));
+      if (doc === null) {
+        throw new RouteError("not_found", 404, `no source document for quote ${quoteId}`);
+      }
+      reply.type(doc.mimeType);
+      reply.header("content-disposition", `inline; filename="${sanitizeFilename(doc.filename)}"`);
+      return reply.send(Buffer.from(doc.bytes));
+    },
+  );
 
   // ---- GET /api/profiles/:id/incentives — read-only mfr-incentive projection
   // The Incentives canvas section reads this; delegates DOWN into the tools-layer
