@@ -60,7 +60,11 @@ export function InventoryDetailModal({
       ? priceLabel(row.msrp - row.listed_price)
       : null;
   const distance = distanceLabel(row.distance_miles);
-  const hasListingUrl = typeof row.listing_url === "string" && row.listing_url !== "";
+  // Only ever link to an http(s) VDP — the same external-link discipline the
+  // Dealer/Incentive modals use (defense-in-depth even though listing_url comes
+  // from the trusted site-scan ranker, never free user input).
+  const hasListingUrl =
+    typeof row.listing_url === "string" && /^https?:\/\//i.test(row.listing_url);
 
   return (
     <Modal open onClose={onClose} labelId={titleId} variant="dialog">
