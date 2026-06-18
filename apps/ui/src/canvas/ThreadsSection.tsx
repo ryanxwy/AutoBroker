@@ -17,6 +17,7 @@
  */
 
 import type { AsyncState } from "../api/useApi.js";
+import { relativeDate } from "./format.js";
 import { Pager } from "./Pager.js";
 import { usePagedList } from "./usePagedList.js";
 
@@ -41,18 +42,6 @@ export type ThreadRowList = ThreadRow[];
  *  "replied". The inbox skill stamps the thread state with the classification. */
 function classificationOf(row: ThreadRow): "quoted" | "replied" {
   return row.state === "quoted" ? "quoted" : "replied";
-}
-
-/** A coarse "3 days ago" relative label from an ISO/timestamp string. Never a
- *  raw id; degrades to "" when the value is unparseable. */
-function relativeDate(value: string | null): string {
-  if (value === null || value.trim() === "") return "";
-  const ms = Date.parse(value);
-  if (Number.isNaN(ms)) return "";
-  const deltaDays = Math.floor((Date.now() - ms) / 86_400_000);
-  if (deltaDays <= 0) return "today";
-  if (deltaDays === 1) return "yesterday";
-  return `${deltaDays} days ago`;
 }
 
 function ThreadRowView({ row }: { row: ThreadRow }): JSX.Element {
