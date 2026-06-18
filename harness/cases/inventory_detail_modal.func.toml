@@ -1,0 +1,69 @@
+# harness/cases/inventory_detail_modal.func.toml — FUNCTIONAL lane: the
+# clickable-cards interaction proof. Every Canvas candidate/dealer/quote/incentive
+# card is now a whole-card button (ClickableTile, role=button) that opens a
+# read-only DETAIL MODAL so a non-technical buyer can double-check the data
+# themselves. This case proves the click-through end-to-end on the offline lane:
+# open the Inventory tab over the populated ranker world, click the recommended
+# candidate card, and assert the portal dialog (shell/Modal → createPortal to
+# document.body) mounts with the inventory detail title.
+#
+# WHY A DEDICATED CASE (not a 2nd step on inventory_compare.func.toml): a
+# kind="ui" step needs its own fixture_state OR a prior RUN's DOM (runner.ts) — a
+# fixture-backed ui step does NOT satisfy the next step's prior-DOM requirement,
+# and apply-fixture seeds ADDITIVELY (re-applying the same world double-seeds). A
+# standalone case boots a fresh server+DB, applies inventory_listings ONCE, and
+# does the whole click-through as a single DOM-mutation chain (two sequential
+# clicks, then the dialog anchors — no mid-step ui_action/anchor interleaving).
+#
+# The field-by-field modal content (MSRP-vs-listed discount, VIN, the
+# View-listing ↗ VDP deep-link, null-omission) is covered exhaustively by the
+# InventoryDetailModal + ClickableTile vitest component tests; the func lane's job
+# here is the one representative "click a card → the right dialog opens" proof.
+#
+# Δ=0 BY CONSTRUCTION: a modal is a client-only state change with no run between
+# the before/after snapshots — a pure read panel reaches no side effect.
+
+[meta]
+id = "inventory_detail_modal_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: click a candidate card → its detail modal opens --------------------
+
+[[steps]]
+id = "candidate_detail_modal"
+kind = "ui"
+fixture_state = "inventory_listings"
+purpose = "Open the Inventory tab over the populated ranker world, click the recommended candidate card (ClickableTile, role=button), and prove the read-only detail modal mounts (modal-dialog + the inventory-detail-title vehicle header)."
+
+# Open the Inventory tab (mounts + waits for the candidates section), then click
+# the single recommended candidate card to open its detail modal. Two sequential
+# clicks in one ui_actions chain — the dialog anchors are scored after both.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-inventory"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "inventory-candidate-row"
+
+# The portal dialog (shell/Modal variant="dialog", createPortal → document.body)
+# is now open — the whole-card click reached the detail view.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "modal-dialog"
+expect = "visible"
+
+# The INVENTORY detail modal's title (the vehicle header) renders — proves it is
+# the inventory detail view that opened (not some other dialog).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-detail-title"
+expect = "visible"

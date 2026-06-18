@@ -49,6 +49,10 @@ export type QuoteCompareInput = z.infer<typeof QuoteCompareInputSchema>;
 export const QuoteRankingSchema = z
   .object({
     rank: z.number().int(),
+    /** The source quote's id — the join key the Canvas quote-detail modal uses
+     *  to resolve a ranked row back to its full raw-quote breakdown. Never
+     *  rendered (id red line); "" when the ranker had no id in scope. */
+    quote_id: z.string(),
     dealer_id: z.string(),
     dealer_name: z.string(),
     otd_total: z.number().nullable(),
