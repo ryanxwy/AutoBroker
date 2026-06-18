@@ -46,3 +46,13 @@ AGENTS.md
 
 # subagent-driven-development scratch handoff reports (never committed)
 .sdd-reports/
+
+# Playwright-MCP / UX-review scratch (browser-driven session artifacts)
+.playwright-mcp/
+.ux-review/
+
+# Loose screenshots dumped at repo root by e2e / UI runs
+# (intentional images live in subdirs, e.g. build/, docs/, readme-assets/)
+/*.png
+/*.jpg
+/*.jpeg

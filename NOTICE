@@ -1,0 +1,98 @@
+AutoBroker — Third-Party Notices
+=================================
+
+This product depends on third-party open-source software. Full license texts
+are included with each package inside node_modules. This file lists the major
+direct dependencies grouped by license type.
+
+Where the exact upstream copyright year or holder could not be confirmed from
+the package metadata, the component is listed with its license name and
+"(see package for full text)".
+
+-------------------------------------------------------------------------------
+Apache-2.0 Licensed Components
+-------------------------------------------------------------------------------
+
+The following components are distributed under the Apache License, Version 2.0
+(https://www.apache.org/licenses/LICENSE-2.0):
+
+  @mastra/core, @mastra/libsql, @mastra/memory
+    Copyright (c) Mastra contributors
+    (see package for full text)
+
+  ai (Vercel AI SDK 6), @ai-sdk/provider, @ai-sdk/anthropic, @ai-sdk/openai,
+  @ai-sdk/deepseek, @ai-sdk/react
+    Copyright (c) Vercel, Inc.
+    (see package for full text)
+
+  drizzle-orm
+    Copyright (c) Drizzle ORM contributors
+    (see package for full text)
+
+  @googleapis/gmail, google-auth-library
+    Copyright (c) Google LLC
+    (see package for full text)
+
+  playwright, playwright-core
+    Copyright (c) Microsoft Corporation
+    (see package for full text)
+
+  typescript
+    Copyright (c) Microsoft Corporation
+    (see package for full text)
+
+  pdfjs-dist
+    Copyright (c) Mozilla Foundation
+    (see package for full text)
+
+-------------------------------------------------------------------------------
+MIT Licensed Components
+-------------------------------------------------------------------------------
+
+The following components are distributed under the MIT License:
+
+  zod, fastify, @fastify/static, croner, react, react-dom, vite,
+  @vitejs/plugin-react, zustand, better-sqlite3, @libsql/client,
+  @libsql/darwin-arm64, drizzle-kit, esbuild, tsx, dependency-cruiser,
+  vitest, happy-dom, @types/node, @types/react, @types/react-dom,
+  @types/better-sqlite3, electron (JavaScript layer)
+    (see individual packages for full text)
+
+-------------------------------------------------------------------------------
+SIL Open Font License 1.1 (OFL-1.1)
+-------------------------------------------------------------------------------
+
+The following font packages are distributed under the SIL Open Font License,
+Version 1.1 (https://openfontlicense.org/):
+
+  @fontsource-variable/archivo
+    Archivo Variable
+    Copyright (c) The Archivo Project Authors
+    Reserved Font Name: "Archivo"
+    (see package for full text)
+
+  @fontsource-variable/source-serif-4
+    Source Serif 4 Variable
+    Copyright (c) Adobe (see package for full text)
+    Reserved Font Name: "Source"
+    (see package for full text)
+
+  @fontsource/fragment-mono
+    Fragment Mono
+    Copyright (c) Google LLC (see package for full text)
+    Reserved Font Name: "Fragment Mono"
+    (see package for full text)
+
+The OFL allows embedding and redistribution of these fonts provided they are
+not sold by themselves and the copyright notices above are preserved.
+
+-------------------------------------------------------------------------------
+Electron Desktop Distribution Note
+-------------------------------------------------------------------------------
+
+The apps/desktop build packages Electron (MIT), which in turn redistributes
+Chromium (BSD-style, see Electron's LICENSES.chromium.html) and Node.js (MIT).
+These redistribution notices are relevant only when distributing the packaged
+desktop application, not for source-code publication. electron-builder (when
+used to package the app) automatically includes LICENSES.chromium.html in the
+distributed bundle.
