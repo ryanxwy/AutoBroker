@@ -29,9 +29,16 @@ import type {
   ProfileList,
   QuoteCompareResult,
   QuoteList,
+  SkillRunSummary,
   ThreadList,
 } from "../api/wire.js";
-import { formatLocation, toSnapshot, vehicleLabel, type ProfileSnapshot } from "../home/profileView.js";
+import {
+  formatLocation,
+  prettifySkill,
+  toSnapshot,
+  vehicleLabel,
+  type ProfileSnapshot,
+} from "../home/profileView.js";
 import { Link } from "../router.js";
 import { CanvasTabs } from "./CanvasTabs.js";
 import { Incentives } from "./Incentives.js";
@@ -469,6 +476,14 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  // At /runs/:id the header shows a human-friendly name (vehicle, else the
+  // running skill's prettified name) instead of the raw run id — the buyer
+  // never reads a slug. Fetched only when a run is in view.
+  const runStatus = useAsync<SkillRunSummary>(
+    () => client.runStatus(runId!),
+    [runId],
+    runId !== null,
+  );
 
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
@@ -488,12 +503,22 @@ export function Canvas({
   const digestProfile =
     digest.kind === "ok" && digest.data.profiles.length > 0 ? digest.data.profiles[0]! : null;
 
+  // The visible run-view header: the active vehicle if known, else the running
+  // skill's friendly name, else a neutral fallback. The raw run id stays in a
+  // visually-hidden <code> for the harness binding (run-view-id), never on screen.
+  const headerLabel =
+    (active !== null ? vehicleLabel(active) : "") ||
+    (runStatus.kind === "ok" ? prettifySkill(runStatus.data.skill) : "") ||
+    "Your search";
+
   return (
     <div className="canvas" data-testid="canvas">
       {runId !== null && (
-        <p className="muted canvas-runline">
-          Run <code data-testid="run-view-id">{runId}</code> — follow along in the conversation
-          on the right.
+        <p className="muted canvas-runline" data-testid="run-view-line">
+          <span className="run-view-label">
+            {headerLabel} — follow along in the conversation on the right.
+          </span>
+          <code data-testid="run-view-id" className="run-view-id-hidden">{runId}</code>
         </p>
       )}
       {profiles.kind === "ok" && active === null && (

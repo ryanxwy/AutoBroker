@@ -716,6 +716,21 @@ body.resizing { cursor: col-resize; user-select: none; }
 
 .canvas-runline { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
 .canvas-runline code { color: var(--run); }
+/* The visible run-view label reads as prose (not a mono slug) in the warm-paper
+ * skin; the raw run id lives in a visually-hidden <code> beside it (the harness
+ * binds to its text via run-view-id, so it must stay in the DOM, just off-screen). */
+.run-view-label { font-family: var(--chrome); }
+.run-view-id-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .canvas-empty h1 { font-size: 22px; margin-bottom: 8px; }
 .canvas-empty > p { font-family: var(--serif); font-style: italic; font-size: 14.5px; color: var(--ink-soft); max-width: 56ch; }
