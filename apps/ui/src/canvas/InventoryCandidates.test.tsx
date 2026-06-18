@@ -6,12 +6,23 @@
  * All existing testids remain intact.
  */
 
+import { act } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { AsyncState } from "../api/useApi.js";
 import type { InventoryCompareResult } from "../api/wire.js";
 import { click, render } from "../test/render.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
+
+/** The detail modal portals to document.body — query it off the document. */
+const docQuery = (testId: string): HTMLElement | null =>
+  document.body.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+/** Click a portalled (document.body) node inside act(). */
+function clickDoc(node: HTMLElement): void {
+  act(() => {
+    node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -266,6 +277,73 @@ describe("InventoryCandidates — candidate row fields", () => {
     const result = makeResult([makeCandidate({ listing_url: null })]);
     const { query } = render(<InventoryCandidates inventory={ok(result)} />);
     expect(query("inventory-listing-link")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Detail modal (clickable tile → portalled read-only modal)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — detail modal", () => {
+  it("opens the portalled modal showing the VIN + price when a row is clicked", () => {
+    const result = makeResult([makeCandidate()]);
+    const r = render(<InventoryCandidates inventory={ok(result)} />);
+
+    // No modal until a row is clicked.
+    expect(docQuery("modal-dialog")).toBeNull();
+
+    click(r.get("inventory-candidate-row"));
+
+    const dialog = docQuery("modal-dialog");
+    expect(dialog).not.toBeNull();
+    expect(docQuery("inventory-detail-title")!.textContent).toContain("Hyundai");
+    expect(dialog!.textContent).toContain("KM8JBCAE3RU000042"); // full VIN
+    expect(dialog!.textContent).toContain("$44,175"); // listed price
+    r.unmount();
+  });
+
+  it("closes the modal when Close is clicked", () => {
+    const result = makeResult([makeCandidate()]);
+    const r = render(<InventoryCandidates inventory={ok(result)} />);
+
+    click(r.get("inventory-candidate-row"));
+    expect(docQuery("modal-dialog")).not.toBeNull();
+
+    clickDoc(docQuery("inventory-detail-close")!);
+    expect(docQuery("modal-dialog")).toBeNull();
+    r.unmount();
+  });
+
+  it("keeps the inline 'View listing' link intact (href/target/rel) on the tile", () => {
+    const result = makeResult([makeCandidate({ listing_url: "https://dealer.test/vdp/42" })]);
+    const { query } = render(<InventoryCandidates inventory={ok(result)} />);
+    const link = query("inventory-listing-link");
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("https://dealer.test/vdp/42");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("shows the Stock # row in the modal when the stock number is present", () => {
+    const result = makeResult([makeCandidate({ stock_number: "STK-7" })]);
+    const r = render(<InventoryCandidates inventory={ok(result)} />);
+    click(r.get("inventory-candidate-row"));
+    const modal = docQuery("inventory-detail-modal");
+    expect(modal!.textContent).toContain("Stock #");
+    expect(modal!.textContent).toContain("STK-7");
+    r.unmount();
+  });
+
+  it("OMITS the Stock # row in the modal when the stock number is null (no em-dash)", () => {
+    const result = makeResult([makeCandidate({ stock_number: null })]);
+    const r = render(<InventoryCandidates inventory={ok(result)} />);
+    click(r.get("inventory-candidate-row"));
+    const modal = docQuery("inventory-detail-modal");
+    // Consistent with the other detail rows: a null field omits its row rather
+    // than rendering an em-dash placeholder.
+    expect(modal!.textContent).not.toContain("Stock #");
+    expect(modal!.textContent).not.toContain("—");
+    r.unmount();
   });
 });
 

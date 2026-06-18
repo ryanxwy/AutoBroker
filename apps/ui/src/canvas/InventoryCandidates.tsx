@@ -24,6 +24,8 @@ import { useMemo, useState } from "react";
 
 import type { AsyncState } from "../api/useApi.js";
 import type { InventoryCompareResult } from "../api/wire.js";
+import { ClickableTile } from "./ClickableTile.js";
+import { InventoryDetailModal } from "./InventoryDetailModal.js";
 import { Pager } from "./Pager.js";
 import { usePagedList } from "./usePagedList.js";
 
@@ -41,6 +43,8 @@ export interface InventoryCandidate {
   /** Public VDP href (or null) — the card's "View listing" click-through target. */
   listing_url: string | null;
   listed_price: number | null;
+  msrp: number | null;
+  inventory_status: string;
   dealer_name: string | null;
   distance_miles: number | null;
   reasons: string[];
@@ -51,20 +55,20 @@ export interface InventoryCandidate {
 
 /** "2026 Hyundai Tucson Limited"-style label from the candidate's identity
  *  fields (any null/empty part is dropped). */
-function vehicleHeader(c: InventoryCandidate): string {
+export function vehicleHeader(c: InventoryCandidate): string {
   return [c.year !== null ? String(c.year) : null, c.make, c.model, c.trim]
     .filter((x): x is string => x !== null && x !== "")
     .join(" ");
 }
 
 /** A "$44,175" price label from a number, or null for a missing price. */
-function priceLabel(value: number | null): string | null {
+export function priceLabel(value: number | null): string | null {
   if (value === null) return null;
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
 /** A "5.2 mi" distance label, or null when unknown. */
-function distanceLabel(value: number | null): string | null {
+export function distanceLabel(value: number | null): string | null {
   if (value === null) return null;
   return `${value.toFixed(1)} mi`;
 }
@@ -81,12 +85,22 @@ function relativeDate(value: string | null): string {
   return `${deltaDays} days ago`;
 }
 
-function CandidateRow({ row }: { row: InventoryCandidate }): JSX.Element {
+function CandidateRow({
+  row,
+  onActivate,
+}: {
+  row: InventoryCandidate;
+  onActivate: () => void;
+}): JSX.Element {
   const header = vehicleHeader(row) || "Inventory listing";
   const price = priceLabel(row.listed_price);
   const distance = distanceLabel(row.distance_miles);
   return (
-    <div className="tile" data-testid="inventory-candidate-row">
+    <ClickableTile
+      testid="inventory-candidate-row"
+      ariaLabel={`View details for ${header}`}
+      onActivate={onActivate}
+    >
       <div className="t-head">
         <span>{header}</span>
         <span
@@ -128,6 +142,7 @@ function CandidateRow({ row }: { row: InventoryCandidate }): JSX.Element {
               target="_blank"
               rel="noopener noreferrer"
               data-testid="inventory-listing-link"
+              onClick={(e) => e.stopPropagation()}
             >
               View listing ↗
             </a>
@@ -143,7 +158,7 @@ function CandidateRow({ row }: { row: InventoryCandidate }): JSX.Element {
           ))}
         </div>
       )}
-    </div>
+    </ClickableTile>
   );
 }
 
@@ -172,6 +187,9 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
   const [filter, setFilter] = useState<"recommended" | "all">(
     () => (recommendedCount > 0 ? "recommended" : "all"),
   );
+
+  // The candidate whose read-only detail modal is open (null = closed).
+  const [detail, setDetail] = useState<InventoryCandidate | null>(null);
 
   // Re-compute the filtered list. A new array identity on every filter/candidate change
   // ensures the pager auto-resets to page 1 (usePagedList watches the items reference).
@@ -247,7 +265,11 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
           ) : (
             <div className="tile-grid">
               {pager.pageItems.map((row) => (
-                <CandidateRow key={row.listing_id} row={row} />
+                <CandidateRow
+                  key={row.listing_id}
+                  row={row}
+                  onActivate={() => setDetail(row)}
+                />
               ))}
             </div>
           )}
@@ -265,6 +287,7 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
           />
         </>
       )}
+      <InventoryDetailModal row={detail} onClose={() => setDetail(null)} />
     </section>
   );
 }

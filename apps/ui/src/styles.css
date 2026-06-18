@@ -118,6 +118,22 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn-primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .btn-primary:hover:not(:disabled) { background: #000; }
+/* An `<a class="btn-primary">` (e.g. a modal's "View listing ↗" external CTA)
+   inherits the bare `button` pill look — the base `button` selector can't reach
+   an anchor, so restate its padding/border/radius/font/cursor here. */
+a.btn-primary {
+  display: inline-block;
+  font-family: var(--chrome);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  padding: 7px 13px;
+  text-decoration: none;
+}
+a.btn-primary:hover { text-decoration: none; }
 .btn-danger { background: var(--panel); border-color: var(--stop); color: var(--stop); }
 .btn-danger:hover:not(:disabled) { background: var(--stop-wash); }
 
@@ -873,6 +889,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: box-shadow 0.15s, transform 0.12s;
 }
 .tile:hover { box-shadow: var(--shadow-mid); transform: translateY(-1px); }
+.tile-clickable { cursor: pointer; }
+.tile-clickable:focus-visible { outline: 2px solid var(--gate); outline-offset: 2px; }
 .tile .t-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; font-size: 14px; }
 .tile .t-head .muted { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--run); white-space: nowrap; }
 .tile .t-addr { font-family: var(--mono); font-size: 10.5px; color: var(--ink-mute); margin-top: 3px; }
@@ -1582,6 +1600,17 @@ details.optional[open] summary { margin-bottom: 10px; }
 /* the profile-edit panel inside the modal needs no entrance of its own. */
 .modal-dialog .profile-edit-panel { margin-top: 14px; padding-top: 0; border-top: 0; animation: none; }
 .hard-delete-consequence { font-family: var(--serif); font-size: 13px; line-height: 1.5; color: var(--ink); margin: 6px 0 0; }
+/* the inventory-detail modal's two-column label/value list (read-only double-check) */
+.inventory-detail-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 16px;
+  margin: 14px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.inventory-detail-list dt { color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9px; padding-top: 2px; }
+.inventory-detail-list dd { margin: 0; word-break: break-all; color: var(--ink); }
 .hard-delete-consequence strong { font-weight: 700; }
 /* the edit modal's danger zone — set off by a ledger rule below the form */
 .profile-danger-zone { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
