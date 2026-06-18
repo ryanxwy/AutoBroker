@@ -55,6 +55,35 @@ Parity-period data (cold-copied product SQLite DB, Mastra runtime DB, logs,
 config) lives under `~/.autobroker-ts/`, isolated from the legacy Python repo's
 `~/.autobroker/`.
 
+### Run the app
+
+After `pnpm install` and setting at least one provider key, build and start the
+backend server, then open the UI:
+
+```bash
+# 1. Build the server (required once; re-run after source changes)
+pnpm --filter @autobroker/server build
+
+# 2. Start the backend server (listens on 127.0.0.1:8100)
+node apps/server/dist/index.js
+
+# 3. In a second terminal: start the Vite dev server for the UI
+pnpm --filter @autobroker/ui dev
+# Open http://localhost:5173 in your browser.
+```
+
+Optional — open as a desktop app (requires the bundled Electron shell):
+
+```bash
+pnpm desktop:bundle   # build the self-contained server bundle
+pnpm desktop:start    # launch the Electron shell
+```
+
+> **Note:** Full pipeline operation (Gmail inbox reading, lead submission) also
+> requires a Gmail OAuth credential configured via the onboarding guides in
+> `docs/onboarding/`. Running `pnpm test` and `pnpm ui:functional` works without
+> any provider keys and is the "no keys" verification floor.
+
 ---
 
 ## Architecture — the five layers
@@ -105,3 +134,30 @@ takes over and the Python repo retires.
 
 - [Agent setup guide](docs/onboarding/AGENT_GUIDE.md) — step-by-step instructions for an AI agent configuring a fresh install.
 - [User guide](docs/onboarding/USER_GUIDE.md) — plain-language setup for the owner.
+
+---
+
+## Disclaimer
+
+AutoBroker is an independent, personal automation tool. It is not affiliated
+with, endorsed by, or otherwise connected to any automobile dealer, dealership
+group, or OEM (including Toyota, Honda, Hyundai, Ford, GM, Stellantis, or
+others); nor to DeepSeek, Anthropic, OpenAI, Google, or any other commercial
+entity whose services it automates or integrates with. All trademarks and
+service marks are the property of their respective owners.
+
+AutoBroker is provided "as is" without warranty of any kind. The authors are not
+responsible for any unintended communications sent to dealers, data shared with
+third-party LLM providers, or consequences of automating car-buying workflows.
+All irreversible actions require explicit human confirmation before they execute.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+For data handling details (Gmail API, LLM data routing, local storage) see
+[docs/DATA_HANDLING.md](docs/DATA_HANDLING.md).
+
+For security and vulnerability reporting see [SECURITY.md](SECURITY.md).

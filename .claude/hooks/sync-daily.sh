@@ -17,7 +17,7 @@
 set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-PLAN_NEWDAY="$HOME/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh"
+PLAN_NEWDAY="$(git rev-parse --show-toplevel 2>/dev/null)/../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh"
 TODAY="$(date +%Y-%m-%d)"
 
 # 1. harness export (best-effort; tolerate missing pnpm / script)
