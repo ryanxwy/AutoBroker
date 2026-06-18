@@ -182,7 +182,11 @@ describe("inventory_compare — read-only three-branch", () => {
     const out = result.result as { resolution: string; totalListings: number; summary: string };
     expect(out.resolution).toBe("pinned");
     expect(out.totalListings).toBe(0);
-    expect(out.summary).toBe("Listed 0 inventory candidates (recommended: 0).");
+    // Nothing scanned → actionable next step, not a bare "Listed 0".
+    expect(out.summary).toBe(
+      "No inventory to compare yet — no dealer sites have been scanned. " +
+        "Scan the dealers' inventory to see what they have in stock.",
+    );
   });
 
   it("STOPs with no_active_profile on a pin-less input with 0 active profiles", async () => {
