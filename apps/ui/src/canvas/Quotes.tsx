@@ -27,6 +27,7 @@
 import type { AsyncState } from "../api/useApi.js";
 import type { QuoteList, QuoteRow } from "../api/wire.js";
 import { collapseAuditFlags } from "./auditFlags.js";
+import { ClickableTile } from "./ClickableTile.js";
 
 /** A "$43,210" total label from a number (no cents noise), or null for a
  *  missing total. */
@@ -44,11 +45,21 @@ function provenanceLine(row: QuoteRow): string {
   return parts.length > 0 ? `via ${parts.join(" · ")}` : "";
 }
 
-function QuoteRowView({ row }: { row: QuoteRow }): JSX.Element {
+function QuoteRowView({
+  row,
+  onOpenQuote,
+}: {
+  row: QuoteRow;
+  onOpenQuote: ((row: QuoteRow) => void) | undefined;
+}): JSX.Element {
   const otd = dollarLabel(row.otd_total);
   const provenance = provenanceLine(row);
   return (
-    <div className="tile" data-testid="canvas-quote-row">
+    <ClickableTile
+      testid="canvas-quote-row"
+      ariaLabel={`View quote details for ${row.dealer_name ?? "Unknown dealer"}`}
+      onActivate={() => onOpenQuote?.(row)}
+    >
       <div className="t-head">
         <span data-testid="canvas-quote-dealer">{row.dealer_name ?? "Unknown dealer"}</span>
         {row.financing_mode !== null && row.financing_mode !== "" && (
@@ -89,7 +100,7 @@ function QuoteRowView({ row }: { row: QuoteRow }): JSX.Element {
           ))}
         </div>
       )}
-    </div>
+    </ClickableTile>
   );
 }
 
@@ -100,9 +111,12 @@ export interface QuotesProps {
   /** When true, suppress the <h2> heading (the foldout <summary> acts as the
    *  heading). Default false — standalone renders the heading as usual. */
   embedded?: boolean;
+  /** Open the full-breakdown detail modal for a clicked quote card. Optional —
+   *  a standalone render without it leaves the card a harmless no-op tile. */
+  onOpenQuote?: (row: QuoteRow) => void;
 }
 
-export function Quotes({ quotes, embedded = false }: QuotesProps): JSX.Element {
+export function Quotes({ quotes, embedded = false, onOpenQuote }: QuotesProps): JSX.Element {
   return (
     <section data-testid="canvas-quotes">
       {!embedded && <h2>Extracted quotes</h2>}
@@ -120,7 +134,7 @@ export function Quotes({ quotes, embedded = false }: QuotesProps): JSX.Element {
       {quotes.kind === "ok" && quotes.data.length > 0 && (
         <div className="tile-grid">
           {quotes.data.map((row) => (
-            <QuoteRowView key={row.quote_id} row={row} />
+            <QuoteRowView key={row.quote_id} row={row} onOpenQuote={onOpenQuote} />
           ))}
         </div>
       )}

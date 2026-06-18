@@ -7,11 +7,11 @@
  * and NO raw id surface in the rendered text.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AsyncState } from "../api/useApi.js";
-import type { QuoteList } from "../api/wire.js";
-import { render } from "../test/render.js";
+import type { QuoteList, QuoteRow } from "../api/wire.js";
+import { click, render } from "../test/render.js";
 import { Quotes } from "./Quotes.js";
 
 function ok(data: QuoteList): AsyncState<QuoteList> {
@@ -148,6 +148,15 @@ describe("Quotes — rows", () => {
   it("does not render the empty copy when rows are present", () => {
     const { container } = render(<Quotes quotes={ok(rows)} />);
     expect(container.querySelector('[data-testid="canvas-quotes-empty"]')).toBeNull();
+  });
+
+  it("calls onOpenQuote with the row when a quote card is clicked", () => {
+    const onOpenQuote = vi.fn<(row: QuoteRow) => void>();
+    const { container } = render(<Quotes quotes={ok(rows)} onOpenQuote={onOpenQuote} />);
+    const first = container.querySelector('[data-testid="canvas-quote-row"]') as HTMLElement;
+    click(first);
+    expect(onOpenQuote).toHaveBeenCalledTimes(1);
+    expect(onOpenQuote).toHaveBeenCalledWith(rows[0]);
   });
 });
 

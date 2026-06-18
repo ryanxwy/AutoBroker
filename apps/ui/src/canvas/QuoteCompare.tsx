@@ -25,6 +25,7 @@
 import type { AsyncState } from "../api/useApi.js";
 import type { QuoteCompareResult, QuoteCompareRow } from "../api/wire.js";
 import { collapseAuditFlags } from "./auditFlags.js";
+import { ClickableTile } from "./ClickableTile.js";
 
 /** A "$44,540" total label from a number, or null for a missing total. */
 function dollarLabel(value: number | null): string | null {
@@ -32,12 +33,22 @@ function dollarLabel(value: number | null): string | null {
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
-function QuoteRow({ row }: { row: QuoteCompareRow }): JSX.Element {
+function QuoteRow({
+  row,
+  onOpenCompare,
+}: {
+  row: QuoteCompareRow;
+  onOpenCompare: ((quoteId: string) => void) | undefined;
+}): JSX.Element {
   const otd = dollarLabel(row.otd_total);
   const downOrDas = dollarLabel(row.down_or_das);
   const monthly = dollarLabel(row.monthly);
   return (
-    <div className="tile" data-testid="quote-compare-row">
+    <ClickableTile
+      testid="quote-compare-row"
+      ariaLabel={`View quote details for ${row.dealer_name}`}
+      onActivate={() => row.quote_id !== "" && onOpenCompare?.(row.quote_id)}
+    >
       <div className="t-head">
         <span data-testid="quote-compare-dealer">{row.dealer_name}</span>
         {otd !== null ? (
@@ -68,7 +79,7 @@ function QuoteRow({ row }: { row: QuoteCompareRow }): JSX.Element {
           ))}
         </div>
       )}
-    </div>
+    </ClickableTile>
   );
 }
 
@@ -78,10 +89,12 @@ function Bucket({
   testid,
   title,
   rows,
+  onOpenCompare,
 }: {
   testid: string;
   title: string;
   rows: QuoteCompareRow[];
+  onOpenCompare: ((quoteId: string) => void) | undefined;
 }): JSX.Element {
   return (
     <div className="quote-compare-bucket" data-testid={testid}>
@@ -91,7 +104,7 @@ function Bucket({
       ) : (
         <div className="tile-grid">
           {rows.map((row) => (
-            <QuoteRow key={`${row.dealer_id}-${row.rank}`} row={row} />
+            <QuoteRow key={`${row.dealer_id}-${row.rank}`} row={row} onOpenCompare={onOpenCompare} />
           ))}
         </div>
       )}
@@ -103,9 +116,12 @@ export interface QuoteCompareProps {
   /** The profile's ranked quote buckets (the host wires this from the ranker
    *  route). */
   quotes: AsyncState<QuoteCompareResult>;
+  /** Open the detail modal for a clicked compare row (by its quote_id — the host
+   *  resolves it to the full raw QuoteRow). Optional. */
+  onOpenCompare?: (quoteId: string) => void;
 }
 
-export function QuoteCompare({ quotes }: QuoteCompareProps): JSX.Element {
+export function QuoteCompare({ quotes, onOpenCompare }: QuoteCompareProps): JSX.Element {
   const finance = quotes.kind === "ok" ? quotes.data.finance : [];
   const lease = quotes.kind === "ok" ? quotes.data.lease : [];
   const cash = quotes.kind === "ok" ? (quotes.data.cash ?? []) : [];
@@ -135,10 +151,29 @@ export function QuoteCompare({ quotes }: QuoteCompareProps): JSX.Element {
       {quotes.kind === "ok" && totalRanked > 0 && (
         <div className="quote-compare-buckets">
           {showFinance && (
-            <Bucket testid="quote-compare-finance" title="Finance" rows={finance} />
+            <Bucket
+              testid="quote-compare-finance"
+              title="Finance"
+              rows={finance}
+              onOpenCompare={onOpenCompare}
+            />
           )}
-          {showLease && <Bucket testid="quote-compare-lease" title="Lease" rows={lease} />}
-          {showCash && <Bucket testid="quote-compare-cash" title="Cash" rows={cash} />}
+          {showLease && (
+            <Bucket
+              testid="quote-compare-lease"
+              title="Lease"
+              rows={lease}
+              onOpenCompare={onOpenCompare}
+            />
+          )}
+          {showCash && (
+            <Bucket
+              testid="quote-compare-cash"
+              title="Cash"
+              rows={cash}
+              onOpenCompare={onOpenCompare}
+            />
+          )}
         </div>
       )}
     </section>

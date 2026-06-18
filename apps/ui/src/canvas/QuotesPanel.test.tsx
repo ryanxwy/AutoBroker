@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AsyncState } from "../api/useApi.js";
 import type { QuoteCompareResult, QuoteList } from "../api/wire.js";
-import { render } from "../test/render.js";
+import { click, render } from "../test/render.js";
 import { QuotesPanel } from "./QuotesPanel.js";
 
 function okCompare(data: QuoteCompareResult): AsyncState<QuoteCompareResult> {
@@ -190,5 +190,76 @@ describe("QuotesPanel — raw foldout", () => {
     // The Quotes section inside the foldout must NOT render "Extracted quotes" h2
     const headings = [...details!.querySelectorAll("h2")].map((h) => h.textContent);
     expect(headings).not.toContain("Extracted quotes");
+  });
+});
+
+describe("QuotesPanel — compare row opens the resolved detail modal", () => {
+  it("clicking a compare row resolves its quote_id to the raw row and shows the full-breakdown modal; Close hides it", () => {
+    const compareRow = {
+      rank: 1,
+      quote_id: "q-1",
+      dealer_id: "d-1",
+      dealer_name: "Dealer A",
+      otd_total: 42000,
+      apr_or_mf: "6.9%",
+      down_or_das: 3000,
+      monthly: 550,
+      audit_flag_summary: [] as string[],
+      financing_mode: "finance",
+    };
+    const compare: QuoteCompareResult = {
+      financingPreference: "finance",
+      finance: [compareRow],
+      lease: [],
+      totalRanked: 1,
+    };
+    // The raw row carries the full breakdown the modal renders (matched by quote_id).
+    const raw = rawQuote({
+      quote_id: "q-1",
+      dealer_name: "Dealer A",
+      otd_total: 42000,
+      msrp: 41000,
+      sales_tax: 3100,
+    });
+
+    const rendered = render(
+      <QuotesPanel quotes={okCompare(compare)} quotesRaw={okRaw([raw])} />,
+    );
+    // No modal initially.
+    expect(document.body.querySelector('[data-testid="quote-detail-modal"]')).toBeNull();
+
+    const row = rendered.container.querySelector(
+      '[data-testid="quote-compare-row"]',
+    ) as HTMLElement;
+    click(row);
+
+    // Portalled modal is now visible with the full breakdown (resolved from raw).
+    const modal = document.body.querySelector('[data-testid="quote-detail-modal"]');
+    expect(modal).not.toBeNull();
+    expect(modal!.textContent).toContain("$41,000"); // MSRP — only on the raw row
+    expect(modal!.textContent).toContain("$3,100"); // Sales tax — only on the raw row
+
+    // Close hides it.
+    click(document.body.querySelector('[data-testid="quote-detail-close"]') as HTMLElement);
+    expect(document.body.querySelector('[data-testid="quote-detail-modal"]')).toBeNull();
+
+    rendered.unmount();
+  });
+
+  it("clicking a raw foldout quote row opens the modal with that row", () => {
+    const raw = rawQuote({ quote_id: "q-raw", dealer_name: "Raw Dealer", otd_total: 38000 });
+    const rendered = render(
+      <QuotesPanel quotes={okCompare(emptyCompare)} quotesRaw={okRaw([raw])} />,
+    );
+    const row = rendered.container.querySelector(
+      '[data-testid="canvas-quote-row"]',
+    ) as HTMLElement;
+    click(row);
+    const modal = document.body.querySelector('[data-testid="quote-detail-modal"]');
+    expect(modal).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-testid="quote-detail-title"]')!.textContent,
+    ).toBe("Raw Dealer");
+    rendered.unmount();
   });
 });

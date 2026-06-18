@@ -1611,6 +1611,22 @@ details.optional[open] summary { margin-bottom: 10px; }
 }
 .inventory-detail-list dt { color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9px; padding-top: 2px; }
 .inventory-detail-list dd { margin: 0; word-break: break-all; color: var(--ink); }
+/* the quote-detail modal's section headings + scrollable source-email body */
+.quote-detail-h3 { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mute); margin: 16px 0 0; }
+.quote-detail-source-body {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule-soft);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
 .hard-delete-consequence strong { font-weight: 700; }
 /* the edit modal's danger zone — set off by a ledger rule below the form */
 .profile-danger-zone { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
