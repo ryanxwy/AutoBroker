@@ -132,7 +132,7 @@ whitelisted city substring, it **silently resolves to Irvine** — the search ru
 in the wrong metro with no error. The buyer persona's `location_query` MUST
 contain a whitelisted city name or its ZIP (e.g. `"Dallas, TX 75201"`).
 
-**~18-metro allowlist** (keep in lock-step with `METRO_FIXTURES` in `serve-live.mjs`):
+**19-metro allowlist** (keep in lock-step with `METRO_FIXTURES` in `serve-live.mjs`):
 
 > Irvine 92602 · Los Angeles 90012 · San Diego 92101 · Dallas 75201 · Houston
 > 77002 · Austin 78701 · Phoenix 85004 · Denver 80202 · Seattle 98101 · Portland
