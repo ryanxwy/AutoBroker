@@ -31,9 +31,17 @@ import { Quotes } from "./Quotes.js";
 export interface QuotesPanelProps {
   quotes: AsyncState<QuoteCompareResult>;
   quotesRaw: AsyncState<QuoteList>;
+  /** Builds the GET …/quotes/:quoteId/source URL for the open quote so the detail
+   *  modal can embed the dealer's original document. Omitted (no active profile) →
+   *  the modal shows only the source-email text floor. */
+  quoteSourceUrl?: (quoteId: string) => string;
 }
 
-export function QuotesPanel({ quotes, quotesRaw }: QuotesPanelProps): JSX.Element {
+export function QuotesPanel({
+  quotes,
+  quotesRaw,
+  quoteSourceUrl,
+}: QuotesPanelProps): JSX.Element {
   const [detail, setDetail] = useState<QuoteRow | null>(null);
 
   const rawCount = quotesRaw.kind === "ok" ? quotesRaw.data.length : null;
@@ -63,7 +71,13 @@ export function QuotesPanel({ quotes, quotesRaw }: QuotesPanelProps): JSX.Elemen
         <summary data-testid="canvas-quotes-foldout">{summaryLabel}</summary>
         <Quotes quotes={quotesRaw} embedded onOpenQuote={(row) => setDetail(row)} />
       </details>
-      <QuoteDetailModal row={detail} onClose={() => setDetail(null)} />
+      <QuoteDetailModal
+        row={detail}
+        sourceDocUrl={
+          detail !== null && quoteSourceUrl ? quoteSourceUrl(detail.quote_id) : null
+        }
+        onClose={() => setDetail(null)}
+      />
     </>
   );
 }

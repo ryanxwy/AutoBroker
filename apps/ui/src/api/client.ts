@@ -368,6 +368,17 @@ export class ApiClient {
     return decode(res, IncentiveListSchema);
   }
 
+  /** URL for GET /api/profiles/:id/quotes/:quoteId/source — the dealer's original
+   *  source document bytes (image/* or application/pdf) a quote was read from, or
+   *  404. NOT a fetch wrapper: returns the URL so a presentational component can
+   *  set it as an <img>/<embed> src or an <a href> (same-origin, works under the
+   *  app's serving origin in both browser + Electron via the same base helper). */
+  quoteSourceUrl(profileId: string, quoteId: string): string {
+    return this.url(
+      `/api/profiles/${encodeURIComponent(profileId)}/quotes/${encodeURIComponent(quoteId)}/source`,
+    );
+  }
+
   /** GET /api/skills → the registered skill manifest list (routes.ts:278). */
   async listSkills(): Promise<SkillList> {
     const res = await this.fetchImpl(this.url("/api/skills"));

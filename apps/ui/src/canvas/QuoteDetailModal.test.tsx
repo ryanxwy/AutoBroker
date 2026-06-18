@@ -12,11 +12,22 @@
  * avoid portal residue.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { act } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { QuoteRow } from "../api/wire.js";
 import { render } from "../test/render.js";
 import { QuoteDetailModal } from "./QuoteDetailModal.js";
+
+/** Let the open-effect's fetch + blob promises settle, inside act() so React
+ *  flushes the resulting state updates (the test render helper drives act). */
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
 
 function quote(over: Partial<QuoteRow> = {}): QuoteRow {
   return {
@@ -180,6 +191,141 @@ describe("QuoteDetailModal — lease quote", () => {
     expect(text).toContain("$410"); // monthly
     // No finance block.
     expect(document.body.querySelector('[data-testid="quote-detail-finance"]')).toBeNull();
+    unmount();
+  });
+});
+
+describe("QuoteDetailModal — original source document embed", () => {
+  afterEach(() => {
+    document.body.querySelectorAll('[data-testid="modal-backdrop"]').forEach((n) => n.remove());
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches and embeds the original image, with an Open-original link, when quote_format is image", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(["png-bytes"], { type: "image/png" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    const createObjectURL = vi.fn(() => "blob:obj-image");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    } as unknown as typeof URL);
+
+    const { unmount } = render(
+      <QuoteDetailModal
+        row={quote({ quote_format: "image" })}
+        sourceDocUrl="/api/profiles/p1/quotes/q-detail-1/source"
+        onClose={() => {}}
+      />,
+    );
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/profiles/p1/quotes/q-detail-1/source");
+    const img = document.body.querySelector('[data-testid="quote-source-image"]');
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("blob:obj-image");
+
+    const open = document.body.querySelector('[data-testid="quote-source-open"]');
+    expect(open).not.toBeNull();
+    expect(open!.getAttribute("href")).toBe("/api/profiles/p1/quotes/q-detail-1/source");
+    expect(open!.getAttribute("target")).toBe("_blank");
+    expect(open!.getAttribute("rel")).toBe("noopener noreferrer");
+
+    // The source-email text remains the floor below the embed.
+    expect(
+      document.body.querySelector('[data-testid="quote-detail-source-email"]')!.textContent,
+    ).toContain("Your Tucson quote");
+
+    unmount();
+  });
+
+  it("embeds a pdf <embed> when quote_format is pdf", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(["%PDF-bytes"], { type: "application/pdf" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:obj-pdf"),
+      revokeObjectURL: vi.fn(),
+    } as unknown as typeof URL);
+
+    const { unmount } = render(
+      <QuoteDetailModal
+        row={quote({ quote_format: "pdf" })}
+        sourceDocUrl="/api/profiles/p1/quotes/q-detail-1/source"
+        onClose={() => {}}
+      />,
+    );
+    await flush();
+
+    const embed = document.body.querySelector('[data-testid="quote-source-pdf"]');
+    expect(embed).not.toBeNull();
+    expect(embed!.getAttribute("src")).toBe("blob:obj-pdf");
+    expect(document.body.querySelector('[data-testid="quote-source-image"]')).toBeNull();
+    unmount();
+  });
+
+  it("renders NO embed and keeps the source-email floor when the fetch is a 404", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      blob: async () => new Blob([]),
+    }));
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:never"),
+      revokeObjectURL: vi.fn(),
+    } as unknown as typeof URL);
+
+    const { unmount } = render(
+      <QuoteDetailModal
+        row={quote({ quote_format: "image" })}
+        sourceDocUrl="/api/profiles/p1/quotes/q-detail-1/source"
+        onClose={() => {}}
+      />,
+    );
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[data-testid="quote-source-image"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="quote-source-pdf"]')).toBeNull();
+    // The source-email text still renders — the fallback floor, never a broken box.
+    expect(
+      document.body.querySelector('[data-testid="quote-detail-source-email"]')!.textContent,
+    ).toContain("Your Tucson quote");
+    unmount();
+  });
+
+  it("does not fetch and renders no embed when quote_format is text (kind null)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob([]),
+    }));
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+
+    const { unmount } = render(
+      <QuoteDetailModal
+        row={quote({ quote_format: "text" })}
+        sourceDocUrl="/api/profiles/p1/quotes/q-detail-1/source"
+        onClose={() => {}}
+      />,
+    );
+    await flush();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[data-testid="quote-source-image"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="quote-source-pdf"]')).toBeNull();
     unmount();
   });
 });

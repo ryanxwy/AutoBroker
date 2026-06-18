@@ -14,7 +14,7 @@
  * API client.
  */
 
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { QuoteRow } from "../api/wire.js";
 import { Modal } from "../shell/Modal.js";
@@ -22,14 +22,64 @@ import { collapseAuditFlags } from "./auditFlags.js";
 import { DetailRow } from "./DetailRow.js";
 import { dateLabel, dollarLabel } from "./format.js";
 
+/** The doc kind the source document embeds as, derived from quote_format. "image"
+ *  → <img>, "pdf"/"mixed" → <embed>, anything else (incl. text/otd) → null (no
+ *  embed; the source-email text remains the floor). */
+function sourceDocKind(quoteFormat: string | null): "image" | "pdf" | null {
+  if (quoteFormat === "image") return "image";
+  if (quoteFormat === "pdf" || quoteFormat === "mixed") return "pdf";
+  return null;
+}
+
 export function QuoteDetailModal({
   row,
+  sourceDocUrl = null,
   onClose,
 }: {
   row: QuoteRow | null;
+  sourceDocUrl?: string | null;
   onClose: () => void;
 }): JSX.Element {
   const titleId = useId();
+  // The original-document blob, fetched on open (same-origin) and turned into an
+  // object URL for the <img>/<embed>. Null until/unless the fetch succeeds; on
+  // any failure (non-2xx, throw, no kind) we render nothing and fall back to the
+  // source-email text. Fetched in an effect (below) so the hook order stays
+  // stable across the open/closed return.
+  const kind = sourceDocKind(row?.quote_format ?? null);
+  const [docUrl, setDocUrl] = useState<string | null>(null);
+  const [docLoading, setDocLoading] = useState(false);
+  const fetchUrl = kind !== null ? sourceDocUrl : null;
+  useEffect(() => {
+    if (fetchUrl === null) {
+      setDocUrl(null);
+      setDocLoading(false);
+      return;
+    }
+    let cancelled = false;
+    let objUrl: string | null = null;
+    setDocLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(fetchUrl);
+        if (!res.ok) throw new Error(`source ${res.status}`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        objUrl = URL.createObjectURL(blob);
+        setDocUrl(objUrl);
+      } catch {
+        if (!cancelled) setDocUrl(null);
+      } finally {
+        if (!cancelled) setDocLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objUrl !== null) URL.revokeObjectURL(objUrl);
+      setDocUrl(null);
+    };
+  }, [fetchUrl]);
+
   if (row === null) {
     // Closed: render an inert Modal (returns null while open=false) so the hook
     // order stays stable across open/closed.
@@ -189,9 +239,44 @@ export function QuoteDetailModal({
           </div>
         )}
 
-        {hasSource && (
+        {(hasSource || (fetchUrl !== null && (docUrl !== null || docLoading))) && (
           <div className="quote-detail-source" data-testid="quote-detail-source-email">
             <h3 className="quote-detail-h3">Source email</h3>
+            {fetchUrl !== null && docUrl !== null && (
+              <div className="quote-detail-source-doc" data-testid="quote-source-doc">
+                <p className="muted">Original document</p>
+                {kind === "image" ? (
+                  <img
+                    data-testid="quote-source-image"
+                    src={docUrl}
+                    alt="Original quote document"
+                    style={{ maxWidth: "100%", maxHeight: 360, objectFit: "contain" }}
+                  />
+                ) : (
+                  <embed
+                    data-testid="quote-source-pdf"
+                    type="application/pdf"
+                    src={docUrl}
+                    style={{ width: "100%", height: 420 }}
+                  />
+                )}
+                <p>
+                  <a
+                    href={fetchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="quote-source-open"
+                  >
+                    Open original ↗
+                  </a>
+                </p>
+              </div>
+            )}
+            {fetchUrl !== null && docUrl === null && docLoading && (
+              <p className="muted" data-testid="quote-source-loading">
+                Loading original document…
+              </p>
+            )}
             {sourceFrom !== "" && <p className="muted">From {sourceFrom}</p>}
             {row.source_subject !== null && row.source_subject !== "" && (
               <p>

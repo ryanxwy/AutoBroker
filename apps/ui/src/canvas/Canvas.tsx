@@ -502,7 +502,13 @@ export function Canvas({
             {tab === "dealers" && <DealerTiles dealers={dealers} />}
             {tab === "inventory" && <InventoryCandidates inventory={inventory} />}
             {tab === "quotes" && (
-              <QuotesPanel quotes={quotes} quotesRaw={quotesRaw} />
+              <QuotesPanel
+                quotes={quotes}
+                quotesRaw={quotesRaw}
+                {...(activeId !== null
+                  ? { quoteSourceUrl: (quoteId: string) => client.quoteSourceUrl(activeId, quoteId) }
+                  : {})}
+              />
             )}
             {tab === "replies" && (
               <ThreadsSection
