@@ -232,3 +232,11 @@ that never reached `main`, or a local `main` out of sync with the remote. This
 is the standing instruction — it supersedes any "don't push/merge without an
 explicit go" default. The force-push ban, explicit-path staging, and the
 destructive-action approval gates above still apply.
+
+**Closeout is git + docs.** After implementing any code change, invoke the
+`landing-changes` skill (`.claude/skills/landing-changes/`) to wrap up: it runs
+the git "definition of done" above AND a doc-freshness sweep — find every doc
+(this repo's `CLAUDE.md` / `.claude/skills/**` and the plan repo's
+`ts-rebuild/**` reports + ADRs + live-status box) that the change made stale, and
+strip the stale data/discussion so docs reflect ONLY the latest code. A doc that
+contradicts the merged code is an unfinished task, not a finished one.
