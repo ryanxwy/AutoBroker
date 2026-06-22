@@ -40,10 +40,15 @@ import { fileURLToPath } from "node:url";
 import { buildServer } from "@autobroker/server";
 import { openDb, seedFakeMailbox } from "@autobroker/tools";
 import {
+  __setHarnessGenerateFaultForTests,
   __setIntakeDepsForTests,
   resetMastraForTests,
   resetRuntimeGlueForTests,
 } from "@autobroker/workflows";
+// __setHarnessGenerateFaultForTests is the model-layer generate-fault seam (T4-U2),
+// re-exported by @autobroker/workflows: arming it makes the next resolved model fail
+// closed (llm_500 throw / llm_timeout reject) — the LLM twin of the geocode
+// tool_timeout. NODE_ENV="test" (set below) satisfies its test-only guard.
 
 // Inlined from harness/seed.ts applyDealerReplySeeds (so this runs under plain
 // node — tsx is not resolvable from the repo root). Creates, per reply: a bound
@@ -402,14 +407,12 @@ function resolveMetro(query) {
 // --- injectable fault seam (T4-U2) -------------------------------------------
 // A module-level one-shot fault flag the POST /__e2e/fault route arms. nextFault()
 // decrements a remaining count and returns the armed mode while count > 0, then
-// disarms to "none". Only "tool_timeout" is wired today (it throws from the geocode
-// seam below); llm_500/llm_timeout are accepted + echoed by the route but have NO
-// consumer until a packages/model generate-wrapping seam lands (the LLM lane stays
-// REAL), so an armed-but-unconsumed llm_* fault can never produce a false "pass".
-// NOTE for that future seam: nextFault() is consumed at the geocode fault-point
-// below regardless of mode, so an llm_* fault armed before an intake would be eaten
-// by the preceding geocode call — give each mode its own budget (or gate the
-// decrement on mode) when an llm_* consumer is wired.
+// disarms to "none". "tool_timeout" throws from the geocode seam below;
+// "llm_500"/"llm_timeout" are routed into the packages/model generate-fault seam
+// (__setHarnessGenerateFaultForTests) by the route handler so the next resolved
+// model fails closed. The geocode nextFault() counter is gated on "tool_timeout"
+// (faultingResolveLocationStub) so it never eats an armed llm_* budget; the model
+// seam is sticky-until-reset and decoupled from this counter.
 const faultState = { mode: "none", remaining: 0 };
 function nextFault() {
   if (faultState.remaining <= 0) {
@@ -428,7 +431,9 @@ function nextFault() {
 // "resolved" or a NULL-coords write. geosearch reads persisted coords and never
 // calls resolveLocation, so this only ever arms the INTAKE geocode step.
 const faultingResolveLocationStub = async (query) => {
-  if (nextFault() === "tool_timeout") {
+  // Only the geocode-relevant fault consumes the geocode budget — an armed llm_*
+  // fault is left intact for the model seam (fixes the cross-mode counter foot-gun).
+  if (faultState.mode === "tool_timeout" && nextFault() === "tool_timeout") {
     throw new Error("tool_timeout (injected fault: geocode)");
   }
   return resolveMetro(query);
@@ -539,12 +544,14 @@ built.app.get("/__e2e/audit", async (req, reply) => {
 
 // Arm an injectable fault for the next N fault-points (T4-U2). {mode,count}:
 //   mode ∈ "none" | "tool_timeout" | "llm_500" | "llm_timeout"
-//   count = how many subsequent fault-points fire (default 1; "none" disarms).
-// Returns {ok,mode,remaining}. tool_timeout is live NOW (throws from the geocode
-// seam → the intake resolveLocation step fails CLOSED). llm_500/llm_timeout are
-// accepted + echoed but have NO consumer until a packages/model generate-wrapping
-// seam lands — arming them is a behavioral no-op (the LLM lane stays real), so they
-// never silently "pass". Used to adversarially test inv #4 (fail-closed) / #12.
+//   count = how many subsequent fault-points fire (default 1; "none" disarms; count
+//           is only meaningful for tool_timeout — the model seam is sticky-until-reset).
+// Returns {ok,mode,remaining}. tool_timeout throws from the geocode seam → the intake
+// resolveLocation step fails CLOSED. llm_500/llm_timeout arm the packages/model
+// generate-fault seam so the next resolved model fails closed (a provider-5xx /
+// hung-request twin) — the throw flows through the workflows harness .catch()
+// (NULL-not-$0 ledger row + re-throw), never a fabricated success. Used to
+// adversarially test inv #4 (fail-closed) / #12 (no silent fallback).
 const FAULT_MODES = new Set(["none", "tool_timeout", "llm_500", "llm_timeout"]);
 built.app.post("/__e2e/fault", async (req, reply) => {
   const body = req.body ?? {};
@@ -556,10 +563,18 @@ built.app.post("/__e2e/fault", async (req, reply) => {
   if (mode === "none") {
     faultState.mode = "none";
     faultState.remaining = 0;
+    __setHarnessGenerateFaultForTests("none"); // disarm the model seam too.
   } else {
     const count = Number.isInteger(body.count) && body.count > 0 ? body.count : 1;
     faultState.mode = mode;
     faultState.remaining = count;
+    // Route the LLM faults into the model-layer generate seam so the NEXT resolved
+    // model fails closed (llm_500 = throw, llm_timeout = reject-after-delay). The
+    // geocode seam still consumes tool_timeout; the model seam is sticky-until-reset
+    // (it manages its own arm/disarm, decoupled from the geocode nextFault() counter).
+    if (mode === "llm_500" || mode === "llm_timeout") {
+      __setHarnessGenerateFaultForTests(mode);
+    }
   }
   reply.code(200);
   return { ok: true, mode: faultState.mode, remaining: faultState.remaining };
