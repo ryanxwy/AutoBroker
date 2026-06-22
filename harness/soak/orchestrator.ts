@@ -47,7 +47,7 @@ import {
   buildSoakLedgerRow,
   type SoakRunTrace,
 } from "./ledger.js";
-import type { ScenarioClass } from "./taxonomy.js";
+import { personaDirective, type ScenarioClass } from "./taxonomy.js";
 import {
   assertL1FuseArmed,
   assertNoExternalMutation,
@@ -311,9 +311,11 @@ export async function runScenario(opts: RunScenarioOpts): Promise<RunScenarioRes
  *  buyer.md role file already constrains "emit text only, one vehicle"; the task
  *  carries the scenario-specific intent. */
 export function buyerTaskFor(scenario: ScenarioClass): string {
+  const persona = personaDirective(scenario.buyerPersona);
   return [
     `Scenario class: ${scenario.className}.`,
     `What this stresses: ${scenario.stresses}`,
+    ...(persona ? [persona] : []),
     "",
     "Write the FIRST chat message a real buyer would send to cold-start this — freeform prose, one vehicle, in character. Emit only that message text.",
   ].join("\n");

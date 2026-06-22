@@ -16,6 +16,7 @@ import {
   parseTaxonomy,
   scenariosInClass,
 } from "./taxonomy.js";
+import { intakeBuyerTaskFor } from "./skills/intake.js";
 
 const MINIMAL = `
 [[scenarios]]
@@ -185,5 +186,38 @@ describe("loadTaxonomy (the _base.toml seed)", () => {
     const found = scenariosInClass(all, "gate_decline_path");
     expect(found.length).toBeGreaterThanOrEqual(1);
     expect(found.every((s) => s.className === "gate_decline_path")).toBe(true);
+  });
+});
+
+describe("buyer_persona (T1-U5)", () => {
+  const scn = (extra: string) => `
+[[scenarios]]
+id = "bp"
+surface = "search_profile_intake"
+class_name = "c"
+stresses = "z"
+deterministic_assertions = ["no_external_mutation"]
+${extra}
+`;
+
+  it("defaults buyer_persona to 'default' when omitted", () => {
+    const [s] = parseTaxonomy(scn(""));
+    expect(s!.buyerPersona).toBe("default");
+  });
+
+  it("parses an explicit persona", () => {
+    const [s] = parseTaxonomy(scn(`buyer_persona = "busy_skimmer"`));
+    expect(s!.buyerPersona).toBe("busy_skimmer");
+  });
+
+  it("fails LOUD on an illegal persona (z.enum)", () => {
+    expect(() => parseTaxonomy(scn(`buyer_persona = "definitely_not_a_persona"`))).toThrow();
+  });
+
+  it("intakeBuyerTaskFor injects the persona directive; default injects nothing", () => {
+    const [withPersona] = parseTaxonomy(scn(`buyer_persona = "busy_skimmer"`));
+    expect(intakeBuyerTaskFor(withPersona!)).toContain("busy skimmer");
+    const [plain] = parseTaxonomy(scn(""));
+    expect(intakeBuyerTaskFor(plain!)).not.toContain("Persona:");
   });
 });

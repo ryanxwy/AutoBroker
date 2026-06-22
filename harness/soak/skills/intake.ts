@@ -47,7 +47,7 @@ import {
   captureMutationBaseline,
   startSoakHost,
 } from "../orchestrator.js";
-import type { ScenarioClass } from "../taxonomy.js";
+import { personaDirective, type ScenarioClass } from "../taxonomy.js";
 import {
   assertL1FuseArmed,
   assertNoExternalMutation,
@@ -426,9 +426,13 @@ export interface DriveIntakeResult {
  * sanitized self-referential test string.
  */
 export function intakeBuyerTaskFor(scenario: ScenarioClass): string {
+  // Inject the persona line ONLY when non-empty (default → []), preserving the
+  // original blank-line spacing so the default task stays byte-identical.
+  const persona = personaDirective(scenario.buyerPersona);
   return [
     `Scenario class: ${scenario.className}.`,
     `What this stresses: ${scenario.stresses}`,
+    ...(persona ? [persona] : []),
     "",
     "Write the FIRST chat message a real car buyer would type to cold-start a search.",
     "Freeform prose, ONE vehicle of interest, in character. Emit ONLY that message text — no JSON wrapper, no commentary.",

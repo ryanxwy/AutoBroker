@@ -65,6 +65,41 @@ export type GateVerb = (typeof GATE_VERBS)[number];
 
 const ModelSchema = z.enum(["sonnet", "opus"]);
 
+/** The optional per-scenario buyer persona (P1–P6 reverse-ported into the soak as
+ *  DATA, not a code branch). "default" = the unflavored buyer brief. */
+export const BuyerPersonaSchema = z.enum([
+  "default",
+  "busy_skimmer",
+  "skeptical_haggler",
+  "anxious_first_timer",
+  "spec_obsessed",
+  "payment_focused",
+  "polite_rambler",
+]);
+export type BuyerPersona = z.infer<typeof BuyerPersonaSchema>;
+
+/** One natural-language directive line per persona, appended to the buyer task in
+ *  ALL three builders (intake / journey / generic). "default" injects nothing (the
+ *  builder text is unchanged) so existing scenarios behave exactly as before. */
+export function personaDirective(persona: BuyerPersona): string {
+  switch (persona) {
+    case "default":
+      return "";
+    case "busy_skimmer":
+      return "Persona: a busy skimmer — terse, drip out only what each step needs, never a clean full spec up front.";
+    case "skeptical_haggler":
+      return "Persona: a skeptical haggler — push back on numbers, ask for the out-the-door breakdown, distrust the first quote.";
+    case "anxious_first_timer":
+      return "Persona: an anxious first-timer — hedging, seeking reassurance, may stall or give up; stay in character.";
+    case "spec_obsessed":
+      return "Persona: spec-obsessed — fixate on trim/options/VIN detail; never invent a spec you were not given.";
+    case "payment_focused":
+      return "Persona: payment-focused — frame everything as $/month; never restate it as a budget ceiling.";
+    case "polite_rambler":
+      return "Persona: a polite rambler — chatty, off-topic asides, but the actual ask stays one vehicle.";
+  }
+}
+
 /** One raw scenario entry. .strict() fails LOUD on an unknown field (a typo'd
  *  key must surface at load, never silently ignored). */
 const RawScenarioSchema = z
@@ -79,6 +114,9 @@ const RawScenarioSchema = z
     stresses: z.string().min(1),
     /** The buyer role's subscription model for this scenario. */
     buyer_model: ModelSchema.default("opus"),
+    /** The optional buyer persona this scenario flavors the buyer turn with
+     *  (.default keeps every existing toml parsing under .strict()). */
+    buyer_persona: BuyerPersonaSchema.default("default"),
     /** Whether this scenario spawns the Sonnet dealer (multi-round email). */
     dealer_needed: z.boolean().default(false),
     /** The deterministic-assertion ids this scenario MUST satisfy (tied to real
@@ -108,6 +146,7 @@ export interface ScenarioClass {
   className: string;
   stresses: string;
   buyerModel: "sonnet" | "opus";
+  buyerPersona: BuyerPersona;
   dealerNeeded: boolean;
   deterministicAssertions: string[];
   judgeDims: string[];
@@ -123,6 +162,7 @@ export function parseTaxonomy(source: string): ScenarioClass[] {
     className: s.class_name,
     stresses: s.stresses,
     buyerModel: s.buyer_model,
+    buyerPersona: s.buyer_persona,
     dealerNeeded: s.dealer_needed,
     deterministicAssertions: s.deterministic_assertions,
     judgeDims: s.judge_dims,

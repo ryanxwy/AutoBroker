@@ -63,7 +63,7 @@ import {
   captureMutationBaseline,
   startSoakHost,
 } from "../orchestrator.js";
-import type { ScenarioClass } from "../taxonomy.js";
+import { personaDirective, type ScenarioClass } from "../taxonomy.js";
 import {
   assertL1FuseArmed,
   assertNoExternalMutation,
@@ -504,10 +504,12 @@ export interface DriveJourneyResult {
  * the buyer phrases natural prose in nl mode, never a literal slash).
  */
 export function journeyBuyerTaskFor(scenario: ScenarioClass, mode: DriveMode): string {
+  const persona = personaDirective(scenario.buyerPersona);
   return [
     `Scenario class: ${scenario.className}.`,
     `What this stresses: ${scenario.stresses}`,
     `Drive mode: ${mode} (${mode === "nl" ? "type natural prose; the assistant routes it" : "the harness types /slash launches; you still narrate naturally"}).`,
+    ...(persona ? [persona] : []),
     "",
     "Write the FIRST chat message a real car buyer would type to cold-start this",
     "search — freeform prose, ONE vehicle of interest, in character. Emit ONLY that",
