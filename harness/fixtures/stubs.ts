@@ -31,10 +31,15 @@ export interface Scenario {
    *  malformed/text-dumped tool call that the LIVE lane cannot stage). Default
    *  false — every other case runs clean. */
   llmMalformed: boolean;
+  /** A deterministic injectable fault for the func lane (T4-U2). "tool_timeout"
+   *  makes resolveLocationStub reject on the NEXT TICK (not a wall-clock hang →
+   *  no flaky timer in the gate), exercising fail-closed on a transient tool fault.
+   *  Default "none". */
+  fault: "none" | "tool_timeout";
 }
 
 /** The single mutable scenario (flipped by setScenario / a fixture state). */
-export const scenario: Scenario = { location: "resolved", trimValid: true, llmMalformed: false };
+export const scenario: Scenario = { location: "resolved", trimValid: true, llmMalformed: false, fault: "none" };
 
 /** Apply a partial scenario (a fixture state's `scenario` block, or a control
  *  route flip). Unspecified fields keep their current value. */
@@ -43,6 +48,7 @@ export function setScenario(partial: Partial<Scenario> | undefined | null): void
   if (partial.location !== undefined) scenario.location = partial.location;
   if (partial.trimValid !== undefined) scenario.trimValid = partial.trimValid;
   if (partial.llmMalformed !== undefined) scenario.llmMalformed = partial.llmMalformed;
+  if (partial.fault !== undefined) scenario.fault = partial.fault;
 }
 
 /** No model call ever fires through these stubs, so every usage meter is empty —
@@ -82,8 +88,15 @@ const FAILED = {
   traceSpans: [],
 };
 
-/** resolveLocation stub: returns the current scenario's outcome (NO live geocode). */
+/** resolveLocation stub: returns the current scenario's outcome (NO live geocode).
+ *  When scenario.fault==="tool_timeout" (T4-U2), reject on the next tick — a
+ *  transient tool fault the intake geocode step must fail CLOSED on (no fabricated
+ *  coords, no NULL-coords persist), NEVER a hallucinated "resolved". */
 export const resolveLocationStub = async (): Promise<unknown> => {
+  if (scenario.fault === "tool_timeout") {
+    await Promise.resolve(); // settle on the next microtask — deterministic, no timer.
+    throw new Error("tool_timeout (injected fault: geocode, func lane)");
+  }
   switch (scenario.location) {
     case "ambiguous":
       return AMBIGUOUS;

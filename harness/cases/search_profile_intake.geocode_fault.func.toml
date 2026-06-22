@@ -1,0 +1,74 @@
+# search_profile_intake.geocode_fault.func.toml — T4-U2 (func-lane fault injection).
+#
+# A transient TOOL fault (geocode) injected deterministically via the
+# intake_geocode_fault fixture (scenario.fault="tool_timeout" → resolveLocationStub
+# rejects on the next tick). The intake reaches the resolveLocation step after a
+# clean data_collection accept + trim_verify, and that step throws. The resolve
+# step has no try/catch and persist independently fail-louds on null coords, so the
+# run fails CLOSED — it terminates `error` with ZERO search_profiles rows, never a
+# hallucinated "resolved" success or a NULL-coords profile (inv #4 fail-closed, inv
+# #12 no silent fallback). This is the TOOL-fault twin of the #1244 malformed-LLM-
+# tool-call case — a distinct fault class, deterministic (next-tick reject, no timer).
+
+[meta]
+id = "search_profile_intake_geocode_fault"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_geocode_fault"
+skill = "search_profile_intake"
+fixture_state = "intake_geocode_fault"
+purpose = "Transient geocode tool fault -> the resolveLocation step fails CLOSED; run errors, zero writes."
+gate_policy = "approve_safe"
+
+# Submit the intake form; trim_verify runs clean, then the geocode step throws.
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["error"]
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "global"
+exact = true
+min = 0
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true

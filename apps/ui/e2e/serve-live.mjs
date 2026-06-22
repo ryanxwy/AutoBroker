@@ -400,12 +400,45 @@ function resolveMetro(query) {
     traceSpans: [],
   };
 }
-const resolveLocationStub = async (query) => resolveMetro(query);
+// --- injectable fault seam (T4-U2) -------------------------------------------
+// A module-level one-shot fault flag the POST /__e2e/fault route arms. nextFault()
+// decrements a remaining count and returns the armed mode while count > 0, then
+// disarms to "none". Only "tool_timeout" is wired today (it throws from the geocode
+// seam below); llm_500/llm_timeout are accepted + echoed by the route but have NO
+// consumer until a packages/model generate-wrapping seam lands (the LLM lane stays
+// REAL), so an armed-but-unconsumed llm_* fault can never produce a false "pass".
+// NOTE for that future seam: nextFault() is consumed at the geocode fault-point
+// below regardless of mode, so an llm_* fault armed before an intake would be eaten
+// by the preceding geocode call — give each mode its own budget (or gate the
+// decrement on mode) when an llm_* consumer is wired.
+const faultState = { mode: "none", remaining: 0 };
+function nextFault() {
+  if (faultState.remaining <= 0) {
+    faultState.mode = "none";
+    return "none";
+  }
+  faultState.remaining -= 1;
+  const mode = faultState.mode;
+  if (faultState.remaining === 0) faultState.mode = "none";
+  return mode;
+}
+
+// The geocode stub, fault-aware: when tool_timeout is armed, throw (a transient
+// tool fault). The intake resolveLocation step has NO try/catch and persist
+// fail-louds on null coords, so the throw fails the run CLOSED — never a fabricated
+// "resolved" or a NULL-coords write. geosearch reads persisted coords and never
+// calls resolveLocation, so this only ever arms the INTAKE geocode step.
+const faultingResolveLocationStub = async (query) => {
+  if (nextFault() === "tool_timeout") {
+    throw new Error("tool_timeout (injected fault: geocode)");
+  }
+  return resolveMetro(query);
+};
 
 resetMastraForTests();
 resetRuntimeGlueForTests();
 // Partial merge keeps the REAL harnessGenerate (live DeepSeek for intake too).
-__setIntakeDepsForTests({ resolveLocation: resolveLocationStub });
+__setIntakeDepsForTests({ resolveLocation: faultingResolveLocationStub });
 
 const built = await buildServer({ quiet: true });
 
@@ -503,6 +536,34 @@ built.app.get("/__e2e/audit", async (req, reply) => {
   } finally {
     adb.$client.close();
   }
+});
+
+// Arm an injectable fault for the next N fault-points (T4-U2). {mode,count}:
+//   mode ∈ "none" | "tool_timeout" | "llm_500" | "llm_timeout"
+//   count = how many subsequent fault-points fire (default 1; "none" disarms).
+// Returns {ok,mode,remaining}. tool_timeout is live NOW (throws from the geocode
+// seam → the intake resolveLocation step fails CLOSED). llm_500/llm_timeout are
+// accepted + echoed but have NO consumer until a packages/model generate-wrapping
+// seam lands — arming them is a behavioral no-op (the LLM lane stays real), so they
+// never silently "pass". Used to adversarially test inv #4 (fail-closed) / #12.
+const FAULT_MODES = new Set(["none", "tool_timeout", "llm_500", "llm_timeout"]);
+built.app.post("/__e2e/fault", async (req, reply) => {
+  const body = req.body ?? {};
+  const mode = typeof body.mode === "string" ? body.mode : "none";
+  if (!FAULT_MODES.has(mode)) {
+    reply.code(400);
+    return { ok: false, error: `unknown fault mode "${mode}"` };
+  }
+  if (mode === "none") {
+    faultState.mode = "none";
+    faultState.remaining = 0;
+  } else {
+    const count = Number.isInteger(body.count) && body.count > 0 ? body.count : 1;
+    faultState.mode = mode;
+    faultState.remaining = count;
+  }
+  reply.code(200);
+  return { ok: true, mode: faultState.mode, remaining: faultState.remaining };
 });
 
 const ALLOWED_TABLES = new Set([

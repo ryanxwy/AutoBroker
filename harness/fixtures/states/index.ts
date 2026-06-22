@@ -49,6 +49,7 @@ import { emptyHome } from "./emptyHome.js";
 import { followupReady } from "./followupReady.js";
 import { hygieneReady } from "./hygieneReady.js";
 import { inboxNoLead, inboxReady } from "./inboxReady.js";
+import { intakeGeocodeFault } from "./intakeGeocodeFault.js";
 import { intakeMalformed } from "./intakeMalformed.js";
 import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
@@ -101,6 +102,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [inboxReady.id]: inboxReady,
   [inboxNoLead.id]: inboxNoLead,
   [intakeMalformed.id]: intakeMalformed,
+  [intakeGeocodeFault.id]: intakeGeocodeFault,
   [hygieneReady.id]: hygieneReady,
 };
 
