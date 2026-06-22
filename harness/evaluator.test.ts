@@ -269,9 +269,14 @@ describe("latency_budget anchor (max per-call wall-clock)", () => {
   });
 
   it("ignores NULL-latency rows (usage-missing row carries no timing)", () => {
-    insertLedgerRow(tmp.db, { runId: "r-nolat", costUsd: null, pricingSource: "unavailable", latencyMs: null });
-    const r = evalAnchor({ kind: "latency_budget", maxMs: 8000 }, detailDone("p-1", "r-nolat"), tmp.db, ctxFor("p-1"));
+    // A null-latency row alongside a within-budget row: still PASS, and `observed`
+    // must reflect ONLY the timed row — proving the null was excluded from the
+    // compared set, not merely coalesced to an in-budget number.
+    insertLedgerRow(tmp.db, { runId: "r-mix", costUsd: null, pricingSource: "unavailable", latencyMs: null });
+    insertLedgerRow(tmp.db, { runId: "r-mix", costUsd: 0.0009, latencyMs: 4000 });
+    const r = evalAnchor({ kind: "latency_budget", maxMs: 8000 }, detailDone("p-1", "r-mix"), tmp.db, ctxFor("p-1"));
     expect(r.ok).toBe(true);
+    expect(r.observed).toEqual([4000]);
   });
 });
 
