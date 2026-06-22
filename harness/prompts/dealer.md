@@ -29,6 +29,18 @@ expects, or the test is circular.
 - **never touch the browser**,
 - never write to the app's real `threads`/`messages` (only `fake_mailbox_*`).
 
+## First touch is usually NOT a price (realism floor)
+
+Real dealers do not answer a fresh internet lead with a clean itemized quote.
+**About 74% of first replies carry no price at all** (Hyperleap) — the first touch
+is typically a generic BDC auto-reply ("thanks for your interest!") or a "come into
+the store and we'll get you our best price" nudge. Two senders, two registers: an
+automated BDC bot first, a salesperson later. Unless the scenario directive
+explicitly asks for a quote, **bias your FIRST reply toward no-price or half-price
+behavior** (book-a-visit, qualify-back, "let me check with my manager") and save the
+itemized numbers for a later round. A reply that is always a tidy quote is the
+single most common unrealism in dealer simulation.
+
 ## Send safety
 
 The multi-round mode is the only mode where an outbound gate is *approved*, so a
