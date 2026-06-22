@@ -1478,10 +1478,10 @@ export interface FormPage {
 /**
  * Submit a dealer lead form through the L2 gate. The fill and the submit click
  * are reachable ONLY inside an approved gate commit; a decline returns without
- * touching the page. The L1 env fuse is re-asserted immediately before the
- * click so the outer ring holds independently of the gate path that brought us
- * here. Each verdict branch is explicit — nothing non-approved is silently
- * folded into a decline by accident.
+ * touching the page. The AUTOBROKER_MODE send brake is asserted at the TOP of
+ * the approved commit — before any fill or click — so test mode refuses without
+ * touching the page at all. Each verdict branch is explicit — nothing
+ * non-approved is silently folded into a decline by accident.
  */
 export async function gatedSubmitForm(deps: {
   runId: string;
@@ -1499,16 +1499,19 @@ export async function gatedSubmitForm(deps: {
   };
 
   const result = await withGate(req, approver, async () => {
+    // Mode brake at the TOP of the approved commit: in test mode the dealer form
+    // submit is refused BEFORE touching the page — no real-form fill, no network
+    // click. The lead-submit workflow maps the ExternalMutationsBlockedError to a
+    // recorded FAKE submission, so the existing fake-record path handles the test
+    // case without depending on a brittle real-form fill. (Real dealer forms vary;
+    // `form.fields` is keyed by each form's real `name` attributes, so a fill on a
+    // selector the live form lacks would otherwise wait the default 30s and throw
+    // a hard timeout that fails the whole approved batch.) AUTOBROKER_MODE is the
+    // sole send-control var: this `!isBuyerMode()` brake is the floor.
+    if (!isBuyerMode()) throw new ExternalMutationsBlockedError("dealer_form_submit");
     for (const [name, value] of Object.entries(form.fields)) {
       await page.fill(`[name="${name}"]`, value);
     }
-    // Mode brake at the click boundary: in test mode the dealer form submit is
-    // refused — no network click; the lead-submit workflow maps the
-    // ExternalMutationsBlockedError to a recorded FAKE submission, so the
-    // existing fake-record path handles the test case identically (the outcome —
-    // record a fake submission, never click — is what matters). AUTOBROKER_MODE
-    // is the sole send-control var: this `!isBuyerMode()` brake is the floor.
-    if (!isBuyerMode()) throw new ExternalMutationsBlockedError("dealer_form_submit");
     await page.click(form.submitSelector); // the network mutation — gate-approved only
     emitter.action("submit", form.url);
     return { submitted: true as const };
