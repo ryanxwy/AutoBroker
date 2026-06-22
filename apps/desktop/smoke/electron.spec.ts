@@ -163,7 +163,7 @@ describe("shared window (S1, S2, S6, S7)", () => {
     expect(sandboxed).not.toBe(false);
   });
 
-  it("S7: fork env arms the safety stack and the fork really runs in it", async () => {
+  it("S7: fork env carries the safety subset (real-by-default, fuse not auto-armed) and the fork really runs in it", async () => {
     // The exact env subset main handed to utilityProcess.fork (test hook)...
     const hook = await app.evaluate(
       () =>
@@ -171,7 +171,11 @@ describe("shared window (S1, S2, S6, S7)", () => {
           forkEnvSafety: Record<string, string>;
         },
     );
-    expect(hook.forkEnvSafety.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS).toBe("1");
+    // Real-send-by-default: a NORMAL launch no longer auto-arms the L1 fuse — the
+    // per-action human-approval gate is the send floor, and real send is reachable.
+    // (Demo mode brakes real send instead; the fuse is opt-in via the environment.)
+    expect(hook.forkEnvSafety.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS).toBeUndefined();
+    expect(hook.forkEnvSafety.AUTOBROKER_REAL_SEND).toBeUndefined(); // not braked = real
     expect(hook.forkEnvSafety.MASTRA_TELEMETRY_DISABLED).toBe("1");
     expect(hook.forkEnvSafety.PORT).toBe("0");
     expect(hook.forkEnvSafety.AUTOBROKER_DATA_DIR).toBe(dataDir);
@@ -317,6 +321,18 @@ describe("demo mode (S8, S9)", () => {
     expect(mode.data_dir).toBe(demoDataDir);
     expect(mode.data_dir).not.toBe(dataDir);
     expect(mode.data_dir).not.toContain("/.autobroker-ts/autobroker.db");
+
+    // Demo is a seeded PRACTICE showcase — it must brake real send so the demo can
+    // never reach a real dealer. The launcher keys the brake on the effective demo
+    // posture (this launch armed AUTOBROKER_DEMO_SEED in the env), so the fork-env
+    // safety subset pins AUTOBROKER_REAL_SEND="0".
+    const hook = await app.evaluate(
+      () =>
+        (globalThis as unknown as Record<string, unknown>).__desktopHook as {
+          forkEnvSafety: Record<string, string>;
+        },
+    );
+    expect(hook.forkEnvSafety.AUTOBROKER_REAL_SEND).toBe("0");
   });
 
   it("S9: the demo banner is present in demo mode", async () => {

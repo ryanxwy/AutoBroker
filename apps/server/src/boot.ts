@@ -109,6 +109,12 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // internal posture for any lane here and then fail CLOSED: assertTestLaneInternal
   // throws if a test process is somehow still real-send capable. A no-op for a
   // real production run.
+  //
+  // Demo is a seeded PRACTICE showcase — brake real send whenever the demo seed is
+  // armed, no matter HOW it was armed (the desktop fresh-install dialog, an
+  // externally-exported AUTOBROKER_DEMO_SEED, or any future demo entry point). This
+  // lives in boot (not just the launcher) so every demo path is covered server-side.
+  if (process.env.AUTOBROKER_DEMO_SEED === "1") process.env.AUTOBROKER_REAL_SEND = "0";
   if (isTestLane()) forceTestLaneInternal();
   assertTestLaneInternal();
 
