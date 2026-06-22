@@ -78,6 +78,9 @@ const RawAnchorSchema = z.object({
    *  dynamic-id widgets (data-testid^="<testid>") — used to count or assert the
    *  absence of a row family like searches-row-<id>. */
   match: z.enum(["exact", "prefix"]).optional(),
+  /** latency_budget only: the max per-call wall-clock latency (ms). Required for
+   *  that kind (a latency_budget with no max_ms fails LOUD at parse). */
+  max_ms: z.number().int().positive().optional(),
 });
 type RawAnchor = z.infer<typeof RawAnchorSchema>;
 
@@ -550,6 +553,10 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
         ...(raw.value !== undefined ? { value: raw.value } : {}),
         ...(raw.count !== undefined ? { count: raw.count } : {}),
       };
+    }
+    case "latency_budget": {
+      if (raw.max_ms === undefined) throw new Error("latency_budget anchor requires max_ms");
+      return { kind: "latency_budget", maxMs: raw.max_ms };
     }
     default:
       throw new Error(`unknown anchor kind "${raw.kind}" in case (typo? unsupported anchor?)`);
