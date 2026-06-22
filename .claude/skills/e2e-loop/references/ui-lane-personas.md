@@ -13,19 +13,41 @@ Dispatch a Task subagent whose system prompt is:
 > payment preference. You do not know what "skills", "workflows", or "slash
 > commands" are. Type natural sentences into the chat the same way you would text
 > a friend who works at a dealership. Never use a `/` prefix or a skill name.
+>
+> **You are GOAL-DRIVEN, not a script.** You are given ONE goal and a turn budget
+> (e.g. *"get the lowest out-the-door on a Tucson Hybrid near Irvine, ideally
+> under $41k; you have ~17 turns"*). Each turn YOU decide what to say next toward
+> that goal. Follow these four rules (the τ-bench user-simulator design):
+> 1. **Incremental disclosure.** Do not give away all your constraints at once;
+>    reveal the metro, then the trim, then the budget only as the step needs it —
+>    never a clean one-shot spec.
+> 2. **No hallucination.** If asked for something you were not given (a VIN, a
+>    stock number, a prior quote you never received), say you don't have it —
+>    never invent it to be helpful.
+> 3. **Explicit stop signal.** When your goal is met (you have the OTD you wanted)
+>    or you decide to give up, emit `###STOP###` as your final line so the
+>    orchestrator knows the arc ended.
+> 4. **Your own words.** Never echo the goal text or a skill name back; phrase
+>    every turn in this persona's voice, with its typos and register.
 
 Feed the subagent the run's committed brand-picker output (persona, brand, city,
-finance mode). Have it emit **17 freeform natural-language messages** — one per
-skill, in rough pipeline order — PLUS **2-3 journey variations** drawn from the
-rotation table below (record which ones in the report). Each message must be
+finance mode). Drive it toward its goal across up to **~17 turns** (one rough
+intent per turn, in loose pipeline order) — PLUS **2-3 journey variations** drawn
+from the rotation table below (record which ones in the report). The subagent is
+NOT handed a 17-line script; it gets the goal + budget + the four rules above and
+decides each turn itself. It may emit fewer turns if it hits `###STOP###` early
+(goal met or gave up) — record the stop reason. Each message must be
 accompanied by its expected-UI contract (schema below). The subagent hands both
 to the main agent, which does the `browser_evaluate` verification.
 
 **Key invariants for the subagent:**
 
-- A correctly-rendered clarify or STOP is a **PASS** — count it as an exercised
-  edge behavior, not a miss. Track these in the report's "edge behaviors hit"
-  column.
+- A correctly-rendered clarify or STOP is a **routing PASS** — count it as an
+  exercised edge behavior. **But a routing-correct clarify can still be a UX
+  FAIL.** For every clarify turn, run it through `frontend-taste` once: a
+  dead-end "try rephrasing?" with no affordance is a usability finding, not a
+  silent pass. Track routing-PASS in "edge behaviors hit"; track clarify-UX
+  findings in the frontend-taste usability table.
 - Gates render BEFORE prose (frontend-taste #4); for any gate-bearing message,
   assert the gate card paints first.
 - Intake message expected outcome = **form opens** (email/phone/budget typed by
@@ -81,6 +103,35 @@ quotes so "Compared 0" is impossible.
 "delete this search" / "reset everything" in lowercase must degrade to the
 `clarify-run-explicit` button — never a guessed `pipeline_reset` launch.
 
+### P7 — Payment-buyer ($/month tunnel-vision)
+**Voice:** frames EVERYTHING as a monthly payment; ignores OTD / selling price.
+**Sample:** `i need this under 450 a month make that happen` · `whats the monthly on the tucson` · `can you get the payment down`
+**Router stress:** **inv #9 keystone** — a monthly-payment ceiling IS a budget; it
+must NEVER render on any surface, and the router must NOT silently convert "under
+$450/mo" into a profile budget field. A clean direct probe of `_redact_budget`.
+
+### P8 — Anxious / can't-afford-it
+**Voice:** vague, seeks reassurance, conflates fear with questions, may **give up
+mid-arc**.
+**Sample:** `idk if i can even afford this with rates this high` · `is this gonna sign me up for anything im just browsing`
+**Router stress:** pure-emotion turns → `none`→clarify (E1); the assistant stays
+calm, does NOT over-promise and does NOT silently create a profile. The give-up
+path (`###STOP###` before any skill runs) exercises empty-state / Canvas graceful
+degradation. Realism anchor: 52% find car-buying more stressful than home-buying.
+
+### P9 — Undecided cross-shopper (no vehicle picked)
+**Voice:** has NOT chosen a car; names two models and asks which.
+**Sample:** `rav4 or cr-v which is better` · `should i get the camry or the accord`
+**Router stress:** **product-boundary probe** — AutoBroker is a QUOTE tool, not a
+recommendation engine. Expected: clarify / redirect to "pin one vehicle to quote",
+and it must **NOT fabricate a pick**. Exposes a boundary the P1–P6 rotation never
+touched (every prior persona already knew its one car).
+
+> **Behavior-axis vector (stochasticity knob).** A persona may also carry a drawn
+> binary axis vector `{terse, skeptical, frustrated, ambiguous,
+> incremental-disclosure, types-budget-unprompted}` so two "P1" runs are not
+> identical. brand-picker draws the vector when it draws the persona; record it.
+
 > **Persona + metro pairing note.** P5 (confused) needs multi-mode quotes — pick a
 > CA/NY/WA metro if you also want a `DOC_FEE_CAP` flag (TX/FL metros won't flag; that
 > is correct behavior). P4 (haggler) needs ≥2 dealers with differentiated OTD — the
@@ -100,6 +151,11 @@ quotes so "Compared 0" is impossible.
 | J6 | **Vague destructive (0.85 trap)** | `clear all this` / `start over` / `send it to everyone` | Clarify reason "…run it explicitly…" + `clarify-run-explicit` button (`router.ts:265-270`); then click — skill's OWN gate renders, nothing pre-approved |
 | J7 | **Question-not-command** | `how much should I pay for this?` / `is this a good deal?` | `none` → clarify, calm assistant turn, no run |
 | J8 | **Re-ask after clarify** | After any clarify, rephrase more directly | Second clearer message launches — proves clarify is recoverable, not a wall |
+| J9 | **Multi-intent run-on** | `find dealers, get quotes, tell me which is cheapest, and is leasing better?` | Router picks ONE skill (`router.ts:273-279`); model-extracted `params` are deliberately dropped (`router.ts:143-148`) → assert the **dropped intents are acknowledged/told-back, not silently lost**. The most common real phrasing shape |
+| J10 | **Type-while-running** | Send a skill message, then send a 2nd freeform message **before the first run reaches a terminal state** | Composer is enabled while merely `running` (only a pending gate disables it, `ChatRail.tsx:181`) → a 2nd `POST /api/route` spawns a **concurrent run**. NEW territory. **Record behavior; this is an OBSERVATION, not a pass/fail gate** — queue vs concurrent vs soft-block is undefined, flag for owner |
+| J11 | **Paste a dealer email** | Paste a multi-line quote email into the chat rail | `dealer_reply_extract` reads the DB inbox, NOT pasted text → assert it does **not** mis-route there; if treated as intake prose, budget/phone must be stripped (inv #9) |
+| J12 | **Stream-of-consciousness (150+ words)** | One rambling paragraph with budget, phone, trade-in buried inside | Assert intent extracted AND budget/phone stripped from intake prefill (inv #9; the freeform-prefill schema excludes email/phone/budget) |
+| J13 | **Ignore the gate** | Open a gate, do NOT decide, click a Canvas tab, come back | Assert composer disabled while gate pending; gate stays pending and decidable; returning lets you decide normally |
 
 ---
 
@@ -145,6 +201,9 @@ If the chosen persona doesn't naturally trigger one, add a targeted message.
 | E8 | Off-mode quote surfacing | P5: `show me cash too` / `compare finance vs lease vs cash` | Cash/unspecified folded into right bucket, no "Compared 0" (FINDING J/A5) |
 | E9 | `no_lead_submitted` anchor | Ask `check my inbox` before any lead_submit | StopCard `no_lead_submitted` "submit a lead first" (`messageModel.ts:266`) |
 | E10 | Re-ask recovery | After any clarify, rephrase directly | Second message launches — clarify is not a wall |
+| E11 | Out-of-scope: financing advice | `can you finance this?` / `should i put more down` | `none`→clarify; assistant does NOT give loan advice or fabricate terms (product boundary) |
+| E12 | Out-of-scope: ranking rationale | `why does this dealer rank #1?` | `none`→clarify or a calm explanation of the existing rank; NO new run, NO fabricated reason |
+| E13 | Out-of-scope: trade-in / negative equity | `i still owe 4k on my trade, does that change anything` | `none`→clarify; gracefully "trade-in not handled" (boundary), NO run, no invented math |
 
 The single happy-path naive-buyer generation reliably hits only LAUNCH. E1–E10 are the
 under-exercised half that this persona+journey rotation is designed to cover.
