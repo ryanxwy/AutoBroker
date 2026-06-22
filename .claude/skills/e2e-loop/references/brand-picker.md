@@ -61,11 +61,11 @@ persona request all three modes mid-sweep to exercise off-mode surfacing
 
 ---
 
-## 4. Persona — ONE of P1–P6
+## 4. Persona — ONE of P1–P9
 
-Full definitions, voice, stress, and the E1–E10 edge-behavior table live in
+Full definitions, voice, stress, and the E1–E13 edge-behavior table live in
 `references/ui-lane-personas.md` — do not redefine here. Record the persona ID
-in the report.
+(and, if drawn, the behavior-axis vector) in the report.
 
 | Persona | Stress exercised |
 |---|---|
@@ -75,6 +75,9 @@ in the report.
 | P4 trade-in haggler | negotiation NL; budget-redaction inv #9; use ≥2-dealer metro |
 | P5 lease-vs-finance confused | off-mode surfacing E8; all three finance modes |
 | P6 ESL/terse texter | typo robustness; destructive downgrade |
+| P7 payment-buyer | $/mo tunnel-vision; inv #9 (monthly cap = budget, never render) |
+| P8 anxious/can't-afford | emotion→`none`→clarify; give-up→empty-state graceful |
+| P9 undecided cross-shopper | product boundary: quote tool not recommender; no fabricated pick |
 
 Buyer email: `<firstname>.buyer@example.com`. Phone is fake-by-default (inv #9).
 

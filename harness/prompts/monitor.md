@@ -30,5 +30,5 @@
 - run a skill,
 - **answer a gate** (that's the Driver, under policy).
 
-<!-- TODO(phase-0): point at the evaluator module + verdict.json schema once
-     they exist under harness/. -->
+<!-- The anchor evaluator now exists: harness/evaluator.ts (the AnchorSpec union +
+     the verdict.json shape it builds). -->

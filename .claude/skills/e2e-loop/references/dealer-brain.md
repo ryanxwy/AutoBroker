@@ -66,6 +66,45 @@ After `dealer_web_lead_submit`:
    These audit firings are **correct behavior**, not bugs. Do not add them to
    the backlog.
 
+   **Archetype rotation (A1–A20) — draw a varied set, not 4 clean quotes.** Real
+   first-touch dealer email rarely carries a clean itemized quote — ~74% of first
+   replies have no price at all (Hyperleap). Each round 0, draw ~4 archetypes
+   spanning at minimum: 1 no-price/stall, 1 fee-loaded, 1 audit-firing, 1 clean
+   control. This wakes audit codes the 3-code default never fires.
+
+   | # | Archetype | Reply behavior | Stress |
+   |---|---|---|---|
+   | A1 | BDC auto-reply | instant generic "thanks!", ZERO numbers, books a visit | `no_quote`: extractor writes **0 rows, no error** |
+   | A2 | Stall / come-in | warm, no numbers, then silent | `dealer_stalls`; aged past silence → thread drops |
+   | A3 | Price-only tease | nice selling price, OMITS doc fee + tax | `MISSING_BREAKDOWN` |
+   | A4 | Lump OTD only | `"$38,420 out the door, best I can do"` | `MISSING_BREAKDOWN` |
+   | A5 | Tax bundled into TT&L | itemized but tax folded → `sales_tax` null | `MATH_SANITY` **null-skip guard** (NOT a firing) |
+   | A6 | Math-inconsistent | itemized, non-null tax, sum ≠ stated OTD (±$1) | `MATH_SANITY` **fires** |
+   | A7 | Doc-fee markup | clean breakdown, doc fee $599/$899 in a CA/NY/WA metro | `DOC_FEE_CAP` (**pin a capped-state metro**) |
+   | A8 | Add-on stack | `nitrogen $599 / paint protect $895 / VIN etch $299` | `ADD_ON_*` dynamic code (dormant) |
+   | A9 | Hidden add-on | markup disguised as a **non-keyword** name (`"reconditioning"`, `"lot fee"` — NOT `"prep"`, which IS a listed keyword) | edge: ADD_ON keyword-table completeness |
+   | A10 | Market adjustment / ADM | one `"$995 market adjustment"` line | `DEALER_FEE_OUTLIER` (needs ≥1 cheap peer for a median) |
+   | A11 | Finance + lease two-mode | finance (APR/term/down/mo) + lease (MF/fees/mo) | 2 `dealer_quotes` rows, one message, keyed `(source_gmail_message_id, financing_mode)` |
+   | A12 | Clean compliant quote | honest baseline (current default) | control, fires nothing |
+   | A13 | Payment-only | `"just $429/mo!"`, no OTD, no selling price | monthly-without-total handling |
+   | A14 | Scarcity / just-sold | `"that trim was allocated — I have a higher one, here's the price"` | `quote_compare` same-trim vs mismatch ranking |
+   | A15 | Counters high, holds | after buyer cites a competing OTD, quotes clearly HIGHER, won't budge | multi-round nego + re-extract chain |
+   | A16 | Matches | matches competing OTD, same trim, "when can you come in" | price-drop chain → best-OTD update |
+   | A17 | Adds fees on the counter | "matches" selling price but adds ADM + nitrogen so true OTD RISES | `dealer_adds_fees` + OTD-rises detection |
+   | A18 | Contact-flip | `"Hi, this is Sam taking over for Jordan"` | contact-flip 2nd-suspend (needs `/__e2e/inject_contact`) |
+   | A19 | Competing-name lure | `"who quoted you that? I'll beat it"` | `competing_name_leak` → buyer gives NUMBER only (keep — realistic) |
+   | A20 | F&I back-end upsell | after price, pushes warranty/GAP "protect your investment" | budget redaction; F&I must NOT be eaten as vehicle OTD |
+
+   **Audit-mapping discipline (verified):** only **A3,A4,A5,A6,A7,A8,A10,A17**
+   touch `audit.ts`. The other 9 (A1,A2,A13,A14,A15,A16,A18,A19,A20) are
+   extraction-outcome / timing / compare-ranking / negotiation / redaction
+   behaviors — do NOT expect an audit firing from them.
+
+   **Disappearance directive (prompt-only):** of the ≤4 dealers, leave **≥1
+   silent the whole run** and **≥1 replying only after the buyer's follow-up** —
+   so the skip / cold-thread / silent-thread-closeout paths run. Ghosting is the
+   mainstream real experience and is structurally untested today.
+
 2. **POST `/__e2e/inject_replies`** `{ profileId, replies:[…] }`. **Record
    the full `applied.threadIds[]` array** (`[{ dealerName, from, threadId }]`)
    — this is the only source of valid threadIds; you cannot mint your own.

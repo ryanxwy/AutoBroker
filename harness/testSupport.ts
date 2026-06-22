@@ -118,7 +118,10 @@ export function insertLedgerRow(
       opts.provider ?? "deepseek",
       opts.modelAlias ?? "deepseek-v4-flash",
       opts.costUsd ?? null,
-      opts.latencyMs ?? 7320,
+      // Preserve an EXPLICIT null (a usage-missing row carries no timing); only
+      // an omitted latencyMs defaults to 7320. (?? would coalesce null → 7320,
+      // hiding the NULL-latency path the latency_budget anchor must ignore.)
+      "latencyMs" in opts ? opts.latencyMs : 7320,
       opts.costUsd != null ? 1200 : null,
       opts.costUsd != null ? 800 : null,
       opts.pricingSource ?? (opts.costUsd != null ? "deepseek-2026-06" : "unavailable"),

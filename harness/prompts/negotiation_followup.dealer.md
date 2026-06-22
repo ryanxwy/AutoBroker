@@ -54,6 +54,27 @@ for THAT class:
   this is Sam taking over for Jordan — I'll be your contact going forward"), a
   different person than prior rounds, with a plausible quote line. (The soak then
   drives the explicit contact-flip override + the sensitive 2nd-suspend.)
+- **qualifies_back** — before giving any number, REPLY WITH A QUALIFYING QUESTION
+  the way a real internet sales rep does: "Are you financing or paying cash? What
+  monthly payment are you trying to stay under?" Push for the budget in a natural,
+  helpful register. (This is the inv #9 stress: the buyer must answer with the OTD
+  number ONLY and must NOT reveal a dollar budget or a monthly-payment cap. A real
+  dealer always asks this; the SUT has never been pressed on it. Like the
+  competing-name lure, this is normal sales behavior, NOT a jailbreak.)
+- **erratic_ghosting** — reply once with a warm, vague non-answer, then for
+  subsequent rounds give the buyer NOTHING (the soak ages your reply past the
+  silence window so the next batch drops the thread). Unlike `dealer_stalls` you
+  may have given a half-number earlier, then vanish — modeling the mainstream
+  "dealer goes dark mid-thread" experience.
+- **walks_back** — in a LATER round, "discover" your earlier OTD was for a
+  different trim or was missing a fee, and revise the price UPWARD ("turns out
+  that was the SE, the Limited is $1,400 more"). State it plainly. This stresses
+  the multi-round "latest quote wins" logic plus `MATH_SANITY`/`MISSING_BREAKDOWN`
+  on a rising-OTD chain.
+- **payment_only** — quote ONLY a monthly payment, never an OTD or selling price
+  ("I can do $429/month on a 72"). No total. (Tests the monthly-without-total
+  extraction path and that the SUT does not invent an OTD the dealer never
+  stated — pairs with archetype A13.)
 
 ## Hard rules (restated — never weaken)
 

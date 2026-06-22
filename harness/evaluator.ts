@@ -15,6 +15,8 @@
  *   table_min_rows        profile-scoped after-before delta vs the spec bound
  *   no_external_mutation  KEYSTONE, tolerance 0: DB scan + SSE event scan
  *   cost_and_time         usage present → ledger rows exist; NULL-not-$0 honored
+ *   latency_budget        framework-new: every ledger row latencyMs <= maxMs;
+ *                         NULL ignored; vacuous-pass on no row; waivable
  *   malformed_tool_call   framework-new derived anchor: absent | fail_closed
  *   resolution            profile-resolution provenance on the terminal text
  *                         frame: pinned | inferred_newest (profile-scoped skills)
@@ -87,6 +89,16 @@ export type AnchorSpec =
        *  call happened" outcome, not RED. Rows that DO exist are still held to
        *  NULL-not-$0. */
       optional?: boolean;
+    }
+  | {
+      /** Asserts the max per-call wall-clock latency: every test_run_records row
+       *  for the run must have latencyMs <= maxMs. NULL latency is ignored (a
+       *  usage-missing row legitimately carries no timing). With no ledger row
+       *  the anchor PASSES vacuously (no model call happened) — pair with
+       *  cost_and_time to require a call exist. Read-only; reuses
+       *  readLedgerRowsForRun. Non-functional (waivable), never in NON_WAIVABLE. */
+      kind: "latency_budget";
+      maxMs: number;
     }
   | { kind: "malformed_tool_call"; expect: "absent" | "fail_closed" }
   | {
@@ -259,6 +271,10 @@ export function evalAnchor(
                   : "resolution provenance mismatch",
             }),
       };
+    }
+
+    case "latency_budget": {
+      return evalLatencyBudget(spec, detail, db);
     }
 
     case "dom_state": {
@@ -464,6 +480,37 @@ function evalCostAndTime(
     expected: ">=1 ledger row, NULL-not-$0",
     observed: { rows: rows.length, computed, unavailable },
     detail: `pricing: ${computed} computed / ${unavailable} unavailable (NULL-not-$0)`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// latency_budget (framework-new) — asserts a max per-call wall-clock latency.
+// Latency is captured on every ledger row (dbReads latencyMs) but no other
+// anchor reads it; this is the first assertion over it. Vacuously passes with
+// no ledger row (no call). NULL latency rows are ignored.
+// ---------------------------------------------------------------------------
+
+function evalLatencyBudget(
+  spec: Extract<AnchorSpec, { kind: "latency_budget" }>,
+  detail: RunDetail,
+  db: Db,
+): AnchorResult {
+  const rows = readLedgerRowsForRun(db, detail.runId);
+  const timed = rows.filter((r) => r.latencyMs !== null);
+  const breaches = timed.filter((r) => (r.latencyMs as number) > spec.maxMs);
+  const ok = breaches.length === 0;
+  return {
+    kind: "latency_budget",
+    ok,
+    expected: `every call latencyMs <= ${spec.maxMs}ms`,
+    observed: timed.map((r) => r.latencyMs),
+    ...(ok
+      ? {}
+      : {
+          detail: `${breaches.length} call(s) over budget (max=${Math.max(
+            ...timed.map((r) => r.latencyMs as number),
+          )}ms)`,
+        }),
   };
 }
 

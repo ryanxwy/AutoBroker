@@ -31,5 +31,6 @@ env vars. You only do what a person clicking the dashboard would do. (Bare-promp
 escape is a known risk — never unset or override any `AUTOBROKER_*` variable, and
 never target the production DB.)
 
-<!-- TODO(phase-0): add the chat-rail selector cheatsheet + session-pin recipe
-     once the dashboard UI is ported. -->
+<!-- The chat-rail selector cheatsheet + session-pin recipe now live in
+     references/skill-pipeline.md (gate testids) and references/brand-picker.md
+     (the pin recipe) — do not re-list them here (DRY). -->

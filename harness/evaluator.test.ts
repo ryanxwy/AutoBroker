@@ -250,6 +250,36 @@ describe("cost_and_time anchor (ledger rows; NULL-not-$0)", () => {
   });
 });
 
+describe("latency_budget anchor (max per-call wall-clock)", () => {
+  it("PASS when every call is within budget", () => {
+    insertLedgerRow(tmp.db, { runId: "r-lat", costUsd: 0.0009, latencyMs: 4000 });
+    const r = evalAnchor({ kind: "latency_budget", maxMs: 8000 }, detailDone("p-1", "r-lat"), tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(true);
+  });
+
+  it("FAIL when a call exceeds the budget", () => {
+    insertLedgerRow(tmp.db, { runId: "r-slow", costUsd: 0.0009, latencyMs: 12000 });
+    const r = evalAnchor({ kind: "latency_budget", maxMs: 8000 }, detailDone("p-1", "r-slow"), tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(false);
+  });
+
+  it("PASS vacuously when no ledger row exists (no model call happened)", () => {
+    const r = evalAnchor({ kind: "latency_budget", maxMs: 8000 }, detailDone("p-1", "r-none"), tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(true);
+  });
+
+  it("ignores NULL-latency rows (usage-missing row carries no timing)", () => {
+    // A null-latency row alongside a within-budget row: still PASS, and `observed`
+    // must reflect ONLY the timed row — proving the null was excluded from the
+    // compared set, not merely coalesced to an in-budget number.
+    insertLedgerRow(tmp.db, { runId: "r-mix", costUsd: null, pricingSource: "unavailable", latencyMs: null });
+    insertLedgerRow(tmp.db, { runId: "r-mix", costUsd: 0.0009, latencyMs: 4000 });
+    const r = evalAnchor({ kind: "latency_budget", maxMs: 8000 }, detailDone("p-1", "r-mix"), tmp.db, ctxFor("p-1"));
+    expect(r.ok).toBe(true);
+    expect(r.observed).toEqual([4000]);
+  });
+});
+
 describe("approval_gate anchor (gate-before-prose)", () => {
   it("force-override run: gate frame precedes the first prose text → PASS", () => {
     const detail = buildRunDetailFromEvents("r-fo", forceOverrideRunFrames(), "done");
