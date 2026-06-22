@@ -29,6 +29,16 @@ come from each slice's `.length`. Pager: `canvas-pager` / `-prev` / `-next` /
 | inventory | `inventory-candidate-row` · `inventory-listing-link` (`<a target=_blank>`) |
 | chat | `chat-input-textarea` |
 
+**SELECT ALL in `inventory_site_scan` + `dealer_web_lead_submit` batch gates** —
+press `batch-select-all`, never a subset. Real users research many dealerships
+(often 100+, across same-car / different-address profiles), so cutting dealers
+destroys the market-research breadth that is the point. Per-site depth and cost
+are bounded by the product itself — `inventory_site_scan` records at most the
+top-20 best-match in-stock cars per website (`PER_DEALER_RECORD_CAP`), and each
+site scans via its built-in make/model/year filter — never by approving fewer
+dealers. (Reverses the 2026-06-18 "scan ~5 nearest" note; see that report's
+corrected Reducibles.)
+
 **KEYSTONE — email_fallback / contact-flip second-suspends have NO dedicated
 testid.** The lead_submit `email_fallback` scope switch (browser.submit→gmail.send)
 and the negotiation `contact-flip` recipient change each render as a *second,
