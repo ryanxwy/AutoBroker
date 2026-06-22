@@ -7,7 +7,7 @@
  * AUTOBROKER_BROWSER_SMOKE=1.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   assertFilterTargetAllowed,
@@ -264,6 +264,25 @@ describe("gatedSubmitForm — the gate/decline/fuse safety branches", () => {
   const approve: Approver = { decide: async () => true };
   const decline: Approver = { decide: async () => false };
 
+  // These submit tests assume real send is ON (the product default) unless a test
+  // overrides it — the global vitest setup brakes the suite, so re-release it here
+  // and restore after each case (the real-send brake is exercised by its own test).
+  let prevRealSend: string | undefined;
+  let prevFuse: string | undefined;
+  beforeEach(() => {
+    prevRealSend = process.env.AUTOBROKER_REAL_SEND;
+    prevFuse = process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
+    process.env.AUTOBROKER_REAL_SEND = "1";
+  });
+  afterEach(() => {
+    if (prevRealSend === undefined) delete process.env.AUTOBROKER_REAL_SEND;
+    else process.env.AUTOBROKER_REAL_SEND = prevRealSend;
+    // Restore the fuse var too — the brake test deletes it, so own its cleanup
+    // here rather than leaking the prior state into later cases in this file.
+    if (prevFuse === undefined) delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
+    else process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = prevFuse;
+  });
+
   it("a declined approver returns {declined} without ever touching the page", async () => {
     const { page, ops } = fakePage();
     const result = await gatedSubmitForm({
@@ -312,6 +331,22 @@ describe("gatedSubmitForm — the gate/decline/fuse safety branches", () => {
       if (prev === undefined) delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
       else process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = prev;
     }
+    expect(ops.some((op) => op.startsWith("click:"))).toBe(false); // never reached the click
+  });
+
+  it("the real-send brake blocks the click even with the fuse disarmed and the approver approving", async () => {
+    const { page, ops } = fakePage();
+    delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS; // fuse disarmed
+    process.env.AUTOBROKER_REAL_SEND = "0"; // braked
+    await expect(
+      gatedSubmitForm({
+        runId: "run-1",
+        page,
+        form: FORM,
+        approver: approve,
+        emitter: NULL_EMITTER,
+      }),
+    ).rejects.toThrow(ExternalMutationsBlockedError);
     expect(ops.some((op) => op.startsWith("click:"))).toBe(false); // never reached the click
   });
 
