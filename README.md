@@ -5,6 +5,11 @@ dealers, pulls real dealer email/web quotes, audits the numbers, and helps you
 negotiate — driven by 17 LLM-backed skills with deterministic code doing the
 load-bearing work and humans approving anything irreversible.
 
+![AutoBroker dashboard — the dual-pane workbench: a Canvas projection of one search (dealers, quotes, replies, inventory) beside a conversational rail that drives the 17 skills.](readme-assets/dashboard.png)
+
+> Shown with the built-in zero-config demo data (`AUTOBROKER_DEMO_SEED=1`) — no
+> API key, Gmail, or network required.
+
 This repository is the **full-TypeScript rebuild** of AutoBroker. It is built
 from the ground up, one skill at a time in dependency × risk order, against the
 frozen legacy Python implementation (`../AutoBroker-Python`) as a read-only
