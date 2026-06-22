@@ -65,7 +65,7 @@ import {
 } from "../orchestrator.js";
 import { personaDirective, type ScenarioClass } from "../taxonomy.js";
 import {
-  assertL1FuseArmed,
+  assertTestModeArmed,
   assertNoExternalMutation,
   combineSoakVerdict,
   runJudge,
@@ -553,8 +553,8 @@ export async function driveSessionConsistencyJourney(
   const routingObservations: RoutingObservation[] = [];
 
   try {
-    // L1-fuse anchor — the armed env recorded into the verdict for every scenario.
-    deterministic.push(assertL1FuseArmed(host.env));
+    // test-mode anchor — the pinned env recorded into the verdict for every scenario.
+    deterministic.push(assertTestModeArmed(host.env));
 
     // The single pinned browser (the orchestrator owns the one UiDriver = one rail
     // = one Mastra Memory thread for the WHOLE journey — the session-consistency
@@ -592,7 +592,7 @@ export async function driveSessionConsistencyJourney(
     // session/projection/routing off the live HTTP surfaces (every read BOUNDED via
     // withTimeout so a throttled server cannot hang). It is best-effort: a leg that
     // cannot reach its surface against real DeepSeek records the limitation and the
-    // journey proceeds — the always-on keystone + L1-fuse + the per-INV assertions
+    // journey proceeds — the always-on keystone + test-mode + the per-INV assertions
     // it COULD score still fold into the verdict.
     const journey = await driveJourneyLaunches({
       driver,

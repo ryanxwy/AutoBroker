@@ -32,8 +32,9 @@ AutoBroker handles sensitive data by design:
   machine. The app is not a multi-tenant service; there is no cloud backend.
 - **Human approval gates on all irreversible actions.** Side effects can
   physically reach `browser.submit` or `gmail.send` only through the L2
-  in-process gate handler, which fails closed. The `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1`
-  env fuse provides a redundant outer ring.
+  in-process gate handler, which fails closed. `AUTOBROKER_MODE` is the single
+  send-control variable: `AUTOBROKER_MODE=test` resolves every send to the local
+  fake mailbox (the floor for all test/CI runs).
 - **Secrets are never committed.** `.env`, `keys.json`, and OAuth tokens are
   in `.gitignore`. CI is verified to contain no real credentials.
 - **The three irreversible skills** (`dealer_web_lead_submit`,

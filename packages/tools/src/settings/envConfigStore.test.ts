@@ -4,10 +4,10 @@
  * Pins the safety surface + keystone mechanics:
  *   - set(editable) → 0600 env.json + live process.env mutation; round-trips
  *     through loadEnvConfigIntoEnv after a simulated restart.
- *   - the L1 fuse can NEVER be disarmed through the store (NonEditableEnvVarError).
+ *   - a read-only-status id can NEVER be written through the store (NonEditableEnvVarError).
  *   - invalid value / unknown id fail loud.
- *   - getEnvConfig never contains a TEST_* id; the fuse reports armed/disarmed
- *     (read fresh from env), never the raw "1"; paths resolve from resolveDataDir.
+ *   - getEnvConfig never contains a TEST_* id; the demo-status row reports on/off
+ *     (read fresh from env); paths resolve from resolveDataDir.
  *   - loadEnvConfigIntoEnv leaves a launch-supplied var untouched when no override.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is mkdtemp'd per test and pointed at via
@@ -36,7 +36,6 @@ const TOUCHED = [
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
   "AUTOBROKER_PER_DEALER_RECORD_CAP",
-  "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
   "AUTOBROKER_DEMO_SEED",
   "AUTOBROKER_TEST_AUTO_APPROVE",
   "AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS",
@@ -150,13 +149,11 @@ describe("gmail_account — the editable-text var (free-text email)", () => {
 });
 
 describe("setEnvConfig — fail-loud guards (in order)", () => {
-  it("refuses to disarm the L1 fuse through the store", () => {
-    expect(() => setEnvConfig("block_external_mutations", "disarmed")).toThrow(
-      NonEditableEnvVarError,
-    );
+  it("refuses to write a read-only-status id (demo_seed) through the store", () => {
+    expect(() => setEnvConfig("demo_seed", "on")).toThrow(NonEditableEnvVarError);
     // No file written, no env mutation as a side effect.
     expect(existsSync(envFile())).toBe(false);
-    expect(process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS).toBeUndefined();
+    expect(process.env.AUTOBROKER_DEMO_SEED).toBeUndefined();
   });
 
   it("rejects a value outside the descriptor's allowedValues", () => {
@@ -188,18 +185,18 @@ describe("getEnvConfig — read-only projection + no hidden ids", () => {
     expect(envVars).not.toContain("AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS");
   });
 
-  it("projects the fuse as armed/disarmed read fresh from env, never the raw '1'", () => {
-    const fuseRow = () => getEnvConfig().find((r) => r.id === "block_external_mutations");
+  it("projects the demo-status row as on/off read fresh from env, never the raw '1'", () => {
+    const demoRow = () => getEnvConfig().find((r) => r.id === "demo_seed");
 
-    expect(fuseRow()?.value).toBe("disarmed");
+    expect(demoRow()?.value).toBe("off");
 
-    process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "1";
-    expect(fuseRow()?.value).toBe("armed"); // read fresh, never cached.
-    expect(fuseRow()?.value).not.toBe("1"); // never the raw value.
-    expect(fuseRow()?.editable).toBe(false);
+    process.env.AUTOBROKER_DEMO_SEED = "1";
+    expect(demoRow()?.value).toBe("on"); // read fresh, never cached.
+    expect(demoRow()?.value).not.toBe("1"); // never the raw value.
+    expect(demoRow()?.editable).toBe(false);
 
-    process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "0";
-    expect(fuseRow()?.value).toBe("disarmed"); // anything but "1" is disarmed.
+    process.env.AUTOBROKER_DEMO_SEED = "0";
+    expect(demoRow()?.value).toBe("off"); // anything but "1" is off.
   });
 
   it("resolves paths from resolveDataDir / the active DB path", () => {

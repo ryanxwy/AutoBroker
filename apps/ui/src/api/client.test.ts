@@ -113,7 +113,7 @@ const ERROR_ENVELOPE_FIXTURE = {
 };
 
 /** GET /api/settings/env → { vars: EnvVarState[] } — one curated row per id, the
- *  editable enum/bool + a read-only fuse status row carrying value "armed". */
+ *  editable enum/bool + a read-only demo-status row carrying value "on". */
 const ENV_CONFIG_FIXTURE = {
   vars: [
     {
@@ -130,17 +130,17 @@ const ENV_CONFIG_FIXTURE = {
       value: "buyer",
     },
     {
-      id: "block_external_mutations",
-      envVar: "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
+      id: "demo_seed",
+      envVar: "AUTOBROKER_DEMO_SEED",
       classification: "read-only-status",
       editable: false,
       allowedValues: null,
       default: null,
       numericMin: null,
       numericMax: null,
-      label: "Safety fuse",
-      tooltip: "Safety fuse.",
-      value: "armed",
+      label: "Demo mode",
+      tooltip: "Demo mode.",
+      value: "on",
     },
   ],
 };
@@ -312,16 +312,16 @@ describe("ApiClient error decode — error envelope → ApiError", () => {
 });
 
 describe("ApiClient — settings / environment", () => {
-  it("getEnvConfig decodes { vars: EnvVarState[] } incl. the armed fuse row", async () => {
+  it("getEnvConfig decodes { vars: EnvVarState[] } incl. the read-only demo row", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch(200, ENV_CONFIG_FIXTURE) });
     const cfg = await client.getEnvConfig();
     expect(cfg.vars).toHaveLength(2);
     expect(cfg.vars[0]!.id).toBe("app_mode");
     expect(cfg.vars[0]!.allowedValues).toEqual(["buyer", "test"]);
-    const fuse = cfg.vars.find((v) => v.id === "block_external_mutations");
-    expect(fuse?.editable).toBe(false);
-    expect(fuse?.value).toBe("armed");
-    expect(fuse?.allowedValues).toBeNull();
+    const demo = cfg.vars.find((v) => v.id === "demo_seed");
+    expect(demo?.editable).toBe(false);
+    expect(demo?.value).toBe("on");
+    expect(demo?.allowedValues).toBeNull();
   });
 
   it("setEnvConfig issues a PUT with { id, value } and tolerates the { ok, vars } echo", async () => {

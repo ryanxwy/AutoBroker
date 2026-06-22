@@ -29,13 +29,13 @@ import { join, resolve, sep } from "node:path";
 
 import { resolveDataDir } from "./db.js";
 import {
-  assertEnvFuseDisarmed,
   withGate,
   type Approver,
   type GateRequest,
 } from "./gate/index.js";
 import { createRealGmailAdapter } from "./gmail/adapter.js";
 import { FakeGmailAdapter } from "./gmail/fakeAdapter.js";
+import { assertFakeMailboxSendOnly } from "./gmail/sendPreflight.js";
 import { isBuyerMode } from "./realSend.js";
 import { type GmailAdapter, type GmailBackend } from "./gmail/types.js";
 import { assertNoBudget, assertUnicodeSafe, BUDGET_PHRASE_PATTERNS } from "./validators.js";
@@ -151,25 +151,17 @@ function unfold(value: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve which backend to build. An explicit argument wins; otherwise the
- * AUTOBROKER_GMAIL_BACKEND env var is read FRESH on every call (never cached at
- * module scope), so a Keys-UI change takes effect with no restart. Unset/empty
- * follows the AUTOBROKER_MODE switch — "real" in buyer mode, "fake" in test mode;
- * anything other than "fake"/"real" is refused loudly.
+ * Resolve which backend to build. An explicit argument wins (the DI / harness
+ * override seam); otherwise the backend is a pure projection of AUTOBROKER_MODE,
+ * read FRESH on every call (never cached at module scope) so a Keys-UI mode
+ * change takes effect with no restart. BUYER-BY-DEFAULT — a normal run resolves
+ * the real backend (still gated by the L2 approval at the send seam);
+ * AUTOBROKER_MODE="test" resolves the fake mailbox instead. There is no separate
+ * backend override var: AUTOBROKER_MODE is the sole send-control switch.
  */
 function resolveBackend(explicit?: GmailBackend): GmailBackend {
-  if (explicit !== undefined) return explicit;
-  const raw = process.env.AUTOBROKER_GMAIL_BACKEND;
-  if (raw === undefined || raw === "") {
-    // No explicit backend: follow the app mode. BUYER-BY-DEFAULT — a normal run
-    // resolves the real backend (still gated by the L2 approval + L1 fuse at the
-    // send seam); AUTOBROKER_MODE="test" resolves the fake mailbox instead.
-    return isBuyerMode() ? "real" : "fake";
-  }
-  if (raw === "fake" || raw === "real") return raw;
-  throw new GmailBackendRefusedError(
-    `AUTOBROKER_GMAIL_BACKEND="${raw}" is not "fake" or "real"`,
-  );
+  if (explicit !== undefined) return explicit; // DI / harness override stays.
+  return isBuyerMode() ? "real" : "fake"; // pure projection of AUTOBROKER_MODE.
 }
 
 /**
@@ -242,7 +234,8 @@ export class GmailTool {
     /** Stable id of the run asking, threaded into the gate request for audit. */
     private readonly runId: string,
     /** Optional explicit backend; otherwise resolved at send time via the
-     *  test override or the factory (which reads the env-selected backend). */
+     *  test override or the factory (which projects the backend from
+     *  AUTOBROKER_MODE). */
     private readonly adapter?: GmailAdapter,
   ) {}
 
@@ -261,11 +254,13 @@ export class GmailTool {
     };
 
     const result = await withGate(req, this.approver, async () => {
-      // L1 outer ring, asserted AGAIN at the network boundary itself so the fuse
-      // holds independently of the L2 path that brought us here. Fires for BOTH
-      // backends now — strictly stronger than gating only the real branch.
-      assertEnvFuseDisarmed("gmail_send");
       const adapter = this.adapter ?? _testAdapterOverride ?? createGmailAdapter();
+      // Mode brake at the network boundary: in test mode assert the RESOLVED
+      // adapter is a genuine Fake (catches an injected/DI real adapter that the
+      // factory was bypassed for). This is the per-seam floor now that
+      // AUTOBROKER_MODE is the sole send-control var — re-asserted here so seam A
+      // matches the brake sendRecord.ts already applies before its send.
+      if (!isBuyerMode()) assertFakeMailboxSendOnly({ adapter });
       const { messageId } = await adapter.send(raw);
       // The discriminator tracks REALITY: it is the kind of the adapter that
       // actually performed the send (injected, test-override, OR factory-built),

@@ -85,8 +85,8 @@ commit**, prefixed `phaseN/<skill>:`.
    `negotiation_followup`, `dealer_closeout_email`. **Fake-send throughout**;
    the commit body carries `[fake-send]` until Phase 5 acceptance is GREEN, and
    human approval is never hidden. The gate stack (native Mastra approval /
-   `suspend()` → L2 in-process gate fail-closed → fallback suspend → the
-   `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` fuse) is mandatory.
+   `suspend()` → L2 in-process gate fail-closed → fallback suspend, over the
+   `AUTOBROKER_MODE` send brake) is mandatory.
 
 ## The 7-step per-skill loop
 

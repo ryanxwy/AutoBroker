@@ -1,7 +1,7 @@
 /**
  * verdict.test.ts — the HYBRID verdict's pure pieces:
  *   - the deterministic-assertion lib over a REAL isolated DB (no_external_mutation
- *     keystone delta, L1-fuse env check, gate-decline zero-write delta, budget
+ *     keystone delta, test-mode env check, gate-decline zero-write delta, budget
  *     redaction substring scan, irreversible fake-send shape).
  *   - the judge-prompt assembler + the strict-JSON judge-verdict parser (fenced /
  *     prose-wrapped tolerant, fail-LOUD on a missing active dim).
@@ -25,7 +25,7 @@ import {
   assertBudgetRedacted,
   assertGateDeclineZeroWrite,
   assertIrreversibleFakeSend,
-  assertL1FuseArmed,
+  assertTestModeArmed,
   assertNoExternalMutation,
   buildJudgeTask,
   combineSoakVerdict,
@@ -92,17 +92,18 @@ describe("assertNoExternalMutation (keystone delta over a real DB)", () => {
   });
 });
 
-describe("assertL1FuseArmed", () => {
-  it("ok when BLOCK=1 and AUTO_APPROVE absent", () => {
-    const r = assertL1FuseArmed({ AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: "1" });
+describe("assertTestModeArmed", () => {
+  it("ok when MODE=test and AUTO_APPROVE absent", () => {
+    const r = assertTestModeArmed({ AUTOBROKER_MODE: "test" });
     expect(r.ok).toBe(true);
   });
-  it("fails when the fuse is disarmed", () => {
-    expect(assertL1FuseArmed({}).ok).toBe(false);
+  it("fails when test mode is not pinned", () => {
+    expect(assertTestModeArmed({}).ok).toBe(false);
+    expect(assertTestModeArmed({ AUTOBROKER_MODE: "buyer" }).ok).toBe(false);
   });
-  it("fails when AUTO_APPROVE is set (even with the fuse armed)", () => {
-    const r = assertL1FuseArmed({
-      AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: "1",
+  it("fails when AUTO_APPROVE is set (even with test mode pinned)", () => {
+    const r = assertTestModeArmed({
+      AUTOBROKER_MODE: "test",
       AUTOBROKER_TEST_AUTO_APPROVE: "1",
     });
     expect(r.ok).toBe(false);
@@ -206,7 +207,7 @@ describe("buildJudgeTask / parseJudgeVerdict", () => {
 describe("combineSoakVerdict (four-tier hybrid fold)", () => {
   const okDet: DeterministicResult[] = [
     { assertionId: "no_external_mutation", ok: true, expected: 0, observed: 0 },
-    { assertionId: "l1_fuse_armed", ok: true, expected: "armed", observed: "armed" },
+    { assertionId: "test_mode_armed", ok: true, expected: "armed", observed: "armed" },
   ];
 
   it("GREEN when all deterministic + judge pass", () => {
@@ -229,9 +230,9 @@ describe("combineSoakVerdict (four-tier hybrid fold)", () => {
     expect(v.defect?.kind).toBe("no_external_mutation");
   });
 
-  it("BLOCKER when the L1 fuse assertion fails", () => {
+  it("BLOCKER when the test-mode assertion fails", () => {
     const v = combineSoakVerdict({
-      deterministic: [{ assertionId: "l1_fuse_armed", ok: false, expected: "armed", observed: "disarmed" }],
+      deterministic: [{ assertionId: "test_mode_armed", ok: false, expected: "armed", observed: "disarmed" }],
     });
     expect(v.verdict).toBe("BLOCKER");
   });

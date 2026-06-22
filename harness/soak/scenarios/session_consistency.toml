@@ -41,13 +41,13 @@ class_name = "sc_happy_path_full_journey"
 stresses = "the buyer drives the whole pinned-session pipeline by NL (intake → geosearch → inventory → inbox → quote_pipeline) — lastRunId monotonic per launch, pinnedProfileId stable, exactly ONE completion row, projection==snapshot, zero external mutation, NL routes each turn to the right skill."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_last_run_id_coherent", "inv_pinned_profile_stable", "inv_single_completion_row", "inv_projection_matches_snapshot", "nl_routing_accuracy", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_last_run_id_coherent", "inv_pinned_profile_stable", "inv_single_completion_row", "inv_projection_matches_snapshot", "nl_routing_accuracy", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["buyer_coherence", "extraction_quality"]
 gate_verbs = ["batch_select_all", "batch_submit", "inbox_select_all", "inbox_submit"]
 
 # --- targeted-VIN-send-approve ------------------------------------------------
 # After the journey, /quote_pipeline with a target_listing_id SUSPENDS at the
-# 'targeted' step; the buyer clickApprovalApprove. Under BLOCK=1 the gated
+# 'targeted' step; the buyer clickApprovalApprove. In test mode the gated
 # fake-send returns blocked (messages Δ=0) but the LOCAL dealer_quotes record
 # lands (idempotent). The suspend payload IS the resume contract.
 [[scenarios]]
@@ -57,7 +57,7 @@ class_name = "sc_targeted_vin_send_approve"
 stresses = "targeted-VIN SEND approve: the run suspends at 'targeted', the suspend payload {kind:'approval',sensitive:true,vin,dealerId,listingId,reason:'targeted_otd_send'} is the resume contract, approve → fake-send fuse-blocked (messages Δ=0) + local dealer_quotes record lands (idempotent), budget never leaks into the ask body."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_suspend_payload_resume_contract", "inv_idempotent_re_run", "inv_budget_redaction", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_suspend_payload_resume_contract", "inv_idempotent_re_run", "inv_budget_redaction", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["buyer_coherence"]
 gate_verbs = ["approval_approve"]
 
@@ -72,7 +72,7 @@ class_name = "sc_targeted_vin_send_decline"
 stresses = "targeted-VIN SEND decline: clickApprovalDeny → zero outbound AND zero record write (dealer_quotes/messages/audit_log Δ=0), the declined outcome projects to 'declined'. No confirmation → zero write."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_decline_zero_write", "inv_projection_matches_snapshot", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_decline_zero_write", "inv_projection_matches_snapshot", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["buyer_coherence"]
 gate_verbs = ["approval_deny"]
 
@@ -88,7 +88,7 @@ class_name = "sc_freeform_while_suspended_hazard"
 stresses = "FIXED session-consistency hazard (commit 8863d11): while quote_pipeline is suspended at 'targeted', a freeform typed into the rail is REFUSED (rail disabled) → NO rogue intake forks, the run stays suspended, last_run_id still points at the suspended run."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_id_coherent", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_id_coherent", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["buyer_coherence"]
 gate_verbs = ["approval_approve"]
 
@@ -103,7 +103,7 @@ class_name = "sc_freeform_while_suspended_batch"
 stresses = "FIXED no-fork hazard on a DIFFERENT suspend kind: while inventory_site_scan is at batch_review, a freeform into the rail is refused (rail disabled) → no rogue fork, the batch_review run stays suspended and answerable via the snapshot."
 buyer_model = "opus"
 dealer_needed = false
-deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_id_coherent", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_id_coherent", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = ["batch_select_all", "batch_submit"]
 
@@ -118,7 +118,7 @@ class_name = "sc_slash_while_suspended"
 stresses = "FIXED slash-while-suspended: a '/dealer_geosearch' typed while quote_pipeline is suspended is refused (rail disabled) — no new run binds the rail, last_run_id stays on the suspended run."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_id_coherent", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_id_coherent", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = ["approval_approve"]
 
@@ -135,7 +135,7 @@ class_name = "sc_scrape_oem_suspend_reap"
 stresses = "the scrape child suspends on an OEM first-encounter → the orchestrator cancel-reaps it (status='canceled', never floated across its boundary), scrape excluded from completed_steps, final_state='partial', next_action → /incentive_scrape; then a direct /incentive_scrape resolves the gate via buttons."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_scrape_child_reaped", "inv_single_completion_row", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_scrape_child_reaped", "inv_single_completion_row", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = ["approval_approve", "approval_deny"]
 
@@ -150,7 +150,7 @@ class_name = "sc_pin_required_stop_in_journey"
 stresses = "quote_pipeline NEVER infers (invariant #6): even with exactly 1 active profile an UNPINNED launch STOPs with pin_required; the buyer pins via Searches and re-launches. 0 active → intake CTA, 2+ → pick by vehicle name."
 buyer_model = "opus"
 dealer_needed = false
-deterministic_assertions = ["inv_pinned_profile_stable", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_pinned_profile_stable", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = ["profile_stop_pick", "profile_stop_intake_cta"]
 
@@ -167,6 +167,6 @@ class_name = "sc_restart_reattach_mid_suspend"
 stresses = "restart-reattach mid-suspend (INV-7): a server restart while quote_pipeline is suspended → the SAME run reattaches off mastra.db with a FRESH decision_id and resumes to terminal, completed steps do NOT re-run (exactly one completion row), last_run_id survived the restart (durable bridge), idempotent form-decision (200/409/410)."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["inv_restart_reattach", "inv_last_run_id_survives_restart", "inv_single_completion_row", "inv_idempotent_form_decision", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["inv_restart_reattach", "inv_last_run_id_survives_restart", "inv_single_completion_row", "inv_idempotent_form_decision", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = ["approval_approve"]

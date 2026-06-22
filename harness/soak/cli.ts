@@ -18,7 +18,7 @@
  * The lane is OAuth-only by nature: `soak run`/`suite` refuse to start when ANY
  * provider api key is present in env (the claude child must use the Keychain
  * subscription, not an api key). It sets the isolated AUTOBROKER_DATA_DIR under
- * ~/.autobroker-ts/soak-runs/<ts>/ and arms the L1 fuse via the orchestrator.
+ * ~/.autobroker-ts/soak-runs/<ts>/ and pins AUTOBROKER_MODE=test via the orchestrator.
  *
  * Dependency wall: harness layer. Reuses the soak modules; no framework, no DB
  * write outside the sanctioned seed path, no playwright import (the orchestrator

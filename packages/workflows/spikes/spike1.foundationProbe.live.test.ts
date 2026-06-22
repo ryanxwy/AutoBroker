@@ -47,7 +47,7 @@
  * Run live:
  *   set -a; . <repo>/.env; set +a; \
  *   AUTOBROKER_SPIKE_LIVE=1 MASTRA_TELEMETRY_DISABLED=1 \
- *   AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 \
+ *   AUTOBROKER_MODE=test \
  *   pnpm --filter @autobroker/workflows exec vitest run \
  *     spikes/spike1.foundationProbe.live.test.ts
  *

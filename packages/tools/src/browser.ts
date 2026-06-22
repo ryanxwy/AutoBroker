@@ -37,7 +37,6 @@ import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page, Response } from "playwright";
 import { classifyBlockSignature } from "./blockSignature.js";
 import {
-  assertEnvFuseDisarmed,
   ExternalMutationsBlockedError,
   withGate,
   type Approver,
@@ -1503,18 +1502,13 @@ export async function gatedSubmitForm(deps: {
     for (const [name, value] of Object.entries(form.fields)) {
       await page.fill(`[name="${name}"]`, value);
     }
-    // Mode brake: in test mode the dealer form submit is blocked the same way
-    // the L1 fuse blocks it — no network click; the lead-submit workflow maps the
-    // ExternalMutationsBlockedError to a recorded FAKE submission. We REUSE that
-    // error type deliberately so the existing fake-record path handles the test
-    // case identically (the message names the fuse, but the outcome — record a
-    // fake submission, never click — is what matters). (In a harness context the
-    // armed fuse blocks earlier, in requestApproval, so this is reached only when
-    // the fuse is disarmed but the mode is test.)
+    // Mode brake at the click boundary: in test mode the dealer form submit is
+    // refused — no network click; the lead-submit workflow maps the
+    // ExternalMutationsBlockedError to a recorded FAKE submission, so the
+    // existing fake-record path handles the test case identically (the outcome —
+    // record a fake submission, never click — is what matters). AUTOBROKER_MODE
+    // is the sole send-control var: this `!isBuyerMode()` brake is the floor.
     if (!isBuyerMode()) throw new ExternalMutationsBlockedError("dealer_form_submit");
-    // L1 outer ring, asserted AGAIN at the click boundary itself so the fuse
-    // holds even if a bug ever found a way around the L2 path above.
-    assertEnvFuseDisarmed("dealer_form_submit");
     await page.click(form.submitSelector); // the network mutation — gate-approved only
     emitter.action("submit", form.url);
     return { submitted: true as const };

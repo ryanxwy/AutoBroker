@@ -1,19 +1,19 @@
 # dealer_web_lead_submit.ui_approve.func.toml — the X1 fake-submit HAPPY PATH,
-# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1).
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test).
 # Approving a web-form dealer at the batch card writes EXACTLY ONE web_form
-# lead_submissions row (the fake-submit LOCAL record — the L1 fuse blocked the
-# real POST), ZERO messages (a web-form dealer never emails), and the keystone
-# stays clean via allow_fake_outbound (the fake-submit row is a legal fake
-# outbound, NOT a real mutation — invariant #1).
+# lead_submissions row (the fake-submit LOCAL record — the test-mode browser
+# brake refused the real POST), ZERO messages (a web-form dealer never emails),
+# and the keystone stays clean via allow_fake_outbound (the fake-submit row is a
+# legal fake outbound, NOT a real mutation — invariant #1).
 #
 #   step 1  install lead_submit_ready + pin the profile (pin_required).
 #   step 2  "/dealer_web_lead_submit" → the batch card renders both bound dealers;
 #           the driver APPROVES the web-form dealer (Jim Click Hyundai) and SKIPS
 #           the no-form dealer (Tucson Kia), then submits. The injected scout
 #           reports a known-platform form for Jim Click (NO LLM); the gated
-#           submit hits the armed fuse → fuse_blocked → the fake-submit web_form
-#           row. Terminal `done`; +1 lead_submissions EXACT; messages Δ=0 EXACT;
-#           keystone clean with allow_fake_outbound; no malformed tool call.
+#           submit hits the test-mode brake → fuse_blocked → the fake-submit
+#           web_form row. Terminal `done`; +1 lead_submissions EXACT; messages
+#           Δ=0 EXACT; keystone clean with allow_fake_outbound; no malformed tool call.
 
 [meta]
 id = "dealer_web_lead_submit_ui_approve"

@@ -49,7 +49,7 @@ import {
 } from "../orchestrator.js";
 import { personaDirective, type ScenarioClass } from "../taxonomy.js";
 import {
-  assertL1FuseArmed,
+  assertTestModeArmed,
   assertNoExternalMutation,
   combineSoakVerdict,
   runJudge,
@@ -470,8 +470,8 @@ export async function driveIntakeScenario(opts: DriveIntakeOpts): Promise<DriveI
   let judge: JudgeDimResult[] = [];
 
   try {
-    // L1-fuse anchor — the armed env recorded into the verdict for every scenario.
-    deterministic.push(assertL1FuseArmed(host.env));
+    // test-mode anchor — the pinned env recorded into the verdict for every scenario.
+    deterministic.push(assertTestModeArmed(host.env));
 
     // The single pinned browser (the orchestrator owns the one UiDriver).
     driver = await UiDriver.launch({

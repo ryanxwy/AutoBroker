@@ -447,8 +447,10 @@ export interface SubmitOneArgs {
 }
 
 /** The per-dealer submit verdict the router branches on. `submitted` → web_form
- *  recorded; `fuse_blocked` → the L1 fuse fired (the fake-submit, still recorded
- *  web_form); `needs_fallback` → no usable form / captcha → email fallback. */
+ *  recorded; `fuse_blocked` → the test-mode brake fired (the fake-submit, still
+ *  recorded web_form); `needs_fallback` → no usable form / captcha → email
+ *  fallback. (The `fuse_blocked` kind name is retained for stability; it now
+ *  signals the AUTOBROKER_MODE=test brake, not an L1 fuse.) */
 export type SubmitVerdict =
   | { kind: "submitted" }
   | { kind: "fuse_blocked" }
@@ -456,13 +458,13 @@ export type SubmitVerdict =
 
 /** The REAL per-dealer gated-submit LOGIC: open a page, navigate the form URL
  *  (read), then the ONE Approver-holding call `session.submitForm` — the only
- *  path to a real form submission. Under BLOCK=1 the L1 fuse throws an
+ *  path to a real form submission. In test mode the mode brake throws an
  *  ExternalMutationsBlockedError BEFORE fill/click → caught here as fuse_blocked
  *  (the expected fake-submit). A blocked navigation resolves no form → needs the
- *  email fallback (the gated submit is NEVER attempted). Disarmed offline: the
- *  fill+click runs against the FAKE/stubbed session → submitted. Holds the
+ *  email fallback (the gated submit is NEVER attempted). In buyer mode offline:
+ *  the fill+click runs against the FAKE/stubbed session → submitted. Holds the
  *  APPROVED approver (the human already approved at the batch_review suspend);
- *  the fuse is the real floor. */
+ *  the test-mode brake is the real floor. */
 export async function submitOneWithSession(deps: {
   session: BrowserSession;
   runId: string;
@@ -1206,9 +1208,9 @@ const submitStep = createStep({
         continue;
       }
 
-      // THE ONE Approver-holding call. Under BLOCK=1 the L1 fuse throws BEFORE
-      // fill/click → fuse_blocked (the expected fake-submit). Offline disarmed:
-      // the real fill+click runs against the FAKE/stubbed session → submitted.
+      // THE ONE Approver-holding call. In test mode the mode brake throws BEFORE
+      // fill/click → fuse_blocked (the expected fake-submit). In buyer mode the
+      // real fill+click runs against the FAKE/stubbed session offline → submitted.
       const form = leadFormFor(state, dealer);
       const verdict = await deps().submitOne({
         runId,

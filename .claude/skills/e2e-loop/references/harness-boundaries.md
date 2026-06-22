@@ -24,8 +24,7 @@ Wait for this line; **record `dataDir`**.
 | `AUTOBROKER_DB` | **deleted** — no stray override |
 | `NODE_ENV` | `test` — arms the intake-deps seam guard |
 | `AUTOBROKER_TEST_AUTO_APPROVE` | **deleted — NEVER set** (CLAUDE.md inv #11; keeps decline path live) |
-| `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS` | `"1"` — L1 fake-send fuse |
-| `AUTOBROKER_GMAIL_BACKEND` | `"fake"` |
+| `AUTOBROKER_MODE` | `"test"` — the sole send-control variable; every send resolves fake/local |
 | `DEEPSEEK_API_KEY` | **not pinned** — boot's `loadDotEnvKeys` reads the real key from `.env` (no-clobber); **LLM lane is live** |
 
 Result: real server + real built UI + isolated throwaway DB (never touches

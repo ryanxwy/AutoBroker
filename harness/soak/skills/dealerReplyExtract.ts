@@ -59,7 +59,7 @@ import { externalMutationDbCount, readLedgerRowsForRun, type LedgerRow } from ".
 import { spawnClaudeAgent, type ClaudeModel, type ExecImpl } from "../claudeAgent.js";
 import type { ScenarioClass } from "../taxonomy.js";
 import {
-  assertL1FuseArmed,
+  assertTestModeArmed,
   assertNoExternalMutation,
   combineSoakVerdict,
   type DeterministicResult,
@@ -885,11 +885,11 @@ export async function runLiveReplyExtract(opts: {
 export interface RunReplyExtractSoakOpts {
   scenario: ScenarioClass;
   /** The isolated case DB path (the caller owns AUTOBROKER_DB/AUTOBROKER_DATA_DIR
-   *  pinning + arms the L1 fuse). */
+   *  pinning + pins test mode). */
   dbPath: string;
   /** The pinned profile id (bootstrapCaseDb created it). */
   profileId: string;
-  /** The env handed to the run (the L1-fuse anchor reads it). */
+  /** The env handed to the run (the test-mode anchor reads it). */
   env: NodeJS.ProcessEnv;
   /** The mutation baseline captured before seeding (the no_external_mutation
    *  keystone delta). */
@@ -956,8 +956,8 @@ export async function runReplyExtractSoak(
   const deterministic: DeterministicResult[] = [];
   let persistedRows: Array<Record<string, unknown>> = [];
   try {
-    // The keystone + L1 fuse (always-on floor; reused from verdict.ts).
-    deterministic.push(assertL1FuseArmed(opts.env));
+    // The keystone + test-mode floor (always-on; reused from verdict.ts).
+    deterministic.push(assertTestModeArmed(opts.env));
     deterministic.push(assertNoExternalMutation({ db, baseline: opts.baseline }));
 
     const ledgerRows = readLedgerRowsForRun(db, run.runId);

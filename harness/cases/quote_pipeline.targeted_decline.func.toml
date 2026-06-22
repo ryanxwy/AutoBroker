@@ -1,7 +1,7 @@
 # harness/cases/quote_pipeline.targeted_decline.func.toml — FUNCTIONAL lane: the
 # quote_pipeline (O1) TARGETED-VIN SEND keystone Δ=0 decline twin.
 #
-# Run via `pnpm ui:functional` (--fixture, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1,
+# Run via `pnpm ui:functional` (--fixture, AUTOBROKER_MODE=test,
 # NO live LLM). A target_listing_id input branches to the targeted-VIN OTD
 # sub-path (the fan-out is skipped): the orchestrator resolves the listing + its
 # inbound thread, builds the VIN-specific OTD ask, and SUSPENDS the sensitive SEND

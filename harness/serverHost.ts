@@ -27,9 +27,10 @@
  *
  * ISOLATION: AUTOBROKER_DATA_DIR is set by the INVOKING runner (under
  * ~/.autobroker-ts/harness-runs/<ts>/); this host honors it (never overrides to a
- * production path). AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS / MASTRA_TELEMETRY_DISABLED /
- * the provider key are inherited from the runner's env (the runner asserted them in
- * preflight before spawning). AUTOBROKER_TEST_AUTO_APPROVE is never set here.
+ * production path). AUTOBROKER_MODE=test (the sole send-control floor) /
+ * MASTRA_TELEMETRY_DISABLED / the provider key are inherited from the runner's env
+ * (the runner asserted them in preflight before spawning). AUTOBROKER_TEST_AUTO_APPROVE
+ * is never set here.
  *
  * Output: a single JSON line on stdout once listening: { harness_host:"listening",
  * port, dataDir } — the runner parses it (mirrors serve.mjs's contract).
@@ -213,14 +214,14 @@ async function main(): Promise<void> {
   // Never auto-approve — keep the decline path live (the runner asserted this too).
   delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
   // The harness host must NEVER really send. The product is buyer-by-default, so
-  // mark this a harness context, pin test mode, and pin the fake Gmail backend —
-  // ALL unconditionally (the LIVE host is not a fixture lane, but is still a
-  // harness context). AUTOBROKER_HARNESS=1 makes boot's isHarnessContext() force
-  // test mode and the assertTestModeSafe tripwire fire even if a persisted
-  // app_mode tried to flip it; the fake backend is a mode-independent floor.
+  // mark this a harness context and pin test mode — BOTH unconditionally (the
+  // LIVE host is not a fixture lane, but is still a harness context).
+  // AUTOBROKER_HARNESS=1 makes boot's isHarnessContext() force test mode and the
+  // assertTestModeSafe tripwire fire even if a persisted app_mode tried to flip
+  // it. AUTOBROKER_MODE is the sole send-control floor; the Gmail backend
+  // projects to fake from it.
   process.env.AUTOBROKER_HARNESS = "1";
   process.env.AUTOBROKER_MODE = "test";
-  process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
 
   if (FIXTURE_MODE) {
     // Arm the workflows test-only deps seam (it refuses outside a test runner)
@@ -231,10 +232,9 @@ async function main(): Promise<void> {
     // world it proves the save flow against.
     process.env.NODE_ENV = "test";
     process.env.DEEPSEEK_API_KEY ??= "fixture-dummy-not-used";
-    // Pin the Gmail backend to the local fake mailbox: the functional lane never
-    // touches a real inbox, and this satisfies both the adapter factory default
-    // and the fake-mailbox-send-only preflight in fixture mode.
-    process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
+    // Test mode (pinned above) already projects the Gmail backend to the local
+    // fake mailbox, so the functional lane never touches a real inbox and the
+    // fake-mailbox-send-only preflight is satisfied — no separate backend var.
     // STUB THE KEY PROBE: the "Test connection" verb must make ZERO real external
     // calls in the functional lane. Inject a deterministic pass for every id (the
     // candidate is never inspected) so the keys_setup case's Test → pass → Save

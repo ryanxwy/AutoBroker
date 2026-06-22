@@ -239,7 +239,7 @@ describe("openedOnce — opened fires at most once per session", () => {
   });
 });
 
-describe("gatedSubmitForm — the gate/decline/fuse safety branches", () => {
+describe("gatedSubmitForm — the gate/decline/mode-brake safety branches", () => {
   const FORM = {
     url: "https://dealer.example/contact",
     fields: { first_name: "Ada", phone: "(949) 555-0100" },
@@ -268,19 +268,13 @@ describe("gatedSubmitForm — the gate/decline/fuse safety branches", () => {
   // overrides it — the global vitest setup pins test mode, so re-set buyer here
   // and restore after each case (the test-mode brake is exercised by its own test).
   let prevMode: string | undefined;
-  let prevFuse: string | undefined;
   beforeEach(() => {
     prevMode = process.env.AUTOBROKER_MODE;
-    prevFuse = process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
     process.env.AUTOBROKER_MODE = "buyer";
   });
   afterEach(() => {
     if (prevMode === undefined) delete process.env.AUTOBROKER_MODE;
     else process.env.AUTOBROKER_MODE = prevMode;
-    // Restore the fuse var too — the brake test deletes it, so own its cleanup
-    // here rather than leaking the prior state into later cases in this file.
-    if (prevFuse === undefined) delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
-    else process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = prevFuse;
   });
 
   it("a declined approver returns {declined} without ever touching the page", async () => {
@@ -313,31 +307,9 @@ describe("gatedSubmitForm — the gate/decline/fuse safety branches", () => {
     expect(ops).toEqual([]);
   });
 
-  it("the armed L1 env fuse blocks the click even when the approver approves", async () => {
+  it("test mode blocks the click even when the approver approves (the mode-brake floor)", async () => {
     const { page, ops } = fakePage();
-    const prev = process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
-    process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "1";
-    try {
-      await expect(
-        gatedSubmitForm({
-          runId: "run-1",
-          page,
-          form: FORM,
-          approver: approve,
-          emitter: NULL_EMITTER,
-        }),
-      ).rejects.toThrow(ExternalMutationsBlockedError);
-    } finally {
-      if (prev === undefined) delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
-      else process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = prev;
-    }
-    expect(ops.some((op) => op.startsWith("click:"))).toBe(false); // never reached the click
-  });
-
-  it("test mode blocks the click even with the fuse disarmed and the approver approving", async () => {
-    const { page, ops } = fakePage();
-    delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS; // fuse disarmed
-    process.env.AUTOBROKER_MODE = "test"; // test mode
+    process.env.AUTOBROKER_MODE = "test"; // test mode — the sole send-control floor
     await expect(
       gatedSubmitForm({
         runId: "run-1",

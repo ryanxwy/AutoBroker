@@ -15,7 +15,7 @@ class_name = "cold_start_phrasing"
 stresses = "intake_freeform_prefill extraction robustness; the form-still-renders-for-confirm invariant (prefill never persists)."
 buyer_model = "opus"
 dealer_needed = false
-deterministic_assertions = ["no_external_mutation", "l1_fuse_armed", "cost_and_time_attributable"]
+deterministic_assertions = ["no_external_mutation", "test_mode_armed", "cost_and_time_attributable"]
 judge_dims = ["buyer_coherence", "extraction_quality"]
 gate_verbs = []
 
@@ -26,7 +26,7 @@ class_name = "profile_ask_branch"
 stresses = "profile-ASK three-branch (invariant #6): 0 -> STOP intake CTA, 2+ -> STOP picker by vehicle name, 1 -> run."
 buyer_model = "sonnet"
 dealer_needed = false
-deterministic_assertions = ["profile_ask_branch", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["profile_ask_branch", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = ["profile_stop_pick", "profile_stop_intake_cta"]
 
@@ -37,7 +37,7 @@ class_name = "gate_decline_path"
 stresses = "no_external_mutation keystone + zero-write-on-decline; L2 fail-closed single side-effect path; lead_submissions/messages delta=0."
 buyer_model = "sonnet"
 dealer_needed = false
-deterministic_assertions = ["gate_decline_zero_write", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["gate_decline_zero_write", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["gate_render_clarity"]
 gate_verbs = ["batch_decline", "inbox_decline", "approval_deny", "hygiene_decline", "reset_cancel"]
 
@@ -48,7 +48,7 @@ class_name = "session_consistency_hazard"
 stresses = "the #1 session-consistency hazard: one pinned session = one thread = one profile; freeform/slash while suspended must not fork a second intake."
 buyer_model = "opus"
 dealer_needed = false
-deterministic_assertions = ["session_no_fork", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["session_no_fork", "no_external_mutation", "test_mode_armed"]
 judge_dims = []
 gate_verbs = []
 
@@ -59,7 +59,7 @@ class_name = "irreversible_send_fake"
 stresses = "the 3 irreversible skills stay fake-send; email_fallback browser.submit -> gmail.send forces a 2nd suspend re-confirm (invariant #8)."
 buyer_model = "sonnet"
 dealer_needed = false
-deterministic_assertions = ["irreversible_fake_send", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["irreversible_fake_send", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["gate_render_clarity"]
 gate_verbs = ["approval_approve", "approval_deny"]
 
@@ -70,7 +70,7 @@ class_name = "budget_redaction"
 stresses = "communication never includes budget (_redact_budget, invariant #9): the stated budget_max must not appear in a drafted message body."
 buyer_model = "opus"
 dealer_needed = false
-deterministic_assertions = ["budget_redaction", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["budget_redaction", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["budget_leak_paraphrase"]
 gate_verbs = ["approval_approve"]
 
@@ -81,7 +81,7 @@ class_name = "malformed_extraction_f1"
 stresses = "#1244 fail-closed (invariant #4): finish_reason!=tool_calls -> fail closed; no prose-regex execution writing a quote row."
 buyer_model = "sonnet"
 dealer_needed = true
-deterministic_assertions = ["malformed_extraction_fail_closed", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["malformed_extraction_fail_closed", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["extraction_quality", "dealer_realism"]
 gate_verbs = []
 
@@ -92,7 +92,7 @@ class_name = "destructive_typed_confirm"
 stresses = "destructive skills (invariant #10): no confirmation -> zero destruction; hygiene decline at ANY stage = zero writes (atomic)."
 buyer_model = "sonnet"
 dealer_needed = false
-deterministic_assertions = ["gate_decline_zero_write", "no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["gate_decline_zero_write", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["gate_render_clarity"]
 gate_verbs = ["reset_confirm", "reset_cancel", "hygiene_decline"]
 
@@ -103,6 +103,6 @@ class_name = "full_e2e_journey"
 stresses = "intake -> geosearch -> site_scan -> inbox_check -> quote_pipeline -> lead_submit -> negotiation_followup as one pinned session; the 7 memory<->workflow consistency invariants end-to-end."
 buyer_model = "opus"
 dealer_needed = true
-deterministic_assertions = ["no_external_mutation", "l1_fuse_armed", "irreversible_fake_send", "cost_and_time_attributable"]
+deterministic_assertions = ["no_external_mutation", "test_mode_armed", "irreversible_fake_send", "cost_and_time_attributable"]
 judge_dims = ["buyer_coherence", "extraction_quality", "dealer_realism"]
 gate_verbs = ["batch_submit", "inbox_submit", "approval_approve"]

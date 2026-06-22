@@ -2,15 +2,18 @@
  * L2 in-process gate bridge — the load-bearing layer of the four-layer gate
  * stack. THIS IS THE SINGLE SIDE-EFFECT PATH.
  *
- * Four-layer stack (revised 2026-06-03 for the Mastra backbone):
+ * Gate stack (revised 2026-06-03 for the Mastra backbone):
  *   L3  native Mastra tool/step approval or suspend — convenience only,
  *                                        api-key lane only.
  *   L2  THIS in-process gate bridge    — LOAD-BEARING, all lanes, fail-CLOSED,
  *                                        single structured path. (Renamed from
  *                                        the legacy `build_sdk_mcp_server`.)
  *   --  fallback-gate suspend          — workflow re-asks the human.
- *   L1  AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 env fuse — redundant OUTER ring,
- *                                        always armed, NEVER the only floor.
+ *
+ * The send floor is the per-seam `!isBuyerMode()` mode brake (AUTOBROKER_MODE=
+ * "test" resolves every send fake/local), re-asserted at each network boundary;
+ * this gate is the always-on approval layer above it. AUTOBROKER_MODE is the
+ * sole send-control variable.
  *
  * SAFETY INVARIANTS this file physically enforces:
  *   1. A side effect (gmail.send / browser.submit) is reachable ONLY by calling
@@ -22,8 +25,6 @@
  *      it. fail-open == silent-fallback == forbidden.
  *   3. The DENY path returns an explicit decline/cancel verdict with
  *      `autoApprove: false` — the safe default. Approval is never implicit.
- *   4. The L1 env fuse throws BEFORE any network/file mutation, as a redundant
- *      outer ring. It is armed in harness runs; it is NOT the primary floor.
  */
 
 /** Categories of irreversible external action that MUST pass the gate. */
@@ -59,14 +60,16 @@ export interface Approver {
 }
 
 /**
- * L1 env fuse — redundant OUTER ring. Throws before any side effect when
- * AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1. Armed in harness runs; NEVER the sole
- * floor (the structural L2 gate is the primary line of defense).
+ * Test-mode block signal. Thrown by a mutating seam (the browser form-submit
+ * brake) when AUTOBROKER_MODE is not buyer, so the action is refused before it
+ * touches the network. The lead-submit workflow catches this to record a FAKE
+ * submission instead of clicking. (Previously the L1-fuse signal; re-homed as
+ * the mode brake's refusal now that AUTOBROKER_MODE is the sole send-control.)
  */
 export class ExternalMutationsBlockedError extends Error {
   constructor(kind: MutationKind) {
     super(
-      `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS is armed — refusing mutating action "${kind}" before it touches the network.`,
+      `refusing mutating action "${kind}" in test mode (AUTOBROKER_MODE != buyer) before it touches the network.`,
     );
     this.name = "ExternalMutationsBlockedError";
   }
@@ -86,25 +89,6 @@ const VALID_KINDS: ReadonlySet<string> = new Set<MutationKind>([
   "dealer_form_submit",
   "typed_yes_confirm",
 ]);
-
-/** True when the L1 env fuse is armed. Read fresh every call — never cached —
- *  so a subprocess that re-resolves env still sees it. */
-function isEnvFuseArmed(): boolean {
-  return process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS === "1";
-}
-
-/**
- * L1 fuse assertion for the NETWORK BOUNDARY itself. The fuse is a REDUNDANT
- * OUTER ring: it must hold even if a bug ever found a way around the L2
- * `requestApproval` path. Mutating tools therefore call this a second time
- * inside their commit callback, immediately before the actual network/click
- * mutation — making L1 independent of L2 rather than nested inside it.
- */
-export function assertEnvFuseDisarmed(kind: MutationKind): void {
-  if (isEnvFuseArmed()) {
-    throw new ExternalMutationsBlockedError(kind);
-  }
-}
 
 /**
  * Structurally validate an inbound gate request. Returns the request unchanged
@@ -137,8 +121,7 @@ function assertWellFormed(req: unknown): asserts req is GateRequest {
  *
  * Order of defenses, all fail-CLOSED:
  *   (a) structural validation (#1244 detector) — throws on malformed.
- *   (b) L1 env fuse — throws if armed.
- *   (c) approver consult — any non-true / any thrown error => declined.
+ *   (b) approver consult — any non-true / any thrown error => declined.
  */
 export async function requestApproval(
   req: unknown,
@@ -147,12 +130,7 @@ export async function requestApproval(
   // (a) fail-closed on malformed/absent structured request.
   assertWellFormed(req);
 
-  // (b) redundant outer ring — throws before the approver is even consulted.
-  if (isEnvFuseArmed()) {
-    throw new ExternalMutationsBlockedError(req.kind);
-  }
-
-  // (c) consult the approver; treat ANY error or non-true as NOT approved.
+  // (b) consult the approver; treat ANY error or non-true as NOT approved.
   let approved = false;
   try {
     approved = (await approver.decide(req)) === true;

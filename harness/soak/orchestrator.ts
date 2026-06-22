@@ -4,9 +4,9 @@
  * Per scenario the orchestrator:
  *  (1) boots the REAL serverHost child via the SAME path runner.ts uses
  *      (serverHost.ts under tsx) with an ISOLATED AUTOBROKER_DATA_DIR under
- *      ~/.autobroker-ts/soak-runs/<ts>/, the L1 fuse ARMED
- *      (AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1), and AUTOBROKER_TEST_AUTO_APPROVE
- *      DELETED — refusing to start otherwise (the L1-fuse preflight);
+ *      ~/.autobroker-ts/soak-runs/<ts>/, test mode pinned (AUTOBROKER_MODE=test,
+ *      the sole send-control floor), and AUTOBROKER_TEST_AUTO_APPROVE DELETED —
+ *      refusing to start otherwise (the test-mode preflight);
  *  (2) launches ONE UiDriver (the single pinned browser the orchestrator owns);
  *  (3) spawns the claude BUYER (via claudeAgent — pure NL generation, no browser)
  *      to GENERATE the freeform cold-start, then TYPES it via typeInChatRail;
@@ -49,7 +49,7 @@ import {
 } from "./ledger.js";
 import { personaDirective, type ScenarioClass } from "./taxonomy.js";
 import {
-  assertL1FuseArmed,
+  assertTestModeArmed,
   assertNoExternalMutation,
   combineSoakVerdict,
   type DeterministicResult,
@@ -79,7 +79,7 @@ export const DEALER_PROMPT = join(PROMPTS_DIR, "dealer.md");
 export const JUDGE_PROMPT = join(PROMPTS_DIR, "judge.md");
 
 // ---------------------------------------------------------------------------
-// the isolated soak-run host (mirrors runner.startServerHost + arms BLOCK=1)
+// the isolated soak-run host (mirrors runner.startServerHost + pins AUTOBROKER_MODE=test)
 // ---------------------------------------------------------------------------
 
 export interface SoakHostHandle {
@@ -87,16 +87,18 @@ export interface SoakHostHandle {
   apiBase: string;
   dataDir: string;
   dbPath: string;
-  /** The exact env handed to the child (the L1-fuse anchor reads it). */
+  /** The exact env handed to the child (the test-mode anchor reads it). */
   env: NodeJS.ProcessEnv;
   stop: () => Promise<void>;
 }
 
 /**
- * Build the child env for a soak host: the runner's isolation shape PLUS the L1
- * fuse armed (AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1) and AUTOBROKER_TEST_AUTO_APPROVE
- * deleted. Pure so the L1-fuse preflight + the unit test can assert it without a
- * spawn.
+ * Build the child env for a soak host: the runner's isolation shape PLUS test
+ * mode pinned (AUTOBROKER_MODE=test, the sole send-control floor) and
+ * AUTOBROKER_TEST_AUTO_APPROVE deleted. Pure so the test-mode preflight + the
+ * unit test can assert it without a spawn. (The child also boots through
+ * boot.ts, which force-pins test mode for harness contexts; MODE is set here
+ * explicitly so the preflight + ledger anchor read it directly.)
  */
 export function buildSoakHostEnv(parentEnv: NodeJS.ProcessEnv, dataDir: string, dbPath: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
@@ -104,16 +106,17 @@ export function buildSoakHostEnv(parentEnv: NodeJS.ProcessEnv, dataDir: string, 
     AUTOBROKER_DATA_DIR: dataDir,
     AUTOBROKER_DB: dbPath,
     MASTRA_TELEMETRY_DISABLED: "1",
-    // L1 fuse ARMED — the redundant outer ring, always armed for the soak.
-    AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: "1",
+    // Test mode pinned — AUTOBROKER_MODE is the sole send-control floor; the
+    // Gmail backend projects to fake from it, so the soak can never really send.
+    AUTOBROKER_MODE: "test",
   };
   // Keep the gate live to exercise the decline path (never auto-approve).
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;
   return env;
 }
 
-/** Spawn the real serverHost child for a soak run. Refuses to start if the L1
- *  fuse is not armed in the constructed env (the L1-fuse preflight). */
+/** Spawn the real serverHost child for a soak run. Refuses to start if test mode
+ *  is not pinned in the constructed env (the test-mode preflight). */
 export function startSoakHost(opts: {
   dataDir: string;
   dbPath: string;
@@ -122,10 +125,10 @@ export function startSoakHost(opts: {
   mkdirSync(opts.dataDir, { recursive: true });
   const env = buildSoakHostEnv(opts.parentEnv ?? process.env, opts.dataDir, opts.dbPath);
 
-  // L1-fuse preflight: refuse to spawn with the fuse disarmed / AUTO_APPROVE set.
-  const fuse = assertL1FuseArmed(env);
+  // Test-mode preflight: refuse to spawn with test mode unset / AUTO_APPROVE set.
+  const fuse = assertTestModeArmed(env);
   if (!fuse.ok) {
-    return Promise.reject(new Error(`startSoakHost: L1-fuse preflight failed — ${fuse.detail}`));
+    return Promise.reject(new Error(`startSoakHost: test-mode preflight failed — ${fuse.detail}`));
   }
 
   return new Promise<SoakHostHandle>((resolveHost, reject) => {
@@ -235,8 +238,8 @@ export async function runScenario(opts: RunScenarioOpts): Promise<RunScenarioRes
   const deterministic: DeterministicResult[] = [];
 
   try {
-    // L1-fuse anchor (records the armed env into the verdict for EVERY scenario).
-    deterministic.push(assertL1FuseArmed(host.env));
+    // Test-mode anchor (records the pinned env into the verdict for EVERY scenario).
+    deterministic.push(assertTestModeArmed(host.env));
 
     // (2) The single pinned browser.
     driver = await UiDriver.launch({

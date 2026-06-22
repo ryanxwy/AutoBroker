@@ -14,7 +14,7 @@ reuses them, it does not fork them.
 |---|---|---|
 | **scenario** | the edge class (cold_start_phrasing, gate_decline_path, …) | DETERMINISTIC, version-controlled (`scenarios/*.toml`) |
 | **phrasing** | the freeform/dealer text | AGENTIC (the claude buyer/dealer GENERATE it) |
-| **execution** | the per-scenario run | ISOLATED (`AUTOBROKER_DATA_DIR` under `~/.autobroker-ts/soak-runs/<ts>/`, L1 fuse armed, AUTO_APPROVE absent) |
+| **execution** | the per-scenario run | ISOLATED (`AUTOBROKER_DATA_DIR` under `~/.autobroker-ts/soak-runs/<ts>/`, `AUTOBROKER_MODE=test` pinned, AUTO_APPROVE absent) |
 | **verdict** | pass/fail | HYBRID (deterministic DB/state assertions are authoritative; Opus judge rules only the soft dims) |
 | **freeze** | a discovered failure → a regression | DETERMINISTIC (minimize the input, emit a fixed `*.ui_*.toml`) |
 
@@ -143,7 +143,7 @@ pnpm soak e2e --mode nl --scenario sc_happy_path_full_journey
 > the right move is to have the orchestrator COPY `keys.json` into the isolated
 > data dir's `settings/` before boot — NOT to relax `assertOauthOnly`.
 
-(`AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` is armed automatically and
+(`AUTOBROKER_MODE=test` is pinned automatically and
 `AUTOBROKER_TEST_AUTO_APPROVE` is deleted by `buildSoakHostEnv` — never set them.)
 
 ## Hard rule

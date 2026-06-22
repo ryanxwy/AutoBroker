@@ -6,7 +6,7 @@
  * <dataDir>/mastra.db; child B re-attaches from it.
  *
  * Env (inherited from the parent test): AUTOBROKER_DATA_DIR (tmp, isolated),
- * AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1, MASTRA_TELEMETRY_DISABLED=1, PORT=0.
+ * AUTOBROKER_MODE=test, MASTRA_TELEMETRY_DISABLED=1, PORT=0.
  * Imports the BUILT dist (apps/server/dist) — the deterministic step closures are
  * re-registered by module import (runtimeGlue contract).
  */

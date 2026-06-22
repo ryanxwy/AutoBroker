@@ -43,12 +43,16 @@ let tmpDir: string;
 let db: Db;
 let originalDataDir: string | undefined;
 
-/** The env both children inherit: isolated data dir + armed fuse + silent telem. */
+/** The env both children inherit: isolated data dir + test mode + silent telem. */
 function childEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     AUTOBROKER_DATA_DIR: tmpDir,
-    AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: "1",
+    // Test mode pinned — the sole send-control floor (the Gmail backend projects
+    // to fake from it). The child also boots through boot.ts, which force-pins
+    // test mode for any harness context (NODE_ENV=test propagates here); MODE is
+    // set explicitly so the floor never depends solely on the boot heuristic.
+    AUTOBROKER_MODE: "test",
     MASTRA_TELEMETRY_DISABLED: "1",
     PORT: "0",
     // Never auto-approve (keep the gate live); never point at production.

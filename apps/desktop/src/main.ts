@@ -14,9 +14,9 @@
  * Gmail/web-form send is reachable, always behind the per-action human-approval
  * gate (the same server+SPA code as the web form; the shell adds NO second path
  * to any side effect). The DEMO showcase pins test mode (AUTOBROKER_MODE=test)
- * since it runs on seeded sample data. The L1 fuse is no longer auto-armed; set
- * AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 in the environment to opt into the
- * redundant hard kill-switch. MASTRA_TELEMETRY_DISABLED=1 is still always pinned.
+ * since it runs on seeded sample data. AUTOBROKER_MODE is the sole send-control
+ * var: setting it to "test" in the environment keeps every send fake/local.
+ * MASTRA_TELEMETRY_DISABLED=1 is still always pinned.
  *
  * `globalThis.__desktopHook` is a read-only introspection surface for the
  * deterministic smoke suite (smoke/electron.spec.ts): the server pid/port, the
@@ -293,8 +293,8 @@ function startServer(): Promise<number> {
     // reachable, still behind the human-approval gate). The DEMO showcase pins
     // test mode — keyed on the EFFECTIVE demo posture (the dialog flag OR an
     // externally-exported AUTOBROKER_DEMO_SEED), so an already-demo launch is test
-    // too; boot re-applies this server-side as the floor. The L1 fuse is opt-in only
-    // (honored from process.env via the spread above; no longer auto-armed here).
+    // too; boot re-applies this server-side as the floor. AUTOBROKER_MODE is the
+    // sole send-control var (honored from process.env via the spread above).
     ...(demoMode || process.env.AUTOBROKER_DEMO_SEED === "1"
       ? { AUTOBROKER_DEMO_SEED: "1", AUTOBROKER_MODE: "test" }
       : {}),
@@ -306,9 +306,6 @@ function startServer(): Promise<number> {
     MASTRA_TELEMETRY_DISABLED: env.MASTRA_TELEMETRY_DISABLED!,
     ...(env.AUTOBROKER_DEMO_SEED !== undefined ? { AUTOBROKER_DEMO_SEED: env.AUTOBROKER_DEMO_SEED } : {}),
     ...(env.AUTOBROKER_MODE !== undefined ? { AUTOBROKER_MODE: env.AUTOBROKER_MODE } : {}),
-    ...(env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS !== undefined
-      ? { AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS }
-      : {}),
   };
 
   return new Promise<number>((resolvePort, reject) => {

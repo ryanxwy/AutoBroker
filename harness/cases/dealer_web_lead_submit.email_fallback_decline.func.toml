@@ -1,5 +1,5 @@
 # dealer_web_lead_submit.email_fallback_decline.func.toml — the X1 FAIL-CLOSED
-# keystone twin. FUNCTIONAL lane (pnpm ui:functional, BLOCK=1).
+# keystone twin. FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test).
 #
 # The load-bearing proof: the gmail.send scope CANNOT fire without the SECOND
 # (email_fallback) approval. The driver approves the no-form dealer at the batch

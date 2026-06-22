@@ -3,11 +3,11 @@
 > Status: Phase 4 scaffold, 2026-06-03. Owns the **only layer that touches the
 > product DB or external APIs**: in-process tool closures for Gmail, Playwright
 > browser, DB writes, pure calc/validators, and the **L2 in-process gate bridge**
-> (the single side-effect path) plus the **L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS`
-> env fuse**. Layer 4 of the five-layer monorepo
-> (`core → model → workflows → tools → app`). See also the
-> [workflows package](../workflows/README.md) (Layer 3, the Mastra orchestrator
-> that drives this gate).
+> (the single side-effect path). The send floor is the per-seam `AUTOBROKER_MODE`
+> brake (`test` → fake/local at every send seam), the sole send-control variable.
+> Layer 4 of the five-layer monorepo (`core → model → workflows → tools → app`).
+> See also the [workflows package](../workflows/README.md) (Layer 3, the Mastra
+> orchestrator that drives this gate).
 
 ## The side-effect invariant (the whole point of this package)
 
@@ -24,14 +24,14 @@ code path from the model to `gmail.send` or `browser.submit`. Provider built-in
 tools are pinned with `allowedTools` / `tools:[]` so the model cannot reach a
 shell and bypass the gate.
 
-## The four-layer gate stack
+## The gate stack
 
 | Layer | Role |
 | --- | --- |
 | L3 native Mastra approval / `suspend()` | Convenience only, api-key lane only. |
 | **L2 in-process gate bridge** | **Load-bearing. All lanes. fail-CLOSED, single structured path.** (Renamed from the legacy `build_sdk_mcp_server`.) |
 | fallback-gate suspend | Workflow re-asks the human. |
-| L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` | Redundant **outer ring**, always armed in harness runs, **never the only floor**. |
+| `AUTOBROKER_MODE` brake | The send floor: `test` resolves every send fake/local at each seam. The sole send-control variable; `test` is force-pinned for all test/CI contexts. |
 
 ### Fail-CLOSED rules enforced in `src/gate/index.ts`
 

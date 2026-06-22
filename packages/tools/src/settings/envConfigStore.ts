@@ -16,12 +16,9 @@
  *
  * CURATION IS THE SAFETY SURFACE (load-bearing). The descriptor registry below
  * is the single allow-list. It does THREE structural things:
- *   - The L1 safety fuse (AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS) appears ONLY as a
- *     read-only status row: editable=false. There is NO code path in this store
- *     that writes it — setEnvConfig refuses any non-editable id before it ever
- *     reaches the persist/mutate step. The fuse can never be disarmed from here.
- *     Its value is projected as "armed"/"disarmed" read FRESH from process.env,
- *     never the raw "1", and there is no setter for it.
+ *   - AUTOBROKER_MODE (the sole send-control var) is the editable "Mode" row;
+ *     "test" keeps every send fake/local, "buyer" enables real send (still behind
+ *     the per-action human-approval gate). It is the one knob the owner sets here.
  *   - The two test-escape vars (AUTOBROKER_TEST_AUTO_APPROVE,
  *     AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS) have NO descriptor at all — they are
  *     structurally unreachable: not readable through getEnvConfig (no row),
@@ -54,7 +51,6 @@ export type EnvVarId =
   | "chrome_headless"
   | "per_dealer_record_cap"
   // read-only status
-  | "block_external_mutations"
   | "demo_seed"
   // read-only path
   | "data_dir"
@@ -150,19 +146,6 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
       "How many best-match in-stock listings each dealer website records per scan. Higher = more market-research data per site; lower = leaner. Default 20, max 80.",
   },
   {
-    id: "block_external_mutations",
-    envVar: "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
-    classification: "read-only-status",
-    editable: false,
-    allowedValues: null,
-    default: null,
-    numericMin: null,
-    numericMax: null,
-    label: "Safety fuse",
-    tooltip:
-      "Safety fuse: a final block on any real outbound email or dealer-form submit. Shown for your awareness — it can't be switched off from this screen.",
-  },
-  {
     id: "demo_seed",
     envVar: "AUTOBROKER_DEMO_SEED",
     classification: "read-only-status",
@@ -224,9 +207,8 @@ function isValidTextValue(value: string): boolean {
 /** One curated row with its CURRENT effective value, ready for the UI. */
 export interface EnvVarState extends EnvVarDescriptor {
   /** Effective value now. For the editable enum/bool: file override → live
-   *  process.env → descriptor default. For the fuse / demo status: a read-only
-   *  projection ("armed"/"disarmed", "on"/"off"). For paths: the resolved path.
-   *  NEVER the raw "1" for the fuse, and never a hidden id. */
+   *  process.env → descriptor default. For the demo status: a read-only
+   *  projection ("on"/"off"). For paths: the resolved path. Never a hidden id. */
   readonly value: string;
 }
 
@@ -238,9 +220,9 @@ export class UnknownEnvVarError extends Error {
   }
 }
 
-/** Thrown when an id is known but not editable (the fuse / paths / demo). This
- *  is the store-layer defense-in-depth that blocks disarming the fuse, not just
- *  the route schema. */
+/** Thrown when an id is known but not editable (the read-only paths / demo
+ *  status). This is the store-layer defense-in-depth that blocks writing a
+ *  read-only row, not just the route schema. */
 export class NonEditableEnvVarError extends Error {
   constructor(readonly id: string) {
     super(`env var '${id}' is read-only and cannot be set from this store`);
@@ -348,10 +330,6 @@ function resolveActiveDbPath(): string {
  *  resolved paths each call — never cached). */
 function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
   switch (descriptor.id) {
-    case "block_external_mutations":
-      // Read-only status projection — never the raw "1", never a setter. Matches
-      // the gate's fresh read of AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS === "1".
-      return process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS === "1" ? "armed" : "disarmed";
     case "demo_seed":
       return process.env.AUTOBROKER_DEMO_SEED === "1" ? "on" : "off";
     case "data_dir":
@@ -374,8 +352,8 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
 
 /**
  * The curated set with live values — the GET payload. NEVER includes a hidden id
- * (the two TEST_* escapes have no descriptor). The fuse row reports
- * "armed"/"disarmed" read fresh from process.env, never the raw "1".
+ * (the two TEST_* escapes have no descriptor). The demo-status row reports
+ * "on"/"off" read fresh from process.env.
  */
 export function getEnvConfig(): readonly EnvVarState[] {
   const stored = readStoredEnv();
@@ -392,7 +370,7 @@ export function getEnvConfig(): readonly EnvVarState[] {
  * Guards run IN ORDER, all fail-loud:
  *   (a) id must be in ENV_DESCRIPTORS  → else UnknownEnvVarError.
  *   (b) descriptor.editable === true   → else NonEditableEnvVarError. This is
- *       the defense-in-depth that blocks disarming the fuse / writing a path at
+ *       the defense-in-depth that blocks writing a read-only path / status row at
  *       the STORE layer, independent of the route schema.
  *   (c) value must be valid for the class → else InvalidEnvValueError. For an
  *       editable-text var (the Gmail account) that means a well-formed address;

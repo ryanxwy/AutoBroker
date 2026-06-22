@@ -193,7 +193,7 @@ function tomlString(s: string): string {
 function anchorBlockFor(assertion: string): string {
   switch (assertion) {
     case "no_external_mutation":
-    case "l1_fuse_armed":
+    case "test_mode_armed":
     case "gate_decline_zero_write":
     case "irreversible_fake_send":
     case "session_no_fork":
@@ -282,7 +282,7 @@ export function emitCorpusToml(input: EmitCorpusTomlInput): string {
   // The failing assertion's anchor (the regression the soak discovered).
   lines.push(anchorBlockFor(input.failingAssertion));
   // The always-on keystone (every soak step asserts it).
-  if (input.failingAssertion !== "no_external_mutation" && input.failingAssertion !== "l1_fuse_armed") {
+  if (input.failingAssertion !== "no_external_mutation" && input.failingAssertion !== "test_mode_armed") {
     lines.push("");
     lines.push("[[steps.anchors]]");
     lines.push('kind = "no_external_mutation"');

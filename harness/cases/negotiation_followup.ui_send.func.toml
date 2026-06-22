@@ -1,19 +1,18 @@
 # negotiation_followup.ui_send.func.toml — the X2 fake-send HAPPY PATH, FUNCTIONAL
-# lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1, NO live LLM).
-# Approving ONE thread at the batch_review card runs the gated send (L1-fuse-
-# blocked under BLOCK=1 → ZERO messages rows) and then the confirm step's LOCAL
-# threads.state='negotiating' write on the sent thread. The keystone stays clean:
-# the fuse blocks the draft insert BEFORE any row is written, so NO fake-outbound
-# row exists (no allow_fake_outbound flag needed — confirmed: X2 writes no
-# submission row, only a messages draft the fuse prevents).
+# lane (pnpm ui:functional, AUTOBROKER_MODE=test, NO live LLM).
+# Approving ONE thread at the batch_review card runs the gated send (resolves
+# FAKE/local in test mode → ONE outbound messages row) and then the confirm step's
+# LOCAL threads.state='negotiating' write on the sent thread. The keystone stays
+# clean: the fake outbound row is recognized as a legal fake-send row (not an
+# external mutation), and X2 writes no lead-submission row.
 #
 #   step 1  install followup_ready + pin the profile (pin_required).
 #   step 2  "/negotiation_followup" → the batch_review card renders both drafts;
 #           the driver APPROVES Jim Click Hyundai (the "SEND 1") and SKIPS Tucson
-#           Kia, then submits. The gated send hits the armed fuse → {blocked} →
-#           ZERO messages rows; the confirm step writes threads.state='negotiating'
-#           on the sent thread and returns the `sent` outcome (resolution=pinned).
-#           Terminal `done`; messages Δ=0 EXACT; resolution=pinned (the SENT-path
+#           Kia, then submits. The gated send FAKE-sends → ONE messages row; the
+#           confirm step writes threads.state='negotiating' on the sent thread and
+#           returns the `sent` outcome (resolution=pinned). Terminal `done`;
+#           messages Δ=1 EXACT (the one fake send); resolution=pinned (the SENT-path
 #           proof — a decline carries NO resolution); keystone clean; no malformed
 #           tool call.
 #
@@ -24,8 +23,7 @@
 # So resolution=pinned cleanly proves the SEND path ran (the path that drives the
 # state write), distinguishing this from the decline twin. The promoted body's
 # no-budget / no-competing-name red lines are asserted OFFLINE in
-# negotiationFollowup.test.ts (under BLOCK=1 there is NO sent messages row to read
-# the body from in the func lane — the fuse blocks the draft insert).
+# negotiationFollowup.test.ts.
 
 [meta]
 id = "negotiation_followup_ui_send"
@@ -58,7 +56,7 @@ expect = "visible"
 [[steps]]
 id = "followup_send"
 skill = "negotiation_followup"
-purpose = "Approve one thread at the REAL batch card — fake send (fuse-blocked, zero messages) + the local negotiating write."
+purpose = "Approve one thread at the REAL batch card — fake send (one messages row) + the local negotiating write."
 gate_policy = "deny_all"
 launch = "chat_slash"
 
@@ -81,10 +79,10 @@ expect = ["done"]
 kind = "approval_gate"      # the batch card rendered.
 
 [[steps.anchors]]
-kind = "table_min_rows"     # zero Gmail sends — the L1 fuse blocked the draft insert.
+kind = "table_min_rows"     # one fake Gmail send — the outbound messages row for the sent thread.
 table = "messages"
 scope = "profile"
-delta_min = 0
+delta_min = 1
 exact = true
 
 [[steps.anchors]]
@@ -92,7 +90,7 @@ kind = "resolution"         # the SENT-path proof (the `sent` confirm sets pinne
 expect = "pinned"           # a decline carries NO resolution) — the local-write anchor.
 
 [[steps.anchors]]
-kind = "no_external_mutation"   # the fuse blocked the draft insert → no row → keystone clean.
+kind = "no_external_mutation"   # fake/local send → the fake outbound row is legal → keystone clean.
 
 [[steps.anchors]]
 kind = "malformed_tool_call"

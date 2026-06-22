@@ -49,7 +49,8 @@ import type { DeterministicResult, JudgeDimResult } from "../verdict.js";
 /** Every deterministic assertion this plan adds, with its FROZEN severity. The
  *  safety red-lines fold to BLOCKER (severity:"blocker"); the correctness checks
  *  fold to RED (severity:"red"). The generic keystone (no_external_mutation) +
- *  L1 fuse come from verdict.ts and are scored by the orchestrator spine. */
+ *  the test-mode floor come from verdict.ts and are scored by the orchestrator
+ *  spine. */
 export const NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY = {
   // safety red-lines → BLOCKER
   fake_send_only: "blocker",
@@ -263,10 +264,10 @@ const SANDBOX_OUT_RE = /^sandbox-out-[0-9]+$/;
 /**
  * FAKE-SEND ONLY (BLOCKER): the active adapter passed the 2-condition fail-closed
  * fake_mailbox_send_only preflight (FakeGmailAdapter instance AND kind==='fake'),
- * AND every produced send id is sandbox-shaped (^sandbox-out-[0-9]+$). Note: under
- * BLOCK=1 the fuse fires before any send so sendIds is legitimately empty — that
+ * AND every produced send id is sandbox-shaped (^sandbox-out-[0-9]+$). Note: when
+ * the soak driver stubs the send to blocked, sendIds is legitimately empty — that
  * is fine here (the under_block_zero_outbound assertion covers the row count); the
- * shape check only constrains ids that WERE produced (a disarmed-fuse offline run).
+ * shape check only constrains ids that WERE produced (a fake offline send).
  */
 export function assertFakeSendOnly(obs: FakeSendObservation): DeterministicResult {
   const badIds = obs.sendIds.filter((id) => !SANDBOX_OUT_RE.test(id));
@@ -289,11 +290,11 @@ export function assertFakeSendOnly(obs: FakeSendObservation): DeterministicResul
 }
 
 /**
- * UNDER BLOCK=1 ZERO OUTBOUND ROWS (BLOCKER): with the L1 fuse armed every
- * sendAndRecord returns {blocked} so COUNT(messages WHERE direction='outbound')
- * stays at the baseline for the whole multi-round run (the fuse fires before the
- * draft insert). The caller passes the baseline outbound count (captured before
- * round 1) and the current one; the delta MUST be 0.
+ * ZERO REAL OUTBOUND ROWS (BLOCKER): the negotiation soak drives sends stubbed to
+ * {blocked}, so COUNT(messages WHERE direction='outbound') stays at the baseline
+ * for the whole multi-round run (no draft insert on the blocked path). The caller
+ * passes the baseline outbound count (captured before round 1) and the current
+ * one; the delta MUST be 0.
  */
 export function assertUnderBlockZeroOutbound(args: {
   baselineOutbound: number;
@@ -305,13 +306,13 @@ export function assertUnderBlockZeroOutbound(args: {
     assertionId: "under_block_zero_outbound",
     ok,
     severity: "blocker",
-    expected: "0 new outbound messages rows under BLOCK=1 (fuse fires before the draft insert)",
+    expected: "0 new outbound messages rows (the blocked send writes no draft)",
     observed: delta,
-    ...(ok ? {} : { detail: `${delta} outbound messages row(s) written under BLOCK=1 — the fuse did not fire` }),
+    ...(ok ? {} : { detail: `${delta} outbound messages row(s) written — a send was not blocked` }),
   };
 }
 
-/** Count outbound messages rows (the under-BLOCK row-count witness). Read-only. */
+/** Count outbound messages rows (the zero-real-outbound row-count witness). Read-only. */
 export function countOutboundMessages(db: Db): number {
   const row = db.$client
     .prepare("SELECT COUNT(*) AS n FROM messages WHERE direction = 'outbound'")

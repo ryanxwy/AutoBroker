@@ -18,7 +18,7 @@ import type { DeterministicResult, JudgeDimResult } from "./verdict.js";
 
 const DET: DeterministicResult[] = [
   { assertionId: "no_external_mutation", ok: true, expected: 0, observed: 0 },
-  { assertionId: "l1_fuse_armed", ok: true, expected: "armed", observed: "armed" },
+  { assertionId: "test_mode_armed", ok: true, expected: "armed", observed: "armed" },
 ];
 const JUDGE: JudgeDimResult[] = [
   { name: "buyer_coherence", pass: true, rationale: "reads like a real buyer" },

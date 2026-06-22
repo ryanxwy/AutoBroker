@@ -316,19 +316,10 @@ function NumericControl({
   );
 }
 
-/** A read-only status pill — NEVER a control. The safety fuse reads
- *  "armed"/"disarmed" (orange "guarded" when armed); demo reads "on"/"off". */
+/** A read-only status pill — NEVER a control. Demo reads "on"/"off". */
 function StatusBadge({ id, value }: { id: string; value: string }): JSX.Element {
-  // "armed" is the protective state → render it in the safety-orange "guarded"
-  // treatment (the awaiting-approval status token); anything else is quiet.
-  const guarded = value === "armed";
   return (
-    <span
-      className="session-pill"
-      data-status={guarded ? "awaiting_approval" : undefined}
-      data-testid={id === "block_external_mutations" ? "env-badge-block_external" : `env-badge-${id}`}
-    >
-      {guarded ? "● " : ""}
+    <span className="session-pill" data-testid={`env-badge-${id}`}>
       {value}
     </span>
   );

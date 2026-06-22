@@ -9,11 +9,11 @@
  * committed migrations applied). NO real browser, NO real Gmail, NO LLM, no
  * network.
  *
- * THE FUSE IS DISARMED (never set AUTOBROKER_TEST_AUTO_APPROVE): the gate stays
- * live in spirit — the submit/send boundaries are injected stubs that model the
- * disarmed-fuse approve path (a real fill+click / a fake draft+promote), so the
- * row is written, the round-trip holds, and the email_fallback re-confirm proves
- * the scope switch is an INDEPENDENT second suspend.
+ * THE GATE STAYS LIVE (never set AUTOBROKER_TEST_AUTO_APPROVE): the submit/send
+ * boundaries are injected stubs that model the buyer-mode approve path (a real
+ * fill+click / a fake draft+promote), so the row is written, the round-trip
+ * holds, and the email_fallback re-confirm proves the scope switch is an
+ * INDEPENDENT second suspend.
  *
  * Acceptance:
  *   1. unpinned + no target → STOP pin_required (NOT a run), zero rows;
@@ -240,7 +240,7 @@ const CAPTCHA_SHAPE: Omit<ScoutOutcome, "dealerId" | "name" | "website"> = {
   contactEmail: "sales@captcha-dealer.example.com",
 };
 
-/** A submit stub modeling the disarmed-fuse approve path: a web-form dealer
+/** A submit stub modeling the buyer-mode approve path: a web-form dealer
  *  reports `submitted` (the real fill+click against the fake session). */
 const submitStubSubmitted: DealerWebLeadSubmitWorkflowDeps["submitOne"] = async (
   _args: SubmitOneArgs,
@@ -251,7 +251,7 @@ const submitNeverCalled: DealerWebLeadSubmitWorkflowDeps["submitOne"] = async ()
 };
 
 /** A sendAndRecord spy: records calls and writes a fake messages draft+promote
- *  (the disarmed-fuse `sent` outcome), so the email-shape lead row + a messages
+ *  (the `sent` outcome), so the email-shape lead row + a messages
  *  row both appear. */
 function sendAndRecordSpy(record: { calls: SendRecordTargetLike[] }): DealerWebLeadSubmitWorkflowDeps["sendAndRecord"] {
   return (async (target: {
@@ -259,7 +259,7 @@ function sendAndRecordSpy(record: { calls: SendRecordTargetLike[] }): DealerWebL
     searchProfileId: string | null;
   }) => {
     record.calls.push({ to: target.email.to, profileId: target.searchProfileId });
-    // Mirror the disarmed-fuse `sent` path: one promoted draft row.
+    // Mirror the `sent` path: one promoted draft row.
     db.$client
       .prepare(
         "INSERT INTO messages (message_id, thread_id, gmail_message_id, direction, sender, " +
@@ -780,7 +780,7 @@ function submitArgs(session: BrowserSession): Parameters<typeof submitOneWithSes
 }
 
 describe("submitOneWithSession — the gated wiring (fake BrowserSession)", () => {
-  it("calls session.submitForm with the APPROVED approver and returns submitted (disarmed fuse)", async () => {
+  it("calls session.submitForm with the APPROVED approver and returns submitted (buyer mode)", async () => {
     const fx = fakeSubmitSession({ submit: async () => ({ submitted: true }) });
     const verdict = await submitOneWithSession(submitArgs(fx.session));
 
@@ -802,17 +802,17 @@ describe("submitOneWithSession — the gated wiring (fake BrowserSession)", () =
     ).toBe(true);
   });
 
-  it("submitForm throwing ExternalMutationsBlockedError → fuse_blocked (the BLOCK=1 fake-send)", async () => {
+  it("submitForm throwing ExternalMutationsBlockedError → fuse_blocked (the test-mode fake-send)", async () => {
     const fx = fakeSubmitSession({
       submit: async () => {
-        // The L1 fuse fired inside the gate BEFORE the click — fail CLOSED.
+        // The test-mode brake fired inside the gate BEFORE the click — fail CLOSED.
         throw new ExternalMutationsBlockedError("dealer_form_submit");
       },
     });
     const verdict = await submitOneWithSession(submitArgs(fx.session));
 
     expect(verdict).toEqual({ kind: "fuse_blocked" });
-    // The gate WAS reached (the fuse is what stopped it), holding the approver.
+    // The gate WAS reached (the brake is what stopped it), holding the approver.
     expect(fx.submitCalls.length).toBe(1);
     expect(fx.submitCalls[0]!.approver).toBe(APPROVED_TEST);
   });

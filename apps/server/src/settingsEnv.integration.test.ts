@@ -1,11 +1,11 @@
 /**
  * settings/env route integration — drives the REAL Fastify app via inject()
  * against an ISOLATED tmp AUTOBROKER_DATA_DIR. Covers:
- *   GET → the curated vars with live values, incl. the read-only fuse status, and
+ *   GET → the curated vars with live values, incl. the read-only demo status, and
  *     no secret value; PUT {app_mode:"buyer"} → 200 {ok, vars} with the echoed
  *     value flipped AND process.env mutated in-place (the no-restart keystone);
- *     PUT {app_mode:"maybe"} → 400 invalid_value; PUT for the fuse id is
- *     rejected by the schema (proving the L1 fuse var is unreachable via the route).
+ *     PUT {app_mode:"maybe"} → 400 invalid_value; PUT for a read-only status id is
+ *     rejected by the schema (proving a non-editable var is unreachable via the route).
  *
  * ISOLATION: a fresh os.tmpdir() subdir is the data dir (saved/restored); the
  * Mastra singleton + runtime glue are reset so boot builds against this dir.
@@ -43,10 +43,8 @@ const MIGRATION_SQL = join(
 // leaks a toggle into a sibling test or the host process.
 const ENV_VARS = [
   "AUTOBROKER_MODE",
-  "AUTOBROKER_GMAIL_BACKEND",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
-  "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
   "AUTOBROKER_DEMO_SEED",
 ] as const;
 
@@ -99,7 +97,7 @@ async function build(): Promise<BuiltServer> {
 }
 
 describe("GET /api/settings/env", () => {
-  it("returns the curated vars with live values, incl. the read-only fuse status", async () => {
+  it("returns the curated vars with live values, incl. the read-only demo status", async () => {
     const { app } = await build();
     const res = await app.inject({ method: "GET", url: "/api/settings/env" });
     expect(res.statusCode).toBe(200);
@@ -114,12 +112,12 @@ describe("GET /api/settings/env", () => {
     expect(byId.get("app_mode")?.value).toBe("test");
     expect(byId.get("chrome_headless")?.value).toBe("1");
 
-    // the L1 fuse appears ONLY as a read-only status row — projected, never raw.
-    const fuse = byId.get("block_external_mutations");
-    expect(fuse?.editable).toBe(false);
-    expect(fuse?.value).toBe("disarmed");
-    // never the raw "1"/"0" for the fuse row
-    expect(fuse?.value).not.toBe("1");
+    // the demo seed appears ONLY as a read-only status row — projected, never raw.
+    const demo = byId.get("demo_seed");
+    expect(demo?.editable).toBe(false);
+    expect(demo?.value).toBe("off");
+    // never the raw "1"/"0" for the demo status row
+    expect(demo?.value).not.toBe("1");
 
     // the two test-escape vars never leak into the payload (no descriptor).
     expect(byId.has("test_auto_approve")).toBe(false);
@@ -188,15 +186,15 @@ describe("PUT /api/settings/env", () => {
     expect(process.env["AUTOBROKER_MODE"]).toBe("test");
   });
 
-  it("rejects the fuse id at the schema (the L1 fuse var is unreachable via the route)", async () => {
+  it("rejects a read-only status id at the schema (a non-editable var is unreachable via the route)", async () => {
     const { app } = await build();
     const res = await app.inject({
       method: "PUT",
       url: "/api/settings/env",
-      payload: { id: "block_external_mutations", value: "disarmed" },
+      payload: { id: "demo_seed", value: "on" },
     });
     expect(res.statusCode).toBe(400);
-    // the fuse env var is never written by any route, on any path.
-    expect(process.env["AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS"]).toBeUndefined();
+    // a read-only status env var is never written by any route, on any path.
+    expect(process.env["AUTOBROKER_DEMO_SEED"]).toBeUndefined();
   });
 });

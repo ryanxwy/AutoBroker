@@ -2,15 +2,15 @@
 /**
  * EnvPanel.test — the Environment panel, driven against an injected ApiClient
  * (mock fetch) over a fixed getEnvConfig() shape. Proves the rows render FROM
- * the server response (one row per curated var, incl. the read-only fuse + the
- * paths), the control type follows each row's classification, and the editable
- * controls write the right wire value:
+ * the server response (one row per curated var, incl. the read-only demo status
+ * + the paths), the control type follows each row's classification, and the
+ * editable controls write the right wire value:
  *
  *   - enum → "buyer" parks a confirm (no call); "Use buyer mode" commits with
  *     "buyer"; "Keep test mode" cancels with NO call + the select snaps back.
  *   - enum "buyer" → "test" commits immediately (one call, no confirm).
  *   - bool toggle writes the STRING "0" when shown / "1" when hidden.
- *   - the fuse row renders a read-only badge with NO interactive control.
+ *   - a read-only status row renders a badge with NO interactive control.
  *   - InfoHint: bubble present on hover + on keyboard focus (aria-describedby
  *     resolves), Escape dismisses.
  *   - a successful write invokes onChanged.
@@ -28,7 +28,7 @@ import { EnvPanel } from "./EnvPanel.js";
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 /** A curated set mirroring the server projection: the mode enum, the bool toggle,
- *  the read-only fuse, demo status, and the two paths. `mode` lets a test start
+ *  the read-only demo status, and the two paths. `mode` lets a test start
  *  from buyer (to exercise buyer→test). */
 function curatedVars(mode: "buyer" | "test" = "test"): EnvVarState[] {
   return [
@@ -70,19 +70,6 @@ function curatedVars(mode: "buyer" | "test" = "test"): EnvVarState[] {
       label: "Show the browser",
       tooltip: "Show the browser tooltip.",
       value: "1", // headless = window hidden
-    },
-    {
-      id: "block_external_mutations",
-      envVar: "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
-      classification: "read-only-status",
-      editable: false,
-      allowedValues: null,
-      default: null,
-      numericMin: null,
-      numericMax: null,
-      label: "Safety fuse",
-      tooltip: "Safety fuse tooltip.",
-      value: "armed",
     },
     {
       id: "demo_seed",
@@ -172,7 +159,7 @@ beforeEach(() => vi.restoreAllMocks());
 afterEach(() => vi.restoreAllMocks());
 
 describe("EnvPanel — rows render from the store response", () => {
-  it("renders one row per curated var, incl. the read-only fuse + both paths", () => {
+  it("renders one row per curated var, incl. the read-only demo status + both paths", () => {
     const client = new ApiClient({ fetchImpl: mockFetch({}) });
     const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
 
@@ -180,8 +167,8 @@ describe("EnvPanel — rows render from the store response", () => {
     expect(r.query("env-row-app_mode")).not.toBeNull();
     expect(r.query("env-select-app_mode")).not.toBeNull();
     expect(r.query("env-toggle-chrome_headless")).not.toBeNull();
-    // read-only fuse → a badge, no control.
-    expect(r.query("env-badge-block_external")).not.toBeNull();
+    // read-only demo status → a badge, no control.
+    expect(r.query("env-badge-demo_seed")).not.toBeNull();
     // paths → mono code, the resolved value straight off the response.
     expect(r.get("env-path-data_dir").textContent).toContain(".autobroker-ts");
     expect(r.query("env-path-db_path")).not.toBeNull();
@@ -190,7 +177,7 @@ describe("EnvPanel — rows render from the store response", () => {
     r.unmount();
   });
 
-  it("the fuse row has NO interactive control (no toggle / select on that row)", () => {
+  it("a read-only status row has NO interactive control (no toggle / select on that row)", () => {
     const client = new ApiClient({ fetchImpl: mockFetch({}) });
     const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
 
@@ -198,13 +185,13 @@ describe("EnvPanel — rows render from the store response", () => {
     // no select, no checkbox, and no button (the only button on the row is the
     // ⓘ hint, which lives in the keyword line, not the controls area).
     const controls = r
-      .get("env-row-block_external_mutations")
+      .get("env-row-demo_seed")
       .querySelector(".key-row-controls") as HTMLElement;
     expect(controls.querySelector("select")).toBeNull();
     expect(controls.querySelector('input[type="checkbox"]')).toBeNull();
     expect(controls.querySelector("button")).toBeNull();
-    // and the badge reads the armed projection (not the raw "1").
-    expect(r.get("env-badge-block_external").textContent).toContain("armed");
+    // and the badge reads the projection (not the raw "1").
+    expect(r.get("env-badge-demo_seed").textContent).toContain("off");
     r.unmount();
   });
 });

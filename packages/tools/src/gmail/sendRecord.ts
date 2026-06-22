@@ -5,20 +5,23 @@
  * and its durable record can only happen together, and only after approval.
  *
  * THE DRAFT-THEN-PROMOTE FLOW (inside `withGate`, in this exact order):
- *   1. fail-CLOSED preflight (`assertFakeMailboxSendOnly`) — fake adapter only;
+ *   1. test-mode brake (`assertFakeMailboxSendOnly`) — fake adapter only when
+ *      not in buyer mode (fail-CLOSED);
  *   2. INSERT a draft `messages` row with `gmail_message_id = NULL` — the durable
  *      checkpoint that survives a later send failure;
- *   3. L1 fuse assertion at the network boundary, BEFORE any id is minted;
- *   4. `adapter.send(raw)` — the irreversible boundary (fake during this phase);
- *   5. PROMOTE: UPDATE the draft, backfilling `gmail_message_id`, only WHERE it
+ *   3. `adapter.send(raw)` — the irreversible boundary (fake during this phase);
+ *   4. PROMOTE: UPDATE the draft, backfilling `gmail_message_id`, only WHERE it
  *      is still NULL — so a double-fire promote is a harmless no-op.
  *
  * The four outcomes follow from WHERE control left the flow:
- *   - sent     — disarmed fuse + approve: one draft → promoted once.
+ *   - sent     — buyer mode (or an approved fake) + approve: one draft →
+ *                promoted once.
  *   - declined — the L2 gate verdict was not approved: the commit callback never
  *                ran, so `draftRowId` stays null and ZERO rows were written.
- *   - blocked  — the L1 fuse was armed: `withGate` throws at the approval step
- *                BEFORE the commit callback runs, so ZERO rows were written.
+ *   - blocked  — defensive: kept for the structural guard. The test-mode brake
+ *                throws INSIDE the commit (after the draft insert) so the test
+ *                path falls through to `partial`; this branch is unreachable from
+ *                the fake path now but retained so the error type still maps.
  *   - partial  — the send threw AFTER the draft was inserted: the draft row is
  *                retained with `gmail_message_id` still NULL (a reconcile hook
  *                can later promote or discard it).
@@ -34,7 +37,6 @@ import { getDb, type Db } from "../db.js";
 import {
   withGate,
   ExternalMutationsBlockedError,
-  assertEnvFuseDisarmed,
   type Approver,
 } from "../gate/index.js";
 import {
@@ -186,10 +188,9 @@ export async function sendAndRecord(
       async () => {
         // Mode brake: in test mode this seam is fake-only (fail-closed). In buyer
         // mode the resolved (real) adapter is allowed — but ONLY after the L2
-        // approval above and the L1 fuse re-check below.
+        // approval above. AUTOBROKER_MODE is the sole send-control var.
         if (!isBuyerMode()) assertFakeMailboxSendOnly({ adapter });
         draftRowId = insertOutboundDraft(db, target); // durable checkpoint, gmail id NULL.
-        assertEnvFuseDisarmed("gmail_send"); // L1, BEFORE any id is minted.
         const { messageId } = await adapter.send(raw); // irreversible boundary (fake).
         promoteOutbound(db, draftRowId, messageId); // backfill gmail id, exactly once.
         return { messageRowId: draftRowId, gmailMessageId: messageId, mode: adapter.kind };
@@ -203,13 +204,13 @@ export async function sendAndRecord(
     }
     return { kind: "sent", ...result };
   } catch (err) {
-    // L1 fuse armed: `withGate` throws at the approval step BEFORE the callback,
-    // so no draft was inserted — zero rows, a clean blocked outcome. The
-    // redundant in-callback `assertEnvFuseDisarmed` only fires if the fuse arms
-    // mid-commit (after the draft insert); that race falls through to `partial`
-    // below, so a `blocked` outcome ALWAYS means zero rows were written.
+    // Structural guard (defensive): an ExternalMutationsBlockedError before any
+    // draft was inserted means zero rows — a clean blocked outcome. This is no
+    // longer reachable from the fake path (the test-mode brake throws INSIDE the
+    // commit, after the draft insert, so that race falls through to `partial`
+    // below); kept so the error type still maps to a zero-row outcome.
     if (err instanceof ExternalMutationsBlockedError && draftRowId === null) {
-      return { kind: "blocked", messageRowId: null, reconcile_hint: "l1_fuse_blocked" };
+      return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
     }
     // The send was prevented after the draft was inserted (a mid-commit fuse arm
     // or an adapter throw): retain the draft (NULL gmail id) and report a partial

@@ -34,7 +34,7 @@ const ALL_VARS = [
   "OPENAI_API_KEY",
   "GOOGLE_PLACES_API_KEY",
 ] as const;
-const SYSTEM_VAR = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
+const SYSTEM_VAR = "MASTRA_TELEMETRY_DISABLED";
 
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -87,7 +87,7 @@ describe("setKey", () => {
   });
 
   it("rejects an id outside the four (the allow-list)", () => {
-    expect(() => setKey("AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS", "x")).toThrow(UnknownSecretKeyError);
+    expect(() => setKey("MASTRA_TELEMETRY_DISABLED", "x")).toThrow(UnknownSecretKeyError);
     expect(() => setKey("gemini", "x")).toThrow(UnknownSecretKeyError);
     // No file leaked, no system var touched.
     expect(existsSync(keysFile())).toBe(false);

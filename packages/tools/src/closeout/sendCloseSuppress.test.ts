@@ -5,13 +5,15 @@
  * reply address become targets; a no-address dealer is skipped + counted; an
  * already-closeout-suppressed dealer is filtered out (the idempotency floor).
  *
- * closeAndSuppressDealer: an approve + disarmed fuse promotes the send AND
- * commits the local close+suppress; an armed fuse blocks the send (zero
- * `messages`) but STILL commits the close+suppress (the X1-style split); a gate
- * decline writes NOTHING; a re-run is a no-op; and the tool issues NO DELETE.
+ * closeAndSuppressDealer: an approve + test-mode fake adapter promotes the send
+ * AND commits the local close+suppress; a send that fails after its draft
+ * (`partial`) STILL commits the close+suppress with sendBlocked=true (the
+ * X1-style split); a gate decline writes NOTHING; a re-run is a no-op; and the
+ * tool issues NO DELETE.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR; the committed
  * migrations run against the throwaway DB. NEVER touches ~/.autobroker*.
+ * AUTOBROKER_MODE=test is pinned so a non-injected send resolves fake/local.
  */
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -30,7 +32,7 @@ import {
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
-const FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
+const MODE = "AUTOBROKER_MODE";
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
@@ -49,16 +51,16 @@ let tmpDir: string;
 let db: Db;
 let originalDataDir: string | undefined;
 let originalDbOverride: string | undefined;
-let originalFuse: string | undefined;
+let originalMode: string | undefined;
 
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
   originalDbOverride = process.env[DB_OVERRIDE];
-  originalFuse = process.env[FUSE];
+  originalMode = process.env[MODE];
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-closeout-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
-  delete process.env[FUSE];
+  process.env[MODE] = "test"; // a non-injected send resolves fake/local.
   db = openDb();
   for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
@@ -70,8 +72,8 @@ afterEach(() => {
   else process.env[DATA_DIR] = originalDataDir;
   if (originalDbOverride === undefined) delete process.env[DB_OVERRIDE];
   else process.env[DB_OVERRIDE] = originalDbOverride;
-  if (originalFuse === undefined) delete process.env[FUSE];
-  else process.env[FUSE] = originalFuse;
+  if (originalMode === undefined) delete process.env[MODE];
+  else process.env[MODE] = originalMode;
 });
 
 // ---------------------------------------------------------------------------
@@ -255,7 +257,7 @@ function targetFor(threadId: string, dealerId = "d1"): {
 }
 
 describe("closeAndSuppressDealer", () => {
-  it("approve + disarmed fuse → send promoted AND thread closed + one suppression row", async () => {
+  it("approve (test mode, fake adapter) → send promoted AND thread closed + one suppression row", async () => {
     const { FakeGmailAdapter } = await import("../gmail/fakeAdapter.js");
     seedProfile();
     seedBoundDealerWithThread({
@@ -296,8 +298,15 @@ describe("closeAndSuppressDealer", () => {
     });
   });
 
-  it("armed fuse → send BLOCKED (zero messages) but the local close+suppress STILL commit", async () => {
-    process.env[FUSE] = "1";
+  it("send prevented after its draft (partial) → sendBlocked but the local close+suppress STILL commit", async () => {
+    // The X1-style split: even when the send does not go out, the local
+    // close+suppress still commit on approve. Drive a `partial` send (the adapter
+    // throws after the draft is inserted) → sendBlocked=true, draft retained.
+    const { FakeGmailAdapter } = await import("../gmail/fakeAdapter.js");
+    const adapter = new FakeGmailAdapter(db);
+    Object.defineProperty(adapter, "send", {
+      value: () => Promise.reject(new Error("injected send failure")),
+    });
     seedProfile();
     seedBoundDealerWithThread({
       dealerId: "d1",
@@ -315,12 +324,17 @@ describe("closeAndSuppressDealer", () => {
       body: BODY,
       subject: SUBJECT,
       fromEmail: FROM,
+      adapter,
     });
 
     expect(r.kind).toBe("closed");
     if (r.kind !== "closed") throw new Error("unreachable");
-    expect(r.sendBlocked).toBe(true); // the fuse blocked the network send.
-    expect(count("messages")).toBe(0); // zero outbound rows — the fake-send.
+    expect(r.sendBlocked).toBe(true); // the send did not go out (partial).
+    // The draft row is retained (NULL gmail id); no PROMOTED outbound exists.
+    const promoted = db.$client
+      .prepare("SELECT COUNT(*) AS n FROM messages WHERE gmail_message_id IS NOT NULL")
+      .get() as { n: number };
+    expect(promoted.n).toBe(0);
     expect(threadState("t1")).toBe("closed"); // local close happened on approve.
     expect(count("thread_suppression")).toBe(1); // local suppress happened too.
   });
@@ -354,7 +368,6 @@ describe("closeAndSuppressDealer", () => {
   });
 
   it("a second closeout for the same dealer is a no-op (ON CONFLICT DO NOTHING)", async () => {
-    process.env[FUSE] = "1";
     seedProfile();
     seedBoundDealerWithThread({
       dealerId: "d1",
@@ -380,7 +393,6 @@ describe("closeAndSuppressDealer", () => {
   });
 
   it("a budget figure in an EDITed body fails loud BEFORE any write", async () => {
-    process.env[FUSE] = "1";
     seedProfile();
     seedBoundDealerWithThread({
       dealerId: "d1",
@@ -408,7 +420,6 @@ describe("closeAndSuppressDealer", () => {
   });
 
   it("issues NO DELETE statement (state-only)", async () => {
-    process.env[FUSE] = "1";
     seedProfile();
     seedBoundDealerWithThread({
       dealerId: "d1",

@@ -1,5 +1,5 @@
 # dealer_closeout_email.skip_all.func.toml — the X3 SKIP-ALL → reset hand-off,
-# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1,
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test,
 # NO live LLM/browser — X3 is zero-LLM). At the batch_review card the user clicks
 # "Skip all & reset" (NOT Decline, NOT approve): the workflow records the typed
 # skip_all_reset outcome (a SUCCESS) and stops with ZERO sends / ZERO close /

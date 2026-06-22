@@ -6,16 +6,15 @@
  * resolver, assembleCloseoutTargets, and the deterministic closeout-draft
  * templates run REAL; the atomic closeAndSuppressDealer is exercised BOTH ways:
  *   - injected as a stub that performs the real local close+suppress writes (the
- *     disarmed-fuse `closed` model) for the suspend/decline/skip-all branches, and
- *   - driven REAL (against the default FakeGmailAdapter) in two focused cases — one
- *     DISARMED (a promoted `messages` row + the body byte-match) and one under the
- *     L1 fuse BLOCK=1 (zero `messages` rows, the local close+suppress still land).
+ *     `closed` model) for the suspend/decline/skip-all branches, and
+ *   - driven REAL (against the default FakeGmailAdapter in test mode) in one
+ *     focused case — a promoted `messages` row + the body byte-match.
  * NO real Gmail, NO LLM, no network.
  *
- * THE FUSE IS DISARMED by default (never set AUTOBROKER_TEST_AUTO_APPROVE): the
- * gate stays live in spirit — the atomic tool models the disarmed-fuse approve
- * path so the close + suppression row are written, the thread flips to 'closed',
- * and the profile transitions to 'closed' on completion.
+ * TEST MODE is the floor (the global vitest setup pins AUTOBROKER_MODE=test, and
+ * AUTOBROKER_TEST_AUTO_APPROVE is never set): the send resolves fake/local, the
+ * gate stays live, the close + suppression row are written, the thread flips to
+ * 'closed', and the profile transitions to 'closed' on completion.
  *
  * Acceptance (the brief's 8):
  *   1. unpinned (1 active) → STOP pin_required (NOT a run), zero rows;
@@ -23,7 +22,7 @@
  *      search_profiles state changes + ZERO thread_suppression rows;
  *   3. SEND → per dealer threads.state='closed' + 1 thread_suppression row
  *      (reason 'closeout:…') + on completion search_profiles.status='closed';
- *      the default body byte-matches the canonical template (the disarmed real tool);
+ *      the default body byte-matches the canonical template (the real tool, test mode);
  *   4. SKIP ALL → the typed `skip_all_reset` result, 0 sends, 0 state changes;
  *   5. a no-address dealer is skipped + the skip count is shown;
  *   6. idempotent: a 2nd run with the dealer already closeout-suppressed → no-op;
@@ -54,7 +53,6 @@ import {
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
-const BLOCK_FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
@@ -66,7 +64,6 @@ let tmpDir: string;
 let db: Db;
 let originalDataDir: string | undefined;
 let originalDbOverride: string | undefined;
-let originalFuse: string | undefined;
 
 const PROFILE_ID = "prof-closeout-1";
 const DEALER_A = "dealer-jim-click"; // addressable (dealer contact_email) + open thread
@@ -79,11 +76,10 @@ const THREAD_NOADDR = "thread-no-address";
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
   originalDbOverride = process.env[DB_OVERRIDE];
-  originalFuse = process.env[BLOCK_FUSE];
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-closeout-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
-  delete process.env[BLOCK_FUSE]; // disarmed by default; one case arms it explicitly.
+  // AUTOBROKER_MODE=test is the global vitest floor; the default send resolves fake.
   db = openDb();
   for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
@@ -97,8 +93,6 @@ afterEach(() => {
   else process.env[DATA_DIR] = originalDataDir;
   if (originalDbOverride === undefined) delete process.env[DB_OVERRIDE];
   else process.env[DB_OVERRIDE] = originalDbOverride;
-  if (originalFuse === undefined) delete process.env[BLOCK_FUSE];
-  else process.env[BLOCK_FUSE] = originalFuse;
 });
 
 // ---------------------------------------------------------------------------
@@ -214,7 +208,7 @@ function suppressionRows(): Array<Record<string, unknown>> {
 }
 
 // ---------------------------------------------------------------------------
-// closeAndSuppressDealer stub — models the disarmed-fuse `closed` outcome by
+// closeAndSuppressDealer stub — models the `closed` outcome by
 // performing the SAME local close+suppress writes the real tool commits (so the
 // suspend/decline/skip-all branches assert the deltas without a live Gmail send).
 // Records every dealer it was called for + the body/subject it received.
@@ -243,7 +237,7 @@ function closeStub(record: {
     if (record.shortCircuitDealerIds?.has(args.target.dealerId)) {
       return { kind: "short_circuit", reconcileHint: "gate_declined" };
     }
-    // Mirror the disarmed-fuse `sent` local writes (close + suppress in one go).
+    // Mirror the `sent` local writes (close + suppress in one go).
     const suppressionId = `closeout:${args.searchProfileId}:${args.target.dealerId}`;
     const reason = `closeout:${args.searchProfileId}`;
     const c = args.db.$client;
@@ -628,10 +622,10 @@ describe("dealer_closeout_email — zero candidates", () => {
 });
 
 // ---------------------------------------------------------------------------
-// case 8 — the REAL atomic tool (disarmed) → a promoted messages row + close+suppress
+// case 8 — the REAL atomic tool (test mode) → a promoted messages row + close+suppress
 // ---------------------------------------------------------------------------
 
-describe("dealer_closeout_email — the REAL closeAndSuppressDealer, fuse DISARMED", () => {
+describe("dealer_closeout_email — the REAL closeAndSuppressDealer (test mode)", () => {
   it("approve → a promoted `messages` row + thread closed + suppression row + profile 'closed'", async () => {
     seedProfile();
     seedBoundDealerWithThread({
@@ -640,8 +634,8 @@ describe("dealer_closeout_email — the REAL closeAndSuppressDealer, fuse DISARM
       threadId: THREAD_A,
       contactEmail: "sales@jimclick.example.com",
     });
-    // Real tool: no injected closeAndSuppressDealer; the default FakeGmailAdapter
-    // promotes a `messages` draft (the disarmed-fuse send), then the local
+    // Real tool: no injected closeAndSuppressDealer; in test mode the default
+    // FakeGmailAdapter promotes a `messages` draft (the fake send), then the local
     // close+suppress commit.
     const messagesBefore = count("messages");
 
@@ -654,10 +648,10 @@ describe("dealer_closeout_email — the REAL closeAndSuppressDealer, fuse DISARM
     expect(final.status).toBe("success");
     if (final.status !== "success") return;
     const out = final.result as { emails_sent: number; closed_thread_ids: string[] };
-    expect(out.emails_sent).toBe(1); // a promoted send (fuse disarmed).
+    expect(out.emails_sent).toBe(1); // a promoted send (test-mode fake).
     expect(out.closed_thread_ids).toEqual([THREAD_A]);
 
-    // The disarmed send promoted exactly one outbound `messages` row whose body is
+    // The test-mode fake send promoted exactly one outbound `messages` row whose body is
     // the canonical closeout template (the round-trip byte-match).
     expect(count("messages")).toBe(messagesBefore + 1);
     const outbound = db.$client
@@ -671,50 +665,6 @@ describe("dealer_closeout_email — the REAL closeAndSuppressDealer, fuse DISARM
     // The local close+suppress committed.
     expect(threadState(THREAD_A)).toBe("closed");
     expect(count("thread_suppression")).toBe(1);
-    expect(profileStatus(PROFILE_ID)).toBe("closed");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// case 9 — the REAL atomic tool under BLOCK=1 → ZERO messages, local writes land
-// ---------------------------------------------------------------------------
-
-describe("dealer_closeout_email — the REAL closeAndSuppressDealer under BLOCK=1", () => {
-  it("approve under the L1 fuse → ZERO messages rows, thread STILL closed + suppression row", async () => {
-    seedProfile();
-    seedBoundDealerWithThread({
-      dealerId: DEALER_A,
-      name: "Jim Click Hyundai",
-      threadId: THREAD_A,
-      contactEmail: "sales@jimclick.example.com",
-    });
-    process.env[BLOCK_FUSE] = "1"; // arm the L1 fuse: the send is blocked, the close is not.
-    const messagesBefore = count("messages");
-
-    const { run, result } = await startRun("co-real-block", { search_profile_id: PROFILE_ID });
-    expect(result.status).toBe("suspended");
-    const final = await run.resume({
-      step: "batchReview",
-      resumeData: { action: "approve", approved_dealer_ids: [DEALER_A] },
-    });
-    expect(final.status).toBe("success");
-    if (final.status !== "success") return;
-    const out = final.result as {
-      emails_sent: number;
-      closed_thread_ids: string[];
-      profile_status_transition: string;
-    };
-    // The fuse blocked the NETWORK send, but the approved+attempted send is
-    // counted as a (fake) send — consistent with negotiation_followup's "sent N"
-    // (a buyer reading "0 sent" otherwise thinks no closeout went out). The local
-    // close+suppress still committed on approve; no real outbound exists.
-    expect(out.emails_sent).toBe(1);
-    expect(out.closed_thread_ids).toEqual([THREAD_A]);
-    expect(out.profile_status_transition).toBe("closed");
-
-    expect(count("messages")).toBe(messagesBefore); // NO new message rows (send blocked).
-    expect(threadState(THREAD_A)).toBe("closed"); // the local close landed.
-    expect(count("thread_suppression")).toBe(1); // the local suppress landed.
     expect(profileStatus(PROFILE_ID)).toBe("closed");
   });
 });

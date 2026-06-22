@@ -127,11 +127,20 @@ the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
    second code path to a side effect.
 3. **Gate stack (top → bottom):** L3 native Mastra tool/step approval or
    `suspend()` (convenience, api-key lane only) → **L2 in-process gate,
-   load-bearing, fail-CLOSED, single structured path** (the always-on floor in
-   BOTH modes) → fallback-suspend → the `AUTOBROKER_MODE` brake (`test` →
-   fake/blocked at every send seam) → L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1`
-   fuse (now an OPTIONAL emergency kill-switch — no longer auto-armed in `buyer`
-   mode; harness lanes still arm it as belt).
+   load-bearing, fail-CLOSED, single structured path** (the always-on
+   human-approval floor in BOTH modes) → fallback-suspend. The send floor is the
+   per-seam `!isBuyerMode()` mode brake (`AUTOBROKER_MODE=test` resolves every
+   send fake/local), independently re-asserted at each network boundary and
+   force-pinned for all test/CI contexts by `forceTestMode()`+`assertTestModeSafe()`.
+   **`AUTOBROKER_MODE` is the SOLE send-control variable** — `AUTOBROKER_GMAIL_BACKEND`
+   and the L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS` fuse are **removed** (both
+   added to the `check:strings` forbidden list so neither can be re-introduced).
+   **Honest floor:** this narrows the env floor from two independent rings to ONE
+   env var plus the always-on L2 human-approval gate. A mistyped/garbage MODE
+   resolves buyer-capable (anything but the exact string `test` is buyer) and is
+   caught **only** by the L2 human-approval gate — there is no second env ring.
+   Invariant #2 (side effects reach a seam only through the L2 gate, fail-closed)
+   is unchanged and still true.
 4. **#1244 fail-closed.** Live-probed 2026-06-04 (107 controlled calls): pure
    tool loops are clean (0/56); the trigger is mixing structured output
    (`response_format`/json_schema) with tools — 27/36 silent tool-skip, 2/36

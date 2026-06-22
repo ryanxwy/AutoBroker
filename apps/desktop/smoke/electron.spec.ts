@@ -171,10 +171,9 @@ describe("shared window (S1, S2, S6, S7)", () => {
           forkEnvSafety: Record<string, string>;
         },
     );
-    // Buyer-by-default: a NORMAL launch no longer auto-arms the L1 fuse — the
-    // per-action human-approval gate is the send floor, and real send is reachable.
-    // (Demo mode pins test mode instead; the fuse is opt-in via the environment.)
-    expect(hook.forkEnvSafety.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS).toBeUndefined();
+    // Buyer-by-default: a NORMAL launch arms nothing send-related — AUTOBROKER_MODE
+    // is the sole send-control var and is unset (= buyer), so real send is reachable
+    // behind the per-action human-approval gate. (Demo mode pins test mode instead.)
     expect(hook.forkEnvSafety.AUTOBROKER_MODE).toBeUndefined(); // unset = buyer
     expect(hook.forkEnvSafety.MASTRA_TELEMETRY_DISABLED).toBe("1");
     expect(hook.forkEnvSafety.PORT).toBe("0");

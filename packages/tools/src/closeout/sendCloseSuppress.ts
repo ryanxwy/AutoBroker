@@ -14,10 +14,10 @@
  *     gated send (X0 `sendAndRecord`) and then folds the LOCAL close+suppress
  *     into a SINGLE better-sqlite3 transaction. The local writes are the durable
  *     record that a future inbox check never re-picks this dealer, so they run
- *     ON APPROVE regardless of the L1 fuse — exactly the lead-submission split:
- *     the network email is separately fuse-gated (under BLOCK=1 the send returns
- *     `blocked` with zero `messages` rows), but the close+suppress still commit.
- *     A gate DECLINE (no approval) writes NOTHING.
+ *     ON APPROVE regardless of whether the send went out — exactly the
+ *     lead-submission split: any non-`sent` send outcome (a prevented/partial
+ *     send) still lets the close+suppress commit (`sendBlocked:true`). A gate
+ *     DECLINE (no approval) writes NOTHING.
  *
  * STATE-ONLY: the close is `UPDATE threads SET state='closed'` and the suppress
  * is an INSERT — this tool NEVER deletes a row. The destructive wipe lives in
@@ -260,9 +260,8 @@ const INSERT_CLOSEOUT_SUPPRESSION =
 const CLOSE_THREAD = "UPDATE threads SET state = 'closed' WHERE thread_id = ?";
 
 /** The outcome of one closeout: `closed` once the local close+suppress
- *  committed (whether the send went out or was fuse-blocked), or
- *  `short_circuit` when the gate declined — nothing was written and the batch
- *  halts. */
+ *  committed (whether the send went out or was prevented), or `short_circuit`
+ *  when the gate declined — nothing was written and the batch halts. */
 export type CloseoutDealerOutcome =
   | { kind: "closed"; messageRowId: string | null; sendBlocked: boolean }
   | { kind: "short_circuit"; reconcileHint: string };
@@ -286,10 +285,11 @@ export interface CloseAndSuppressArgs {
 }
 
 /**
- * Send one closeout (fake), then close the thread + write the closeout
- * suppression row in ONE local transaction. The send is L1-fuse-gated; the
- * close+suppress are local writes that run on APPROVE regardless of the fuse —
- * a gate DECLINE writes nothing and short-circuits the batch.
+ * Send one closeout, then close the thread + write the closeout suppression row
+ * in ONE local transaction. The send resolves fake in test mode (AUTOBROKER_MODE
+ * is the sole send-control var); the close+suppress are local writes that run on
+ * APPROVE whether or not the send went out — a gate DECLINE writes nothing and
+ * short-circuits the batch.
  */
 export async function closeAndSuppressDealer(
   args: CloseAndSuppressArgs,
@@ -301,8 +301,8 @@ export async function closeAndSuppressDealer(
   assertUnicodeSafe(args.subject);
   assertNoBudget(args.subject);
 
-  // 1) The GATED send (X0). Under BLOCK=1 → {blocked} (zero messages rows); a
-  //    disarmed fuse + approve → {sent}. NEVER throws for blocked/declined/
+  // 1) The GATED send (X0). In test mode the fake adapter + approve → {sent}; a
+  //    send that fails after the draft → {partial}. NEVER throws for declined/
   //    partial. A `declined` outcome means the gate said no → we do NOT close.
   const outcome = await sendAndRecord(
     {
@@ -327,8 +327,8 @@ export async function closeAndSuppressDealer(
   }
 
   // 2) The LOCAL close+suppress in ONE txn — runs on approve whether the send
-  //    was `sent` (offline) or `blocked` (BLOCK=1). Deterministic suppression
-  //    id → idempotent (a re-run is a no-op via ON CONFLICT DO NOTHING).
+  //    was `sent` or prevented (`partial`). Deterministic suppression id →
+  //    idempotent (a re-run is a no-op via ON CONFLICT DO NOTHING).
   const suppressionId = `closeout:${args.searchProfileId}:${args.target.dealerId}`;
   const reason = `closeout:${args.searchProfileId}`;
   const txn = args.db.$client.transaction(() => {

@@ -14,13 +14,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "@autobroker/db";
 
 import {
-  assertBlockFuseArmed,
   assertDataDirIsolated,
   assertFakeMailboxSendOnly,
   assertNoAutoApprove,
   assertProviderKeyPresent,
   assertServerActiveDbMatches,
   assertTelemetrySilent,
+  assertTestModePreflight,
   PreflightError,
 } from "./preflight.js";
 
@@ -30,23 +30,21 @@ const SAVED: Record<string, string | undefined> = {};
 const KEYS = [
   "AUTOBROKER_DATA_DIR",
   "AUTOBROKER_DB",
-  "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
+  "AUTOBROKER_MODE",
   "AUTOBROKER_TEST_AUTO_APPROVE",
   "MASTRA_TELEMETRY_DISABLED",
   "DEEPSEEK_API_KEY",
-  "AUTOBROKER_GMAIL_BACKEND",
 ];
 
 beforeEach(() => {
   for (const k of KEYS) SAVED[k] = process.env[k];
-  // A clean, ISOLATED, fully-armed baseline.
+  // A clean, ISOLATED, test-mode baseline.
   process.env.AUTOBROKER_DATA_DIR = join(homedir(), ".autobroker-ts");
   delete process.env.AUTOBROKER_DB;
-  process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "1";
+  process.env.AUTOBROKER_MODE = "test";
   delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
   process.env.MASTRA_TELEMETRY_DISABLED = "1";
   process.env.DEEPSEEK_API_KEY = "test-key-not-printed";
-  delete process.env.AUTOBROKER_GMAIL_BACKEND; // unset → fake-send-only default
 });
 afterEach(() => {
   for (const k of KEYS) {
@@ -75,17 +73,17 @@ describe("gate ① data-dir isolation", () => {
   });
 });
 
-describe("gate ② BLOCK fuse", () => {
-  it("PASSES when armed exactly '1'", () => {
-    expect(() => assertBlockFuseArmed()).not.toThrow();
+describe("gate ②b test mode (the sole send-control floor)", () => {
+  it("PASSES when AUTOBROKER_MODE is exactly 'test'", () => {
+    expect(() => assertTestModePreflight()).not.toThrow();
   });
   it("REJECTS when unset", () => {
-    delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
-    expect(() => assertBlockFuseArmed()).toThrow(PreflightError);
+    delete process.env.AUTOBROKER_MODE;
+    expect(() => assertTestModePreflight()).toThrow(PreflightError);
   });
-  it("REJECTS when 'true' (not the exact string '1')", () => {
-    process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "true";
-    expect(() => assertBlockFuseArmed()).toThrow(PreflightError);
+  it("REJECTS when 'buyer' (not the exact string 'test')", () => {
+    process.env.AUTOBROKER_MODE = "buyer";
+    expect(() => assertTestModePreflight()).toThrow(PreflightError);
   });
 });
 
@@ -207,29 +205,24 @@ describe("gate ⑧ fake-mailbox send-only", () => {
     rmSync(sandboxDir, { recursive: true, force: true });
   });
 
-  it("PASSES when all four conditions hold (backend unset, isolated db, fuse armed, table present)", () => {
+  it("PASSES when all three conditions hold (test mode, isolated db, table present)", () => {
     expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).not.toThrow();
   });
 
-  it("PASSES when AUTOBROKER_GMAIL_BACKEND is exactly 'fake'", () => {
-    process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
-    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).not.toThrow();
-  });
-
-  it("REJECTS when AUTOBROKER_GMAIL_BACKEND is 'real'", () => {
-    process.env.AUTOBROKER_GMAIL_BACKEND = "real";
+  it("REJECTS when AUTOBROKER_MODE is not 'test' (buyer)", () => {
+    process.env.AUTOBROKER_MODE = "buyer";
     expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(PreflightError);
-    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(/AUTOBROKER_GMAIL_BACKEND/);
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(/AUTOBROKER_MODE/);
+  });
+
+  it("REJECTS when AUTOBROKER_MODE is unset", () => {
+    delete process.env.AUTOBROKER_MODE;
+    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(PreflightError);
   });
 
   it("REJECTS a non-isolated --db (production ~/.autobroker)", () => {
     const prodDb = join(homedir(), ".autobroker", "autobroker.db");
     expect(() => assertFakeMailboxSendOnly({ db: prodDb })).toThrow(PreflightError);
-  });
-
-  it("REJECTS when the L1 BLOCK fuse is disarmed", () => {
-    delete process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS;
-    expect(() => assertFakeMailboxSendOnly({ db: withTableDb })).toThrow(PreflightError);
   });
 
   it("REJECTS when the fake_mailbox_messages table is missing (migration 0002 not applied)", () => {

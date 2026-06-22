@@ -28,8 +28,9 @@ surroundings (e.g. is this write actually behind the gate?).
    `gmail.send`, a dealer-facing DB write) must physically reach the wire only
    through the L2 in-process gate handler, which fails **CLOSED**. Flag: a second
    code path that hits a side effect without the gate; a gate `catch` that falls
-   through to the action (fail-open); the L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS`
-   fuse used as the ONLY floor instead of a redundant outer ring.
+   through to the action (fail-open); a send seam that reaches the network without
+   the per-seam `!isBuyerMode()` brake (`AUTOBROKER_MODE`, the sole send-control
+   variable, is force-pinned to `test` for all test/CI contexts).
 3. **#1244 fail-closed (#4).** On `finish_reason != tool_calls` OR empty
    `tool_calls` OR a tool-shaped blob in message content → the code must fail
    CLOSED (HITL suspend, or hard-abort with `MalformedToolCallAbort`). Flag ANY

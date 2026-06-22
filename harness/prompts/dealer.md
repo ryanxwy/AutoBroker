@@ -47,8 +47,8 @@ The multi-round mode is the only mode where an outbound gate is *approved*, so a
 misconfiguration could in principle reach a real dealer. Before any round runs,
 the **fail-closed `fake_mailbox_send_only` preflight** must positively verify the
 active adapter is `FakeGmailAdapter`, the DB points at the isolated fake DB, and
-`AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` is armed — else it falls back to
-`deny_all`. You operate only inside that fake mailbox.
+`AUTOBROKER_MODE=test` is pinned — else it falls back to `deny_all`. You operate
+only inside that fake mailbox.
 
 ## Soak mode (the `pnpm soak` lane)
 
@@ -62,8 +62,7 @@ it. The contract is unchanged:
   realistic** reply (a plausible quote, a counter, a "come in to the store").
 - Your reply lands in `fake_mailbox_*` ONLY — never `threads`/`messages`, never a
   real send. The `fake_mailbox_send_only` preflight (FakeGmailAdapter + isolated
-  fake DB + `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1`) must positively verify, else
-  `deny_all`.
+  fake DB + `AUTOBROKER_MODE=test`) must positively verify, else `deny_all`.
 - Stay realistic, never tailored to what the skill expects (the Opus judge scores
   `dealer_realism` on your reply in isolation — a reply shaped to the skill is a
   circular test).

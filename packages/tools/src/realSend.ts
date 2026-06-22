@@ -14,9 +14,10 @@
  * Test / harness / CI contexts must NEVER be able to send for real, regardless of
  * the chosen mode. They force test mode via {@link forceTestMode}, and
  * {@link assertTestModeSafe} is a fail-CLOSED tripwire that throws if such a
- * context is ever observed not-in-test-mode (or pointed at a real Gmail backend)
- * — independent of the global default, so the product being buyer-by-default can
- * never make a test or CI run reach a real dealer.
+ * context is ever observed not-in-test-mode — independent of the global default,
+ * so the product being buyer-by-default can never make a test or CI run reach a
+ * real dealer. (The Gmail backend projects FROM this mode, so the not-in-test
+ * check fully covers the send-control floor; there is no separate backend var.)
  */
 
 /** The two app modes. "buyer" is the real product; "test" is internal/safe. */
@@ -55,12 +56,9 @@ export function isHarnessContext(): boolean {
   );
 }
 
-/** Force the internal/safe posture by pinning AUTOBROKER_MODE="test". We set ONLY
- *  the mode here — the fake Gmail backend is already the default (an unset
- *  AUTOBROKER_GMAIL_BACKEND resolves to "fake"), and the lanes that need it pin it
- *  explicitly, so boot must not synthesize a backend value (a settings-route
- *  integration test asserts boot leaves that var untouched). With test mode pinned
- *  the send seams resolve fake. */
+/** Force the internal/safe posture by pinning AUTOBROKER_MODE="test". This is the
+ *  one knob: the Gmail backend is a pure projection of the mode, so pinning test
+ *  mode resolves every send seam to fake/local. */
 export function forceTestMode(): void {
   process.env.AUTOBROKER_MODE = "test";
 }
@@ -75,20 +73,15 @@ export class ModeViolationError extends Error {
 }
 
 /** Fail-CLOSED tripwire. A no-op outside a harness context; INSIDE one it throws
- *  unless the process is in test mode AND not pointed at a real Gmail backend.
- *  Wired into boot so EVERY lane that shares the boot chokepoint is checked,
- *  regardless of the global default. */
+ *  unless the process is in test mode. The Gmail backend projects FROM the mode,
+ *  so the not-in-test check is the sole floor here. Wired into boot so EVERY lane
+ *  that shares the boot chokepoint is checked, regardless of the global default. */
 export function assertTestModeSafe(): void {
   if (!isHarnessContext()) return;
   if (!isTestMode()) {
     throw new ModeViolationError(
       'a harness/test context is not in test mode (AUTOBROKER_MODE is not "test") — ' +
         "refusing to risk a real external send from a test or CI run",
-    );
-  }
-  if (process.env.AUTOBROKER_GMAIL_BACKEND === "real") {
-    throw new ModeViolationError(
-      'a harness/test context has AUTOBROKER_GMAIL_BACKEND="real" — refusing a real Gmail backend in a test context',
     );
   }
 }

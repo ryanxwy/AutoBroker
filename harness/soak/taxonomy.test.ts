@@ -26,7 +26,7 @@ class_name = "cold_start_phrasing"
 stresses = "extraction robustness"
 buyer_model = "opus"
 dealer_needed = false
-deterministic_assertions = ["no_external_mutation", "l1_fuse_armed"]
+deterministic_assertions = ["no_external_mutation", "test_mode_armed"]
 judge_dims = ["buyer_coherence"]
 gate_verbs = []
 `;
@@ -39,7 +39,7 @@ describe("parseTaxonomy", () => {
     expect(s!.className).toBe("cold_start_phrasing");
     expect(s!.buyerModel).toBe("opus");
     expect(s!.dealerNeeded).toBe(false);
-    expect(s!.deterministicAssertions).toEqual(["no_external_mutation", "l1_fuse_armed"]);
+    expect(s!.deterministicAssertions).toEqual(["no_external_mutation", "test_mode_armed"]);
     expect(s!.judgeDims).toEqual(["buyer_coherence"]);
     expect(s!.gateVerbs).toEqual([]);
   });
@@ -170,10 +170,10 @@ describe("loadTaxonomy (the _base.toml seed)", () => {
     }
   });
 
-  it("every scenario asserts the keystone + the L1 fuse (the always-on floor)", () => {
+  it("every scenario asserts the keystone + test mode (the always-on floor)", () => {
     for (const s of all) {
       expect(s.deterministicAssertions).toContain("no_external_mutation");
-      expect(s.deterministicAssertions).toContain("l1_fuse_armed");
+      expect(s.deterministicAssertions).toContain("test_mode_armed");
     }
   });
 

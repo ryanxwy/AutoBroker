@@ -15,8 +15,8 @@
  *
  * ALLOW-LIST DISCIPLINE: this store manages EXACTLY the four key vars below and
  * nothing else. It NEVER reads, writes, or deletes a system/operational env var
- * (AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS, AUTOBROKER_DATA_DIR, MASTRA_TELEMETRY_DISABLED,
- * NODE_ENV, PORT, ...). An id outside the four is rejected.
+ * (AUTOBROKER_MODE, AUTOBROKER_DATA_DIR, MASTRA_TELEMETRY_DISABLED, NODE_ENV,
+ * PORT, ...). An id outside the four is rejected.
  *
  * AT-REST: the file is 0600 plaintext JSON. This is a local-first, single-user
  * app on the owner's own machine, and it matches the existing Gmail-token

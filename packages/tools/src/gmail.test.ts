@@ -8,11 +8,13 @@
  * Freezes:
  *   - redactBudget substitutes leaked budget phrases out, and the substituted
  *     result passes the assertNoBudget belt; a clean string is unchanged;
- *   - createGmailAdapter: default → Fake; =real + isolated dir → Real; =real +
- *     production dir → refused; unknown value → refused; env read FRESH each call;
+ *   - createGmailAdapter: backend is a pure projection of AUTOBROKER_MODE — test
+ *     mode → Fake; buyer mode → Real (refused under the production dir); an
+ *     explicit arg still wins; mode read FRESH each call;
  *   - GmailTool.send routes through the gate, calls adapter.send exactly once,
  *     threads runId into the gate request, returns {mode, messageId}; decline →
- *     {declined:true} with zero sends; an ARMED L1 fuse throws before send;
+ *     {declined:true} with zero sends; in TEST mode an injected real-shaped
+ *     adapter is refused by the seam-A brake before any send;
  *   - __setGmailAdapterForTests refuses outside NODE_ENV=test.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR for the Fake; the
@@ -43,12 +45,11 @@ import {
   type GmailBackend,
   type OutboundEmail,
 } from "./gmail.js";
+import { FakeMailboxPreflightError } from "./gmail/sendPreflight.js";
 import { assertNoBudget } from "./validators.js";
 
-const BACKEND = "AUTOBROKER_GMAIL_BACKEND";
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
-const FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
 const NODE_ENV = "NODE_ENV";
 const MODE = "AUTOBROKER_MODE";
 
@@ -60,12 +61,12 @@ const saved: Record<string, string | undefined> = {};
 let tmpDir: string;
 
 function snapshotEnv(): void {
-  for (const key of [BACKEND, DATA_DIR, DB_OVERRIDE, FUSE, NODE_ENV, MODE]) {
+  for (const key of [DATA_DIR, DB_OVERRIDE, NODE_ENV, MODE]) {
     saved[key] = process.env[key];
   }
 }
 function restoreEnv(): void {
-  for (const key of [BACKEND, DATA_DIR, DB_OVERRIDE, FUSE, NODE_ENV, MODE]) {
+  for (const key of [DATA_DIR, DB_OVERRIDE, NODE_ENV, MODE]) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
   }
@@ -77,8 +78,7 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-gmail-seam-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
-  delete process.env[BACKEND];
-  delete process.env[FUSE];
+  delete process.env[MODE];
 });
 
 afterEach(() => {
@@ -174,57 +174,50 @@ describe("buildRaw", () => {
   });
 });
 
-describe("createGmailAdapter — factory matrix", () => {
-  it("defaults to FakeGmailAdapter when the env is unset AND the mode is test", () => {
+describe("createGmailAdapter — factory matrix (backend = projection of AUTOBROKER_MODE)", () => {
+  it("builds FakeGmailAdapter in test mode", () => {
     migrateFakeDb();
-    delete process.env[BACKEND];
     process.env[MODE] = "test"; // test mode → fake
     expect(createGmailAdapter()).toBeInstanceOf(FakeGmailAdapter);
   });
 
-  it("defaults to RealGmailAdapter when the env is unset and the mode is buyer (buyer-by-default)", () => {
+  it("builds RealGmailAdapter in buyer mode (buyer-by-default)", () => {
     // beforeEach pins DATA_DIR to a throwaway tmpdir (not ~/.autobroker), so the
     // production refusal passes; the real adapter is lazy (no I/O at construction).
-    delete process.env[BACKEND];
     process.env[MODE] = "buyer"; // buyer-by-default
     expect(createGmailAdapter()).toBeInstanceOf(RealGmailAdapter);
   });
 
-  it("builds RealGmailAdapter for =real under an isolated parity-style dir", () => {
+  it("builds RealGmailAdapter in buyer mode under an isolated parity-style dir", () => {
     // Point the data dir at a ~/.autobroker-ts subtree so the prod refusal passes;
     // the real adapter is lazy (no I/O at construction) so this never networks.
     const parityDir = join(homedir(), ".autobroker-ts", "gmail-seam-test");
     process.env[DATA_DIR] = parityDir;
-    process.env[BACKEND] = "real";
+    process.env[MODE] = "buyer";
     expect(createGmailAdapter()).toBeInstanceOf(RealGmailAdapter);
   });
 
-  it("refuses =real when the data dir is under production ~/.autobroker", () => {
+  it("refuses a real backend when the data dir is under production ~/.autobroker", () => {
     process.env[DATA_DIR] = join(homedir(), ".autobroker");
-    process.env[BACKEND] = "real";
+    process.env[MODE] = "buyer"; // buyer mode → real → prod denylist refuses
     expect(() => createGmailAdapter()).toThrow(GmailBackendRefusedError);
   });
 
-  it("refuses an unknown backend string", () => {
-    process.env[BACKEND] = "bogus";
-    expect(() => createGmailAdapter()).toThrow(GmailBackendRefusedError);
-  });
-
-  it("reads AUTOBROKER_GMAIL_BACKEND FRESH on each call (no module caching)", () => {
+  it("reads AUTOBROKER_MODE FRESH on each call (no module caching)", () => {
     migrateFakeDb();
-    delete process.env[BACKEND];
+    process.env[MODE] = "test";
     const first = createGmailAdapter();
     expect(first).toBeInstanceOf(FakeGmailAdapter);
 
-    process.env[BACKEND] = "real";
+    process.env[MODE] = "buyer";
     process.env[DATA_DIR] = join(homedir(), ".autobroker-ts", "gmail-seam-test");
     const second = createGmailAdapter();
     expect(second).toBeInstanceOf(RealGmailAdapter);
   });
 
-  it("honors an explicit backend argument over the env var", () => {
+  it("honors an explicit backend argument over the mode", () => {
     migrateFakeDb();
-    process.env[BACKEND] = "real";
+    process.env[MODE] = "buyer"; // mode says real, but explicit fake wins
     process.env[DATA_DIR] = tmpDir; // not parity, but explicit fake skips the check
     expect(createGmailAdapter("fake")).toBeInstanceOf(FakeGmailAdapter);
   });
@@ -245,18 +238,21 @@ describe("GmailTool.send", () => {
     expect(result).toEqual({ mode: "fake", messageId: "spy-msg-1" });
   });
 
-  it("mode FOLLOWS the adapter: an injected kind:'real' adapter reports mode 'real'", async () => {
+  it("mode FOLLOWS the adapter: an injected kind:'real' adapter reports mode 'real' (buyer mode)", async () => {
+    // In BUYER mode the seam-A brake does not fire, so an injected real adapter is
+    // allowed — the discriminator must follow the adapter that performed the send.
+    process.env[MODE] = "buyer";
     const adapter = spyAdapter("real");
     const tool = new GmailTool(recordingApprover(true), "run-r", adapter);
     const result = await tool.send(CLEAN_EMAIL);
     expect(result).toEqual({ mode: "real", messageId: "spy-msg-1" });
   });
 
-  it("mode tracks the ADAPTER, not the env: kind:'fake' under BACKEND=real still reports 'fake'", async () => {
-    // The env says "real" but the adapter that actually runs is a fake — the
-    // discriminator must follow the adapter that performed the send, never the
-    // env (which can disagree with an injected/test-override adapter).
-    process.env[BACKEND] = "real";
+  it("mode tracks the ADAPTER, not the mode: a kind:'fake' adapter in buyer mode still reports 'fake'", async () => {
+    // The mode says buyer (real) but the adapter that actually runs is a fake —
+    // the discriminator must follow the adapter that performed the send, never the
+    // mode (which can disagree with an injected/test-override adapter).
+    process.env[MODE] = "buyer";
     const adapter = spyAdapter("fake");
     const tool = new GmailTool(recordingApprover(true), "run-mismatch", adapter);
     const result = await tool.send(CLEAN_EMAIL);
@@ -284,12 +280,17 @@ describe("GmailTool.send", () => {
     expect(result).toMatchObject({ messageId: "spy-msg-1" });
   });
 
-  it("throws on an ARMED L1 fuse — before any send (the unified path)", async () => {
-    process.env[FUSE] = "1";
-    const adapter = spyAdapter();
-    const tool = new GmailTool(recordingApprover(true), "run-fuse", adapter);
+  it("seam-A brake: in TEST mode an injected real-shaped adapter is refused before any send", async () => {
+    // The factory would build a Fake in test mode, but a DI/override real-shaped
+    // adapter bypasses the factory — the seam-A `assertFakeMailboxSendOnly` brake
+    // (which the gate already approved past) must catch it at the network boundary
+    // and fail CLOSED with zero sends. This is the load-bearing test-mode floor
+    // now that AUTOBROKER_MODE is the sole send-control var.
+    process.env[MODE] = "test";
+    const adapter = spyAdapter("real"); // a real-shaped spy, NOT a FakeGmailAdapter instance
+    const tool = new GmailTool(recordingApprover(true), "run-seam-a", adapter);
 
-    await expect(tool.send(CLEAN_EMAIL)).rejects.toThrow();
+    await expect(tool.send(CLEAN_EMAIL)).rejects.toThrow(FakeMailboxPreflightError);
     expect(adapter.sendCalls).toHaveLength(0);
   });
 });

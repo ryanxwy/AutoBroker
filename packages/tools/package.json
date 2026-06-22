@@ -2,7 +2,7 @@
   "name": "@autobroker/tools",
   "version": "0.0.0",
   "private": true,
-  "description": "Layer 4 — the ONLY layer that touches the product DB or external APIs. In-process tool closures for Gmail, Playwright browser, DB writes, pure calc/validators, plus the L2 in-process gate bridge (fail-CLOSED single side-effect path) and the L1 AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS env fuse.",
+  "description": "Layer 4 — the ONLY layer that touches the product DB or external APIs. In-process tool closures for Gmail, Playwright browser, DB writes, pure calc/validators, plus the L2 in-process gate bridge (fail-CLOSED single side-effect path) over the AUTOBROKER_MODE send brake (the sole send-control variable).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

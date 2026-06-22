@@ -9,7 +9,8 @@
  * The seven gates (in order):
  *   ① AUTOBROKER_DATA_DIR isolated — under ~/.autobroker-ts, NEVER production
  *      ~/.autobroker; the --db path resolves under it.
- *   ② BLOCK fuse armed — AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS === "1" (exact "1").
+ *   ②b test mode — AUTOBROKER_MODE === "test" (exact "test"). The sole
+ *      send-control floor: a harness run can never reach a real dealer.
  *   ③ no auto-approve — AUTOBROKER_TEST_AUTO_APPROVE unset/!="1" (keep the decline
  *      path live, invariant #11).
  *   ④ telemetry silent — MASTRA_TELEMETRY_DISABLED === "1".
@@ -23,11 +24,11 @@
  *      any scoring. Lives in driverKind.ts (it needs a live run); this module owns
  *      gates ①–⑥, the env/DB envelope that fires with zero network.
  *   ⑧ fake-mailbox send-only (email-pipeline skills only) — the run is in
- *      fake-send-only mode: AUTOBROKER_GMAIL_BACKEND is unset-or-"fake" (NEVER
- *      "real"), the --db is isolated (gate ①), the BLOCK fuse is armed (gate ②),
- *      and the sandbox table fake_mailbox_messages exists (so a Fake send cannot
- *      silently no-op against a DB missing migration 0002). Fail-closed; the only
- *      gate that opens a (read-only) DB handle.
+ *      fake-send-only mode: AUTOBROKER_MODE === "test" (gate ②b, the backend then
+ *      projects to fake), the --db is isolated (gate ①), and the sandbox table
+ *      fake_mailbox_messages exists (so a Fake send cannot silently no-op against
+ *      a DB missing migration 0002). Fail-closed; the only gate that opens a
+ *      (read-only) DB handle.
  *
  * This file touches NO network for gates ①–⑤ (pure env/path checks). Gate ⑥ makes
  * exactly one GET /api/mode call — the FIRST permitted network call, and only
@@ -147,19 +148,10 @@ export function assertDataDirIsolated(opts: Pick<PreflightOpts, "db">): void {
   }
 }
 
-/** Gate ② — the L1 BLOCK fuse must be armed with the EXACT string "1". */
-export function assertBlockFuseArmed(): void {
-  if (process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS !== "1") {
-    throw new PreflightError(
-      'AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS must be exactly "1" (the L1 fuse is not armed)',
-    );
-  }
-}
-
 /** Gate ②b — the run must be in TEST mode. The product is buyer-by-default, so a
- *  harness run must explicitly carry AUTOBROKER_MODE="test" — the one floor that
- *  guarantees a test can never reach a real dealer even if the default is buyer
- *  and the L1 fuse were somehow disarmed. */
+ *  harness run must explicitly carry AUTOBROKER_MODE="test" — the sole
+ *  send-control floor that guarantees a test can never reach a real dealer even
+ *  when the global default is buyer. */
 export function assertTestModePreflight(): void {
   if (process.env.AUTOBROKER_MODE !== "test") {
     throw new PreflightError(
@@ -249,7 +241,6 @@ export async function assertServerActiveDbMatches(opts: PreflightOpts): Promise<
  */
 export async function assertPreflight(opts: PreflightOpts): Promise<void> {
   assertDataDirIsolated(opts); // ①
-  assertBlockFuseArmed(); // ②
   assertTestModePreflight(); // ②b
   assertNoAutoApprove(); // ③
   assertTelemetrySilent(); // ④
@@ -261,7 +252,6 @@ export async function assertPreflight(opts: PreflightOpts): Promise<void> {
  *  assert the env envelope BEFORE it even spawns/contacts a server. */
 export function assertEnvEnvelope(opts: Pick<PreflightOpts, "provider" | "db">): void {
   assertDataDirIsolated(opts); // ①
-  assertBlockFuseArmed(); // ②
   assertTestModePreflight(); // ②b
   assertNoAutoApprove(); // ③
   assertTelemetrySilent(); // ④
@@ -271,35 +261,26 @@ export function assertEnvEnvelope(opts: Pick<PreflightOpts, "provider" | "db">):
 /**
  * Gate ⑧ — fake-mailbox send-only preflight for the email-pipeline skills. The
  * whole run must be in fake-send-only mode before the first run starts, so no real
- * Gmail send can be reached. FAIL-CLOSED: any of the four conditions missing throws
+ * Gmail send can be reached. FAIL-CLOSED: any of the three conditions missing throws
  * a PreflightError. Synchronous; the table-existence check is a read-only local DB
  * query (no network). Each branch names the exact condition that failed.
  *
- *   ① backend is fake — AUTOBROKER_GMAIL_BACKEND is unset-or-"fake"; "real" (or any
- *      other non-empty value) is rejected.
+ *   ① test mode — AUTOBROKER_MODE === "test" (reuses assertTestModePreflight, gate
+ *      ②b). With test mode the Gmail backend projects to fake; AUTOBROKER_MODE is
+ *      the sole send-control floor, so this is the one mailbox-send-only check.
  *   ② data-dir isolated — reuses assertDataDirIsolated (the ~/.autobroker-ts-only
  *      check), so the sandbox DB is never the production tree.
- *   ③ L1 fuse armed — reuses assertBlockFuseArmed (the redundant outer ring).
- *   ④ sandbox table present — fake_mailbox_messages exists (migration 0002), so a
+ *   ③ sandbox table present — fake_mailbox_messages exists (migration 0002), so a
  *      Fake send cannot silently no-op against a DB missing the table.
  */
 export function assertFakeMailboxSendOnly(opts: Pick<PreflightOpts, "db">): void {
-  // ① backend is fake (unset-or-"fake"); reject "real" and any other value.
-  const backend = process.env.AUTOBROKER_GMAIL_BACKEND;
-  if (backend !== undefined && backend !== "" && backend !== "fake") {
-    throw new PreflightError(
-      `AUTOBROKER_GMAIL_BACKEND="${backend}" — email-pipeline runs require fake-send-only ` +
-        `(unset or "fake"); refusing to run with a non-fake mailbox backend`,
-    );
-  }
+  // ① test mode — the backend projects to fake (reuse gate ②b).
+  assertTestModePreflight();
 
   // ② data-dir isolation (reuse gate ①).
   assertDataDirIsolated(opts);
 
-  // ③ L1 BLOCK fuse armed (reuse gate ②).
-  assertBlockFuseArmed();
-
-  // ④ the sandbox table fake_mailbox_messages must exist (migration 0002). Open the
+  // ③ the sandbox table fake_mailbox_messages must exist (migration 0002). Open the
   //    read handle through the one permitted DB channel and close it in a finally.
   const db = openDb(opts.db);
   try {

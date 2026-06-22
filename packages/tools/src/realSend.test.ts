@@ -6,8 +6,7 @@
  *   (a) buyer-by-default — unset/anything-but-"test" ⇒ buyer; only the exact
  *       "test" selects test mode;
  *   (b) harness-context detection keys on the fixture sentinel / NODE_ENV="test";
- *   (c) forceTestMode pins AUTOBROKER_MODE="test" (and leaves the backend var
- *       untouched);
+ *   (c) forceTestMode pins AUTOBROKER_MODE="test";
  *   (d) assertTestModeSafe is a no-op outside a harness context and throws, inside
  *       one, whenever the process is not in test mode — independent of the default.
  */
@@ -27,7 +26,6 @@ const VARS = [
   "AUTOBROKER_MODE",
   "AUTOBROKER_HARNESS",
   "AUTOBROKER_HARNESS_FIXTURE",
-  "AUTOBROKER_GMAIL_BACKEND",
   "NODE_ENV",
 ] as const;
 const original = new Map(VARS.map((v) => [v, process.env[v]]));
@@ -108,14 +106,11 @@ describe("isHarnessContext — harness sentinel / fixture sentinel / NODE_ENV=te
 });
 
 describe("forceTestMode — pins AUTOBROKER_MODE=test", () => {
-  it("pins test mode (and leaves the Gmail backend var untouched)", () => {
+  it("pins test mode (the one send-control knob)", () => {
     process.env.AUTOBROKER_MODE = "buyer";
-    delete process.env.AUTOBROKER_GMAIL_BACKEND;
     forceTestMode();
     expect(process.env.AUTOBROKER_MODE).toBe("test");
     expect(isTestMode()).toBe(true);
-    // boot must not synthesize a backend value (settings-route test asserts this).
-    expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBeUndefined();
   });
 });
 
@@ -130,14 +125,6 @@ describe("assertTestModeSafe — fail-closed tripwire", () => {
     clearHarness();
     process.env.AUTOBROKER_HARNESS_FIXTURE = "1";
     process.env.AUTOBROKER_MODE = "buyer"; // ambient buyer default leaked into a harness
-    expect(() => assertTestModeSafe()).toThrow(ModeViolationError);
-  });
-
-  it("THROWS in a harness context with a real Gmail backend even if in test mode", () => {
-    clearHarness();
-    process.env.AUTOBROKER_HARNESS_FIXTURE = "1";
-    process.env.AUTOBROKER_MODE = "test";
-    process.env.AUTOBROKER_GMAIL_BACKEND = "real";
     expect(() => assertTestModeSafe()).toThrow(ModeViolationError);
   });
 

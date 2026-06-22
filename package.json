@@ -24,7 +24,7 @@
     "harness:export": "pnpm --filter @autobroker/harness run export-daily --",
     "soak": "pnpm --filter @autobroker/harness run soak --",
     "e2e:serve-live": "node apps/ui/e2e/serve-live.mjs",
-    "ui:functional": "pnpm --filter @autobroker/ui run build && for c in harness/cases/*.func.toml; do echo \"=== $c ===\"; AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 AUTOBROKER_MODE=test MASTRA_TELEMETRY_DISABLED=1 DEEPSEEK_API_KEY=functional-dummy-not-used pnpm --filter @autobroker/harness run functional -- --case \"$(basename \"$c\")\" || exit 1; done",
+    "ui:functional": "pnpm --filter @autobroker/ui run build && for c in harness/cases/*.func.toml; do echo \"=== $c ===\"; AUTOBROKER_MODE=test MASTRA_TELEMETRY_DISABLED=1 DEEPSEEK_API_KEY=functional-dummy-not-used pnpm --filter @autobroker/harness run functional -- --case \"$(basename \"$c\")\" || exit 1; done",
     "desktop:bundle": "pnpm --filter @autobroker/desktop run bundle",
     "desktop:start": "pnpm --filter @autobroker/desktop run start",
     "desktop:smoke": "pnpm --filter @autobroker/desktop run smoke"

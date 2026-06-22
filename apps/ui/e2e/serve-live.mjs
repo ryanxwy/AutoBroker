@@ -12,8 +12,9 @@
  *     allowlist's real coords): the Places key has no Geocoding entitlement (a
  *     live geocode blocks) and the 巡检 stays hermetic, yet ANY allowlist city
  *     resolves — so the buyer-brain can search any metro (brand+city), not Irvine.
- *   - Safety floor armed: AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 (fake-send) +
- *     AUTOBROKER_GMAIL_BACKEND=fake. AUTOBROKER_TEST_AUTO_APPROVE is NEVER set.
+ *   - Safety floor armed: AUTOBROKER_MODE=test — the sole send-control floor; the
+ *     Gmail backend projects to fake from it. AUTOBROKER_TEST_AUTO_APPROVE is
+ *     NEVER set.
  *
  * Control routes (OUTSIDE /api, the wall is untouched):
  *   POST /__e2e/inject_replies { profileId, replies:[{dealerName,dealerWebsite,
@@ -334,9 +335,7 @@ process.env.AUTOBROKER_DATA_DIR = tmpDir;
 delete process.env.AUTOBROKER_DB;
 process.env.NODE_ENV = "test"; // arms the intake deps seam guard
 delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
-process.env.AUTOBROKER_MODE = "test"; // internal/safe posture (the buyer-default floor)
-process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "1"; // fake-send floor
-process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
+process.env.AUTOBROKER_MODE = "test"; // the sole send-control floor (Gmail projects to fake)
 // NOTE: DEEPSEEK_API_KEY is intentionally NOT set here — boot's loadDotEnvKeys
 // loads the real key from .env (no-clobber), so the LLM lane is LIVE.
 

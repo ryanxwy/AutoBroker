@@ -4,7 +4,7 @@
  * Two halves:
  *  (1) the DETERMINISTIC-assertion lib — thin, pure wrappers over the EXISTING
  *      harness read channel (dbReads.externalMutationDbCount / snapshotCounts
- *      deltas / readLedgerRowsForRun) + the L1-fuse preflight. Each returns a
+ *      deltas / readLedgerRowsForRun) + the test-mode preflight. Each returns a
  *      typed {assertionId, ok, expected, observed}. Deterministic failures are
  *      AUTHORITATIVE (the safety/correctness floor) and reuse evaluator.ts
  *      semantics: the no_external_mutation keystone failing is a BLOCKER.
@@ -40,8 +40,8 @@ import { spawnClaudeAgent, type ClaudeModel, type ExecImpl } from "./claudeAgent
 export const DETERMINISTIC_ASSERTION_IDS = [
   /** no_external_mutation keystone: externalMutationDbCount delta == 0 (tolerance 0). */
   "no_external_mutation",
-  /** the L1 fuse armed + AUTO_APPROVE absent in the spawned host env. */
-  "l1_fuse_armed",
+  /** test mode pinned (AUTOBROKER_MODE=test) + AUTO_APPROVE absent in the spawned host env. */
+  "test_mode_armed",
   /** profile-ASK 0/2+/1 branch: search_profiles count + the stop-card data-stop-code. */
   "profile_ask_branch",
   /** a gate decline wrote zero rows (the scoped table delta == 0). */
@@ -64,7 +64,7 @@ export type DeterministicAssertionId = (typeof DETERMINISTIC_ASSERTION_IDS)[numb
  *  NON_WAIVABLE). Per-skill safety assertions instead set severity:"blocker". */
 const BLOCKER_ASSERTIONS: ReadonlySet<string> = new Set<string>([
   "no_external_mutation",
-  "l1_fuse_armed",
+  "test_mode_armed",
 ]);
 
 /** Every soft dimension the Opus judge may rule on (load-bearing for these ONLY).
@@ -89,7 +89,7 @@ export type JudgeDimId = (typeof JUDGE_DIM_IDS)[number];
  * shared verdict contract is frozen, the id space is not. A per-skill assertion
  * declares its own `severity`: "blocker" for a safety red-line (folds to BLOCKER
  * like the keystone), "red" for a correctness failure. A result with no severity
- * falls back to the generic BLOCKER_ASSERTIONS set (the keystone + L1 fuse) — so
+ * falls back to the generic BLOCKER_ASSERTIONS set (the keystone + test-mode) — so
  * the base assertions keep their authoritative-blocker behavior unchanged.
  */
 export interface DeterministicResult {
@@ -130,21 +130,22 @@ export function assertNoExternalMutation(args: {
 }
 
 /**
- * L1 fuse armed: the env handed to the spawned serverHost must carry
- * AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 AND must NOT carry AUTOBROKER_TEST_AUTO_APPROVE.
- * A soak preflight refuses to spawn otherwise (this is also asserted as a step
- * anchor so the ledger records it).
+ * Test mode armed: the env handed to the spawned serverHost must carry
+ * AUTOBROKER_MODE=test (the sole send-control floor; the Gmail backend projects
+ * to fake from it) AND must NOT carry AUTOBROKER_TEST_AUTO_APPROVE. A soak
+ * preflight refuses to spawn otherwise (this is also asserted as a step anchor so
+ * the ledger records it).
  */
-export function assertL1FuseArmed(env: NodeJS.ProcessEnv): DeterministicResult {
-  const blockArmed = env["AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS"] === "1";
+export function assertTestModeArmed(env: NodeJS.ProcessEnv): DeterministicResult {
+  const testMode = env["AUTOBROKER_MODE"] === "test";
   const autoApproveAbsent = env["AUTOBROKER_TEST_AUTO_APPROVE"] === undefined;
-  const ok = blockArmed && autoApproveAbsent;
+  const ok = testMode && autoApproveAbsent;
   return {
-    assertionId: "l1_fuse_armed",
+    assertionId: "test_mode_armed",
     ok,
-    expected: "BLOCK_EXTERNAL_MUTATIONS=1 + AUTO_APPROVE absent",
-    observed: `block=${env["AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS"] ?? "unset"} autoApprove=${env["AUTOBROKER_TEST_AUTO_APPROVE"] ?? "absent"}`,
-    ...(ok ? {} : { detail: "L1 fuse disarmed or AUTO_APPROVE set — soak refuses to run" }),
+    expected: "AUTOBROKER_MODE=test + AUTO_APPROVE absent",
+    observed: `mode=${env["AUTOBROKER_MODE"] ?? "unset"} autoApprove=${env["AUTOBROKER_TEST_AUTO_APPROVE"] ?? "absent"}`,
+    ...(ok ? {} : { detail: "test mode not pinned or AUTO_APPROVE set — soak refuses to run" }),
   };
 }
 
@@ -384,7 +385,7 @@ export interface SoakVerdictDoc {
 
 /**
  * Fold the deterministic + judge halves into the four-tier verdict:
- *  - a failed BLOCKER_ASSERTION (keystone / L1 fuse) → BLOCKER (authoritative).
+ *  - a failed BLOCKER_ASSERTION (keystone / test-mode) → BLOCKER (authoritative).
  *  - any other failed deterministic assertion → RED (authoritative).
  *  - a failed judge dim (and no deterministic failure) → RED on those dims.
  *  - all clean → GREEN.

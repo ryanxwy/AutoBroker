@@ -74,8 +74,8 @@ fix or record first — per the harness standard's GREEN→RED rule.
 ## Safety redlines (no loop may dilute these)
 
 - mutation-capable / deny_all skills (C/D risk + the 3 irreversible skills)
-  **never run in an unattended loop**; the only floor is
-  `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` armed + L2 fail-CLOSED.
+  **never run in an unattended loop**; the floor is `AUTOBROKER_MODE=test` (the
+  sole send-control var) + L2 fail-CLOSED.
 - never set `AUTOBROKER_TEST_AUTO_APPROVE` — the decline path must stay
   exercised.
 - loop output toward the plan repo is drafts/reports only; commits are human.

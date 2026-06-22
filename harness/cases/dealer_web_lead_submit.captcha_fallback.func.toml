@@ -1,13 +1,14 @@
 # dealer_web_lead_submit.captcha_fallback.func.toml — the X1 CAPTCHA follow-on.
-# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1).
+# FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test).
 #
 # A captcha-gated contact form can NEVER be auto-submitted (retrying a captcha
 # never helps), so the scout detects the captcha at SCOUT time (a READ on the
-# form-DOM snapshot — the armed L1 fuse makes a post-submit page unreachable, so
-# the captcha could only ever be caught here) and routes the dealer to the email
-# fallback with reason "captcha_fallback". The captcha is NEVER submitted. Like
-# every email_fallback, the browser.submit → gmail.send scope switch demands its
-# OWN sensitive approval — NEVER folded into the batch_review approval.
+# form-DOM snapshot — in test mode the browser submit brake makes a post-submit
+# page unreachable, so the captcha could only ever be caught here) and routes the
+# dealer to the email fallback with reason "captcha_fallback". The captcha is
+# NEVER submitted. Like every email_fallback, the browser.submit → gmail.send
+# scope switch demands its OWN sensitive approval — NEVER folded into the
+# batch_review approval.
 #
 #   step 1  install lead_submit_ready + pin the profile (pin_required).
 #   step 2  "/dealer_web_lead_submit" → the batch card renders all three bound
@@ -18,14 +19,14 @@
 #           is NEVER attempted) — and the emailFallback step raises a SECOND
 #           kind:"approval" suspend (sensitive=true) on the gate-banner
 #           ApprovalPrompt. The driver confirms it (Approve). Only THEN does the
-#           gmail.send scope fire — and under BLOCK=1 sendAndRecord is
-#           L1-fuse-blocked, so the run writes the local email-shape
-#           lead_submissions row (email_fallback_reason='captcha_fallback') but
-#           ZERO messages rows. Terminal `done`; +1 lead_submissions EXACT (the
-#           captcha email-fallback row); messages Δ=0 EXACT (gmail.send
-#           fuse-blocked); keystone clean with allow_fake_outbound; the sensitive
-#           approval card carried NO approve-all affordance (asserted DRIVER-SIDE
-#           on the approval resume); no malformed call.
+#           gmail.send scope fire — and in test mode sendAndRecord FAKE-sends, so
+#           the run writes the local email-shape lead_submissions row
+#           (email_fallback_reason='captcha_fallback') AND one fake outbound
+#           messages row. Terminal `done`; +1 lead_submissions EXACT (the
+#           captcha email-fallback row); messages Δ=1 EXACT (the fake gmail.send);
+#           keystone clean with allow_fake_outbound; the sensitive approval card
+#           carried NO approve-all affordance (asserted DRIVER-SIDE on the
+#           approval resume); no malformed call.
 #
 # (The captcha_fallback REASON + captcha_manual_count===1 are proven by the
 #  offline workflow test; this func case proves the end-to-end UI-lane shape.)
@@ -61,7 +62,7 @@ expect = "visible"
 [[steps]]
 id = "lead_captcha_fallback"
 skill = "dealer_web_lead_submit"
-purpose = "Approve the captcha-gated dealer at the batch card, then APPROVE the independent email re-confirm — one captcha email-shape fake row, zero messages, captcha never submitted."
+purpose = "Approve the captcha-gated dealer at the batch card, then APPROVE the independent email re-confirm — one captcha email-shape fake row, one fake messages row, captcha never submitted."
 gate_policy = "deny_all"
 launch = "chat_slash"
 
@@ -109,14 +110,14 @@ delta_min = 1
 exact = true
 
 [[steps.anchors]]
-kind = "table_min_rows"     # zero Gmail sends — sendAndRecord is L1-fuse-blocked.
+kind = "table_min_rows"     # one fake Gmail send — sendAndRecord FAKE-sends in test mode.
 table = "messages"
 scope = "profile"
-delta_min = 0
+delta_min = 1
 exact = true
 
 [[steps.anchors]]
-kind = "no_external_mutation"   # the captcha email-fallback row is a LEGAL fake outbound.
+kind = "no_external_mutation"   # the captcha email-fallback row + fake messages row are LEGAL fake outbound.
 allow_fake_outbound = true
 
 [[steps.anchors]]

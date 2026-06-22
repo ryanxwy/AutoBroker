@@ -119,11 +119,12 @@ rail and message streaming.
 ### Safety, in one line
 
 Side effects can physically reach `browser.submit` / `gmail.send` **only**
-through the L2 in-process gate handler, which fails **closed**. The
-`AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` env fuse is a redundant outer ring, not
-the only floor. The three irreversible skills stay fake-send until their phase
-passes, and their human approval is never hidden. See `CLAUDE.md` for the full
-invariant set.
+through the L2 in-process gate handler, which fails **closed**. `AUTOBROKER_MODE`
+is the single send-control variable: `AUTOBROKER_MODE=test` resolves every send
+to the local fake mailbox, while `buyer` (the default) enables real sends — still
+one human-approved action at a time through the L2 gate. The three irreversible
+skills stay fake-send until their phase passes, and their human approval is never
+hidden. See `CLAUDE.md` for the full invariant set.
 
 ---
 

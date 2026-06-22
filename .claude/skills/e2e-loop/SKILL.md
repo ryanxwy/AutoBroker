@@ -67,8 +67,8 @@ blocks a merge.
 
 ## Guardrails
 
-- Isolated tmp data-dir; `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` armed; **never** set
-  `AUTOBROKER_TEST_AUTO_APPROVE` — keep the decline path live (CLAUDE.md inv #11).
+- Isolated tmp data-dir; `AUTOBROKER_MODE=test` pinned (the sole send-control var);
+  **never** set `AUTOBROKER_TEST_AUTO_APPROVE` — keep the decline path live (CLAUDE.md inv #11).
 - The 3 irreversible skills stay **fake-send**; gates render BEFORE prose; decline =
   Δ0, proven via `/__e2e/rows` (inv #8, #10).
 - #1244 fail-closed watch on the largest live extractions (inv #4, by name — never

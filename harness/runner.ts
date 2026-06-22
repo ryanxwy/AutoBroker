@@ -219,9 +219,6 @@ function startServerHost(opts: RunnerOpts): Promise<HostHandle> {
     // to flip it. serverHost self-sets these too.
     AUTOBROKER_HARNESS: "1",
     AUTOBROKER_MODE: "test",
-    // Backend floor independent of mode: the host never resolves a real Gmail
-    // backend, even if mode were somehow flipped.
-    AUTOBROKER_GMAIL_BACKEND: "fake",
   };
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;
   // Functional lane: arm the host's fixture mode (deterministic DI stubs + the

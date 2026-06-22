@@ -1003,9 +1003,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   // ========================================================================
   // settings/env — the curated NON-SECRET operational env vars. The route layer
   // NEVER reads/writes the env file; it delegates to the tools envConfigStore.
-  // The L1 safety fuse (AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS) appears here ONLY as
-  // a read-only status row — no route, method, or body can write it (the PUT id
-  // enum rejects its id, and the store refuses any non-editable id).
+  // AUTOBROKER_MODE (the sole send-control var) is the editable "Mode" row; the
+  // read-only paths/status rows can never be written (the PUT id enum rejects a
+  // non-editable id, and the store refuses any non-editable id).
   // ========================================================================
 
   // ---- GET /api/settings/env — curated vars with live values ---------------

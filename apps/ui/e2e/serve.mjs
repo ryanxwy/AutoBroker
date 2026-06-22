@@ -68,11 +68,11 @@ process.env.NODE_ENV = "test";
 delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
 // This lane must NEVER really send. The product is buyer-by-default, so force the
 // internal posture EXPLICITLY here (not via NODE_ENV alone, an overloaded flag) —
-// pin test mode + the fake mailbox — so a buyer-by-default global can never let a
-// func/Playwright run reach a real dealer. boot's assertTestModeSafe tripwire
-// re-asserts this fail-closed.
+// pin test mode (the sole send-control floor; the Gmail backend projects to fake
+// from it) — so a buyer-by-default global can never let a func/Playwright run
+// reach a real dealer. boot's assertTestModeSafe tripwire re-asserts this
+// fail-closed.
 process.env.AUTOBROKER_MODE = "test";
-process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
 // The DeepSeek provider registry is CONSTRUCTED at boot (createRailMemory pins OM
 // to deepseek.chat) but NEVER exercised — give it a dummy key so construction
 // never trips on a missing env, while no live call is ever made.

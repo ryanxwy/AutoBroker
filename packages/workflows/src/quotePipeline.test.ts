@@ -58,7 +58,7 @@ import { quotePipelineOutputSchema } from "./quotePipelineContracts.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
-const FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
+const MODE = "AUTOBROKER_MODE";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_SQLS = [
@@ -73,16 +73,16 @@ let tmpDir: string;
 let db: Db;
 let originalDataDir: string | undefined;
 let originalDbOverride: string | undefined;
-let originalFuse: string | undefined;
+let originalMode: string | undefined;
 
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
   originalDbOverride = process.env[DB_OVERRIDE];
-  originalFuse = process.env[FUSE];
+  originalMode = process.env[MODE];
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-qp-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
-  delete process.env[FUSE];
+  process.env[MODE] = "test"; // a non-injected send resolves fake/local.
   db = openDb();
   for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
@@ -96,8 +96,8 @@ afterEach(() => {
   else process.env[DATA_DIR] = originalDataDir;
   if (originalDbOverride === undefined) delete process.env[DB_OVERRIDE];
   else process.env[DB_OVERRIDE] = originalDbOverride;
-  if (originalFuse === undefined) delete process.env[FUSE];
-  else process.env[FUSE] = originalFuse;
+  if (originalMode === undefined) delete process.env[MODE];
+  else process.env[MODE] = originalMode;
 });
 
 // ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ describe("quote_pipeline targeted-VIN", () => {
     __setQuotePipelineDepsForTests({
       sendAndRecord: async () => {
         sends += 1;
-        return { kind: "blocked", messageRowId: null, reconcile_hint: "l1_fuse_blocked" };
+        return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
       },
     });
 
@@ -363,7 +363,7 @@ describe("quote_pipeline targeted-VIN", () => {
     __setQuotePipelineDepsForTests({
       sendAndRecord: async (target) => {
         sentBody = target.email.body;
-        return { kind: "blocked", messageRowId: null, reconcile_hint: "l1_fuse_blocked" };
+        return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
       },
     });
 
@@ -397,14 +397,13 @@ describe("quote_pipeline targeted-VIN", () => {
 
   // The REAL sendAndRecord path (NOT a stub): the orchestrator builds a thread
   // reply target (threadId + inReplyToGmailId paired from the real inbound's
-  // gmail_message_id), so validateThreadFlags must NOT throw. The fuse is ARMED
-  // (BLOCK=1), so the send is the fake-blocked outcome (zero real send, zero
-  // outbound messages row), while the LOCAL recordQuoteFromListing still writes
-  // one dealer_quotes row on the real inbound message id.
-  it("approve through the REAL sendAndRecord under BLOCK=1 → thread flags pair, send blocked, one recorded quote", async () => {
+  // gmail_message_id), so validateThreadFlags must NOT throw. In test mode the
+  // injected FakeGmailAdapter resolves a FAKE/local send (no real send), so one
+  // outbound messages row is written, while the LOCAL recordQuoteFromListing also
+  // writes one dealer_quotes row on the real inbound message id.
+  it("approve through the REAL sendAndRecord in test mode → thread flags pair, fake send, one recorded quote", async () => {
     seedProfile();
     const { listingId } = seedTargetedWorld();
-    process.env[FUSE] = "1"; // the L1 fuse is the live anchor.
     let realSendCalled = false;
     __setQuotePipelineDepsForTests({
       // Drive the REAL sendAndRecord against a FakeGmailAdapter + the test DB.
@@ -433,11 +432,11 @@ describe("quote_pipeline targeted-VIN", () => {
     expect(out.finalState).toBe("ok");
     expect(realSendCalled).toBe(true);
 
-    // BLOCK=1 → zero outbound row written (the fuse throws before the draft insert).
+    // Test mode → the FAKE send writes exactly one outbound row (no real send).
     const afterOutbound = db.$client
       .prepare("SELECT COUNT(*) AS n FROM messages WHERE direction = 'outbound'")
       .get() as { n: number };
-    expect(afterOutbound.n).toBe(beforeOutbound.n);
+    expect(afterOutbound.n).toBe(beforeOutbound.n + 1);
 
     // recordQuoteFromListing wrote exactly one dealer_quotes row on the REAL inbound msg.
     expect(quoteCount()).toBe(1);
@@ -458,7 +457,7 @@ describe("quote_pipeline targeted-VIN", () => {
       sendAndRecord: async () => ({
         kind: "blocked",
         messageRowId: null,
-        reconcile_hint: "l1_fuse_blocked",
+        reconcile_hint: "mode_blocked",
       }),
     });
 

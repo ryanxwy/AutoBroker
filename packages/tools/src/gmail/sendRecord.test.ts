@@ -1,12 +1,13 @@
 /**
  * L1 unit tests — the draft-then-promote outbound send+record writer. Proves the
- * four outcomes and the side-effect/row invariants, all against an isolated
- * throwaway DB with a fake spy adapter (no network, no real Gmail):
- *   - approve (fuse disarmed) → exactly one `messages` row, gmail id backfilled
- *     once;
+ * outcomes and the side-effect/row invariants, all against an isolated throwaway
+ * DB with a fake spy adapter (no network, no real Gmail):
+ *   - approve (buyer mode / approved fake) → exactly one `messages` row, gmail id
+ *     backfilled once;
  *   - decline → ZERO rows, adapter.send never called;
- *   - ARMED L1 fuse + approving approver → `blocked`, ZERO rows, send never
- *     called;
+ *   - test mode + a non-fake adapter → the mode brake throws before the draft
+ *     insert (fail closed), ZERO rows, send never called;
+ *   - buyer mode + a real-kind adapter → allowed (the real-send path);
  *   - adapter.send throws → `partial`, the draft row survives with a NULL gmail
  *     id;
  *   - promote is double-fire-safe (a second promote is a no-op);
@@ -15,8 +16,8 @@
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR; the committed
  * migration SQL runs against the throwaway DB. NEVER touches ~/.autobroker or
- * ~/.autobroker-ts. The L1 fuse is DISARMED for every case except the one that
- * tests the armed fuse.
+ * ~/.autobroker-ts. AUTOBROKER_MODE is the sole send-control var; test mode is
+ * the default, the one buyer-path test opts in.
  */
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -39,7 +40,6 @@ import {
 } from "./sendRecord.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
-const FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
 const MODE = "AUTOBROKER_MODE";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -50,10 +50,10 @@ let tmpDir: string;
 let db: Db;
 
 function snapshotEnv(): void {
-  for (const key of [DATA_DIR, FUSE, MODE]) saved[key] = process.env[key];
+  for (const key of [DATA_DIR, MODE]) saved[key] = process.env[key];
 }
 function restoreEnv(): void {
-  for (const key of [DATA_DIR, FUSE, MODE]) {
+  for (const key of [DATA_DIR, MODE]) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
   }
@@ -63,7 +63,6 @@ beforeEach(() => {
   snapshotEnv();
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-send-record-"));
   process.env[DATA_DIR] = tmpDir;
-  delete process.env[FUSE];
   process.env[MODE] = "test"; // test mode by default; the buyer test opts in
   db = openDb();
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
@@ -90,9 +89,9 @@ function recordingApprover(verdict: boolean): Approver & { seen: GateRequest[] }
 }
 
 /** A plain spy adapter (kind "fake"). Used ONLY for paths where the send is
- *  never reached (decline, armed fuse) or where the preflight rejects it first
- *  (non-fake kind override) — the preflight checks `instanceof FakeGmailAdapter`,
- *  so the happy/partial paths use a real FakeGmailAdapter instead. Only `send` is
+ *  never reached (decline) or where the mode brake rejects it first (non-fake
+ *  kind override) — the brake checks `instanceof FakeGmailAdapter`, so the
+ *  happy/partial paths use a real FakeGmailAdapter instead. Only `send` is
  *  exercised; read methods throw if touched. */
 function spyFakeAdapter(): GmailAdapter & { sendCalls: string[] } {
   const sendCalls: string[] = [];
@@ -137,7 +136,7 @@ describe("sendAndRecord", () => {
   // The preflight requires a genuine FakeGmailAdapter instance, so the happy and
   // partial paths build one against the isolated DB rather than the plain spy.
 
-  it("approve + disarmed fuse → exactly one row, gmail id backfilled once", async () => {
+  it("approve (test mode, fake adapter) → exactly one row, gmail id backfilled once", async () => {
     const { FakeGmailAdapter } = await import("./fakeAdapter.js");
     const adapter = new FakeGmailAdapter(db);
     const before = messageRowCount();
@@ -172,27 +171,6 @@ describe("sendAndRecord", () => {
     });
 
     expect(outcome).toEqual({ kind: "declined", messageRowId: null });
-    expect(messageRowCount()).toBe(before);
-    expect(adapter.sendCalls).toHaveLength(0);
-  });
-
-  it("ARMED fuse + approving approver → blocked, ZERO rows, send never called", async () => {
-    process.env[FUSE] = "1";
-    const adapter = spyFakeAdapter();
-    const before = messageRowCount();
-
-    const outcome = await sendAndRecord(topLevelTarget(), {
-      approver: recordingApprover(true),
-      runId: "run-3",
-      adapter,
-      db,
-    });
-
-    expect(outcome.kind).toBe("blocked");
-    if (outcome.kind === "blocked") {
-      expect(outcome.messageRowId).toBeNull();
-      expect(outcome.reconcile_hint).toBe("l1_fuse_blocked");
-    }
     expect(messageRowCount()).toBe(before);
     expect(adapter.sendCalls).toHaveLength(0);
   });
@@ -249,10 +227,9 @@ describe("sendAndRecord", () => {
   });
 
   it("BUYER: in buyer mode, a real-kind adapter is ALLOWED — row written, send called", async () => {
-    // Buyer-by-default: the fake-only preflight is skipped, so the resolved real
-    // adapter proceeds (still only because the approver approved + the fuse is
-    // disarmed). This is the real-send path the product now ships by default.
-    delete process.env[FUSE]; // disarmed
+    // Buyer-by-default: the fake-only mode brake is skipped, so the resolved real
+    // adapter proceeds (still only because the approver approved). This is the
+    // real-send path the product now ships by default.
     process.env[MODE] = "buyer"; // buyer mode
     const realish = spyFakeAdapter();
     Object.defineProperty(realish, "kind", { value: "real" });

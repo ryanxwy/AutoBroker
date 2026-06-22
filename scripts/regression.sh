@@ -40,7 +40,7 @@ fi
 
 echo "== regression $STAMP ==" | tee "$REPORT"
 
-if env -u AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS bash scripts/green.sh >"$REPORT_DIR/$STAMP.green.log" 2>&1; then
+if bash scripts/green.sh >"$REPORT_DIR/$STAMP.green.log" 2>&1; then
   echo "green.sh: GREEN" | tee -a "$REPORT"
 else
   echo "green.sh: FAILED (see $STAMP.green.log) — fix the repo before burning live calls." | tee -a "$REPORT"
@@ -54,7 +54,6 @@ while IFS= read -r case_file; do
   log="$REPORT_DIR/$STAMP.$(basename "$case_file" .toml).log"
   t0=$SECONDS
   if AUTOBROKER_DATA_DIR="${AUTOBROKER_DATA_DIR:-$HOME/.autobroker-ts/harness-runs}" \
-     AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 \
      AUTOBROKER_MODE=test \
      MASTRA_TELEMETRY_DISABLED=1 \
      pnpm -s harness intake --case "$case_file" --layer L2 >"$log" 2>&1; then ok=1; else ok=0; fi
