@@ -121,3 +121,33 @@ expect = "absent"
 kind = "dom_state"
 testid = "env-path-data_dir"
 expect = "visible"
+
+# The editable per_dealer_record_cap numeric row renders.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-row-per_dealer_record_cap"
+expect = "visible"
+
+# Its number input renders.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-input-per_dealer_record_cap"
+expect = "visible"
+
+[[steps.ui_actions]]
+verb = "fill"
+testid = "env-input-per_dealer_record_cap"
+value = "30"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "env-save-per_dealer_record_cap"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "env-saved-per_dealer_record_cap"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-saved-per_dealer_record_cap"
+expect = "visible"

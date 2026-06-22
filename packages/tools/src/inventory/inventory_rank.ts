@@ -299,8 +299,9 @@ const PREFERRED_INVENTORY_STATUSES = new Set(["in_stock", "in_transit"]);
  * dropped upstream — this function does not re-check them.
  *
  * Parity note: the frozen Python oracle records up to 60 listings per dealer,
- * unranked. This top-20-best-match cap is an intentional, owner-directed
- * divergence — do NOT expect the parity gate to match the oracle here.
+ * unranked. This best-match record cap (default 20, configurable) is an
+ * intentional, owner-directed divergence — do NOT expect the parity gate to
+ * match the oracle here.
  *
  * @param ctx    Profile match context (make/model/trim/year/colors/radius/budget).
  * @param rows   Classified rows for ONE dealer (listing + matchStatus pairs).

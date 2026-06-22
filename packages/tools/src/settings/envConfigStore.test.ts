@@ -35,6 +35,7 @@ const TOUCHED = [
   "AUTOBROKER_GMAIL_BACKEND",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
+  "AUTOBROKER_PER_DEALER_RECORD_CAP",
   "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS",
   "AUTOBROKER_DEMO_SEED",
   "AUTOBROKER_TEST_AUTO_APPROVE",
@@ -219,5 +220,55 @@ describe("loadEnvConfigIntoEnv — launch-supplied vars untouched without an ove
 
     // Untouched — the loader only applies saved overrides.
     expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBe("fake");
+  });
+});
+
+describe("per_dealer_record_cap — editable-numeric descriptor + validation", () => {
+  it("is present in getEnvConfig with classification editable-numeric, editable true, min 1, max 80", () => {
+    const row = getEnvConfig().find((r) => r.id === "per_dealer_record_cap");
+    expect(row).toBeDefined();
+    expect(row?.classification).toBe("editable-numeric");
+    expect(row?.editable).toBe(true);
+    expect(row?.numericMin).toBe(1);
+    expect(row?.numericMax).toBe(80);
+    expect(row?.default).toBe("20");
+  });
+
+  it("accepts the default value 20", () => {
+    expect(() => setEnvConfig("per_dealer_record_cap", "20")).not.toThrow();
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBe("20");
+  });
+
+  it("accepts boundary value 1", () => {
+    expect(() => setEnvConfig("per_dealer_record_cap", "1")).not.toThrow();
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBe("1");
+  });
+
+  it("accepts boundary value 80", () => {
+    expect(() => setEnvConfig("per_dealer_record_cap", "80")).not.toThrow();
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBe("80");
+  });
+
+  it("rejects 0 (below minimum) with InvalidEnvValueError", () => {
+    expect(() => setEnvConfig("per_dealer_record_cap", "0")).toThrow(InvalidEnvValueError);
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBeUndefined();
+  });
+
+  it("rejects 81 (above maximum) with InvalidEnvValueError", () => {
+    expect(() => setEnvConfig("per_dealer_record_cap", "81")).toThrow(InvalidEnvValueError);
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBeUndefined();
+  });
+
+  it("rejects a non-integer string with InvalidEnvValueError", () => {
+    expect(() => setEnvConfig("per_dealer_record_cap", "20.5")).toThrow(InvalidEnvValueError);
+    expect(() => setEnvConfig("per_dealer_record_cap", "abc")).toThrow(InvalidEnvValueError);
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBeUndefined();
+  });
+
+  it("round-trips through loadEnvConfigIntoEnv after a simulated restart", () => {
+    setEnvConfig("per_dealer_record_cap", "40");
+    delete process.env.AUTOBROKER_PER_DEALER_RECORD_CAP;
+    loadEnvConfigIntoEnv();
+    expect(process.env.AUTOBROKER_PER_DEALER_RECORD_CAP).toBe("40");
   });
 });

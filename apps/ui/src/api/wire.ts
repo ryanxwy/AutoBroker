@@ -627,13 +627,13 @@ export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
 // ---------------------------------------------------------------------------
 
 /** The editable env ids the route accepts on PUT. */
-export const ENV_EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless"] as const;
+export const ENV_EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
 export type EnvEditableId = (typeof ENV_EDITABLE_IDS)[number];
 
 /** One curated env-var row with its current effective value — mirrors the store
  *  EnvVarState (descriptor fields + the projected `value`). `allowedValues` is
- *  the enum/bool list or null (path / free status rows); `default` is the
- *  descriptor default or null. Flat + all-required per the wire convention. */
+ *  the enum/bool list or null (path / free status / numeric rows); `default` is
+ *  the descriptor default or null. Flat + all-required per the wire convention. */
 export const EnvVarStateSchema = z.object({
   id: z.string(),
   envVar: z.string(),
@@ -641,12 +641,15 @@ export const EnvVarStateSchema = z.object({
     "editable-enum",
     "editable-bool",
     "editable-text",
+    "editable-numeric",
     "read-only-status",
     "read-only-path",
   ]),
   editable: z.boolean(),
   allowedValues: z.array(z.string()).nullable(),
   default: z.string().nullable(),
+  numericMin: z.number().nullable(),
+  numericMax: z.number().nullable(),
   label: z.string(),
   tooltip: z.string(),
   value: z.string(),

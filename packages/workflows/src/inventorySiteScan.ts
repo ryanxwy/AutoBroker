@@ -132,6 +132,8 @@ import {
   resolveActiveProfile as resolveActiveProfileImpl,
   resolveSrp,
   selectTopListingsForDealer,
+  resolvePerDealerRecordCap,
+  PER_DEALER_RECORD_CAP_DEFAULT,
   validateVinProvenance,
   withBrowserContext,
   type BrowserEmitter,
@@ -712,16 +714,21 @@ export const CARD_COLLECT_MAX = 80;
 
 /**
  * Per-dealer (per-website) hard cap on listings RECORDED per scan run.
- * After extraction + classification, only the top-20 best-match in-stock rows
- * are persisted; the rest are dropped and counted in `listingsDroppedBeyondCap`.
+ * After extraction + classification, only the top-N best-match in-stock rows
+ * are persisted (N = the configurable cap, default 20; resolved at scan time via
+ * `resolvePerDealerRecordCap()` from the `AUTOBROKER_PER_DEALER_RECORD_CAP`
+ * setting); the rest are dropped and counted in `listingsDroppedBeyondCap`.
  * Selection uses the composite key in `selectTopListingsForDealer` (tools layer):
  * availability tier → match tier → score DESC → listing_id ASC.
  *
  * Parity note: the frozen Python oracle records up to 60 listings per dealer,
  * unranked. This cap is an intentional, owner-directed divergence — the parity
  * gate is NOT expected to match the oracle here.
+ *
+ * Kept as a default-valued alias for readability; the live value comes from
+ * `resolvePerDealerRecordCap()` at the call site, not from this constant.
  */
-export const PER_DEALER_RECORD_CAP = 20;
+export const PER_DEALER_RECORD_CAP = PER_DEALER_RECORD_CAP_DEFAULT;
 
 /**
  * In-page probe: collect {href, cardText} for every inventory result card on
@@ -1451,8 +1458,8 @@ const InventoryScanStateSchema = z.object({
    *  null (the row itself survives to the usual VIN-or-URL key rule). */
   urlProvenanceStripped: z.number().int(),
   vdpVinsAttached: z.number().int(),
-  /** Listings dropped by the per-dealer top-20 best-match record cap
-   *  (applied after extraction + classification, before persist). */
+  /** Listings dropped by the per-dealer best-match record cap (default 20,
+   *  configurable; applied after extraction + classification, before persist). */
   listingsDroppedBeyondCap: z.number().int(),
   persist: PersistCountsSchema.nullable(),
 });
@@ -1493,7 +1500,7 @@ const InventoryScanOutputSchema = z.discriminatedUnion("outcome", [
     rowsInvalidDropped: z.number().int(),
     vinProvenanceDropped: z.number().int(),
     urlProvenanceStripped: z.number().int(),
-    /** Listings dropped by the per-dealer top-20 best-match record cap. */
+    /** Listings dropped by the per-dealer best-match record cap (default 20, configurable). */
     listingsDroppedBeyondCap: z.number().int(),
     summary: z.string(),
   }),
@@ -1947,15 +1954,16 @@ const extractStep = createStep({
           listingsFound += 1;
         }
 
-        // Apply per-dealer top-20 best-match record cap AFTER extraction +
-        // classification, BEFORE persisting. Dropped rows are never written.
+        // Apply per-dealer best-match record cap (default 20, configurable via
+        // resolvePerDealerRecordCap) AFTER extraction + classification, BEFORE
+        // persisting. Dropped rows are never written.
         // Capped-out rows that were persisted in a prior scan participate in the
         // normal staleSuperseded soft-supersede on the next scan — the cap is a
         // recording gate, not a hard delete of previously persisted rows.
         const { kept, dropped } = selectTopListingsForDealer(
           matchCtx,
           classified,
-          PER_DEALER_RECORD_CAP,
+          resolvePerDealerRecordCap(),
         );
         listingsDroppedBeyondCap += dropped;
         carry.classified.set(row.dealer_id, kept);
@@ -2036,7 +2044,7 @@ const persistConfirmStep = createStep({
           ? `, ${state.urlProvenanceStripped} unverifiable URL(s) cleared`
           : "") +
         (state.listingsDroppedBeyondCap > 0
-          ? `, ${state.listingsDroppedBeyondCap} listing(s) beyond the per-site top-20 cap dropped`
+          ? `, ${state.listingsDroppedBeyondCap} listing(s) beyond the per-site record cap dropped`
           : "") +
         `. Filter ladder: ${state.rungUrlTemplateHits} URL-template hit(s), ` +
         `${state.rungDomFilterHits} on-page filter hit(s), ` +

@@ -77,6 +77,15 @@ export function EnvRow({ state, onSet, busyError, saved }: EnvRowProps): JSX.Ele
         {classification === "editable-text" && (
           <TextControl id={id} value={value} onSet={onSet} />
         )}
+        {classification === "editable-numeric" && (
+          <NumericControl
+            id={id}
+            value={value}
+            numericMin={state.numericMin}
+            numericMax={state.numericMax}
+            onSet={onSet}
+          />
+        )}
         {classification === "read-only-status" && <StatusBadge id={id} value={value} />}
         {classification === "read-only-path" && (
           <code className="env-path" data-testid={`env-path-${id}`}>
@@ -238,6 +247,60 @@ function TextControl({
         data-testid={`env-input-${id}`}
         value={draft}
         placeholder="you@example.com"
+        autoComplete="off"
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <button
+        type="submit"
+        className="btn-primary"
+        data-testid={`env-save-${id}`}
+        disabled={!dirty}
+      >
+        Save
+      </button>
+    </form>
+  );
+}
+
+/** A numeric editable var. Types a draft and Save commits it. Resets to the
+ *  committed value after a successful save / external refetch. An unchanged
+ *  draft disables Save; the server re-validates the range. */
+function NumericControl({
+  id,
+  value,
+  numericMin,
+  numericMax,
+  onSet,
+}: {
+  id: string;
+  value: string;
+  numericMin: number | null;
+  numericMax: number | null;
+  onSet: (id: string, value: string) => void;
+}): JSX.Element {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  const trimmed = draft.trim();
+  const dirty = trimmed.length > 0 && trimmed !== value;
+
+  return (
+    <form
+      className="env-text"
+      data-testid={`env-numeric-${id}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty) onSet(id, trimmed);
+      }}
+    >
+      <input
+        type="number"
+        className="env-input"
+        data-testid={`env-input-${id}`}
+        value={draft}
+        min={numericMin ?? undefined}
+        max={numericMax ?? undefined}
+        step={1}
         autoComplete="off"
         onChange={(e) => setDraft(e.target.value)}
       />

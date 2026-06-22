@@ -231,7 +231,7 @@ const TestKeyBodySchema = z.object({
  *  store is ever called (the L1 fuse var is structurally unreachable here). The
  *  store re-checks editable + allowedValues as defense-in-depth. */
 const SetEnvBodySchema = z.object({
-  id: z.enum(["gmail_backend", "gmail_account", "chrome_headless"]),
+  id: z.enum(["gmail_backend", "gmail_account", "chrome_headless", "per_dealer_record_cap"]),
   value: z.string().min(1).max(254),
 });
 

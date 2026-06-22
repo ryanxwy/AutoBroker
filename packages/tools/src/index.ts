@@ -306,6 +306,12 @@ export {
   type RankedCandidate,
   type RankInventoryResult,
 } from "./inventory/compute.js";
+export {
+  PER_DEALER_RECORD_CAP_DEFAULT,
+  PER_DEALER_RECORD_CAP_MIN,
+  PER_DEALER_RECORD_CAP_MAX,
+  resolvePerDealerRecordCap,
+} from "./inventory/recordCap.js";
 
 // Fake-mailbox corpus seeder — the inbound deterministic row builder (the
 // adapter only writes outbound, so this stages the dealer-reply corpus the read

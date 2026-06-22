@@ -38,6 +38,11 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveDataDir } from "../db.js";
+import {
+  PER_DEALER_RECORD_CAP_DEFAULT,
+  PER_DEALER_RECORD_CAP_MIN,
+  PER_DEALER_RECORD_CAP_MAX,
+} from "../inventory/recordCap.js";
 
 /** The stable id for each curated row (the wire id used by the routes). The two
  *  TEST_* escapes are deliberately absent — they have no id and so are
@@ -47,6 +52,7 @@ export type EnvVarId =
   | "gmail_backend"
   | "gmail_account"
   | "chrome_headless"
+  | "per_dealer_record_cap"
   // read-only status
   | "block_external_mutations"
   | "demo_seed"
@@ -58,6 +64,7 @@ export type EnvVarClass =
   | "editable-enum"
   | "editable-bool"
   | "editable-text"
+  | "editable-numeric"
   | "read-only-status"
   | "read-only-path";
 
@@ -70,9 +77,13 @@ export interface EnvVarDescriptor {
   readonly classification: EnvVarClass;
   /** true ONLY for the editable ids — the structural write gate. */
   readonly editable: boolean;
-  /** The enum/bool value list; null for path / free status rows. */
+  /** The enum/bool value list; null for path / free status / numeric rows. */
   readonly allowedValues: readonly string[] | null;
   readonly default: string | null;
+  /** For editable-numeric: the inclusive lower bound; null otherwise. */
+  readonly numericMin: number | null;
+  /** For editable-numeric: the inclusive upper bound; null otherwise. */
+  readonly numericMax: number | null;
   /** Short non-tech UI label. */
   readonly label: string;
   /** Non-tech tooltip copy shown next to the row. */
@@ -90,6 +101,8 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     editable: true,
     allowedValues: ["fake", "real"],
     default: "fake",
+    numericMin: null,
+    numericMax: null,
     label: "Email mode",
     tooltip:
       "Email mode. Sample uses a built-in practice inbox (nothing leaves your computer). Live reads your real Gmail. Sending stays off either way until you approve each message.",
@@ -104,6 +117,8 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     // (or via env) and persisted to the 0600 env.json on this machine only.
     allowedValues: null,
     default: null,
+    numericMin: null,
+    numericMax: null,
     label: "Gmail account",
     tooltip:
       "The Gmail address AutoBroker connects to in Live email mode. It pre-selects the right account on Google's sign-in screen when you authorize access.",
@@ -115,9 +130,24 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     editable: true,
     allowedValues: ["1", "0"],
     default: "1",
+    numericMin: null,
+    numericMax: null,
     label: "Show the browser",
     tooltip:
       "Show the browser. Off runs the car-search browser invisibly in the background; On pops a real window so you can watch it work.",
+  },
+  {
+    id: "per_dealer_record_cap",
+    envVar: "AUTOBROKER_PER_DEALER_RECORD_CAP",
+    classification: "editable-numeric",
+    editable: true,
+    allowedValues: null,
+    default: String(PER_DEALER_RECORD_CAP_DEFAULT),
+    numericMin: PER_DEALER_RECORD_CAP_MIN,
+    numericMax: PER_DEALER_RECORD_CAP_MAX,
+    label: "Listings recorded per dealer site",
+    tooltip:
+      "How many best-match in-stock listings each dealer website records per scan. Higher = more market-research data per site; lower = leaner. Default 20, max 80.",
   },
   {
     id: "block_external_mutations",
@@ -126,6 +156,8 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     editable: false,
     allowedValues: null,
     default: null,
+    numericMin: null,
+    numericMax: null,
     label: "Safety fuse",
     tooltip:
       "Safety fuse: a final block on any real outbound email or dealer-form submit. Shown for your awareness — it can't be switched off from this screen.",
@@ -137,6 +169,8 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     editable: false,
     allowedValues: null,
     default: null,
+    numericMin: null,
+    numericMax: null,
     label: "Demo mode",
     tooltip:
       "Demo mode: shows sample cars and dealers so you can try the app. Set when the app is launched.",
@@ -148,6 +182,8 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     editable: false,
     allowedValues: null,
     default: null,
+    numericMin: null,
+    numericMax: null,
     label: "Data folder",
     tooltip: "Where AutoBroker keeps your data on this computer.",
   },
@@ -160,13 +196,15 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     editable: false,
     allowedValues: null,
     default: null,
+    numericMin: null,
+    numericMax: null,
     label: "Database file",
     tooltip: "The database file AutoBroker is using right now.",
   },
 ];
 
 /** The editable ids only — the write allow-list. */
-export const EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless"] as const;
+export const EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
 
 /** Max length for a free-text editable value (an email address — RFC 5321 caps
  *  the full address at 254 chars). Guards against a pathological payload. */
@@ -270,6 +308,12 @@ function readStoredEnv(): StoredEnv {
       // Free-text: keep only a value that still passes validation (a stale/garbage
       // override from a hand-edited file is dropped).
       if (isValidTextValue(v)) out[id] = v;
+    } else if (descriptor.classification === "editable-numeric") {
+      // Numeric: keep only a value that parses as an integer within [min, max].
+      const n = parseInt(v, 10);
+      const min = descriptor.numericMin ?? -Infinity;
+      const max = descriptor.numericMax ?? Infinity;
+      if (Number.isInteger(n) && n >= min && n <= max) out[id] = v;
     } else if (descriptor.allowedValues !== null && descriptor.allowedValues.includes(v)) {
       // Enum/bool: keep only a value currently in the descriptor's allowedValues.
       out[id] = v;
@@ -316,7 +360,8 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
       return resolveActiveDbPath();
     case "gmail_backend":
     case "gmail_account":
-    case "chrome_headless": {
+    case "chrome_headless":
+    case "per_dealer_record_cap": {
       // file override → live process.env → descriptor default.
       const fromFile = stored[descriptor.id];
       if (fromFile !== undefined) return fromFile;
@@ -366,6 +411,18 @@ export function setEnvConfig(id: string, value: string): void {
     // Free-text (an email): validate shape, not an allow-list.
     if (!isValidTextValue(value)) {
       throw new InvalidEnvValueError(id, value, ["a valid email address"]);
+    }
+  } else if (descriptor.classification === "editable-numeric") {
+    // Numeric: must be a base-10 integer within [numericMin, numericMax].
+    const n = parseInt(value, 10);
+    const min = descriptor.numericMin ?? -Infinity;
+    const max = descriptor.numericMax ?? Infinity;
+    if (!Number.isInteger(n) || isNaN(n) || String(n) !== value || n < min || n > max) {
+      throw new InvalidEnvValueError(
+        id,
+        value,
+        [`an integer between ${min} and ${max}`],
+      );
     }
   } else {
     // Enum/bool: the value must be one of the descriptor's allowedValues.
