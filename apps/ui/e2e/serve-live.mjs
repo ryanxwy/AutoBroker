@@ -89,12 +89,39 @@ const INSERT_MSG_DIR =
 const INSERT_ANALYSIS =
   "INSERT INTO message_analysis (analysis_id, message_id, analysis_version, is_current, intent, search_profile_id) " +
   "VALUES (?, ?, 1, 1, ?, ?) ON CONFLICT(analysis_id) DO NOTHING";
+// A named dealer-side contact (the reply-target ladder's rung-1 primary_reply_target
+// / rung-2 latest_inbound_contact). normalized_email is NOT NULL with a UNIQUE
+// (dealer_id, normalized_email) index, so we always write the lowercased trim.
+// foreign_keys=ON means messages.contact_id can only be set AFTER the
+// dealer_contacts row exists — injectContact inserts the contact first, then links.
+const INSERT_CONTACT =
+  "INSERT INTO dealer_contacts " +
+  "(contact_id, dealer_id, email, display_name, normalized_email, role, is_primary_reply_target, search_profile_id) " +
+  "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(contact_id) DO NOTHING";
+const SET_MSG_CONTACT =
+  "UPDATE messages SET contact_id = ? WHERE thread_id = ? AND direction = 'inbound'";
 let injectSeq = 0;
 // ~2 days ago (not a fixed 2024 epoch): keeps replies INSIDE the negotiation
 // follow-up window (max 14d since the dealer's last reply) and reads as a fresh
 // inbox, so the nightly 巡检 can actually exercise negotiation_followup +
 // dealer_closeout_email drafts. Monotonic via injectSeq below.
 const BASE_MS = Date.now() - 2 * 24 * 60 * 60 * 1000;
+
+// The per-reply receive clock. By default every reply lands at BASE_MS (~2d ago),
+// so the timing gate (gateDecisionForTarget) only ever returns "ready" — skip
+// (cold >14d) and wait (<24h since OUR send) never fire. ageHoursAgo / delayMinutes
+// let a case age a reply explicitly so the gate's skip/wait edges are exercisable.
+//   - ageHoursAgo: now minus N hours (use a large N like 360 to force "skip").
+//   - delayMinutes: BASE_MS plus N minutes (a small nudge relative to the floor).
+// Caveat: each reply is its own single-message seedFakeMailbox call, so the
+// fakeSeed strict-increasing guard does NOT span replies — an out-of-order
+// ageHoursAgo batch will NOT throw at seed time. Order replies[] oldest-first by
+// convention so the +injectSeq epsilon doesn't fight your intended tie order.
+function replyBaseMs(reply) {
+  if (typeof reply.ageHoursAgo === "number") return Date.now() - reply.ageHoursAgo * 60 * 60 * 1000;
+  if (typeof reply.delayMinutes === "number") return BASE_MS + reply.delayMinutes * 60 * 1000;
+  return BASE_MS;
+}
 
 function injectDealerReplies(profileId, replies) {
   const adb = openDb();
@@ -113,7 +140,7 @@ function injectDealerReplies(profileId, replies) {
       const threadId = `live-thread-${slug}`;
       const messageId = `live-msg-${slug}`;
       const gmailMessageId = `live-gmsg-${slug}`;
-      const internalDateMs = BASE_MS + injectSeq++;
+      const internalDateMs = replyBaseMs(reply) + injectSeq++;
       const receivedAt = new Date(internalDateMs).toISOString();
       if (insertDealer.run(dealerId, reply.dealerName, reply.dealerWebsite, reply.from).changes > 0) dealers++;
       bindDealer.run(profileId, dealerId);
@@ -248,6 +275,35 @@ function injectCrmThreads(profileId, dealers) {
   }
 }
 
+// Seed a named dealer-side contact on an existing thread's dealer and link this
+// thread's inbound message(s) to it, so resolveReplyTarget climbs from rung-4
+// (dealers.contact_email) to rung-1 primary_reply_target (or rung-2
+// latest_inbound_contact). Makes A18 contact-flip / A19 rename live-reachable —
+// the workflow path (negotiationFollowup → setPrimaryReplyTarget) already exists;
+// this is the missing fixture. Own openDb()/finally. The contact is inserted
+// BEFORE the messages.contact_id UPDATE (foreign_keys=ON enforces that order).
+function injectContact(threadId, contact) {
+  const adb = openDb();
+  try {
+    const row = adb.$client
+      .prepare("SELECT dealer_id AS dealerId, search_profile_id AS profileId FROM threads WHERE thread_id = ?")
+      .get(threadId);
+    if (row === undefined || row.dealerId === null) {
+      return { ok: false, error: "unknown threadId (call inject_replies first)" };
+    }
+    const contactId = `live-contact-${row.dealerId}-${randomUUID().slice(0, 8)}`;
+    const normalized = contact.email.trim().toLowerCase();
+    adb.$client.prepare(INSERT_CONTACT).run(
+      contactId, row.dealerId, contact.email, contact.displayName, normalized,
+      contact.role, contact.isPrimary ? 1 : 0, row.profileId,
+    );
+    const messagesLinked = adb.$client.prepare(SET_MSG_CONTACT).run(contactId, threadId).changes;
+    return { ok: true, threadId, contactId, messagesLinked };
+  } finally {
+    adb.$client.close();
+  }
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = join(here, "..", "..", "..", "packages", "db", "drizzle");
 // A fresh DB must receive the WHOLE committed migration set in journal order — a
@@ -368,6 +424,8 @@ built.app.post("/__e2e/inject_replies", async (req, reply) => {
     subject: String(r.subject ?? "Re: your inquiry"),
     body: String(r.body ?? ""),
     attachment: r.attachment ?? null,
+    ...(typeof r.ageHoursAgo === "number" ? { ageHoursAgo: r.ageHoursAgo } : {}),
+    ...(typeof r.delayMinutes === "number" ? { delayMinutes: r.delayMinutes } : {}),
   }));
   const applied = injectDealerReplies(profileId, normalized);
   reply.code(200);
@@ -412,6 +470,25 @@ built.app.post("/__e2e/inject_reply_to_thread", async (req, reply) => {
   return applied;
 });
 
+// Seed a named reply-target contact on a thread's dealer + link the thread's
+// inbound message(s) → unlocks reply-target rung 1/2 (primary_reply_target /
+// latest_inbound_contact) so contact-flip (A18) / rename (A19) are reachable live.
+built.app.post("/__e2e/inject_contact", async (req, reply) => {
+  const body = req.body ?? {};
+  if (typeof body.threadId !== "string" || typeof body.email !== "string" || body.email.length === 0) {
+    reply.code(400);
+    return { ok: false, error: "threadId + non-empty email required" };
+  }
+  const applied = injectContact(body.threadId, {
+    email: body.email,
+    displayName: typeof body.displayName === "string" ? body.displayName : null,
+    role: typeof body.role === "string" ? body.role : null,
+    isPrimary: body.isPrimary === true,
+  });
+  reply.code(applied.ok ? 200 : 400);
+  return applied;
+});
+
 built.app.get("/__e2e/audit", async (req, reply) => {
   const action = (req.query ?? {}).action;
   const adb = openDb();
@@ -432,6 +509,7 @@ const ALLOWED_TABLES = new Set([
   "dealer_quotes", "quote_audits", "messages", "dealers", "profile_dealers",
   "threads", "search_profiles", "lead_submissions", "manufacturer_incentives",
   "inventory_listings", "audit_log", "fake_mailbox_messages", "message_analysis",
+  "dealer_contacts",
 ]);
 built.app.get("/__e2e/rows", async (req, reply) => {
   const table = (req.query ?? {}).table;

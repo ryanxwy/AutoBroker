@@ -29,6 +29,7 @@ import {
   readReplyTargetInputs,
   readThreadSnapshotForDraft,
 } from "./followupReads.js";
+import { resolveReplyTarget } from "../dealerComm/replyTargets.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -261,5 +262,30 @@ describe("readReplyTargetInputs", () => {
     ).run(DEALER, OTHER_PROFILE);
     const inputs = readReplyTargetInputs(db, { profileId: PROFILE, dealerId: DEALER, threadId: "t-1" });
     expect(inputs.leadSubmissions).toHaveLength(0);
+  });
+});
+
+describe("readReplyTargetInputs → resolveReplyTarget chain (T3-U1 inject_contact effect)", () => {
+  it("a seeded primary contact + linked inbound message resolves to rung-1 primary_reply_target (beats rung-4 contact_email)", () => {
+    const c = db.$client;
+    c.prepare("INSERT INTO threads (thread_id, dealer_id, state, search_profile_id) VALUES ('t-1', ?, 'replied', ?)").run(DEALER, PROFILE);
+    // Mirror what serve-live's injectContact writes: a primary dealer_contacts row
+    // + the inbound message's contact_id. DEALER already carries contact_email
+    // (rung 4) from beforeEach, so a primary_reply_target result proves rung 1 beat
+    // the rung-4 fallback — i.e. inject_contact lifts the live lane off rung 4.
+    c.prepare(
+      "INSERT INTO dealer_contacts (contact_id, dealer_id, email, display_name, normalized_email, role, is_primary_reply_target, search_profile_id) " +
+        "VALUES ('live-contact-1', ?, 'Alex.Tan@jimclick.example.com', 'Alex Tan', 'alex.tan@jimclick.example.com', 'sales_manager', 1, ?)",
+    ).run(DEALER, PROFILE);
+    c.prepare(
+      "INSERT INTO messages (message_id, thread_id, direction, contact_id, sender_email, received_at, search_profile_id, quote_extraction_status) " +
+        "VALUES ('m-in', 't-1', 'inbound', 'live-contact-1', 'Alex.Tan@jimclick.example.com', ?, ?, 'pending')",
+    ).run(NOW, PROFILE);
+
+    const resolved = resolveReplyTarget(readReplyTargetInputs(db, { profileId: PROFILE, dealerId: DEALER, threadId: "t-1" }));
+    expect(resolved).not.toBeNull();
+    expect(resolved!.source).toBe("primary_reply_target"); // rung 1, NOT rung-4 dealer_contact_email
+    expect(resolved!.email).toBe("Alex.Tan@jimclick.example.com");
+    expect(resolved!.contactId).toBe("live-contact-1");
   });
 });
