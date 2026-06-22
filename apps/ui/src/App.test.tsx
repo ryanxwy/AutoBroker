@@ -66,6 +66,7 @@ function mockFetch(
     deadRuns?: string[];
     runStatus?: Record<string, Record<string, unknown>>;
     demo?: boolean;
+    mode?: "buyer" | "test";
   } = {},
 ): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -79,7 +80,7 @@ function mockFetch(
       }
       return new MockStream(url).response;
     }
-    if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x", demo: opts.demo ?? false });
+    if (url.endsWith("/api/mode")) return json({ active_db: "test.db", data_dir: "/tmp/x", demo: opts.demo ?? false, mode: opts.mode ?? "buyer" });
     if (url.endsWith("/api/settings/keys"))
       return json({
         deepseek: { present: true },
@@ -553,7 +554,7 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
       const json = (body: unknown, status = 200): Response =>
         new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
       if (url.includes("/stream-v2")) return new MockStream(url).response;
-      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false });
+      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false, mode: "buyer" });
       if (url.endsWith("/api/skills"))
         return json([{ name: "search_profile_intake", version: "1", summary: "s", inputs: ["x"], outputs: "p", sensitive: false, profile_pin: "exempt", retries: 1 }]);
       if (url.includes("/dealers")) {
@@ -624,7 +625,7 @@ describe("App — first-run gate (no DeepSeek key)", () => {
       const url = typeof input === "string" ? input : input.toString();
       const json = (body: unknown, status = 200): Response =>
         new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false });
+      if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/tmp/x", demo: false, mode: "buyer" });
       if (url.endsWith("/api/settings/keys"))
         return json({
           deepseek: { present: false },

@@ -43,7 +43,7 @@ import {
   type Approver,
   type GateRequest,
 } from "./gate/index.js";
-import { isRealSendEnabled } from "./realSend.js";
+import { isBuyerMode } from "./realSend.js";
 
 // ---------------------------------------------------------------------------
 // Emitter — the voiced-trace surface. The app layer adapts this onto the
@@ -1503,15 +1503,15 @@ export async function gatedSubmitForm(deps: {
     for (const [name, value] of Object.entries(form.fields)) {
       await page.fill(`[name="${name}"]`, value);
     }
-    // Brake: with real send off, the dealer form submit is blocked the same way
+    // Mode brake: in test mode the dealer form submit is blocked the same way
     // the L1 fuse blocks it — no network click; the lead-submit workflow maps the
     // ExternalMutationsBlockedError to a recorded FAKE submission. We REUSE that
-    // error type deliberately so the existing fake-record path handles the braked
+    // error type deliberately so the existing fake-record path handles the test
     // case identically (the message names the fuse, but the outcome — record a
-    // fake submission, never click — is what matters). (In a test lane the armed
-    // fuse blocks earlier, in requestApproval, so this is reached only when the
-    // fuse is disarmed but real send is braked.)
-    if (!isRealSendEnabled()) throw new ExternalMutationsBlockedError("dealer_form_submit");
+    // fake submission, never click — is what matters). (In a harness context the
+    // armed fuse blocks earlier, in requestApproval, so this is reached only when
+    // the fuse is disarmed but the mode is test.)
+    if (!isBuyerMode()) throw new ExternalMutationsBlockedError("dealer_form_submit");
     // L1 outer ring, asserted AGAIN at the click boundary itself so the fuse
     // holds even if a bug ever found a way around the L2 path above.
     assertEnvFuseDisarmed("dealer_form_submit");

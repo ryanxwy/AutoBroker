@@ -2,9 +2,9 @@
  * settings/env route integration — drives the REAL Fastify app via inject()
  * against an ISOLATED tmp AUTOBROKER_DATA_DIR. Covers:
  *   GET → the curated vars with live values, incl. the read-only fuse status, and
- *     no secret value; PUT {gmail_backend:"real"} → 200 {ok, vars} with the echoed
+ *     no secret value; PUT {app_mode:"buyer"} → 200 {ok, vars} with the echoed
  *     value flipped AND process.env mutated in-place (the no-restart keystone);
- *     PUT {gmail_backend:"maybe"} → 400 invalid_value; PUT for the fuse id is
+ *     PUT {app_mode:"maybe"} → 400 invalid_value; PUT for the fuse id is
  *     rejected by the schema (proving the L1 fuse var is unreachable via the route).
  *
  * ISOLATION: a fresh os.tmpdir() subdir is the data dir (saved/restored); the
@@ -42,6 +42,7 @@ const MIGRATION_SQL = join(
 // The operational vars this surface touches — saved/restored so the suite never
 // leaks a toggle into a sibling test or the host process.
 const ENV_VARS = [
+  "AUTOBROKER_MODE",
   "AUTOBROKER_GMAIL_BACKEND",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
@@ -107,8 +108,10 @@ describe("GET /api/settings/env", () => {
     };
     const byId = new Map(body.vars.map((v) => [v.id, v]));
 
-    // the two editable toggles default sensibly
-    expect(byId.get("gmail_backend")?.value).toBe("fake");
+    // the two editable toggles project sensibly. boot runs in a harness context
+    // (NODE_ENV=test) so forceTestMode() pins AUTOBROKER_MODE="test" → app_mode
+    // projects "test" (not the descriptor default "buyer").
+    expect(byId.get("app_mode")?.value).toBe("test");
     expect(byId.get("chrome_headless")?.value).toBe("1");
 
     // the L1 fuse appears ONLY as a read-only status row — projected, never raw.
@@ -126,12 +129,12 @@ describe("GET /api/settings/env", () => {
 });
 
 describe("PUT /api/settings/env", () => {
-  it("sets gmail_backend → 200 {ok, vars} with the value flipped and env mutated in-place", async () => {
+  it("sets app_mode → 200 {ok, vars} with the value flipped and env mutated in-place", async () => {
     const { app } = await build();
     const res = await app.inject({
       method: "PUT",
       url: "/api/settings/env",
-      payload: { id: "gmail_backend", value: "real" },
+      payload: { id: "app_mode", value: "buyer" },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
@@ -139,11 +142,11 @@ describe("PUT /api/settings/env", () => {
       vars: { id: string; value: string }[];
     };
     expect(body.ok).toBe(true);
-    const echoed = body.vars.find((v) => v.id === "gmail_backend");
-    expect(echoed?.value).toBe("real");
+    const echoed = body.vars.find((v) => v.id === "app_mode");
+    expect(echoed?.value).toBe("buyer");
 
-    // the no-restart keystone — the next gmail-factory call sees real immediately.
-    expect(process.env["AUTOBROKER_GMAIL_BACKEND"]).toBe("real");
+    // the no-restart keystone — the next mode read sees buyer immediately.
+    expect(process.env["AUTOBROKER_MODE"]).toBe("buyer");
   });
 
   it("sets gmail_account (free-text email) → 200 with the value echoed and env mutated", async () => {
@@ -177,12 +180,12 @@ describe("PUT /api/settings/env", () => {
     const res = await app.inject({
       method: "PUT",
       url: "/api/settings/env",
-      payload: { id: "gmail_backend", value: "maybe" },
+      payload: { id: "app_mode", value: "maybe" },
     });
     expect(res.statusCode).toBe(400);
     expect((res.json() as { error: { code: string } }).error.code).toBe("invalid_value");
-    // the rejected write never touched the live env.
-    expect(process.env["AUTOBROKER_GMAIL_BACKEND"]).toBeUndefined();
+    // the rejected write never changed the mode away from the boot-pinned "test".
+    expect(process.env["AUTOBROKER_MODE"]).toBe("test");
   });
 
   it("rejects the fuse id at the schema (the L1 fuse var is unreachable via the route)", async () => {

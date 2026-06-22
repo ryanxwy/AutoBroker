@@ -6,9 +6,9 @@
  * paths), the control type follows each row's classification, and the editable
  * controls write the right wire value:
  *
- *   - enum → "real" parks a confirm (no call); "Use real Gmail" commits with
- *     "real"; "Keep sample inbox" cancels with NO call + the select snaps back.
- *   - enum "real" → "fake" commits immediately (one call, no confirm).
+ *   - enum → "buyer" parks a confirm (no call); "Use buyer mode" commits with
+ *     "buyer"; "Keep test mode" cancels with NO call + the select snaps back.
+ *   - enum "buyer" → "test" commits immediately (one call, no confirm).
  *   - bool toggle writes the STRING "0" when shown / "1" when hidden.
  *   - the fuse row renders a read-only badge with NO interactive control.
  *   - InfoHint: bubble present on hover + on keyboard focus (aria-describedby
@@ -27,23 +27,23 @@ import { EnvPanel } from "./EnvPanel.js";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-/** A curated set mirroring the server projection: gmail enum, the bool toggle,
- *  the read-only fuse, demo status, and the two paths. `backend` lets a test
- *  start from real (to exercise real→fake). */
-function curatedVars(backend: "fake" | "real" = "fake"): EnvVarState[] {
+/** A curated set mirroring the server projection: the mode enum, the bool toggle,
+ *  the read-only fuse, demo status, and the two paths. `mode` lets a test start
+ *  from buyer (to exercise buyer→test). */
+function curatedVars(mode: "buyer" | "test" = "test"): EnvVarState[] {
   return [
     {
-      id: "gmail_backend",
-      envVar: "AUTOBROKER_GMAIL_BACKEND",
+      id: "app_mode",
+      envVar: "AUTOBROKER_MODE",
       classification: "editable-enum",
       editable: true,
-      allowedValues: ["fake", "real"],
-      default: "fake",
+      allowedValues: ["buyer", "test"],
+      default: "buyer",
       numericMin: null,
       numericMax: null,
-      label: "Email mode",
-      tooltip: "Email mode tooltip.",
-      value: backend,
+      label: "Mode",
+      tooltip: "Mode tooltip.",
+      value: mode,
     },
     {
       id: "gmail_account",
@@ -127,13 +127,13 @@ function curatedVars(backend: "fake" | "real" = "fake"): EnvVarState[] {
 }
 
 /** A mock fetch covering GET + PUT /api/settings/env. `puts` captures PUT
- *  bodies; `backend` seeds the GET (and the PUT echo). */
-function mockFetch(opts: { puts?: Array<Record<string, unknown>>; backend?: "fake" | "real" }): typeof fetch {
+ *  bodies; `mode` seeds the GET (and the PUT echo). */
+function mockFetch(opts: { puts?: Array<Record<string, unknown>>; mode?: "buyer" | "test" }): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     const json = (body: unknown, status = 200): Response =>
       new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-    const vars = curatedVars(opts.backend ?? "fake");
+    const vars = curatedVars(opts.mode ?? "test");
     if (url.endsWith("/api/settings/env") && init?.method === "PUT") {
       opts.puts?.push(JSON.parse(String(init.body)) as Record<string, unknown>);
       return json({ ok: true, vars });
@@ -147,11 +147,11 @@ function mockFetch(opts: { puts?: Array<Record<string, unknown>>; backend?: "fak
 
 /** A resolved env AsyncState wrapping a curated set (the panel renders FROM it;
  *  the GET mock above only matters for refetch-after-write, which App owns). */
-function okEnv(backend: "fake" | "real" = "fake"): AsyncState<EnvConfigResponse> & {
+function okEnv(mode: "buyer" | "test" = "test"): AsyncState<EnvConfigResponse> & {
   refetch: () => void;
   refreshing: boolean;
 } {
-  return { kind: "ok", data: { vars: curatedVars(backend) }, refetch: () => {}, refreshing: false };
+  return { kind: "ok", data: { vars: curatedVars(mode) }, refetch: () => {}, refreshing: false };
 }
 
 function flush(): Promise<void> {
@@ -177,8 +177,8 @@ describe("EnvPanel — rows render from the store response", () => {
     const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
 
     expect(r.query("env-panel")).not.toBeNull();
-    expect(r.query("env-row-gmail_backend")).not.toBeNull();
-    expect(r.query("env-select-gmail_backend")).not.toBeNull();
+    expect(r.query("env-row-app_mode")).not.toBeNull();
+    expect(r.query("env-select-app_mode")).not.toBeNull();
     expect(r.query("env-toggle-chrome_headless")).not.toBeNull();
     // read-only fuse → a badge, no control.
     expect(r.query("env-badge-block_external")).not.toBeNull();
@@ -186,7 +186,7 @@ describe("EnvPanel — rows render from the store response", () => {
     expect(r.get("env-path-data_dir").textContent).toContain(".autobroker-ts");
     expect(r.query("env-path-db_path")).not.toBeNull();
     // the keyword line shows the literal env var.
-    expect(r.get("env-keyword-gmail_backend").textContent).toBe("AUTOBROKER_GMAIL_BACKEND");
+    expect(r.get("env-keyword-app_mode").textContent).toBe("AUTOBROKER_MODE");
     r.unmount();
   });
 
@@ -210,51 +210,51 @@ describe("EnvPanel — rows render from the store response", () => {
 });
 
 describe("EnvPanel — enum gate-before-control", () => {
-  it("switching to real shows the confirm; Use real Gmail calls setEnvConfig('gmail_backend','real')", async () => {
+  it("switching to buyer shows the confirm; Use buyer mode calls setEnvConfig('app_mode','buyer')", async () => {
     const puts: Array<Record<string, unknown>> = [];
     const onChanged = vi.fn();
     const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
-    const r = render(<EnvPanel client={client} env={okEnv("fake")} onChanged={onChanged} />);
+    const r = render(<EnvPanel client={client} env={okEnv("test")} onChanged={onChanged} />);
 
     // No confirm + no call until the sensitive value is picked.
-    expect(r.query("env-confirm-gmail_backend")).toBeNull();
-    changeSelect(r.get("env-select-gmail_backend") as HTMLSelectElement, "real");
-    expect(r.query("env-confirm-gmail_backend")).not.toBeNull();
+    expect(r.query("env-confirm-app_mode")).toBeNull();
+    changeSelect(r.get("env-select-app_mode") as HTMLSelectElement, "buyer");
+    expect(r.query("env-confirm-app_mode")).not.toBeNull();
     expect(puts).toHaveLength(0); // parked — no call yet.
 
-    click(r.get("env-confirm-yes-gmail_backend"));
+    click(r.get("env-confirm-yes-app_mode"));
     await flush();
     expect(puts).toHaveLength(1);
-    expect(puts[0]).toEqual({ id: "gmail_backend", value: "real" });
+    expect(puts[0]).toEqual({ id: "app_mode", value: "buyer" });
     expect(onChanged).toHaveBeenCalledTimes(1);
     r.unmount();
   });
 
-  it("Keep sample inbox cancels with NO call and the select snaps back to fake", () => {
+  it("Keep test mode cancels with NO call and the select snaps back to test", () => {
     const puts: Array<Record<string, unknown>> = [];
     const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
-    const r = render(<EnvPanel client={client} env={okEnv("fake")} onChanged={() => {}} />);
+    const r = render(<EnvPanel client={client} env={okEnv("test")} onChanged={() => {}} />);
 
-    changeSelect(r.get("env-select-gmail_backend") as HTMLSelectElement, "real");
-    expect((r.get("env-select-gmail_backend") as HTMLSelectElement).value).toBe("real"); // pending
-    click(r.get("env-confirm-no-gmail_backend"));
+    changeSelect(r.get("env-select-app_mode") as HTMLSelectElement, "buyer");
+    expect((r.get("env-select-app_mode") as HTMLSelectElement).value).toBe("buyer"); // pending
+    click(r.get("env-confirm-no-app_mode"));
 
     expect(puts).toHaveLength(0); // no call
-    expect(r.query("env-confirm-gmail_backend")).toBeNull(); // confirm gone
-    expect((r.get("env-select-gmail_backend") as HTMLSelectElement).value).toBe("fake"); // snapped back
+    expect(r.query("env-confirm-app_mode")).toBeNull(); // confirm gone
+    expect((r.get("env-select-app_mode") as HTMLSelectElement).value).toBe("test"); // snapped back
     r.unmount();
   });
 
-  it("real → fake commits immediately (one call, no confirm)", async () => {
+  it("buyer → test commits immediately (one call, no confirm)", async () => {
     const puts: Array<Record<string, unknown>> = [];
-    const client = new ApiClient({ fetchImpl: mockFetch({ puts, backend: "real" }) });
-    const r = render(<EnvPanel client={client} env={okEnv("real")} onChanged={() => {}} />);
+    const client = new ApiClient({ fetchImpl: mockFetch({ puts, mode: "buyer" }) });
+    const r = render(<EnvPanel client={client} env={okEnv("buyer")} onChanged={() => {}} />);
 
-    changeSelect(r.get("env-select-gmail_backend") as HTMLSelectElement, "fake");
+    changeSelect(r.get("env-select-app_mode") as HTMLSelectElement, "test");
     await flush();
-    expect(r.query("env-confirm-gmail_backend")).toBeNull(); // never confirms the safe direction
+    expect(r.query("env-confirm-app_mode")).toBeNull(); // never confirms the safe direction
     expect(puts).toHaveLength(1);
-    expect(puts[0]).toEqual({ id: "gmail_backend", value: "fake" });
+    expect(puts[0]).toEqual({ id: "app_mode", value: "test" });
     r.unmount();
   });
 });
@@ -351,13 +351,13 @@ describe("EnvPanel — InfoHint accessible tooltip", () => {
     const client = new ApiClient({ fetchImpl: mockFetch({}) });
     const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
 
-    const trigger = r.get("info-hint-gmail_backend");
+    const trigger = r.get("info-hint-app_mode");
     const describedby = trigger.getAttribute("aria-describedby");
     expect(describedby).not.toBeNull();
-    const bubble = r.get("info-hint-bubble-gmail_backend");
+    const bubble = r.get("info-hint-bubble-app_mode");
     expect(bubble.getAttribute("role")).toBe("tooltip");
     expect(bubble.id).toBe(describedby);
-    expect(bubble.textContent).toContain("Email mode tooltip");
+    expect(bubble.textContent).toContain("Mode tooltip");
     r.unmount();
   });
 
@@ -365,7 +365,7 @@ describe("EnvPanel — InfoHint accessible tooltip", () => {
     const client = new ApiClient({ fetchImpl: mockFetch({}) });
     const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
 
-    const trigger = r.get("info-hint-gmail_backend") as HTMLButtonElement;
+    const trigger = r.get("info-hint-app_mode") as HTMLButtonElement;
     const wrap = trigger.closest(".info-hint-wrap") as HTMLElement;
     // Not dismissed at rest → CSS :focus-within / :hover would reveal it.
     expect(wrap.getAttribute("data-dismissed")).toBe("false");

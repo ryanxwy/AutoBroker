@@ -565,6 +565,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         client={client}
         runActive={activeRunId !== null && !activeTurnTerminal}
         pinnedProfileId={pinnedProfileId}
+        appMode={mode.kind === "ok" ? mode.data.mode : null}
+        onModeSwitched={mode.refetch}
         onStartIntake={startIntakeFresh}
         onPin={onPin}
         onUnpin={onUnpin}

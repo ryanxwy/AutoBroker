@@ -20,13 +20,16 @@ export {
   type Approver,
 } from "./gate/index.js";
 
-// Real-send master brake (AUTOBROKER_REAL_SEND) + the fail-closed test-lane tripwire.
+// App mode (AUTOBROKER_MODE: "buyer"|"test") + the fail-closed harness tripwire.
 export {
-  isRealSendEnabled,
-  isTestLane,
-  forceTestLaneInternal,
-  assertTestLaneInternal,
-  RealSendInTestLaneError,
+  resolveMode,
+  isBuyerMode,
+  isTestMode,
+  isHarnessContext,
+  forceTestMode,
+  assertTestModeSafe,
+  ModeViolationError,
+  type AppMode,
 } from "./realSend.js";
 
 // Gmail (fake/real send seam, default fake).
@@ -785,7 +788,7 @@ export {
 } from "./settings/index.js";
 
 // Settings/env — the curated NON-SECRET operational env vars (the editable
-// GMAIL_BACKEND / CHROME_HEADLESS toggles + read-only fuse/path/status rows).
+// AUTOBROKER_MODE / CHROME_HEADLESS toggles + read-only fuse/path/status rows).
 // The boot loader seeds saved overrides into process.env; routes delegate down
 // here and never read/write the env file directly.
 export {

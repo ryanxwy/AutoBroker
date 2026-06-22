@@ -465,6 +465,76 @@ body.resizing { cursor: col-resize; user-select: none; }
 .modeswitch button.on:hover:not(:disabled) { color: var(--panel); }
 .modeswitch button + button { border-left: 1px solid var(--rule); }
 
+/* ---- app-mode posture toggle (Buyer = live/can-send · Test = safe) --------
+   Reuses the segmented .modeswitch idiom so it adds no new control vocabulary,
+   but tints the ACTIVE segment with the role color carrying the safety meaning:
+   buyer = safety-orange --gate (live), test = racing-green --go (calm). A small
+   status dot echoes the .running-pill pulse-dot, lit only on the active side. */
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.mode-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: 7px 11px;
+  transition: background 0.18s, color 0.18s;
+}
+.mode-toggle button + button { border-left: 1px solid var(--rule); }
+.mode-toggle button:hover:not(:disabled) { color: var(--ink); }
+.mode-toggle button:disabled { cursor: default; }
+/* the status dot: muted on an inactive segment, role-colored + lit when active. */
+.mode-toggle .mode-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rule);
+  flex: 0 0 auto;
+}
+/* active TEST segment — calm green safe state. */
+.mode-toggle button[data-mode="test"].on {
+  background: var(--go-wash);
+  color: var(--go);
+}
+.mode-toggle button[data-mode="test"].on .mode-dot { background: var(--go); }
+/* active BUYER segment — live, can-send orange (the gate/approval accent). */
+.mode-toggle button[data-mode="buyer"].on {
+  background: var(--gate-wash);
+  color: var(--gate);
+}
+.mode-toggle button[data-mode="buyer"].on .mode-dot {
+  background: var(--gate);
+  /* a gentle live pulse only on the armed side (respects reduced-motion below). */
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-toggle button[data-mode="buyer"].on .mode-dot { animation: none; }
+}
+
+/* the confirm dialog's go-live button — the safety-orange gate primary (the
+   same accent the gate-card affirmative uses), since turning buyer ON arms real
+   external send. Distinct from .btn-danger (stop-red) — this is "go", not "delete". */
+.btn-go-live {
+  background: var(--gate);
+  border-color: var(--gate);
+  color: #fff;
+}
+.btn-go-live:hover:not(:disabled) { background: #d24f08; }
+
 .diagnostics { position: relative; font-size: 12px; }
 .diagnostics summary {
   cursor: pointer;

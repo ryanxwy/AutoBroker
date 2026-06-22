@@ -385,7 +385,8 @@ export class ApiClient {
     return decode(res, SkillListSchema);
   }
 
-  /** GET /api/mode → { active_db, data_dir } harness preflight (routes.ts:283). */
+  /** GET /api/mode → { active_db, data_dir, demo, mode } harness preflight +
+   *  the AUTOBROKER_MODE posture the TopBar toggle reflects (routes.ts:943). */
   async getMode(): Promise<Mode> {
     const res = await this.fetchImpl(this.url("/api/mode"));
     return decode(res, ModeSchema);

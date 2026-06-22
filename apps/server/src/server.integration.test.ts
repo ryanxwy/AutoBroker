@@ -515,14 +515,16 @@ describe("read-only routes", () => {
     }
   });
 
-  it("GET /api/mode → {active_db, data_dir} pointed at the tmp data dir", async () => {
+  it("GET /api/mode → {active_db, data_dir, mode} pointed at the tmp data dir", async () => {
     const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
     const r = await s.app.inject({ method: "GET", url: "/api/mode" });
     expect(r.statusCode).toBe(200);
-    const mode = r.json<{ active_db: string; data_dir: string }>();
+    const mode = r.json<{ active_db: string; data_dir: string; mode: string }>();
     expect(mode.data_dir).toBe(tmpDir);
     expect(mode.active_db).toContain(tmpDir);
     expect(mode.active_db).not.toContain("/.autobroker/"); // never production
+    // The harness host forces test mode, so the posture reports "test" here.
+    expect(mode.mode).toBe("test");
   });
 
   it("GET /api/profiles/:id for a missing profile → 404", async () => {

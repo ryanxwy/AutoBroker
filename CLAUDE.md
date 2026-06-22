@@ -105,16 +105,33 @@ layer touches SQLite or external I/O" while carving out Mastra's runtime store.
 
 ## Safety invariants (load-bearing — do not weaken)
 
-1. **`no_external_mutation` is non-negotiable and applies to every step.** No
-   submitted-lead row, no real Gmail-send tool event, no non-fake outbound row.
+**Send mode (authoritative, 2026-06-22): AutoBroker is REAL-SEND-BY-DEFAULT.** A
+single user-facing variable `AUTOBROKER_MODE` (`buyer` | `test`, default `buyer`,
+toggled in the TopBar) controls all external sending. `buyer` = the real product
+(real Gmail send + real dealer web-form submit + real LLM); `test` = internal/safe
+(fake mailbox, no real submit). Every test/harness/CI lane is forced to `test`
+**fail-closed** — the `AUTOBROKER_HARNESS=1` sentinel + `isHarnessContext()` +
+`assertTestModeSafe()` tripwire in boot + the preflight gate + a no-clobber on
+`loadEnvConfigIntoEnv` mean a test can NEVER reach a real dealer. The **L2
+in-process human-approval gate is the always-on load-bearing floor**: even in
+`buyer` mode nothing sends without a per-action human approval; `buyer` only makes
+the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
+"real email is never sent" posture historically described below.
+
+1. **`no_external_mutation` applies to every step in `test` mode** (it is what
+   every harness lane asserts). In `buyer` mode real sends DO occur — but ONLY
+   through the single L2 gate, one human-approved action at a time; there is still
+   no un-approved, un-gated outbound path.
 2. **Side effects can physically reach `browser.submit` / `gmail.send` only
    through the L2 in-process gate handler**, which fails **closed**. There is no
    second code path to a side effect.
 3. **Gate stack (top → bottom):** L3 native Mastra tool/step approval or
    `suspend()` (convenience, api-key lane only) → **L2 in-process gate,
-   load-bearing, fail-CLOSED, single structured path** → fallback-suspend → L1
-   `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1` fuse (redundant outer ring, always
-   armed, never the only floor).
+   load-bearing, fail-CLOSED, single structured path** (the always-on floor in
+   BOTH modes) → fallback-suspend → the `AUTOBROKER_MODE` brake (`test` →
+   fake/blocked at every send seam) → L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1`
+   fuse (now an OPTIONAL emergency kill-switch — no longer auto-armed in `buyer`
+   mode; harness lanes still arm it as belt).
 4. **#1244 fail-closed.** Live-probed 2026-06-04 (107 controlled calls): pure
    tool loops are clean (0/56); the trigger is mixing structured output
    (`response_format`/json_schema) with tools — 27/36 silent tool-skip, 2/36
@@ -136,15 +153,18 @@ layer touches SQLite or external I/O" while carving out Mastra's runtime store.
    typed result distinguishing `pinned` vs `inferred-newest`; log every inferred
    resolution. Re-test the 1/0/2-active branches in the TS resolver — do not
    assume closed. Do not build a global `AUTOBROKER_STRICT_PROFILE_PIN`.
-7. **Real email is never sent.** Email-pipeline skills validate against fixed
-   real-dealer corpus (fixed input, not fixed LLM trace); multi-round is local
-   fake-mailbox DB rows only, behind a fail-closed `fake_mailbox_send_only`
-   preflight.
+7. **Real email is sent in `buyer` mode** (real-send-by-default), always behind
+   the L2 human-approval gate, one recipient at a time. In `test` mode it is local
+   fake-mailbox DB rows only, behind the fail-closed `fake_mailbox_send_only`
+   preflight. Email-pipeline skills still validate against the fixed real-dealer
+   corpus (fixed input, not fixed LLM trace) in the `test`-mode harness lane.
 8. **The 3 irreversible mutation skills** (`dealer_web_lead_submit`,
-   `negotiation_followup`, `dealer_closeout_email`) stay **fake-send** until
-   Phase 5 is GREEN, their human approval is **never hidden** on any surface, and
-   `dealer_web_lead_submit`'s `email_fallback` scope switch (browser.submit →
-   gmail.send) must force a suspend re-confirm.
+   `negotiation_followup`, `dealer_closeout_email`) really send in `buyer` mode and
+   fake-send in `test` mode — via the SAME `AUTOBROKER_MODE` switch as every other
+   send; there is no separate per-skill flag and no Phase-5/legal gate. Their human
+   approval is **never hidden** on any surface, and `dealer_web_lead_submit`'s
+   `email_fallback` scope switch (browser.submit → gmail.send) must force a suspend
+   re-confirm.
 9. **Communication never includes budget** (`_redact_budget`, enforced in code).
    **Fake phone by default** unless the user explicitly opts in. Hard
    constraints live in code, not in prompt text or sampling temperature.
@@ -175,8 +195,9 @@ acceptance ledger), and the acceptance step is **one commit per skill**.
 Move to the next skill only after the DeepSeek-live step (step 5) is green.
 
 Commit message prefix: **`phaseN/<skill>:`** (e.g. `phase1/quote_audit:`), so the
-docs-repo daily sync can bucket commits by phase. For the 3 irreversible skills,
-mark the commit body `[fake-send]` until Phase 5 acceptance is GREEN.
+docs-repo daily sync can bucket commits by phase. (The 3 irreversible skills now
+really send in `buyer` mode — see the send-mode note under Safety invariants —
+so the old `[fake-send]` commit-body marker is retired.)
 
 ## Sync contract with `../AutoBroker-dev-plan`
 
@@ -211,3 +232,11 @@ that never reached `main`, or a local `main` out of sync with the remote. This
 is the standing instruction — it supersedes any "don't push/merge without an
 explicit go" default. The force-push ban, explicit-path staging, and the
 destructive-action approval gates above still apply.
+
+**Closeout is git + docs.** After implementing any code change, invoke the
+`landing-changes` skill (`.claude/skills/landing-changes/`) to wrap up: it runs
+the git "definition of done" above AND a doc-freshness sweep — find every doc
+(this repo's `CLAUDE.md` / `.claude/skills/**` and the plan repo's
+`ts-rebuild/**` reports + ADRs + live-status box) that the change made stale, and
+strip the stale data/discussion so docs reflect ONLY the latest code. A doc that
+contradicts the merged code is an unfinished task, not a finished one.

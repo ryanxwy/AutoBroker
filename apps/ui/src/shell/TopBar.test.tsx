@@ -61,6 +61,8 @@ const noop = (): void => {};
 const baseProps = {
   runActive: false,
   pinnedProfileId: null,
+  appMode: null,
+  onModeSwitched: noop,
   onStartIntake: noop,
   onPin: noop,
   onUnpin: noop,

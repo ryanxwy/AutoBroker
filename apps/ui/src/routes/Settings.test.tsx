@@ -42,7 +42,7 @@ function env(): AsyncState<EnvConfigResponse> & { refetch: () => void; refreshin
 function mode(): AsyncState<Mode> & { refetch: () => void; refreshing: boolean } {
   return {
     kind: "ok",
-    data: { active_db: "/tmp/autobroker.db", data_dir: "/tmp", demo: false },
+    data: { active_db: "/tmp/autobroker.db", data_dir: "/tmp", demo: false, mode: "buyer" },
     refetch: () => {},
     refreshing: false,
   };

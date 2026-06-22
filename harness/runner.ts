@@ -211,11 +211,17 @@ function startServerHost(opts: RunnerOpts): Promise<HostHandle> {
     // Ensure the explicit DB override matches --db so /api/mode reports exactly it.
     AUTOBROKER_DB: opts.db,
     MASTRA_TELEMETRY_DISABLED: "1",
-    // The spawned host is a test lane: brake real send (the product is
-    // real-send-by-default) so it can never reach a real dealer. serverHost
-    // self-sets this too; boot's assertTestLaneInternal re-asserts it.
-    AUTOBROKER_E2E_LANE: "1",
-    AUTOBROKER_REAL_SEND: "0",
+    // The spawned host is a harness context: pin test mode (the product is
+    // buyer-by-default) so it can never reach a real dealer. AUTOBROKER_HARNESS=1
+    // marks it as a harness context unconditionally (even the LIVE host, which is
+    // not a fixture lane), so boot's isHarnessContext() forces test mode and the
+    // assertTestModeSafe tripwire re-asserts it even if a persisted app_mode tried
+    // to flip it. serverHost self-sets these too.
+    AUTOBROKER_HARNESS: "1",
+    AUTOBROKER_MODE: "test",
+    // Backend floor independent of mode: the host never resolves a real Gmail
+    // backend, even if mode were somehow flipped.
+    AUTOBROKER_GMAIL_BACKEND: "fake",
   };
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;
   // Functional lane: arm the host's fixture mode (deterministic DI stubs + the
@@ -1914,12 +1920,12 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function run(argv: string[]): Promise<number> {
-  // The harness runner is, by definition, a test lane — it must never reach a
-  // real dealer. The product is real-send-by-default, so brake real send in the
-  // runner process itself (and mark the lane) BEFORE the gate-②b preflight, so
-  // the floor holds no matter how the runner was launched.
-  process.env.AUTOBROKER_E2E_LANE = "1";
-  process.env.AUTOBROKER_REAL_SEND = "0";
+  // The harness runner is, by definition, a harness context — it must never reach
+  // a real dealer. The product is buyer-by-default, so mark this a harness context
+  // and pin test mode in the runner process itself BEFORE the gate-②b preflight,
+  // so the floor holds no matter how the runner was launched.
+  process.env.AUTOBROKER_HARNESS = "1";
+  process.env.AUTOBROKER_MODE = "test";
   // Self-resolve the provider key BEFORE any model/provider call or the gate-⑤
   // key-presence preflight, so `pnpm harness` needs no manual `source .env`. The
   // .env loader is data-dir-independent (it fills the gap even though the harness
