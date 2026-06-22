@@ -47,6 +47,22 @@ describe("minimizeFailingInput", () => {
   it("throws when the predicate does not fail on the full input (caller bug)", () => {
     expect(() => minimizeFailingInput("clean", () => false)).toThrow(/does not fail on the full input/);
   });
+
+  it("returns a 1-minimal token set (every remaining token is load-bearing)", () => {
+    // The failure reproduces iff the candidate still contains BOTH needle tokens.
+    // ddmin + the verify pass must strip everything else and leave a set where
+    // dropping ANY single remaining token breaks the predicate.
+    const input = "please find me a dealer near ZIP 99999 by tomorrow afternoon ok thanks";
+    const fails = (c: string) => c.includes("ZIP") && c.includes("99999");
+    const result = minimizeFailingInput(input, fails);
+    expect(fails(result.minimized)).toBe(true);
+    expect(result.shrank).toBe(true);
+    const tokens = result.minimized.split(/\s+/).filter((t) => t.length > 0);
+    for (let i = 0; i < tokens.length; i += 1) {
+      const dropped = tokens.filter((_, j) => j !== i).join(" ");
+      expect(fails(dropped)).toBe(false);
+    }
+  });
 });
 
 describe("emitCorpusToml → parseCase (the EXISTING cases.ts grammar)", () => {

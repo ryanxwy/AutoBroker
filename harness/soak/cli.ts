@@ -48,6 +48,7 @@ import {
   scenariosInClass,
   type ScenarioClass,
 } from "./taxonomy.js";
+import type { SoakVerdictDoc } from "./verdict.js";
 
 interface SoakArgs {
   command: "run" | "suite" | "e2e" | "freeze" | "list";
@@ -131,24 +132,59 @@ async function cmdSuite(args: SoakArgs): Promise<number> {
   const scenarios: ScenarioClass[] = className === undefined ? all : scenariosInClass(all, className);
   if (scenarios.length === 0) fail(`no scenarios${className ? ` in class "${className}"` : ""}`);
   const headless = !args.bools.has("headed");
+
+  const untilDry = args.bools.has("until-dry");
+  const dryRounds = args.flags.has("dry-rounds") ? Math.max(1, Number(args.flags.get("dry-rounds"))) : 2;
+  const seenSignatures = new Set<string>();
+  let consecutiveDry = 0;
+  let round = 0;
   let worst = 0;
-  // Sequential — the subscription is rate-limited; pace one scenario at a time
-  // (claudeAgent surfaces rateLimited so a future backoff can read it).
-  for (const scenario of scenarios) {
-    const runRoot = soakRunRoot();
-    const result = await runScenario({ scenario, runRoot, headless });
-    console.log(
-      JSON.stringify({
-        soak: "suite",
-        scenario: result.scenarioId,
-        verdict: result.verdict.verdict,
-        status: result.verdict.status,
-        ledger: result.ledgerPath,
-      }),
-    );
-    if (result.verdict.verdict !== "GREEN") worst = 1;
+
+  // One suite pass; with --until-dry, loop until `dryRounds` consecutive rounds
+  // surface NO novel {surface,assertionId,defect.kind} signature (the discovery
+  // engine has gone dry). Without it, exactly one pass (the prior behavior).
+  do {
+    round += 1;
+    let novelThisRound = false;
+    // Sequential — the subscription is rate-limited; pace one scenario at a time
+    // (claudeAgent surfaces rateLimited so a future backoff can read it).
+    for (const scenario of scenarios) {
+      const runRoot = soakRunRoot();
+      const result = await runScenario({ scenario, runRoot, headless });
+      const sig = noveltySignature(scenario, result.verdict);
+      const novel = sig !== null && !seenSignatures.has(sig);
+      if (sig !== null) seenSignatures.add(sig);
+      if (novel) novelThisRound = true;
+      console.log(
+        JSON.stringify({
+          soak: "suite",
+          round,
+          scenario: result.scenarioId,
+          verdict: result.verdict.verdict,
+          status: result.verdict.status,
+          signature: sig,
+          novel,
+          ledger: result.ledgerPath,
+        }),
+      );
+      if (result.verdict.verdict !== "GREEN") worst = 1;
+    }
+    consecutiveDry = novelThisRound ? 0 : consecutiveDry + 1;
+  } while (untilDry && consecutiveDry < dryRounds);
+
+  if (untilDry) {
+    console.log(JSON.stringify({ soak: "suite", done: true, rounds: round, signatures: seenSignatures.size }));
   }
   return worst;
+}
+
+/** The novelty signature for an until-dry round: surface + the first failing
+ *  deterministic assertion id + the defect kind. A GREEN scenario (no defect) is
+ *  not novel (null). Two rounds that surface only already-seen signatures = dry. */
+function noveltySignature(scenario: ScenarioClass, verdict: SoakVerdictDoc): string | null {
+  if (verdict.defect === null) return null;
+  const failing = verdict.deterministic.find((d) => !d.ok);
+  return `${scenario.surface}::${failing?.assertionId ?? verdict.defect.kind}::${verdict.defect.kind}`;
 }
 
 /**

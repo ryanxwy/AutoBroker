@@ -1,0 +1,33 @@
+# harness/soak/scenarios/metamorphic.toml — the T4-U4 metamorphic routing-invariance
+# soak taxonomy (ADDITIVE; never edits _base.toml). Each class names a base NL
+# phrasing + k perturbations that MUST all route to the SAME skill_id (the router is
+# invariant under benign rephrasing). The per-skill `routing_invariance` assertion
+# lives in skills/metamorphic.ts as a RUNTIME DeterministicResult (its OWN open
+# assertionId + severity, folded by combineSoakVerdict) — NOT a declared toml id.
+# The toml's `deterministic_assertions` carries ONLY the FROZEN floor ids
+# (no_external_mutation + l1_fuse_armed) per the verdict.ts DETERMINISTIC_ASSERTION_IDS
+# contract that taxonomy.test.ts Zod-validates the declared list against.
+#
+# Arrays are SINGLE-LINE (the harness toml.ts parser rejects multi-line arrays).
+
+[[scenarios]]
+id = "metamorphic_routing_geosearch"
+surface = "dealer_geosearch"
+class_name = "metamorphic_routing_geosearch"
+stresses = "routing invariance: a base 'find dealers near me' phrasing + k benign perturbations (typos, politeness, reordering) must ALL route to dealer_geosearch — the router is invariant under rephrasing (runtime routing_invariance in skills/metamorphic.ts)."
+buyer_model = "sonnet"
+dealer_needed = false
+deterministic_assertions = ["no_external_mutation", "l1_fuse_armed"]
+judge_dims = []
+gate_verbs = []
+
+[[scenarios]]
+id = "metamorphic_routing_inventory"
+surface = "inventory_site_scan"
+class_name = "metamorphic_routing_inventory"
+stresses = "routing invariance over inventory-scan phrasings: 'scan their sites for stock', 'what Tucsons do they have', 'check inventory' must all route to inventory_site_scan, never split to dealer_geosearch."
+buyer_model = "sonnet"
+dealer_needed = false
+deterministic_assertions = ["no_external_mutation", "l1_fuse_armed"]
+judge_dims = []
+gate_verbs = []

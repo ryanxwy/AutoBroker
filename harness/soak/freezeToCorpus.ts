@@ -96,22 +96,50 @@ export function minimizeFailingInput(
     }
   }
 
-  // Pass 2: drop whitespace-delimited tokens.
-  changed = true;
-  while (changed && iterations < maxIterations) {
-    changed = false;
-    const tokens = current.split(/\s+/).filter((t) => t.length > 0);
-    if (tokens.length <= 1) break;
+  // Pass 2: ddmin over whitespace tokens — remove ever-finer COMPLEMENT chunks
+  // (the classic Zeller/Hildebrandt delta-debugging reduce-to-subset), then a
+  // final 1-minimality verify pass that guarantees no single token can be dropped.
+  let tokens = current.split(/\s+/).filter((t) => t.length > 0);
+  let n = 2; // granularity: number of chunks the token list is split into.
+  while (tokens.length > 1 && iterations < maxIterations) {
+    const size = Math.ceil(tokens.length / n);
+    let reduced = false;
+    for (let start = 0; start < tokens.length && iterations < maxIterations; start += size) {
+      iterations += 1;
+      // try the COMPLEMENT (everything except this chunk) — the ddmin step.
+      const complement = [...tokens.slice(0, start), ...tokens.slice(start + size)];
+      const candidate = complement.join(" ").trim();
+      if (candidate.length > 0 && fails(candidate)) {
+        tokens = complement;
+        n = Math.max(n - 1, 2); // a removal shrinks the list → coarsen granularity.
+        reduced = true;
+        break;
+      }
+    }
+    if (!reduced) {
+      if (n >= tokens.length) break; // granularity is at single tokens → done.
+      n = Math.min(tokens.length, n * 2); // refine granularity.
+    }
+  }
+
+  // 1-minimality verify pass: after ddmin, sweep dropping each remaining single
+  // token; if any drop still fails, ddmin missed it — keep dropping until a full
+  // clean sweep proves no single token is removable (the 1-minimal guarantee).
+  let singleChanged = true;
+  while (singleChanged && iterations < maxIterations) {
+    singleChanged = false;
     for (let i = 0; i < tokens.length && iterations < maxIterations; i += 1) {
+      if (tokens.length <= 1) break;
       iterations += 1;
       const candidate = tokens.filter((_, j) => j !== i).join(" ").trim();
       if (candidate.length > 0 && fails(candidate)) {
-        current = candidate;
-        changed = true;
+        tokens = tokens.filter((_, j) => j !== i);
+        singleChanged = true;
         break;
       }
     }
   }
+  current = tokens.join(" ").trim();
 
   return { minimized: current, shrank: current.length < input.length, iterations };
 }
