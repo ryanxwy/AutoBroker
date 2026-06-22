@@ -60,7 +60,7 @@ export interface ValidateResult {
 /**
  * LC-1 pure validation — the oracle parity-minimum (year/make/model non-empty +
  * year int-coercible). Does NOT touch the DB. This is intentionally LOOSER than
- * the 6-field FORM contract (SearchProfileIntakeInputSchema, core): a skill can
+ * the 7-field FORM contract (SearchProfileIntakeInputSchema, core): a skill can
  * dry-run this without forcing the full form set. Returns { ok, errors[] }.
  */
 export function validate(input: unknown): ValidateResult {
@@ -315,7 +315,7 @@ export function create(
   input: SearchProfileIntakeInput,
   opts: CreateOpts,
 ): CreateResult {
-  // (1) Form-contract back-validation (.strict(), 6-field required, enums).
+  // (1) Form-contract back-validation (.strict(), 7-field required, enums).
   const parsed = SearchProfileIntakeInputSchema.parse(input);
 
   // (2) Persist parity-minimum hard floor: year/make/model.

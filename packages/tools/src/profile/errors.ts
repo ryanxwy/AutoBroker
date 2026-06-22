@@ -74,7 +74,7 @@ export class CoordinatesNotResolvedError extends Error {
 
 /**
  * The persist parity-minimum (year/make/model) was not met when building a
- * row for INSERT. Distinct from the 6-field FORM contract (enforced in core's
+ * row for INSERT. Distinct from the 7-field FORM contract (enforced in core's
  * SearchProfileIntakeInputSchema) — this is the looser service-side hard floor.
  */
 export class MissingRequiredFieldError extends Error {

@@ -155,7 +155,7 @@ export function validateField(
   }
 }
 
-/** The required field names (the 6-field submit gate), in render order. */
+/** The required field names (the 7-field submit gate), in render order. */
 export const REQUIRED_FIELD_NAMES = INTAKE_FIELD_NAMES.filter(
   (n) => INTAKE_FIELD_META[n].required,
 );

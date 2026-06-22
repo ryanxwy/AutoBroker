@@ -31,9 +31,9 @@ describe("formModel — field set derivation from core", () => {
     expect(INTAKE_FIELD_NAMES).toEqual(Object.keys(INTAKE_FIELD_META));
   });
 
-  it("the required set is exactly the 6 form-contract fields", () => {
+  it("the required set is exactly the 7 form-contract fields", () => {
     expect(new Set(REQUIRED_FIELD_NAMES)).toEqual(
-      new Set(["make", "model", "year", "location_query", "follow_up_email", "financing_preference"]),
+      new Set(["make", "model", "trim", "year", "location_query", "follow_up_email", "financing_preference"]),
     );
   });
 
@@ -50,8 +50,13 @@ describe("formModel — validation", () => {
   });
 
   it("an optional empty field is valid", () => {
-    expect(validateField("trim", "", NOW)).toBeNull();
-    expect(validateField("trim", null, NOW)).toBeNull();
+    expect(validateField("trade_in_description", "", NOW)).toBeNull();
+    expect(validateField("trade_in_description", null, NOW)).toBeNull();
+  });
+
+  it("trim is now required — empty trim is flagged", () => {
+    expect(validateField("trim", "", NOW)).toMatch(/required/i);
+    expect(validateField("trim", "Limited", NOW)).toBeNull();
   });
 
   it("email + phone shapes", () => {
@@ -70,16 +75,17 @@ describe("formModel — validation", () => {
     expect(validateField("year", 2025, NOW)).toMatch(/this year or next/i);
   });
 
-  it("requiredCompleteCount + allRequiredValid track the 6 required fields", () => {
+  it("requiredCompleteCount + allRequiredValid track the 7 required fields", () => {
     const values = {
       make: "Hyundai",
       model: "Tucson",
+      trim: "Limited",
       year: 2026,
       location_query: "Irvine, CA",
       follow_up_email: "me@example.com",
       financing_preference: "finance",
     };
-    expect(requiredCompleteCount(values, NOW)).toBe(6);
+    expect(requiredCompleteCount(values, NOW)).toBe(7);
     expect(allRequiredValid(values, NOW)).toBe(true);
     expect(allRequiredValid({ ...values, make: "" }, NOW)).toBe(false);
   });
@@ -91,13 +97,13 @@ describe("formModel — form-decision serialization", () => {
       make: "Hyundai",
       model: "", // required empty → stays '' so the server rejects it
       year: 2026,
-      trim: "", // optional empty → null
+      trade_in_description: "", // optional empty → null
       search_radius_miles: "50", // number coercion
     });
     expect(content["make"]).toBe("Hyundai");
     expect(content["model"]).toBe(""); // required empty preserved
     expect(content["year"]).toBe(2026);
-    expect(content["trim"]).toBeNull();
+    expect(content["trade_in_description"]).toBeNull();
     expect(content["search_radius_miles"]).toBe(50);
   });
 });

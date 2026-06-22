@@ -21,7 +21,8 @@ The runtime flow, grounded in the 8-step workflow
    or cancels the form. Decline/cancel terminates the run as `declined`, and every
    later step short-circuits to zero writes.
 4. **Validate** — pure parse of the submitted form against the strict input schema.
-5. **Trim-verify (LLM)** — skipped when no trim is given; otherwise an LLM call
+5. **Trim-verify (LLM)** — trim is required at the form (owner-directed), so this
+   runs on every intake: an LLM call
    (`intake_trim_verify` useCase) checks the trim is real for the make/model.
    If invalid → suspend ② (`force_override` gate): the user force-overrides
    (audited), revises (re-verify), or declines. A revise that still verifies

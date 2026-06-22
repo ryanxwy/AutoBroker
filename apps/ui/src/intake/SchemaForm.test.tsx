@@ -26,14 +26,14 @@ afterEach(() => {
 });
 
 describe("SchemaForm — field rendering", () => {
-  it("renders all 18 fields, the 6 required marks, and both sections", () => {
+  it("renders all 18 fields, the 7 required marks, and both sections", () => {
     const r = render(
       <SchemaForm runId="r1" seedFields={null} submitting={false} onSubmit={() => {}} onDecline={() => {}} />,
     );
     for (const name of ALL_FIELDS) expect(r.query(`intake-field-${name}`)).not.toBeNull();
     for (const name of REQUIRED) expect(r.query(`required-mark-${name}`)).not.toBeNull();
-    // optional fields have NO required mark.
-    expect(r.query("required-mark-trim")).toBeNull();
+    // a still-optional field has NO required mark (trim is now required — covered by the loop above).
+    expect(r.query("required-mark-search_radius_miles")).toBeNull();
     expect(r.query("intake-section-required")).not.toBeNull();
     expect(r.query("intake-section-optional")).not.toBeNull();
     expect(r.get("intake-completeness").textContent).toBe(`0/${REQUIRED.length} required`);
@@ -103,9 +103,10 @@ describe("SchemaForm — submit", () => {
     submit(form);
     expect(onSubmit).not.toHaveBeenCalled();
 
-    // Fill the 6 required fields.
+    // Fill the 7 required fields.
     change(r.get("intake-field-make") as HTMLInputElement, "Hyundai");
     change(r.get("intake-field-model") as HTMLInputElement, "Tucson");
+    change(r.get("intake-field-trim") as HTMLInputElement, "Limited");
     clickYear(r);
     change(r.get("intake-field-location_query") as HTMLInputElement, "Irvine, CA");
     change(r.get("intake-field-follow_up_email") as HTMLInputElement, "me@example.com");
