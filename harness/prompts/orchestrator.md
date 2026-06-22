@@ -48,5 +48,6 @@ exactly what it needs — **never your history**.
   synthetic / ZDR precondition gate (2026-06-02 product-owner decision). Privacy
   is handled by the upfront README disclosure, not by a harness gate.
 
-<!-- TODO(phase-0): expand into the full step-loop checklist + evidence-dir
-     layout once the evaluator and cases/*.toml exist. -->
+<!-- The full step loop is documented above; the evaluator (harness/evaluator.ts)
+     and the cases/*.toml corpus now exist — see references/backlog-state-machine.md
+     for the S0-S6 evidence-dir layout. -->

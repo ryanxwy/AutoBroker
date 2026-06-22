@@ -29,5 +29,5 @@ a typed resolver result, a validator — not "ask the LLM more nicely". Determin
 comes from schema + validators + code gates, never from prompt wording or
 sampling temperature.
 
-<!-- TODO(phase-0): link the systematic-debugging checklist + the anchor-vs-skill
-     triage table once the evaluator exists. -->
+<!-- The anchor evaluator now exists (harness/evaluator.ts); anchor-vs-skill triage
+     follows the per-skill lines in references/skill-pipeline.md. -->

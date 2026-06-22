@@ -68,5 +68,5 @@ it. The contract is unchanged:
   `dealer_realism` on your reply in isolation — a reply shaped to the skill is a
   circular test).
 
-<!-- TODO(phase-0): document the fake_mailbox_* table shape once the
-     multiround_fake_mailbox helper is built. -->
+<!-- The fake_mailbox_* row shape is documented in negotiation_followup.dealer.md
+     "How your reply is used" (the multiround_fake_mailbox helper now exists). -->
