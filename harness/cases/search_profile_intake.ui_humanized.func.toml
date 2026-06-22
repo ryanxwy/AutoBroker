@@ -1,0 +1,77 @@
+# harness/cases/search_profile_intake.ui_humanized.func.toml — T2-U1.
+# The freeform intake case, FUNCTIONAL lane (DI stubs, no live LLM/geocode),
+# driven PER-KEYSTROKE: the user TYPES the prose into the real chat input one
+# character at a time (real keydown/input events) with a deterministic positional
+# typo+backspace, exercising ChatInput's per-key auto-grow, the IME/keyCode guard,
+# and the slash-autocomplete path that the atomic page.fill (chat_freeform) never
+# touches. The freeform-prefill stub seeds the form, so checkFormSeeded holds; the
+# human-confirm fill + submit go through the real widgets. DETERMINISM: the typo is
+# positional (Math.floor(len/2)), never RNG — two runs produce a byte-identical verdict.
+
+[meta]
+id = "search_profile_intake_ui_humanized"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "freeform"
+provider = "deepseek"
+lane = "ui"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_humanized"
+skill = "search_profile_intake"
+purpose = "Per-keystroke freeform prose (deterministic typo) into the real chat input; seeded form human-confirmed."
+gate_policy = "approve_safe"
+launch = "chat_freeform_humanized"
+
+[steps.input_inline]
+prompt = "I want to buy a 2026 Hyundai Tucson Hybrid Limited in Irvine, CA within 120 miles, use a fake phone number for now."
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"

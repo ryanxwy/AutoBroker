@@ -1162,9 +1162,14 @@ async function driveResumeScriptDom(
       await driver.waitForIntakeForm(maxMs);
       await driver.checkFormRenderedBeforeProse();
       await driver.checkGateBeforeProse();
+      // GATE-PENDING composer lock (T2-U2): with the data_collection gate open,
+      // the chat composer must be disabled so a typed follow-up can't start a
+      // rogue second run answering the gate with prose.
+      if (step.assertComposerLocked) await driver.checkComposerLockedWhileGated();
       // The freeform launch must show a SEEDED form (any prefilled field —
       // values are LLM-nondeterministic) BEFORE the driver touches it.
-      if (step.launch === "chat_freeform") await driver.checkFormSeeded();
+      if (step.launch === "chat_freeform" || step.launch === "chat_freeform_humanized")
+        await driver.checkFormSeeded();
       if (resume.action === "accept") {
         const content = resume.content ?? {};
         if (step.edge === "reload_mid_form") {
@@ -1694,12 +1699,16 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       // ---- start the run BY USER ACTION -----------------------------------
       if (step.launch === "skills_popover") {
         await driver.launchSkillFromPopover(skill);
-      } else if (step.launch === "chat_freeform") {
+      } else if (step.launch === "chat_freeform" || step.launch === "chat_freeform_humanized") {
         const prompt = step.inputInline?.["prompt"];
         if (typeof prompt !== "string" || prompt.trim() === "") {
-          fail(`case step "${step.id}" launches chat_freeform but has no input_inline.prompt`);
+          fail(`case step "${step.id}" launches ${step.launch} but has no input_inline.prompt`);
         }
-        await driver.typeInChatRail(prompt);
+        if (step.launch === "chat_freeform_humanized") {
+          await driver.typeInChatRailHumanized(prompt);
+        } else {
+          await driver.typeInChatRail(prompt);
+        }
       } else if (step.launch === "stop_picker") {
         // The PREVIOUS step ended in a 2+-profiles STOP whose card is still
         // rendered; pick by vehicle label — the click starts a NEW run with

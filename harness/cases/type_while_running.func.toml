@@ -1,0 +1,58 @@
+# harness/cases/type_while_running.func.toml — T2-U2 (GATE-PENDING ARM ONLY).
+#
+# Pins the chat-rail lock contract: while an intake run holds a PENDING
+# data_collection gate (the collect form is showing, turn status =
+# awaiting_approval), the composer is LOCKED — chat-send AND chat-input-textarea
+# both carry the disabled attribute — so a follow-up message typed mid-suspend
+# cannot start a rogue concurrent run that answers the gate with prose.
+# (App.tsx activeAwaiting!==null -> ChatRail disabled -> ChatInput disables both
+# widgets.) A regression that re-enables the composer while gated flips this RED.
+#
+# SCOPE — GATE-PENDING ARM ONLY. This does NOT assert the run-in-flight arm (the
+# composer staying open while the run is merely `running`, before any gate). That
+# gap is real but needs a /__e2e/hold-run seam to pin a run at `running`
+# deterministically, and the concurrent-run behavior itself is owner-pending — so
+# it is deliberately NOT asserted here (do not add a running-state disabled anchor
+# to this case). See the e2e-realism plan T2-U2 / §8.
+#
+# FUNCTIONAL lane (DI stubs, no live LLM): the intake reaches the data_collection
+# suspend with zero model cost; the composer-lock checks fire at the suspend, then
+# the user DECLINES (terminal `declined`, zero writes).
+
+[meta]
+id = "type_while_running_func"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "intake_gate_pending_lock"
+skill = "search_profile_intake"
+purpose = "At the pending data_collection gate, composer is locked (Send + textarea disabled); then decline."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+assert_composer_locked = true
+
+[[steps.resume]]
+on = "data_collection"
+action = "decline"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "global"
+exact = true
+min = 0
+
+[[steps.anchors]]
+kind = "no_external_mutation"

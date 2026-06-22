@@ -251,6 +251,62 @@ export class UiDriver {
     await this.page.click(tid("chat-send"));
   }
 
+  /** typeInChatRailHumanized (T2-U1): drive the chat-rail textarea PER-KEYSTROKE
+   *  (real keydown/input events — exercising ChatInput's per-key auto-grow effect,
+   *  the IME/keyCode guard, and the slash autocomplete that page.fill's atomic
+   *  value-set never touches), then click Send. A DETERMINISTIC typo+backspace is
+   *  injected at a fixed positional index (NOT Math.random — the func lane must be
+   *  byte-identical across runs): at the midpoint character we type a wrong key,
+   *  then Backspace, then the correct character, so the net committed text equals
+   *  `text` exactly. `delay` is the per-key delay ms (default 0). typo:false types
+   *  cleanly. */
+  async typeInChatRailHumanized(
+    text: string,
+    opts: { delay?: number; typo?: boolean } = {},
+  ): Promise<void> {
+    const delay = opts.delay ?? 0;
+    const injectTypo = opts.typo ?? true;
+    const sel = tid("chat-input-textarea");
+    await this.page.click(sel); // focus the real textarea (keyboard.type targets focus).
+    const typoAt = injectTypo && text.length > 1 ? Math.floor(text.length / 2) : -1;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i]!;
+      if (i === typoAt) {
+        // A deterministic wrong key (the next char, or "x" for a non-letter), then
+        // correct it — net text is unchanged.
+        const wrong = /[a-y]/.test(ch) ? String.fromCharCode(ch.charCodeAt(0) + 1) : "x";
+        await this.page.keyboard.type(wrong, { delay });
+        await this.page.keyboard.press("Backspace");
+      }
+      await this.page.keyboard.type(ch, { delay });
+    }
+    await this.page.click(tid("chat-send"));
+  }
+
+  /** checkComposerLockedWhileGated (T2-U2): while a data_collection gate is PENDING
+   *  (the intake collect form is showing, turn status = awaiting_approval), the chat
+   *  composer must be LOCKED — both the Send button and the textarea carry the
+   *  disabled attribute — so a follow-up message typed mid-suspend cannot start a
+   *  rogue second run answering the gate with prose. Records two real UiChecks (never
+   *  a passthrough). Call at the data_collection suspend, BEFORE the resume decision.
+   *  GATE-PENDING arm only; the run-in-flight arm (composer open while merely
+   *  `running`) is a separate, owner-pending gap and is NOT asserted here. */
+  async checkComposerLockedWhileGated(): Promise<void> {
+    for (const testid of ["chat-send", "chat-input-textarea"]) {
+      const present = (await this.page.locator(tid(testid)).count()) > 0;
+      const disabled =
+        present && (await this.page.locator(tid(testid)).first().isDisabled().catch(() => false));
+      this.record({
+        surface: `dom:${testid}`,
+        selector: `${tid(testid)}[disabled]`,
+        expected: "composer locked (disabled) while a data_collection gate is pending",
+        observed: disabled ? "disabled" : present ? "enabled" : "absent",
+        ok: disabled,
+      });
+    }
+    await this.screenshot("composer-locked-while-gated");
+  }
+
   /** The run id of the CURRENTLY shown /runs/:id route, or null (not on a run
    *  view). Used by the realtime-reactivity proof to address the open run
    *  stream the rail is subscribed to. */

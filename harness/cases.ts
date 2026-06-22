@@ -137,6 +137,7 @@ const CONTENT_FROM_SOURCES = new Set(["narrative.profile", "suspend.targets"]);
 const LaunchSchema = z.enum([
   "chat_slash",
   "chat_freeform",
+  "chat_freeform_humanized",
   "skills_popover",
   "stop_picker",
   "canvas_button",
@@ -218,6 +219,10 @@ const RawStepSchema = z.object({
   /** UI-lane edge behavior the runner applies while driving this step
    *  (rotation-pool corner case; unknown values fail loud at parse). */
   edge: EdgeSchema.optional(),
+  /** UI-lane (data_collection steps): while the gate is pending, assert the chat
+   *  composer is LOCKED (Send + textarea disabled) before the resume decision.
+   *  Default false. */
+  assert_composer_locked: z.boolean().optional(),
   /** PER-STEP wall-clock budget (seconds). Used when the CLI --max-seconds
    *  flag is ABSENT; the CLI always overrides. Long browser+LLM steps
    *  (inventory_site_scan) author 1800 here so a corpus run without flags
@@ -337,6 +342,7 @@ export interface CaseResume {
 export type StepLaunch =
   | "chat_slash"
   | "chat_freeform"
+  | "chat_freeform_humanized"
   | "skills_popover"
   | "stop_picker"
   | "canvas_button";
@@ -381,6 +387,9 @@ export interface CaseStep {
   expectStop: ExpectStop | null;
   /** The UI-lane edge behavior applied while driving this step, or null. */
   edge: StepEdge | null;
+  /** UI-lane: assert composer-locked-while-gated at the data_collection suspend,
+   *  before the resume decision. */
+  assertComposerLocked: boolean;
   /** Per-step budget (seconds) when the CLI --max-seconds is absent, or null
    *  (the runner's 900s default). CLI overrides. */
   maxSeconds: number | null;
@@ -621,6 +630,7 @@ export function toCase(raw: TomlTable): Case {
     profileScopeFrom: s.profile_scope_from ?? null,
     expectStop: s.expect_stop ?? null,
     edge: s.edge ?? null,
+    assertComposerLocked: s.assert_composer_locked ?? false,
     maxSeconds: s.max_seconds ?? null,
     expectsWipe: s.expects_wipe ?? false,
     pinLabel: s.pin_label ?? null,
