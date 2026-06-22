@@ -8,12 +8,13 @@
 # (App.tsx activeAwaiting!==null -> ChatRail disabled -> ChatInput disables both
 # widgets.) A regression that re-enables the composer while gated flips this RED.
 #
-# SCOPE — GATE-PENDING ARM ONLY. This does NOT assert the run-in-flight arm (the
-# composer staying open while the run is merely `running`, before any gate). That
-# gap is real but needs a /__e2e/hold-run seam to pin a run at `running`
-# deterministically, and the concurrent-run behavior itself is owner-pending — so
-# it is deliberately NOT asserted here (do not add a running-state disabled anchor
-# to this case). See the e2e-realism plan T2-U2 / §8.
+# SCOPE — GATE-PENDING ARM. This case pins the lock at a PENDING gate. The
+# run-in-flight arm (composer disabled while a run is merely `running`, before any
+# gate) was RESOLVED to SOFT-BLOCK (owner, 2026-06-22): ChatRail's composer is now
+# disabled whenever a run is active (running OR awaiting), and that arm is asserted
+# by the deterministic component test ChatRail.test.tsx ("composer locked while a
+# run is in flight"). A func-lane variant would still need a /__e2e/hold-run seam to
+# park a run at `running`; until then the component test is the run-in-flight proof.
 #
 # FUNCTIONAL lane (DI stubs, no live LLM): the intake reaches the data_collection
 # suspend with zero model cost; the composer-lock checks fire at the suspend, then
