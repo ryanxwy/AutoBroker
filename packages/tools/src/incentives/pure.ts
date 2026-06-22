@@ -308,7 +308,7 @@ export const OEM_SEED_SOURCES: Readonly<Record<string, { urlTemplate: string }>>
   },
   // Toyota + Honda national current-offers hubs. Param-free (the stable kind the
   // cold isolated capture reads without destabilizing), US .com (classifyOemHost
-  // passes), and live-verified by the nightly 巡检's own incentive_scrape cold
+  // passes), and live-verified by the e2e 巡检's own incentive_scrape cold
   // capture — the real headless browser reaches these even where a plain fetch is
   // 403'd. Like Hyundai, the capture may surface mostly an MSRP/offers grid (a
   // valid empty result is honest); the point is the brand is now a recognized
@@ -323,7 +323,7 @@ export const OEM_SEED_SOURCES: Readonly<Record<string, { urlTemplate: string }>>
   // param-free, US .com (classifyOemHost passes), trusted host the repo already
   // recognizes (inventory_site_scan treats chevrolet.com as the Chevrolet OEM
   // site). Keyed "chevrolet" with a "chevy"->"chevrolet" alias above so the
-  // common colloquial make resolves. Live cold-capture verified by the nightly
+  // common colloquial make resolves. Live cold-capture verified by the e2e
   // 巡检; an all-MSRP grid is a valid empty result.
   chevrolet: {
     urlTemplate: "https://www.chevrolet.com/deals",

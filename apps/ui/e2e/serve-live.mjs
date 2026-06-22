@@ -1,5 +1,5 @@
 /**
- * serve-live.mjs — the LIVE e2e dashboard host for the nightly 全技能巡检.
+ * serve-live.mjs — the LIVE e2e dashboard host for the 全技能巡检.
  *
  * Like serve.mjs it boots the REAL @autobroker/server + serves the REAL built
  * apps/ui/dist on an ISOLATED throwaway DB, but it is wired for a LIVE DeepSeek
@@ -61,7 +61,7 @@ import {
 // these injected dealers) negotiation_followup + dealer_closeout_email resolve a
 // null reply target and silently report "no candidates" — so seed it from the
 // dealer's reply `from`, which IS their contact address, to make those drafts
-// actually exercisable by the nightly 巡检.
+// actually exercisable by the e2e 巡检.
 const INSERT_DEALER =
   "INSERT INTO dealers (dealer_id, name, website, country, contact_email) VALUES (?, ?, ?, 'US', ?) " +
   "ON CONFLICT(dealer_id) DO UPDATE SET contact_email = excluded.contact_email";
@@ -109,7 +109,7 @@ const SET_MSG_CONTACT =
 let injectSeq = 0;
 // ~2 days ago (not a fixed 2024 epoch): keeps replies INSIDE the negotiation
 // follow-up window (max 14d since the dealer's last reply) and reads as a fresh
-// inbox, so the nightly 巡检 can actually exercise negotiation_followup +
+// inbox, so the e2e 巡检 can actually exercise negotiation_followup +
 // dealer_closeout_email drafts. Monotonic via injectSeq below.
 const BASE_MS = Date.now() - 2 * 24 * 60 * 60 * 1000;
 
@@ -315,7 +315,7 @@ const DRIZZLE_DIR = join(here, "..", "..", "..", "packages", "db", "drizzle");
 // A fresh DB must receive the WHOLE committed migration set in journal order — a
 // later migration carries the fake_mailbox_* tables the inject route needs. Read
 // drizzle's _journal.json (not a hardcoded list) so a newly-added migration is
-// picked up automatically by the nightly 巡检 instead of being silently missed.
+// picked up automatically by the e2e 巡检 instead of being silently missed.
 function migrationFilesInOrder() {
   try {
     const journal = JSON.parse(readFileSync(join(DRIZZLE_DIR, "meta", "_journal.json"), "utf8"));
@@ -362,7 +362,7 @@ db.$client.close();
 
 // --- geocoder: a query-HONORING metro fixture map (NOT a live geocode) --------
 // The Places key has NO Geocoding entitlement (a live geocode blocks), and an
-// unattended nightly 巡检 should stay hermetic anyway. So instead of pinning ONE
+// unattended e2e 巡检 should stay hermetic anyway. So instead of pinning ONE
 // city we map the curated brand+city allowlist's metros → real coords: the typed
 // location_query is matched by a 5-digit ZIP first, then a city-name substring,
 // falling back to Irvine. This lets the buyer-brain search ANY allowlist metro
