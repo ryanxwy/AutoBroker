@@ -1949,6 +1949,9 @@ const extractStep = createStep({
 
         // Apply per-dealer top-20 best-match record cap AFTER extraction +
         // classification, BEFORE persisting. Dropped rows are never written.
+        // Capped-out rows that were persisted in a prior scan participate in the
+        // normal staleSuperseded soft-supersede on the next scan — the cap is a
+        // recording gate, not a hard delete of previously persisted rows.
         const { kept, dropped } = selectTopListingsForDealer(
           matchCtx,
           classified,

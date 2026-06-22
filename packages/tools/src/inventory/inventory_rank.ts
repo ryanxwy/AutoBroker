@@ -206,7 +206,7 @@ export function scoreListing(
     ctx.acceptable_trims,
   );
   const [priceScore, priceReason] = priceAxis(
-    asNumber(listing["listed_price"]),
+    asNumber(listing["listed_price"] ?? listing["price"]),
     asNumber(listing["msrp"]),
     medianListedPrice,
   );

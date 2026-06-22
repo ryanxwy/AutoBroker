@@ -488,6 +488,52 @@ describe("selectTopListingsForDealer", () => {
     expect(kept[0]!.listing["listing_id"]).toBe("mis_stk");
   });
 
+  it("extracted InventoryListing shape (price key, no listed_price/msrp) — cheaper listing wins cap", () => {
+    // Regression: scoreListing previously read only listing["listed_price"],
+    // which is absent on freshly-extracted rows (InventoryListing uses "price").
+    // With the fix, the price axis reads listed_price ?? price, so the cheaper
+    // car actually wins instead of both falling to the neutral 0.5 fallback and
+    // breaking ties on listing_id.
+    const cheaper = {
+      listing: {
+        listing_id: "ext_cheap",
+        year: 2026,
+        make: "Hyundai",
+        model: "Tucson",
+        trim: "Limited",
+        exterior_color: "Shimmering Silver",
+        interior_color: null,
+        price: 39000, // extracted shape: "price", no "listed_price", no "msrp"
+        inventory_status: "in_stock",
+        listing_url: "https://dealer.example/v/1",
+        vin: null,
+        stock_number: null,
+      },
+      matchStatus: "exact",
+    };
+    const pricier = {
+      listing: {
+        listing_id: "ext_pricey", // lexically after "ext_cheap" → would win tiebreak if neutral
+        year: 2026,
+        make: "Hyundai",
+        model: "Tucson",
+        trim: "Limited",
+        exterior_color: "Shimmering Silver",
+        interior_color: null,
+        price: 45000, // same shape, higher price
+        inventory_status: "in_stock",
+        listing_url: "https://dealer.example/v/2",
+        vin: null,
+        stock_number: null,
+      },
+      matchStatus: "exact",
+    };
+    // Cap=1 forces a drop; cheaper must win on price axis, not on id tiebreak.
+    const { kept, dropped } = selectTopListingsForDealer(ctx(), [pricier, cheaper], 1);
+    expect(dropped).toBe(1);
+    expect(kept[0]!.listing["listing_id"]).toBe("ext_cheap");
+  });
+
   it("color preference breaks score tie — preferred-color listing kept over off-color listing", () => {
     // Both exact match, both in_stock, identical price/trim. The only difference
     // is exterior_color. With a preferred-color ctx the color axis gives the
