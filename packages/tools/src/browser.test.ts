@@ -307,7 +307,7 @@ describe("gatedSubmitForm — the gate/decline/mode-brake safety branches", () =
     expect(ops).toEqual([]);
   });
 
-  it("test mode blocks the click even when the approver approves (the mode-brake floor)", async () => {
+  it("test mode brakes BEFORE any fill or click, even when the approver approves (the mode-brake floor)", async () => {
     const { page, ops } = fakePage();
     process.env.AUTOBROKER_MODE = "test"; // test mode — the sole send-control floor
     await expect(
@@ -319,7 +319,10 @@ describe("gatedSubmitForm — the gate/decline/mode-brake safety branches", () =
         emitter: NULL_EMITTER,
       }),
     ).rejects.toThrow(ExternalMutationsBlockedError);
-    expect(ops.some((op) => op.startsWith("click:"))).toBe(false); // never reached the click
+    // The brake fires at the top of the approved commit: NO real-form fill is
+    // attempted (so a dealer form lacking a mapped field can never 30s-timeout
+    // and fail the run) and the network click is never reached.
+    expect(ops).toEqual([]);
   });
 
   it("an approved gate fills then clicks, and announces the submit", async () => {
