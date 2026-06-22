@@ -60,6 +60,10 @@ kind = "run_status"
 expect = ["done"]
 
 [[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"          # parity with the slash/freeform func cases.
+
+[[steps.anchors]]
 kind = "table_min_rows"
 table = "search_profiles"
 scope = "profile"

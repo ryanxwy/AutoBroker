@@ -31,10 +31,12 @@ export interface ChatRailProps {
   turns: TurnView[];
   /** The run currently driving the rail (its assistant turn is the live one). */
   activeRunId: string | null;
-  /** The active run's pending gate, if any. While a gate is pending the rail
-   *  input is DISABLED (hazard fix): a typed message cannot spawn a rogue run —
-   *  gates stay button-only. Null when nothing is awaiting. */
-  activeAwaiting: unknown | null;
+  /** Whether a run is ACTIVE (running OR awaiting_approval, i.e. NOT terminal).
+   *  While a run is in flight the composer is SOFT-BLOCKED so a typed message
+   *  cannot spawn a concurrent run — this supersedes the older gate-only lock (a
+   *  pending gate is always also an active run, and a merely-running run now
+   *  locks the composer too). Gates stay button-only. */
+  runActive: boolean;
   /** The LIVE browser activity for the active run's turn, or null. */
   browserView: BrowserView | null;
   /** The form-decision controller for the active run's pending gate. */
@@ -75,7 +77,7 @@ export function ChatRail({
   title,
   turns,
   activeRunId,
-  activeAwaiting,
+  runActive,
   browserView,
   decision,
   knownSkills,
@@ -178,7 +180,7 @@ export function ChatRail({
 
       <ChatInput
         knownSkills={knownSkills}
-        disabled={activeAwaiting !== null}
+        disabled={runActive}
         onSlash={onSlash}
         onFreeform={onFreeform}
       />

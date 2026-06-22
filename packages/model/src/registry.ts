@@ -119,7 +119,63 @@ export const defaultProvider: Provider = DEFAULT_PROVIDER;
  * `providerId{SEPARATOR}modelId` key, which is why SEPARATOR is ".".
  */
 export function resolveModel(alias: ModelAlias): LanguageModel {
-  return registry.languageModel(alias);
+  const real = registry.languageModel(alias);
+  if (_harnessGenerateFault === "none") return real;
+  return wrapWithGenerateFault(real, _harnessGenerateFault);
   // TODO: surface a typed "alias not registered" error instead of letting the
   // SDK throw, so policy() down-routing can react. Fail-LOUD, never silent.
+}
+
+// --- TEST-ONLY generate-fault seam (T4-U2) ---------------------------------
+// Makes the NEXT resolved model's doGenerate/doStream fail like a provider 5xx
+// ("llm_500", throw now) or a hung request ("llm_timeout", reject after a short
+// delay). NEVER armed in production: the arm() refuses outside a test runner,
+// the same guard rule as the workflows __setIntakeDepsForTests seam. The throw
+// propagates through the Agent.generate() .catch() in @autobroker/workflows
+// (harness.ts) which records ONE NULL-not-$0 ledger row and re-throws — so an
+// armed llm_* fault fails the run CLOSED, never a fabricated "success" (inv #4/#12).
+export type HarnessGenerateFault = "none" | "llm_500" | "llm_timeout";
+
+let _harnessGenerateFault: HarnessGenerateFault = "none";
+
+export function __setHarnessGenerateFaultForTests(fault: HarnessGenerateFault): void {
+  if (process.env["VITEST"] === undefined && process.env["NODE_ENV"] !== "test") {
+    throw new Error(
+      "__setHarnessGenerateFaultForTests is a test-only seam (refused outside a test runner)",
+    );
+  }
+  _harnessGenerateFault = fault;
+}
+
+export function __resetHarnessGenerateFaultForTests(): void {
+  _harnessGenerateFault = "none";
+}
+
+/** Wrap a resolved v3 model so doGenerate/doStream reject. Preserves identity
+ *  fields (modelId for pricing, specificationVersion) so the ledger row still
+ *  records the real route — the throw, not a fabricated success, is what we test. */
+function wrapWithGenerateFault(
+  model: LanguageModel,
+  fault: Exclude<HarnessGenerateFault, "none">,
+): LanguageModel {
+  if (typeof model === "string") return model; // a bare-string id has no doGenerate to fault.
+  const reject = async (): Promise<never> => {
+    if (fault === "llm_timeout") {
+      await new Promise((r) => setTimeout(r, 50)); // reject-after-delay, not a real hang.
+    }
+    throw new Error(`injected LLM fault: ${fault}`);
+  };
+  // A Proxy intercepts ONLY doGenerate/doStream and delegates everything else to the
+  // REAL model — preserving its prototype, getters, and identity fields (modelId,
+  // provider, specificationVersion, supportedUrls) that Mastra's agent/schema-compat
+  // layer reads before any call. (A spread/clone would drop the prototype + getters
+  // and crash Mastra's tool builder.) Reads use the default receiver (this=target) and
+  // methods are bound to target so private-field access never trips on the proxy.
+  return new Proxy(model, {
+    get(target, prop) {
+      if (prop === "doGenerate" || prop === "doStream") return reject;
+      const value = Reflect.get(target, prop);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }

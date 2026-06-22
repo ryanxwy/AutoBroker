@@ -89,6 +89,16 @@ export {
   type IntakeWorkflowDeps,
 } from "./searchProfileIntake.js";
 
+// The model-layer generate-fault test seam (T4-U2), re-exported so the live e2e
+// host (serve-live.mjs depends on @autobroker/workflows but not directly on
+// @autobroker/model) can arm an llm_500/llm_timeout fault for the next resolved
+// model — the LLM twin of __setIntakeDepsForTests' geocode override.
+export {
+  __setHarnessGenerateFaultForTests,
+  __resetHarnessGenerateFaultForTests,
+  type HarnessGenerateFault,
+} from "@autobroker/model";
+
 // The intake skill contracts (emit schemas + resume schemas + prompt builders),
 // co-located with the skill (skill-local, single-use; see header rationale).
 export {

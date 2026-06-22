@@ -12,6 +12,13 @@
 
 // Provider registry + model resolution.
 export { registry, resolveModel, defaultProvider } from "./registry.js";
+// Test-only generate-fault seam (T4-U2): arm a provider-5xx / hung-request fault
+// so the next resolved model fails CLOSED (refused outside a test runner).
+export {
+  __setHarnessGenerateFaultForTests,
+  __resetHarnessGenerateFaultForTests,
+} from "./registry.js";
+export type { HarnessGenerateFault } from "./registry.js";
 
 // useCase -> ModelAlias -> CapabilityFlags routing policy.
 export { policy, USE_CASES } from "./policy.js";

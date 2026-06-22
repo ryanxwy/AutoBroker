@@ -38,6 +38,8 @@ import { z } from "zod";
 
 import {
   MalformedToolCallAbort,
+  __resetHarnessGenerateFaultForTests,
+  __setHarnessGenerateFaultForTests,
   makeProseDumpModel,
   makeStaticToolCallModel,
   makeStructuredObjectModel,
@@ -530,5 +532,25 @@ describe("harness.generate — adversarial-review fixes (2026-06-05)", () => {
     // The guard fires before any model call — nothing ran, zero rows (same
     // no-fake-provenance rule as the output_object gate).
     expect(ledgerRows()).toHaveLength(0);
+  });
+});
+
+describe("harness.generate — transport throw (injected llm fault) fails CLOSED", () => {
+  it("llm_500: re-throws + writes ONE NULL-not-$0 ledger row (no fabricated success)", async () => {
+    // Omit _testOverrides.model so the REAL resolveModel runs and the generate-fault
+    // seam fires (the resolved model's doGenerate rejects). The harness .catch() must
+    // record one ledger row (NULL-not-$0, fail_reason set) and re-throw — never a
+    // success. This is the end-to-end inv #4/#12 proof for an LLM transport fault.
+    __setHarnessGenerateFaultForTests("llm_500");
+    try {
+      await expect(harness.generate(probeInput(), ledger, { db })).rejects.toThrow(/llm_500/);
+    } finally {
+      __resetHarnessGenerateFaultForTests();
+    }
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).not.toBeNull(); // Error.name recorded on the throw.
+    expect(rows[0]?.cost_usd).toBeNull(); // NULL-not-$0 (no usage on a failed call).
+    expect(rows[0]?.pricing_source).toBe("unavailable");
   });
 });
