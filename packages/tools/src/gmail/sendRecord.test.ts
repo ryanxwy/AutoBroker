@@ -40,6 +40,7 @@ import {
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
+const REAL_SEND = "AUTOBROKER_REAL_SEND";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = join(here, "..", "..", "..", "db", "drizzle");
@@ -49,10 +50,10 @@ let tmpDir: string;
 let db: Db;
 
 function snapshotEnv(): void {
-  for (const key of [DATA_DIR, FUSE]) saved[key] = process.env[key];
+  for (const key of [DATA_DIR, FUSE, REAL_SEND]) saved[key] = process.env[key];
 }
 function restoreEnv(): void {
-  for (const key of [DATA_DIR, FUSE]) {
+  for (const key of [DATA_DIR, FUSE, REAL_SEND]) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
   }
@@ -63,6 +64,7 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-send-record-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[FUSE];
+  process.env[REAL_SEND] = "0"; // braked by default; the real-send test opts in
   db = openDb();
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0001_redundant_ozymandias.sql"), "utf8"));
@@ -226,9 +228,11 @@ describe("sendAndRecord", () => {
     expect(row.gmail_message_id).toBeNull();
   });
 
-  it("throws (fail closed) when the adapter is not the fake — no draft written", async () => {
-    // A non-fake adapter fails the preflight, which runs INSIDE the commit but
-    // BEFORE the draft insert → the error re-throws with zero state.
+  it("BRAKED: throws (fail closed) when real send is off and the adapter is not the fake — no draft written", async () => {
+    // With the brake engaged, a non-fake adapter fails the fake-only preflight,
+    // which runs INSIDE the commit but BEFORE the draft insert → re-throws with
+    // zero state.
+    process.env[REAL_SEND] = "0"; // braked (explicit; also the beforeEach default)
     const notFake = spyFakeAdapter();
     Object.defineProperty(notFake, "kind", { value: "real" });
     const before = messageRowCount();
@@ -243,6 +247,27 @@ describe("sendAndRecord", () => {
     ).rejects.toThrow();
     expect(messageRowCount()).toBe(before);
     expect(notFake.sendCalls).toHaveLength(0);
+  });
+
+  it("REAL: with the brake released, a real-kind adapter is ALLOWED — row written, send called", async () => {
+    // Real-by-default: the fake-only preflight is skipped, so the resolved real
+    // adapter proceeds (still only because the approver approved + the fuse is
+    // disarmed). This is the real-send path the product now ships by default.
+    delete process.env[FUSE]; // disarmed
+    process.env[REAL_SEND] = "1"; // brake released
+    const realish = spyFakeAdapter();
+    Object.defineProperty(realish, "kind", { value: "real" });
+
+    const outcome = await sendAndRecord(topLevelTarget(), {
+      approver: recordingApprover(true),
+      runId: "run-real",
+      adapter: realish,
+      db,
+    });
+
+    expect(outcome.kind).toBe("sent");
+    expect(realish.sendCalls).toHaveLength(1);
+    expect(messageRowCount()).toBe(1);
   });
 
   it("rejects exactly-one-of(threadId, inReplyToGmailId) — the reply double-flag", async () => {

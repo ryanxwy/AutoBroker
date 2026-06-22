@@ -43,6 +43,7 @@ import {
   type OutboundEmail,
   type SendMode,
 } from "../gmail.js";
+import { isRealSendEnabled } from "../realSend.js";
 import { assertFakeMailboxSendOnly } from "./sendPreflight.js";
 import type { GmailAdapter } from "./types.js";
 
@@ -183,7 +184,10 @@ export async function sendAndRecord(
       },
       deps.approver,
       async () => {
-        assertFakeMailboxSendOnly({ adapter }); // fail-closed: fake only.
+        // Brake: when real send is disabled, this seam is fake-only (fail-closed).
+        // When real send is enabled, the resolved (real) adapter is allowed — but
+        // ONLY after the L2 approval above and the L1 fuse re-check below.
+        if (!isRealSendEnabled()) assertFakeMailboxSendOnly({ adapter });
         draftRowId = insertOutboundDraft(db, target); // durable checkpoint, gmail id NULL.
         assertEnvFuseDisarmed("gmail_send"); // L1, BEFORE any id is minted.
         const { messageId } = await adapter.send(raw); // irreversible boundary (fake).
