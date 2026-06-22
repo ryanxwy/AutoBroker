@@ -58,11 +58,12 @@ const SKILLS_FIXTURE = [
   },
 ];
 
-/** GET /api/mode → { active_db, data_dir, demo } (routes.ts:287). */
+/** GET /api/mode → { active_db, data_dir, demo, mode } (routes.ts:943). */
 const MODE_FIXTURE = {
   active_db: "/tmp/autobroker-xyz/autobroker.db",
   data_dir: "/tmp/autobroker-xyz",
   demo: false,
+  mode: "buyer",
 };
 
 /** GET /api/skill-runs/:id → status summary (intakeRuns.ts:569-575). The
@@ -159,10 +160,11 @@ describe("ApiClient decode — captured wire fixtures", () => {
     expect(skills[0]!.sensitive).toBe(false);
   });
 
-  it("getMode decodes { active_db, data_dir }", async () => {
+  it("getMode decodes { active_db, data_dir, demo, mode }", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch(200, MODE_FIXTURE) });
     const mode = await client.getMode();
     expect(mode.data_dir).toBe("/tmp/autobroker-xyz");
+    expect(mode.mode).toBe("buyer");
   });
 
   it("runStatus decodes the awaiting_approval summary incl. pending + events", async () => {

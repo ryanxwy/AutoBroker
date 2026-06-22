@@ -20,12 +20,13 @@
 import { ApiClient } from "../api/client.js";
 import { useDataRefetch } from "../api/useDataChanged.js";
 import { useAsync } from "../api/useApi.js";
-import type { ProfileList } from "../api/wire.js";
+import type { AppMode, ProfileList } from "../api/wire.js";
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
 import { navigate } from "../router.js";
 import { useLayout } from "../store/layout.js";
 import { ClosedSearchesGroup } from "./ClosedSearchesGroup.js";
 import { BrandMark, GearIcon, PinIcon } from "./icons.js";
+import { ModeToggle } from "./ModeToggle.js";
 import { Popover } from "./Popover.js";
 
 // Module-level stable literal — the data-change bus key the active-searches list
@@ -40,6 +41,11 @@ export interface TopBarProps {
   runActive: boolean;
   /** The current session's TRUE pin (hydrated by App), or null. */
   pinnedProfileId: string | null;
+  /** The live AUTOBROKER_MODE posture (from GET /api/mode), or null while the
+   *  mode read is loading/errored — the toggle hides until a real value lands. */
+  appMode: AppMode | null;
+  /** Refetch /api/mode after the toggle commits a switch. */
+  onModeSwitched: () => void;
   onStartIntake: () => void;
   /** Pin the CURRENT session to a profile (creates a session when none). */
   onPin: (profileId: string) => void;
@@ -53,6 +59,8 @@ export function TopBar({
   client,
   runActive,
   pinnedProfileId,
+  appMode,
+  onModeSwitched,
   onStartIntake,
   onPin,
   onUnpin,
@@ -170,6 +178,12 @@ export function TopBar({
       </div>
 
       <div className="topbar__right">
+        {/* App-mode posture toggle (Buyer = live/can-send, Test = safe). Renders
+            once the /api/mode read resolves; switching TO buyer is confirm-gated. */}
+        {appMode !== null && (
+          <ModeToggle mode={appMode} onSwitched={onModeSwitched} client={client} />
+        )}
+
         <div className="modeswitch" role="tablist" aria-label="Workbench mode">
           <button
             type="button"

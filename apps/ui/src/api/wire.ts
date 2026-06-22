@@ -564,15 +564,22 @@ export const SkillListSchema = z.array(SkillManifestSchema);
 export type SkillList = z.infer<typeof SkillListSchema>;
 
 // ---------------------------------------------------------------------------
-// Mode — GET /api/mode → { active_db, data_dir, demo }. `demo` is true in the
-// zero-config sample-world mode (the isolated demo DB) and drives the
-// persistent demo banner.
+// Mode — GET /api/mode → { active_db, data_dir, demo, mode }. `demo` is true in
+// the zero-config sample-world mode (the isolated demo DB) and drives the
+// persistent demo banner. `mode` is the single AUTOBROKER_MODE posture
+// ("buyer" = real product / can send; "test" = internal/safe) the TopBar toggle
+// reflects + switches.
 // ---------------------------------------------------------------------------
+
+/** The two app postures (mirrors @autobroker/tools AppMode). */
+export const AppModeSchema = z.enum(["buyer", "test"]);
+export type AppMode = z.infer<typeof AppModeSchema>;
 
 export const ModeSchema = z.object({
   active_db: z.string(),
   data_dir: z.string(),
   demo: z.boolean(),
+  mode: AppModeSchema,
 });
 export type Mode = z.infer<typeof ModeSchema>;
 

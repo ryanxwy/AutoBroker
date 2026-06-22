@@ -56,6 +56,7 @@ import {
   close as closeProfile,
   restore as restoreProfile,
   purge as purgeProfile,
+  resolveMode,
   getKeyPresence,
   setKey,
   clearKey,
@@ -939,7 +940,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return SKILL_MANIFEST;
   });
 
-  // ---- GET /api/mode — harness preflight {active_db, data_dir, demo} -------
+  // ---- GET /api/mode — harness preflight {active_db, data_dir, demo, mode} --
   app.get("/api/mode", async () => {
     // The active product DB path = AUTOBROKER_DB override or <dataDir>/autobroker.db.
     const dataDir = resolveDataDir();
@@ -950,7 +951,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // off this flag.
     const demo =
       process.env.AUTOBROKER_DEMO_SEED === "1" || /(^|\/)demo\/?$/.test(dataDir);
-    return { active_db: activeDb, data_dir: dataDir, demo };
+    // mode = the single AUTOBROKER_MODE posture ("buyer" = real product, "test" =
+    // internal/safe), read fresh. The TopBar mode toggle reflects + switches this.
+    return { active_db: activeDb, data_dir: dataDir, demo, mode: resolveMode() };
   });
 
   // ========================================================================
