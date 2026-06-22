@@ -2,7 +2,7 @@
  * L1 unit tests — SearchProfileIntakeInputSchema + INTAKE_FIELD_META.
  *
  * Pure Zod parse tests; no DB, no framework. Freezes:
- *   (a) the 18-field happy path parses (6 required + 12 nullable);
+ *   (a) the 18-field happy path parses (7 required + 11 nullable);
  *   (b) absence of EACH required field fails (the form-contract required set);
  *   (c) META keys exactly match the schema shape keys (structural drift guard);
  *   (d) budget_max sensitivity = 'internal_only'; derived sets are correct.
@@ -18,7 +18,7 @@ import {
   type IntakeFieldName,
 } from "./intake.js";
 
-/** Happy path: 6 required filled, all 12 optional present (as null is allowed). */
+/** Happy path: 7 required filled, all 11 optional present (as null is allowed). */
 const HAPPY: SearchProfileIntakeInput = {
   make: "Hyundai",
   model: "Tucson Hybrid",
@@ -26,7 +26,7 @@ const HAPPY: SearchProfileIntakeInput = {
   location_query: "Irvine, CA 92614",
   follow_up_email: "buyer@example.com",
   financing_preference: "finance",
-  trim: null,
+  trim: "SEL",
   search_radius_miles: null,
   budget_max: null,
   follow_up_phone: null,
@@ -43,6 +43,7 @@ const HAPPY: SearchProfileIntakeInput = {
 const REQUIRED: IntakeFieldName[] = [
   "make",
   "model",
+  "trim",
   "year",
   "location_query",
   "follow_up_email",
@@ -128,7 +129,7 @@ describe("INTAKE_FIELD_META — structural drift guard", () => {
     expect(Object.keys(INTAKE_FIELD_META)).toEqual(CANONICAL_ORDER);
   });
 
-  it("required flags match the 6-field required set exactly", () => {
+  it("required flags match the 7-field required set exactly", () => {
     expect([...INTAKE_REQUIRED_FIELDS].sort()).toEqual([...REQUIRED].sort());
   });
 

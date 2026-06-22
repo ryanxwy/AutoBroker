@@ -558,10 +558,21 @@ const forceOverrideStep = createStep({
       })) as never;
     }
 
-    // revise → change the trim (or clear it) and re-verify once.
+    // revise → change the trim and re-verify once. Trim is now REQUIRED at the
+    // form contract (owner-directed, 2026-06-22), so a cleared/empty trim can no
+    // longer proceed — it would fail the required-form persist late. Re-suspend the
+    // gate so the user provides a trim, forces the current one, or cancels:
+    // fail-closed, never a null-trim profile, never a late crash.
+    if (resumeData.trim === null || resumeData.trim.trim() === "") {
+      return (await suspend({
+        kind: "force_override",
+        question: "A trim is required — keep the current trim, revise it, or cancel.",
+        trim: fields.trim ?? "",
+        reason: trimVerdict.attestation,
+      })) as never;
+    }
     const revisedFields: SearchProfileIntakeInput = { ...fields, trim: resumeData.trim };
     const revised: IntakeState = { ...base, fields: revisedFields };
-    if (resumeData.trim === null) return revised; // cleared → nothing to verify.
 
     const r = await runTrimVerify(revisedFields, runId);
     if ("malformed" in r) {

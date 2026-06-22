@@ -6,14 +6,14 @@
  * import directly — no codegen step.
  *
  * REQUIRED set (form contract): exactly
- *   { make, model, year, location_query, follow_up_email, financing_preference }.
- * The UI forces the user to fill these 6; the service-persist parity-minimum
+ *   { make, model, trim, year, location_query, follow_up_email, financing_preference }.
+ * The UI forces the user to fill these 7; the service-persist parity-minimum
  * (year/make/model) is enforced separately in the tools layer — NOT here.
- * Required fields are non-nullable; the other 12 are `.nullable()` (collected,
+ * Required fields are non-nullable; the other 11 are `.nullable()` (collected,
  * may be empty).
  *
- * Schema DECLARATION order is required-first for error surfacing (the 6 required
- * fields parse/report before the 12 nullable ones). The canonical UI RENDER
+ * Schema DECLARATION order is required-first for error surfacing (the 7 required
+ * fields parse/report before the 11 nullable ones). The canonical UI RENDER
  * order = INTAKE_FIELD_META key order, the frozen 18-field order below.
  *
  * 18-field CANONICAL ORDER (frozen — the UI renders in this order;
@@ -45,9 +45,15 @@ import {
 
 export const SearchProfileIntakeInputSchema = z
   .object({
-    // --- required (form contract: 6 fields) ----------------------------------
+    // --- required (form contract: 7 fields) ----------------------------------
     make: z.string().min(1),
     model: z.string().min(1),
+    /** Required at the form (owner-directed, 2026-06-22): trims differ enough in
+     *  price that a quote/compare without one is ambiguous, so an empty trim is
+     *  rejected here just like make/model. The STORED schema (searchProfile.ts)
+     *  + the prefill/force-override-revise schemas stay nullable
+     *  (storage-tolerant, prefill-partial). */
+    trim: z.string().min(1),
     /** Required. New-cars-only year gate (canon guardrail): current or next
      *  model year, enforced server-side here — the form's year-segmented widget
      *  mirrors it client-side. */
@@ -70,8 +76,7 @@ export const SearchProfileIntakeInputSchema = z
     /** Required at the form; 'undecided' (skipped/unsure) → dual finance+lease. */
     financing_preference: FinancingPreferenceSchema,
 
-    // --- optional / buyer context (12 fields, nullable) ----------------------
-    trim: z.string().nullable(),
+    // --- optional / buyer context (11 fields, nullable) ----------------------
     /** Bounded HERE only (form lane; the partial patch schema inherits it).
      *  The LLM prefill emit schema stays unbounded on purpose: an out-of-range
      *  spoken radius must stay a recoverable prefill, never a thrown
@@ -114,7 +119,7 @@ export type IntakeFieldSensitivity = "normal" | "pii" | "internal_only";
 export interface IntakeFieldMeta {
   /** Human label (中文) for the form. */
   label: string;
-  /** Whether the form forces this field (the 6-field required set). */
+  /** Whether the form forces this field (the 7-field required set). */
   required: boolean;
   sensitivity: IntakeFieldSensitivity;
   section: IntakeSection;
@@ -134,7 +139,7 @@ export const INTAKE_FIELD_META = {
   // --- "Car & contact" (required section) ----------------------------------
   make: { label: "品牌", required: true, sensitivity: "normal", section: CAR_CONTACT },
   model: { label: "车型", required: true, sensitivity: "normal", section: CAR_CONTACT },
-  trim: { label: "配置", required: false, sensitivity: "normal", section: CAR_CONTACT },
+  trim: { label: "配置", required: true, sensitivity: "normal", section: CAR_CONTACT },
   year: { label: "年款", required: true, sensitivity: "normal", section: CAR_CONTACT },
   location_query: { label: "所在地", required: true, sensitivity: "normal", section: CAR_CONTACT },
   search_radius_miles: { label: "搜索半径", required: false, sensitivity: "normal", section: CAR_CONTACT },
@@ -153,7 +158,7 @@ export const INTAKE_FIELD_META = {
   current_brand_owner: { label: "现有品牌车主", required: false, sensitivity: "normal", section: BUYER_CONTEXT },
 } as const satisfies Record<IntakeFieldName, IntakeFieldMeta>;
 
-/** The 6 form-required field names, derived from INTAKE_FIELD_META. */
+/** The 7 form-required field names, derived from INTAKE_FIELD_META. */
 export const INTAKE_REQUIRED_FIELDS = (
   Object.keys(INTAKE_FIELD_META) as IntakeFieldName[]
 ).filter((name) => INTAKE_FIELD_META[name].required);

@@ -113,7 +113,7 @@ function auditCount(action: string): number {
   return r.n;
 }
 
-/** A complete, valid submitted-form payload (the 6 required + a trim). */
+/** A complete, valid submitted-form payload (the 7 required fields, incl. trim). */
 function validFields(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     make: "Hyundai",
@@ -444,6 +444,36 @@ describe("search_profile_intake — force-override", () => {
     expect(resumed.result.outcome).toBe("declined");
     expect(rowCount("search_profiles")).toBe(0);
     expect(auditCount("intake_verification_forced")).toBe(0);
+  });
+
+  it("revise → clear (trim:null) → re-suspends the gate (trim is required), never a null-trim profile, no crash", async () => {
+    // Trim is required at the form, so the gate's clear/empty-revise can no longer
+    // proceed to persist (which would fail-loud late). It must re-suspend instead.
+    wireDeps({
+      harnessGenerate: harnessStub({ valid: false }),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-revise-clear-resuspend-1" });
+    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
+    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) } });
+
+    const afterClear = await run.resume({
+      step: "forceOverrideGate",
+      resumeData: { action: "revise", trim: null },
+    });
+    expect(afterClear.status).toBe("suspended"); // re-suspended, NOT proceeded/crashed.
+    if (afterClear.status !== "suspended") return;
+    expect(suspendPayloadOf(afterClear, "forceOverrideGate")["kind"]).toBe("force_override");
+    expect(rowCount("search_profiles")).toBe(0); // nothing persisted.
+
+    // The user can still decline out cleanly (fail-closed).
+    const resumed = await run.resume({ step: "forceOverrideGate", resumeData: { action: "decline" } });
+    expect(resumed.status).toBe("success");
+    if (resumed.status !== "success") return;
+    expect(resumed.result.outcome).toBe("declined");
+    expect(rowCount("search_profiles")).toBe(0);
   });
 
   // FIX D — a confirmed force_override writes its forced-audit row immediately; a
