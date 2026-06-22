@@ -547,6 +547,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const activeBrowserView =
     !activeTurnTerminal && browserView.entries.length > 0 ? browserView : null;
 
+  // A run is ACTIVE while it exists and has not reached a terminal status
+  // (running OR awaiting_approval). Drives the TopBar run pill AND the composer
+  // SOFT-BLOCK: a message typed mid-run must not spawn a concurrent run.
+  const runActive = activeRunId !== null && !activeTurnTerminal;
+
   const activeAwaiting =
     activeTurn !== undefined && activeTurn.turn.status === "awaiting_approval"
       ? activeTurn.turn.awaitingUser
@@ -563,7 +568,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       <Toast />
       <TopBar
         client={client}
-        runActive={activeRunId !== null && !activeTurnTerminal}
+        runActive={runActive}
         pinnedProfileId={pinnedProfileId}
         appMode={mode.kind === "ok" ? mode.data.mode : null}
         onModeSwitched={mode.refetch}
@@ -642,7 +647,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           title={railTitle}
           turns={turns}
           activeRunId={activeRunId}
-          activeAwaiting={activeAwaiting}
+          runActive={runActive}
           browserView={activeBrowserView}
           decision={decision}
           knownSkills={knownSkills}
