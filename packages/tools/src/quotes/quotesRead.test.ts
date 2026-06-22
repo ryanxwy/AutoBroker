@@ -103,6 +103,14 @@ function insertAudit(quoteId: string, passVersion: string): void {
     .run(quoteId, PROFILE, passVersion);
 }
 
+/** A SQLite UTC datetime string for `now - 1 day` — safely inside RECENT_SQL's
+ *  rolling `datetime('now','-7 days')` window no matter when the suite runs. Use
+ *  this for "recent" seeds instead of a literal date, which rots out of the
+ *  window once wall-clock passes 7 days from it. */
+function recentTimestamp(): string {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
+}
+
 beforeAll(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-quotesread-"));
   process.env[DATA_DIR] = tmpDir;
@@ -162,7 +170,7 @@ describe("listQuotesForProfile (no recent)", () => {
 
 describe("listQuotesForProfile (recent: 4-predicate filter)", () => {
   it("includes only succeeded + unaudited-at-pass + recent quotes", () => {
-    const nowish = "2026-06-14 00:00:00";
+    const nowish = recentTimestamp();
     insertMessage("m-ok", "succeeded");
     insertMessage("m-pending", "succeeded");
     insertMessage("m-audited", "succeeded");
@@ -186,7 +194,7 @@ describe("listQuotesForProfile (recent: 4-predicate filter)", () => {
 
   it("treats a quote already audited at a DIFFERENT pass as still unaudited at v1", () => {
     insertMessage("m-1", "succeeded");
-    insertQuote({ quoteId: "q-1", messageId: "m-1", receivedAt: "2026-06-14 00:00:00" });
+    insertQuote({ quoteId: "q-1", messageId: "m-1", receivedAt: recentTimestamp() });
     insertAudit("q-1", "v2"); // audited at v2, not v1
     const rows = listQuotesForProfile(db, PROFILE, { recent: true, passVersion: "v1" });
     expect(rows.map((r) => r.quote_id)).toEqual(["q-1"]);
