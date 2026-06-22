@@ -202,3 +202,93 @@ describe("classifySkillFromText — fail-closed → clarify (never a guessed lau
     expect(out.inputData).toEqual({});
   });
 });
+
+describe("classifySkillFromText — confidence boundaries + params discard", () => {
+  // The decision logic is `confidence < FLOOR` (strict), so the floor itself
+  // LAUNCHES and the value just below it clarifies — pin both sides.
+  it("EXACTLY at the 0.6 floor (non-destructive) launches (< is exclusive)", async () => {
+    const out = await classifySkillFromText(
+      "compare my quotes",
+      ctx,
+      decisionModel({ skill: "quote_compare", confidence: 0.6, reason: "wants a comparison" }),
+    );
+    expect(out.kind).toBe("launch");
+    if (out.kind !== "launch") return; // narrow
+    expect(out.skillId).toBe("quote_compare");
+  });
+
+  it("just BELOW the 0.6 floor (0.59) → clarify", async () => {
+    const out = await classifySkillFromText(
+      "compare my quotes",
+      ctx,
+      decisionModel({ skill: "quote_compare", confidence: 0.59, reason: "maybe a comparison" }),
+    );
+    expect(out.kind).toBe("clarify");
+  });
+
+  it("a destructive route EXACTLY at the 0.85 floor launches (only reaches its own gate)", async () => {
+    const out = await classifySkillFromText(
+      "reset my whole pipeline now",
+      ctx,
+      decisionModel({ skill: "pipeline_reset", confidence: 0.85, reason: "explicit reset" }),
+    );
+    expect(out.kind).toBe("launch");
+    if (out.kind !== "launch") return; // narrow
+    expect(out.skillId).toBe("pipeline_reset");
+  });
+
+  it("a destructive route just BELOW 0.85 (0.84) → clarify", async () => {
+    const out = await classifySkillFromText(
+      "maybe reset everything",
+      ctx,
+      decisionModel({ skill: "pipeline_reset", confidence: 0.84, reason: "might reset" }),
+    );
+    expect(out.kind).toBe("clarify");
+    if (out.kind !== "clarify") return; // narrow
+    expect(out.candidates[0]?.skillId).toBe("pipeline_reset");
+  });
+
+  it("an out-of-range confidence (2, fails the [0,1] Zod belt) → clarify, never a launch", async () => {
+    const out = await classifySkillFromText(
+      "find dealers near Irvine 92614",
+      ctx,
+      decisionModel({ skill: "dealer_geosearch", confidence: 2, reason: "over-confident" }),
+    );
+    expect(out.kind).toBe("clarify");
+  });
+
+  it("model-extracted params are DISCARDED on a non-intake launch (never fed to buildInput)", async () => {
+    const out = await classifySkillFromText(
+      "find dealers within 50 miles of 92614",
+      ctx,
+      decisionModel({
+        skill: "dealer_geosearch",
+        confidence: 0.95,
+        reason: "wants nearby dealers",
+        params: { radius: "50", zip: "92614" },
+      }),
+    );
+    expect(out.kind).toBe("launch");
+    if (out.kind !== "launch") return; // narrow
+    // params are a model scratch slot only — inputData stays the minimal {}.
+    expect(out.inputData).toEqual({});
+  });
+
+  it("intake launch carries ONLY the freeform seed even when the model emits params", async () => {
+    const nl = "looking for a tucson around irvine maybe 41k";
+    const out = await classifySkillFromText(
+      nl,
+      ctx,
+      decisionModel({
+        skill: "intake",
+        confidence: 0.9,
+        reason: "new search",
+        params: { make: "Hyundai", budget: "41000" },
+      }),
+    );
+    expect(out.kind).toBe("launch");
+    if (out.kind !== "launch") return; // narrow
+    // budget/make params must NOT leak into inputData (only the prose seed).
+    expect(out.inputData).toEqual({ input_mode: "freeform", freeform_text: nl });
+  });
+});
