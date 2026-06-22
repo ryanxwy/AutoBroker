@@ -464,6 +464,16 @@ export class UiDriver {
     await this.page.click(tid("gate-force-override-decline"));
   }
 
+  /** Wait for the #1244 malformed_tool_call gate card (rail track). */
+  async waitForMalformedGate(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("gate-malformed"), { timeout: timeoutMs });
+  }
+
+  /** Decline (Cancel) at the malformed gate — terminal, zero write. */
+  async clickMalformedDecline(): Promise<void> {
+    await this.page.click(tid("gate-malformed-decline"));
+  }
+
   /** Open the chat-rail Skills tray: wait for the (always-mounted) <details>
    *  summary toggle, expand it if it isn't already open, then wait for the list.
    *  The rail re-reads profiles+skills live, so a just-created profile flips the

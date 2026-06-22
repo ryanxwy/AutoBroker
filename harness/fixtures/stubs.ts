@@ -26,10 +26,15 @@ export interface Scenario {
   location: ScenarioLocation;
   /** The trim_verify verdict harnessGenerateStub returns. */
   trimValid: boolean;
+  /** When true, the intake_trim_verify generate call fail-closes with a #1244
+   *  malformed_tool_call HarnessSuspend (the deterministic twin of a real DeepSeek
+   *  malformed/text-dumped tool call that the LIVE lane cannot stage). Default
+   *  false — every other case runs clean. */
+  llmMalformed: boolean;
 }
 
 /** The single mutable scenario (flipped by setScenario / a fixture state). */
-export const scenario: Scenario = { location: "resolved", trimValid: true };
+export const scenario: Scenario = { location: "resolved", trimValid: true, llmMalformed: false };
 
 /** Apply a partial scenario (a fixture state's `scenario` block, or a control
  *  route flip). Unspecified fields keep their current value. */
@@ -37,6 +42,7 @@ export function setScenario(partial: Partial<Scenario> | undefined | null): void
   if (partial == null) return;
   if (partial.location !== undefined) scenario.location = partial.location;
   if (partial.trimValid !== undefined) scenario.trimValid = partial.trimValid;
+  if (partial.llmMalformed !== undefined) scenario.llmMalformed = partial.llmMalformed;
 }
 
 /** No model call ever fires through these stubs, so every usage meter is empty —
@@ -91,6 +97,13 @@ export const resolveLocationStub = async (): Promise<unknown> => {
 /** harnessGenerate stub: a trim_verify verdict from scenario.trimValid; a fixed
  *  freeform-prefill seed otherwise (NO live LLM). */
 export const harnessGenerateStub = async (input: { useCase: string }): Promise<unknown> => {
+  // #1244 fail-closed injection: the deterministic twin of a real DeepSeek
+  // malformed/text-dumped tool call. The intake LLM step (trimVerify) treats a
+  // HarnessSuspend as a malformed_tool_call suspend (fail-closed to the human) —
+  // signals member of MalformedSignal[] (model/malformedToolCall.ts).
+  if (scenario.llmMalformed && input.useCase === "intake_trim_verify") {
+    return { suspended: true, reason: "malformed_tool_call", signals: ["finish_reason_not_tool_calls"] };
+  }
   if (input.useCase === "intake_trim_verify") {
     return {
       object: {

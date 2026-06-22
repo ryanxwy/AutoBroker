@@ -1,0 +1,81 @@
+# search_profile_intake.malformed_1244.func.toml
+#
+# #1244 fail-closed, CI-GATED (func lane). The trim_verify LLM call is forced to
+# fail-closed via the intake_malformed fixture (scenario.llmMalformed=true → the
+# harnessGenerate stub returns a malformed_tool_call HarnessSuspend). The intake
+# workflow maps that to a run-level malformed_tool_call suspend; the user DECLINES,
+# and the run must end `declined` with ZERO search_profiles writes (never a
+# fabricated profile). This is the deterministic twin of a real DeepSeek malformed/
+# text-dumped tool call — no live DeepSeek and no SUT fault-injection route needed
+# (the func lane already injects the stub). It supersedes the DEFERRED skeleton,
+# whose premise ("the only injection seam is disabled on the live host") is true
+# for the LIVE lane but irrelevant for the FUNC lane.
+#
+# trim is non-null so trimVerifyStep runs the stubbed call (a null trim skips it).
+
+[meta]
+id = "search_profile_intake_malformed_1244"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+[[steps]]
+id = "intake_malformed_1244"
+skill = "search_profile_intake"
+fixture_state = "intake_malformed"
+purpose = "#1244 fail-closed: malformed trim_verify -> decline -> declined, zero writes."
+gate_policy = "approve_safe"
+
+# 1) Submit the intake form (the data_collection suspend).
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+# 2) The stubbed trim_verify fail-closes -> malformed_tool_call suspend. DECLINE it.
+[[steps.resume]]
+on = "malformed_tool_call"
+action = "decline"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "fail_closed"
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["declined", "error"]
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "global"
+exact = true
+min = 0

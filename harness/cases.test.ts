@@ -137,8 +137,11 @@ describe("case loader", () => {
     expect(audit).toMatchObject({ scope: "global", action: "intake_verification_forced" });
   });
 
-  it("loads the deferred #1244 case with the fail_closed anchor", () => {
-    const c = loadCase(join(CASES, "search_profile_intake.malformed_1244.deferred.toml"));
+  it("loads the (now CI-gated) #1244 func case with the fail_closed anchor", () => {
+    // The deferred skeleton was un-deferred into this *.func.toml: the func lane's
+    // intake_malformed fixture forces the malformed suspend deterministically, so
+    // green.sh now gates the #1244 fail-closed path (no live DeepSeek needed).
+    const c = loadCase(join(CASES, "search_profile_intake.malformed_1244.func.toml"));
     const mf = c.steps[0]!.anchors.find((a) => a.kind === "malformed_tool_call");
     expect(mf).toMatchObject({ kind: "malformed_tool_call", expect: "fail_closed" });
   });
