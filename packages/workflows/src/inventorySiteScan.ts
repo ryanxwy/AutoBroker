@@ -131,6 +131,7 @@ import {
   persistScanResults as persistScanResultsImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   resolveSrp,
+  selectTopListingsForDealer,
   validateVinProvenance,
   withBrowserContext,
   type BrowserEmitter,
@@ -708,6 +709,19 @@ export interface CollectedCard {
 /** Cap on cards collected per SRP — cards beyond it simply aren't extracted
  *  (the same fate the snapshot char cap already imposes). */
 export const CARD_COLLECT_MAX = 80;
+
+/**
+ * Per-dealer (per-website) hard cap on listings RECORDED per scan run.
+ * After extraction + classification, only the top-20 best-match in-stock rows
+ * are persisted; the rest are dropped and counted in `listingsDroppedBeyondCap`.
+ * Selection uses the composite key in `selectTopListingsForDealer` (tools layer):
+ * availability tier → match tier → score DESC → listing_id ASC.
+ *
+ * Parity note: the frozen Python oracle records up to 60 listings per dealer,
+ * unranked. This cap is an intentional, owner-directed divergence — the parity
+ * gate is NOT expected to match the oracle here.
+ */
+export const PER_DEALER_RECORD_CAP = 20;
 
 /**
  * In-page probe: collect {href, cardText} for every inventory result card on
@@ -1411,6 +1425,7 @@ const InventoryScanStateSchema = z.object({
   year: z.number().int(),
   trim: z.string().nullable(),
   acceptableTrims: z.array(z.string()).nullable(),
+  preferredExteriorColors: z.array(z.string()).nullable(),
   originLat: z.number(),
   originLng: z.number(),
   /** AUDIT METADATA ONLY (workflow state/trace) — no step branches on it. */
@@ -1436,6 +1451,9 @@ const InventoryScanStateSchema = z.object({
    *  null (the row itself survives to the usual VIN-or-URL key rule). */
   urlProvenanceStripped: z.number().int(),
   vdpVinsAttached: z.number().int(),
+  /** Listings dropped by the per-dealer top-20 best-match record cap
+   *  (applied after extraction + classification, before persist). */
+  listingsDroppedBeyondCap: z.number().int(),
   persist: PersistCountsSchema.nullable(),
 });
 type InventoryScanState = z.infer<typeof InventoryScanStateSchema>;
@@ -1475,6 +1493,8 @@ const InventoryScanOutputSchema = z.discriminatedUnion("outcome", [
     rowsInvalidDropped: z.number().int(),
     vinProvenanceDropped: z.number().int(),
     urlProvenanceStripped: z.number().int(),
+    /** Listings dropped by the per-dealer top-20 best-match record cap. */
+    listingsDroppedBeyondCap: z.number().int(),
     summary: z.string(),
   }),
   z.object({ outcome: z.literal("declined") }),
@@ -1583,6 +1603,7 @@ const resolveProfileStep = createStep({
       year: profile.year,
       trim: profile.trim,
       acceptableTrims: parseAcceptableTrims(profile.acceptableTrimsJson),
+      preferredExteriorColors: parseAcceptableTrims(profile.preferredExteriorColorsJson),
       originLat: profile.latitude as number,
       originLng: profile.longitude as number,
       approvedBy: inputData.approved_by,
@@ -1603,6 +1624,7 @@ const resolveProfileStep = createStep({
       vinProvenanceDropped: 0,
       urlProvenanceStripped: 0,
       vdpVinsAttached: 0,
+      listingsDroppedBeyondCap: 0,
       persist: null,
     };
   },
@@ -1821,6 +1843,21 @@ const extractStep = createStep({
       let vinProvenanceDropped = 0;
       let urlProvenanceStripped = 0;
       let vdpVinsAttached = 0;
+      let listingsDroppedBeyondCap = 0;
+
+      // ProfileMatchCtx for selectTopListingsForDealer. Budget is redacted.
+      // Distance is null per-listing at record time (all rows share the
+      // dealer), so search_radius_miles is a no-op here.
+      const matchCtx = {
+        profile_year: state.year,
+        profile_make: state.make,
+        profile_model: state.model,
+        profile_trim: state.trim,
+        acceptable_trims: state.acceptableTrims,
+        preferred_exterior_colors: state.preferredExteriorColors,
+        search_radius_miles: 0,
+        budget_max: null,
+      };
 
       await runWorkerPool(EXTRACT_CONCURRENCY, scanned.length, async (i) => {
         const row = scanned[i]!;
@@ -1909,7 +1946,16 @@ const extractStep = createStep({
           });
           listingsFound += 1;
         }
-        carry.classified.set(row.dealer_id, classified);
+
+        // Apply per-dealer top-20 best-match record cap AFTER extraction +
+        // classification, BEFORE persisting. Dropped rows are never written.
+        const { kept, dropped } = selectTopListingsForDealer(
+          matchCtx,
+          classified,
+          PER_DEALER_RECORD_CAP,
+        );
+        listingsDroppedBeyondCap += dropped;
+        carry.classified.set(row.dealer_id, kept);
       });
 
       return {
@@ -1919,6 +1965,7 @@ const extractStep = createStep({
         vinProvenanceDropped,
         urlProvenanceStripped,
         vdpVinsAttached,
+        listingsDroppedBeyondCap,
       };
     } catch (err) {
       // A failed extract phase fails the run — release the carry so the heavy
@@ -1985,6 +2032,9 @@ const persistConfirmStep = createStep({
         (state.urlProvenanceStripped > 0
           ? `, ${state.urlProvenanceStripped} unverifiable URL(s) cleared`
           : "") +
+        (state.listingsDroppedBeyondCap > 0
+          ? `, ${state.listingsDroppedBeyondCap} listing(s) beyond the per-site top-20 cap dropped`
+          : "") +
         `. Filter ladder: ${state.rungUrlTemplateHits} URL-template hit(s), ` +
         `${state.rungDomFilterHits} on-page filter hit(s), ` +
         `${state.rungUnfilteredFallbacks} unfiltered fallback(s).`;
@@ -2008,6 +2058,7 @@ const persistConfirmStep = createStep({
         rowsInvalidDropped: state.rowsInvalidDropped,
         vinProvenanceDropped: state.vinProvenanceDropped,
         urlProvenanceStripped: state.urlProvenanceStripped,
+        listingsDroppedBeyondCap: state.listingsDroppedBeyondCap,
         summary,
       };
     } finally {

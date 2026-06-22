@@ -272,6 +272,84 @@ export function applyFilters(
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Per-dealer top-N selection for inventory_site_scan
+// ---------------------------------------------------------------------------
+
+/**
+ * Availability preference tiers for the per-dealer record cap:
+ * in_stock / in_transit rank ABOVE ordered / unknown.
+ * Availability-preferred, not a hard filter — if a dealer has fewer than
+ * `cap` available listings, non-available ones fill the remaining slots.
+ */
+const PREFERRED_INVENTORY_STATUSES = new Set(["in_stock", "in_transit"]);
+
+/**
+ * Select the top-`cap` best-match in-stock listings for a single dealer's
+ * extracted+classified rows, using a composite sort key:
+ *   1. Availability tier ASC — preferred (in_stock/in_transit) before others.
+ *   2. Match tier ASC       — exact < near < mismatch < unknown.
+ *   3. Score DESC           — four-axis composite (trim/price/color/distance);
+ *                             distance is constant within one dealer and does
+ *                             not distort intra-dealer order; median listed
+ *                             price is computed over the dealer's own set.
+ *   4. Listing_id/url ASC  — stable tiebreak (string compare, mirrors rankListings).
+ *
+ * Listings with no identity anchor (no VIN AND no listing_url) are already
+ * dropped upstream — this function does not re-check them.
+ *
+ * Parity note: the frozen Python oracle records up to 60 listings per dealer,
+ * unranked. This top-20-best-match cap is an intentional, owner-directed
+ * divergence — do NOT expect the parity gate to match the oracle here.
+ *
+ * @param ctx    Profile match context (make/model/trim/year/colors/radius/budget).
+ * @param rows   Classified rows for ONE dealer (listing + matchStatus pairs).
+ * @param cap    Hard cap; slice to this many after sorting.
+ * @returns      { kept: ..., dropped: number } — rows to persist + drop tally.
+ */
+export function selectTopListingsForDealer<
+  T extends { listing: Record<string, unknown>; matchStatus: string },
+>(
+  ctx: ProfileMatchCtx,
+  rows: T[],
+  cap: number,
+): { kept: T[]; dropped: number } {
+  // Compute median listed_price over this dealer's own set for the price axis.
+  const prices = rows
+    .map((r) => asNumber(r.listing["listed_price"] ?? r.listing["price"]))
+    .filter((p): p is number => p !== null);
+  const medianLp = prices.length > 0 ? median(prices) : null;
+
+  // Distance is constant within one dealer — use null (neutral 0.5) since we
+  // have no per-listing distance at record time (all listings share the dealer).
+  const distanceMiles: number | null = null;
+
+  const scored = rows.map((r) => {
+    const availTier = PREFERRED_INVENTORY_STATUSES.has(
+      String(r.listing["inventory_status"] ?? ""),
+    )
+      ? 0
+      : 1;
+    const matchTier = MATCH_TIER[r.matchStatus] ?? 3;
+    const ranked = scoreListing(ctx, r.listing, distanceMiles, medianLp);
+    // Tiebreak: listing_id then listing_url, both ASC.
+    const tiebreak =
+      String(r.listing["listing_id"] ?? r.listing["listing_url"] ?? "");
+    return { r, availTier, matchTier, score: ranked.score, tiebreak };
+  });
+
+  scored.sort(
+    (a, b) =>
+      a.availTier - b.availTier ||
+      a.matchTier - b.matchTier ||
+      b.score - a.score ||
+      (a.tiebreak < b.tiebreak ? -1 : a.tiebreak > b.tiebreak ? 1 : 0),
+  );
+
+  const kept = scored.slice(0, cap).map((s) => s.r);
+  return { kept, dropped: rows.length - kept.length };
+}
+
 /**
  * Filter → median → score → sort. `dealerDistances` maps dealer_id → miles (or
  * null); a row whose dealer is missing from the map falls to the neutral

@@ -18,6 +18,7 @@ import {
   applyFilters,
   rankListings,
   scoreListing,
+  selectTopListingsForDealer,
 } from "./inventory_rank.js";
 
 // ---------------------------------------------------------------------------
@@ -362,5 +363,167 @@ describe("rankListings", () => {
       expect(r.score).toBeGreaterThan(0.0);
       expect(r.score).toBeLessThanOrEqual(1.0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectTopListingsForDealer (per-dealer record cap for inventory_site_scan)
+// ---------------------------------------------------------------------------
+
+/** Minimal ClassifiedListingRow-like helper for the cap tests. */
+function capRow(
+  id: string,
+  matchStatus: string,
+  inventoryStatus: string,
+  listed_price: number | null = 40000,
+): { listing: Record<string, unknown>; matchStatus: string } {
+  return {
+    listing: {
+      listing_id: id,
+      year: 2026,
+      make: "Hyundai",
+      model: "Tucson",
+      trim: "Limited",
+      exterior_color: "Shimmering Silver",
+      msrp: 46500,
+      listed_price,
+      inventory_status: inventoryStatus,
+    },
+    matchStatus,
+  };
+}
+
+describe("selectTopListingsForDealer", () => {
+  it("keeps all rows when count <= cap", () => {
+    const rows = [capRow("a", "exact", "in_stock"), capRow("b", "near", "in_transit")];
+    const { kept, dropped } = selectTopListingsForDealer(ctx(), rows, 20);
+    expect(kept).toHaveLength(2);
+    expect(dropped).toBe(0);
+  });
+
+  it("slices to exactly cap when count > cap", () => {
+    const rows = Array.from({ length: 25 }, (_, i) =>
+      capRow(`id_${String(i).padStart(2, "0")}`, "exact", "in_stock"),
+    );
+    const { kept, dropped } = selectTopListingsForDealer(ctx(), rows, 20);
+    expect(kept).toHaveLength(20);
+    expect(dropped).toBe(5);
+  });
+
+  it("prefers in_stock/in_transit over ordered/unknown", () => {
+    // Mix of available (in_stock, in_transit) and non-available (ordered, unknown)
+    const rows = [
+      capRow("ord", "exact", "ordered"),
+      capRow("unk", "exact", "unknown"),
+      capRow("stk", "exact", "in_stock"),
+      capRow("trs", "exact", "in_transit"),
+    ];
+    const { kept, dropped } = selectTopListingsForDealer(ctx(), rows, 2);
+    const ids = kept.map((r) => r.listing["listing_id"] as string);
+    expect(ids).toContain("stk");
+    expect(ids).toContain("trs");
+    expect(ids).not.toContain("ord");
+    expect(ids).not.toContain("unk");
+    expect(dropped).toBe(2);
+  });
+
+  it("fills remaining slots with non-available when fewer than cap are available", () => {
+    // Only 1 in_stock, cap=3 → the 2 non-available ones should fill in.
+    const rows = [
+      capRow("stk", "exact", "in_stock"),
+      capRow("unk1", "exact", "unknown"),
+      capRow("unk2", "near", "unknown"),
+    ];
+    const { kept, dropped } = selectTopListingsForDealer(ctx(), rows, 3);
+    expect(kept).toHaveLength(3);
+    expect(dropped).toBe(0);
+  });
+
+  it("ranks exact above near above mismatch above unknown within same availability tier", () => {
+    const rows = [
+      capRow("unk", "unknown", "in_stock"),
+      capRow("mis", "mismatch", "in_stock"),
+      capRow("nea", "near", "in_stock"),
+      capRow("exa", "exact", "in_stock"),
+    ];
+    const { kept } = selectTopListingsForDealer(ctx(), rows, 4);
+    const ids = kept.map((r) => r.listing["listing_id"] as string);
+    expect(ids[0]).toBe("exa");
+    expect(ids[1]).toBe("nea");
+    expect(ids[2]).toBe("mis");
+    expect(ids[3]).toBe("unk");
+  });
+
+  it("breaks ties by listing_id ASC (stable tiebreak)", () => {
+    // All identical except id — same match, same availability, same price
+    const rows = [
+      capRow("zzz", "exact", "in_stock"),
+      capRow("aaa", "exact", "in_stock"),
+      capRow("mmm", "exact", "in_stock"),
+    ];
+    const { kept } = selectTopListingsForDealer(ctx(), rows, 2);
+    expect(kept[0]!.listing["listing_id"]).toBe("aaa");
+    expect(kept[1]!.listing["listing_id"]).toBe("mmm");
+  });
+
+  it("higher score ranks before lower score within same tier", () => {
+    // Same match/availability; preferred color → higher score
+    const goodColor = capRow("good", "exact", "in_stock");
+    const badColor = capRow("bad_zzz", "exact", "in_stock");
+    // Override color on goodColor to preferred, badColor to non-preferred
+    goodColor.listing["exterior_color"] = "Shimmering Silver"; // preferred in ctx()
+    badColor.listing["exterior_color"] = "Atomic Tangerine"; // non-preferred
+    const { kept } = selectTopListingsForDealer(ctx(), [badColor, goodColor], 1);
+    expect(kept[0]!.listing["listing_id"]).toBe("good");
+  });
+
+  it("availability preferred > match tier: in_stock mismatch ranks above unknown ordered", () => {
+    // in_stock mismatch is tier (availTier=0, matchTier=2)
+    // unknown ordered is tier (availTier=1, matchTier=3) — should lose on availability
+    const rows = [
+      capRow("mis_stk", "mismatch", "in_stock"),
+      capRow("unk_ord", "unknown", "ordered"),
+    ];
+    const { kept } = selectTopListingsForDealer(ctx(), rows, 1);
+    expect(kept[0]!.listing["listing_id"]).toBe("mis_stk");
+  });
+
+  it("color preference breaks score tie — preferred-color listing kept over off-color listing", () => {
+    // Both exact match, both in_stock, identical price/trim. The only difference
+    // is exterior_color. With a preferred-color ctx the color axis gives the
+    // preferred-color listing score 1.0 vs 0.2 for the off-color one, so the
+    // preferred-color listing must survive the cap drop.
+    const preferred = {
+      listing: {
+        listing_id: "pref_color",
+        year: 2026,
+        make: "Hyundai",
+        model: "Tucson",
+        trim: "Limited",
+        exterior_color: "Shimmering Silver", // in ctx() preferred_exterior_colors
+        msrp: 46500,
+        listed_price: 44000,
+        inventory_status: "in_stock",
+      },
+      matchStatus: "exact",
+    };
+    const offColor = {
+      listing: {
+        listing_id: "off_color_zzz", // lexically after "pref_color" → loses tiebreak too
+        year: 2026,
+        make: "Hyundai",
+        model: "Tucson",
+        trim: "Limited",
+        exterior_color: "Atomic Tangerine", // not in preferred list
+        msrp: 46500,
+        listed_price: 44000,
+        inventory_status: "in_stock",
+      },
+      matchStatus: "exact",
+    };
+    // Cap=1 forces a drop; preferred-color listing must be kept.
+    const { kept, dropped } = selectTopListingsForDealer(ctx(), [offColor, preferred], 1);
+    expect(dropped).toBe(1);
+    expect(kept[0]!.listing["listing_id"]).toBe("pref_color");
   });
 });

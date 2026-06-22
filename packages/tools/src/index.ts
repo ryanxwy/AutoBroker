@@ -293,6 +293,7 @@ export {
   scoreListing,
   applyFilters,
   rankListings,
+  selectTopListingsForDealer,
   type ProfileMatchCtx,
   type RankedRow,
 } from "./inventory/inventory_rank.js";
