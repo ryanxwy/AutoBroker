@@ -47,6 +47,9 @@ import {
   getDb,
   seedDemoData,
   ensureProductSchema,
+  isTestLane,
+  forceTestLaneInternal,
+  assertTestLaneInternal,
 } from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
@@ -98,6 +101,16 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // secrets loader. A launch-supplied env var with no file override is left
   // untouched; missing file = no-op.
   loadEnvConfigIntoEnv();
+
+  // (1b·realSend) Real-send floor. The product is real-send-by-default, so the
+  // ONE place external sending is disabled is a test/harness lane — and that must
+  // hold INDEPENDENTLY of the global default. boot() is the chokepoint every lane
+  // (fixture, e2e serve, serve-live, dev, desktop) shares, so we force the
+  // internal posture for any lane here and then fail CLOSED: assertTestLaneInternal
+  // throws if a test process is somehow still real-send capable. A no-op for a
+  // real production run.
+  if (isTestLane()) forceTestLaneInternal();
+  assertTestLaneInternal();
 
   // (1b'') Instantiate the product schema on a fresh install (idempotent — the
   // drizzle migrator no-ops an already-migrated DB). The app delegates DOWN into

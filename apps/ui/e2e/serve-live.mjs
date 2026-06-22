@@ -278,6 +278,8 @@ process.env.AUTOBROKER_DATA_DIR = tmpDir;
 delete process.env.AUTOBROKER_DB;
 process.env.NODE_ENV = "test"; // arms the intake deps seam guard
 delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
+process.env.AUTOBROKER_E2E_LANE = "1"; // explicit lane sentinel (not NODE_ENV alone)
+process.env.AUTOBROKER_REAL_SEND = "0"; // brake real send (the inverted-default floor)
 process.env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS = "1"; // fake-send floor
 process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
 // NOTE: DEEPSEEK_API_KEY is intentionally NOT set here — boot's loadDotEnvKeys

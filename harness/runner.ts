@@ -211,6 +211,11 @@ function startServerHost(opts: RunnerOpts): Promise<HostHandle> {
     // Ensure the explicit DB override matches --db so /api/mode reports exactly it.
     AUTOBROKER_DB: opts.db,
     MASTRA_TELEMETRY_DISABLED: "1",
+    // The spawned host is a test lane: brake real send (the product is
+    // real-send-by-default) so it can never reach a real dealer. serverHost
+    // self-sets this too; boot's assertTestLaneInternal re-asserts it.
+    AUTOBROKER_E2E_LANE: "1",
+    AUTOBROKER_REAL_SEND: "0",
   };
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;
   // Functional lane: arm the host's fixture mode (deterministic DI stubs + the
@@ -1891,6 +1896,12 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function run(argv: string[]): Promise<number> {
+  // The harness runner is, by definition, a test lane — it must never reach a
+  // real dealer. The product is real-send-by-default, so brake real send in the
+  // runner process itself (and mark the lane) BEFORE the gate-②b preflight, so
+  // the floor holds no matter how the runner was launched.
+  process.env.AUTOBROKER_E2E_LANE = "1";
+  process.env.AUTOBROKER_REAL_SEND = "0";
   // Self-resolve the provider key BEFORE any model/provider call or the gate-⑤
   // key-presence preflight, so `pnpm harness` needs no manual `source .env`. The
   // .env loader is data-dir-independent (it fills the gap even though the harness

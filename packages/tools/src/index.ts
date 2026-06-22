@@ -20,6 +20,15 @@ export {
   type Approver,
 } from "./gate/index.js";
 
+// Real-send master brake (AUTOBROKER_REAL_SEND) + the fail-closed test-lane tripwire.
+export {
+  isRealSendEnabled,
+  isTestLane,
+  forceTestLaneInternal,
+  assertTestLaneInternal,
+  RealSendInTestLaneError,
+} from "./realSend.js";
+
 // Gmail (fake/real send seam, default fake).
 export {
   GmailTool,

@@ -55,6 +55,7 @@ while IFS= read -r case_file; do
   t0=$SECONDS
   if AUTOBROKER_DATA_DIR="${AUTOBROKER_DATA_DIR:-$HOME/.autobroker-ts/harness-runs}" \
      AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 \
+     AUTOBROKER_REAL_SEND=0 \
      MASTRA_TELEMETRY_DISABLED=1 \
      pnpm -s harness intake --case "$case_file" --layer L2 >"$log" 2>&1; then ok=1; else ok=0; fi
   dt=$((SECONDS - t0))

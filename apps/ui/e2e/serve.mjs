@@ -66,6 +66,14 @@ delete process.env.AUTOBROKER_DB;
 // NODE_ENV=test arms the workflows test-only deps seam guard; never auto-approve.
 process.env.NODE_ENV = "test";
 delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
+// This lane must NEVER really send. The product is real-send-by-default, so force
+// the internal posture EXPLICITLY here (not via NODE_ENV alone, an overloaded
+// flag) — brake real send + pin the fake mailbox — so a real global default can
+// never let a func/Playwright run reach a real dealer. boot's assertTestLaneInternal
+// tripwire re-asserts this fail-closed.
+process.env.AUTOBROKER_E2E_LANE = "1";
+process.env.AUTOBROKER_REAL_SEND = "0";
+process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
 // The DeepSeek provider registry is CONSTRUCTED at boot (createRailMemory pins OM
 // to deepseek.chat) but NEVER exercised — give it a dummy key so construction
 // never trips on a missing env, while no live call is ever made.
