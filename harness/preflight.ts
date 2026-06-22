@@ -156,14 +156,14 @@ export function assertBlockFuseArmed(): void {
   }
 }
 
-/** Gate ②b — real send must be BRAKED. The product is real-send-by-default, so a
- *  harness run must explicitly carry AUTOBROKER_REAL_SEND="0" — the one floor that
- *  guarantees a test can never reach a real dealer even if the global default is
- *  real and the L1 fuse were somehow disarmed. */
-export function assertRealSendBraked(): void {
-  if (process.env.AUTOBROKER_REAL_SEND !== "0") {
+/** Gate ②b — the run must be in TEST mode. The product is buyer-by-default, so a
+ *  harness run must explicitly carry AUTOBROKER_MODE="test" — the one floor that
+ *  guarantees a test can never reach a real dealer even if the default is buyer
+ *  and the L1 fuse were somehow disarmed. */
+export function assertTestModePreflight(): void {
+  if (process.env.AUTOBROKER_MODE !== "test") {
     throw new PreflightError(
-      'AUTOBROKER_REAL_SEND must be exactly "0" in a harness run (real send is not braked)',
+      'AUTOBROKER_MODE must be exactly "test" in a harness run (the run is not in test mode)',
     );
   }
 }
@@ -250,7 +250,7 @@ export async function assertServerActiveDbMatches(opts: PreflightOpts): Promise<
 export async function assertPreflight(opts: PreflightOpts): Promise<void> {
   assertDataDirIsolated(opts); // ①
   assertBlockFuseArmed(); // ②
-  assertRealSendBraked(); // ②b
+  assertTestModePreflight(); // ②b
   assertNoAutoApprove(); // ③
   assertTelemetrySilent(); // ④
   assertProviderKeyPresent(opts.provider); // ⑤ (zero network up to here)
@@ -262,7 +262,7 @@ export async function assertPreflight(opts: PreflightOpts): Promise<void> {
 export function assertEnvEnvelope(opts: Pick<PreflightOpts, "provider" | "db">): void {
   assertDataDirIsolated(opts); // ①
   assertBlockFuseArmed(); // ②
-  assertRealSendBraked(); // ②b
+  assertTestModePreflight(); // ②b
   assertNoAutoApprove(); // ③
   assertTelemetrySilent(); // ④
   assertProviderKeyPresent(opts.provider); // ⑤

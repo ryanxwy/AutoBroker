@@ -32,7 +32,7 @@ import {
 const TOUCHED = [
   "AUTOBROKER_DATA_DIR",
   "AUTOBROKER_DB",
-  "AUTOBROKER_GMAIL_BACKEND",
+  "AUTOBROKER_MODE",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
   "AUTOBROKER_PER_DEALER_RECORD_CAP",
@@ -67,29 +67,39 @@ function envFile(): string {
 }
 
 describe("setEnvConfig — editable persist + live mutation", () => {
-  it("persists gmail_backend to a 0600 env.json and mutates process.env in place", () => {
-    setEnvConfig("gmail_backend", "real");
+  it("persists app_mode to a 0600 env.json and mutates process.env in place", () => {
+    setEnvConfig("app_mode", "test");
 
     // live process.env mutated for no-restart effect.
-    expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBe("real");
+    expect(process.env.AUTOBROKER_MODE).toBe("test");
 
     // file written at 0600.
     const path = envFile();
     expect(existsSync(path)).toBe(true);
     expect(statSync(path).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ gmail_backend: "real" });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ app_mode: "test" });
   });
 
   it("round-trips through loadEnvConfigIntoEnv after a simulated restart", () => {
-    setEnvConfig("gmail_backend", "real");
+    setEnvConfig("app_mode", "test");
 
     // Simulate a restart: the file persists, but process.env is back to launch
     // state (the var unset).
-    delete process.env.AUTOBROKER_GMAIL_BACKEND;
-    expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBeUndefined();
+    delete process.env.AUTOBROKER_MODE;
+    expect(process.env.AUTOBROKER_MODE).toBeUndefined();
 
     loadEnvConfigIntoEnv();
-    expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBe("real");
+    expect(process.env.AUTOBROKER_MODE).toBe("test");
+  });
+
+  it("NO-CLOBBER: a launch/lane-pinned AUTOBROKER_MODE wins over a stored app_mode (safety floor)", () => {
+    // A persisted "buyer" must NOT overwrite a harness/demo lane that pinned
+    // "test" in the env before boot — otherwise loadEnvConfigIntoEnv (which runs
+    // before the mode floor) would flip a test lane to real-send-capable.
+    setEnvConfig("app_mode", "buyer"); // persisted to env.json
+    process.env.AUTOBROKER_MODE = "test"; // a lane pins test before the loader runs
+    loadEnvConfigIntoEnv();
+    expect(process.env.AUTOBROKER_MODE).toBe("test"); // lane wins; stored is ignored
   });
 
   it("saves chrome_headless and reflects it in getEnvConfig", () => {
@@ -150,8 +160,8 @@ describe("setEnvConfig — fail-loud guards (in order)", () => {
   });
 
   it("rejects a value outside the descriptor's allowedValues", () => {
-    expect(() => setEnvConfig("gmail_backend", "maybe")).toThrow(InvalidEnvValueError);
-    expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBeUndefined();
+    expect(() => setEnvConfig("app_mode", "maybe")).toThrow(InvalidEnvValueError);
+    expect(process.env.AUTOBROKER_MODE).toBeUndefined();
     expect(existsSync(envFile())).toBe(false);
   });
 
@@ -202,24 +212,24 @@ describe("getEnvConfig — read-only projection + no hidden ids", () => {
   });
 
   it("exposes editable flag + tooltip + allowedValues for UI rendering", () => {
-    const gmail = getEnvConfig().find((r) => r.id === "gmail_backend");
-    expect(gmail?.editable).toBe(true);
-    expect(gmail?.allowedValues).toEqual(["fake", "real"]);
-    expect(typeof gmail?.tooltip).toBe("string");
-    expect(gmail?.tooltip.length).toBeGreaterThan(0);
+    const mode = getEnvConfig().find((r) => r.id === "app_mode");
+    expect(mode?.editable).toBe(true);
+    expect(mode?.allowedValues).toEqual(["buyer", "test"]);
+    expect(typeof mode?.tooltip).toBe("string");
+    expect(mode?.tooltip.length).toBeGreaterThan(0);
   });
 });
 
 describe("loadEnvConfigIntoEnv — launch-supplied vars untouched without an override", () => {
   it("leaves a launch-supplied var alone when no file override exists", () => {
     // A var supplied at launch (e.g. harness/CI), with NO file written.
-    process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
+    process.env.AUTOBROKER_MODE = "test";
     expect(existsSync(envFile())).toBe(false);
 
     loadEnvConfigIntoEnv();
 
     // Untouched — the loader only applies saved overrides.
-    expect(process.env.AUTOBROKER_GMAIL_BACKEND).toBe("fake");
+    expect(process.env.AUTOBROKER_MODE).toBe("test");
   });
 });
 

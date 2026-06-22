@@ -50,7 +50,7 @@ const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
 const FUSE = "AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS";
 const NODE_ENV = "NODE_ENV";
-const REAL_SEND = "AUTOBROKER_REAL_SEND";
+const MODE = "AUTOBROKER_MODE";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = join(here, "..", "..", "db", "drizzle");
@@ -60,12 +60,12 @@ const saved: Record<string, string | undefined> = {};
 let tmpDir: string;
 
 function snapshotEnv(): void {
-  for (const key of [BACKEND, DATA_DIR, DB_OVERRIDE, FUSE, NODE_ENV, REAL_SEND]) {
+  for (const key of [BACKEND, DATA_DIR, DB_OVERRIDE, FUSE, NODE_ENV, MODE]) {
     saved[key] = process.env[key];
   }
 }
 function restoreEnv(): void {
-  for (const key of [BACKEND, DATA_DIR, DB_OVERRIDE, FUSE, NODE_ENV, REAL_SEND]) {
+  for (const key of [BACKEND, DATA_DIR, DB_OVERRIDE, FUSE, NODE_ENV, MODE]) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
   }
@@ -175,18 +175,18 @@ describe("buildRaw", () => {
 });
 
 describe("createGmailAdapter — factory matrix", () => {
-  it("defaults to FakeGmailAdapter when the env is unset AND the brake is engaged", () => {
+  it("defaults to FakeGmailAdapter when the env is unset AND the mode is test", () => {
     migrateFakeDb();
     delete process.env[BACKEND];
-    process.env[REAL_SEND] = "0"; // braked
+    process.env[MODE] = "test"; // test mode → fake
     expect(createGmailAdapter()).toBeInstanceOf(FakeGmailAdapter);
   });
 
-  it("defaults to RealGmailAdapter when the env is unset and the brake is RELEASED (real-by-default)", () => {
+  it("defaults to RealGmailAdapter when the env is unset and the mode is buyer (buyer-by-default)", () => {
     // beforeEach pins DATA_DIR to a throwaway tmpdir (not ~/.autobroker), so the
     // production refusal passes; the real adapter is lazy (no I/O at construction).
     delete process.env[BACKEND];
-    process.env[REAL_SEND] = "1"; // real-by-default
+    process.env[MODE] = "buyer"; // buyer-by-default
     expect(createGmailAdapter()).toBeInstanceOf(RealGmailAdapter);
   });
 

@@ -9,11 +9,11 @@
  * it (hover/focus tooltip), the human label, and a one-line description from the
  * descriptor tooltip.
  *
- * GATE-BEFORE-CONTROL (enum → "real"): switching the email-mode select to the
+ * GATE-BEFORE-CONTROL (enum → "buyer"): switching the mode select to the
  * sensitive value does NOT commit. It parks a `pending` value and renders an
- * inline confirm on the shared gate-card plate; only "Use real Gmail" calls the
- * setter, "Keep sample inbox" cancels with NO call and the select snaps back.
- * The safe direction (real → fake) commits immediately.
+ * inline confirm on the shared gate-card plate; only "Use buyer mode" calls the
+ * setter, "Keep test mode" cancels with NO call and the select snaps back.
+ * The safe direction (buyer → test) commits immediately.
  *
  * BOOL ENCODING: the value crosses the wire as the STRING "1"/"0" ("1" =
  * headless = window hidden). The human label is "Show the browser", so the
@@ -28,9 +28,9 @@ import { useEffect, useState } from "react";
 
 import type { EnvVarState } from "../api/wire.js";
 import {
-  GMAIL_BACKEND_CONFIRM,
-  GMAIL_BACKEND_CONFIRM_VALUE,
-  GMAIL_BACKEND_OPTION_LABELS,
+  APP_MODE_CONFIRM,
+  APP_MODE_CONFIRM_VALUE,
+  APP_MODE_OPTION_LABELS,
   SHOW_BROWSER_LABELS,
 } from "./envDefs.js";
 import { InfoHint } from "./InfoHint.js";
@@ -108,7 +108,7 @@ export function EnvRow({ state, onSet, busyError, saved }: EnvRowProps): JSX.Ele
   );
 }
 
-/** The email-mode enum: a native <select> with friendly option labels, plus the
+/** The mode enum: a native <select> with friendly option labels, plus the
  *  gate-before-control confirm when switching to the sensitive value. */
 function EnumControl({
   id,
@@ -125,7 +125,7 @@ function EnumControl({
 
   const onSelect = (next: string): void => {
     if (next === value) return;
-    if (next === GMAIL_BACKEND_CONFIRM_VALUE) {
+    if (next === APP_MODE_CONFIRM_VALUE) {
       // Sensitive direction → confirm before committing (no call yet).
       setPending(next);
       return;
@@ -146,7 +146,7 @@ function EnumControl({
       >
         {allowedValues.map((opt) => (
           <option key={opt} value={opt}>
-            {GMAIL_BACKEND_OPTION_LABELS[opt] ?? opt}
+            {APP_MODE_OPTION_LABELS[opt] ?? opt}
           </option>
         ))}
       </select>
@@ -158,8 +158,8 @@ function EnumControl({
           aria-labelledby={`env-confirm-title-${id}`}
           data-testid={`env-confirm-${id}`}
         >
-          <strong id={`env-confirm-title-${id}`}>{GMAIL_BACKEND_CONFIRM.title}</strong>
-          <p className="muted">{GMAIL_BACKEND_CONFIRM.body}</p>
+          <strong id={`env-confirm-title-${id}`}>{APP_MODE_CONFIRM.title}</strong>
+          <p className="muted">{APP_MODE_CONFIRM.body}</p>
           <div className="gate-actions">
             <button
               type="button"
@@ -171,14 +171,14 @@ function EnumControl({
                 onSet(id, next);
               }}
             >
-              {GMAIL_BACKEND_CONFIRM.confirmLabel}
+              {APP_MODE_CONFIRM.confirmLabel}
             </button>
             <button
               type="button"
               data-testid={`env-confirm-no-${id}`}
               onClick={() => setPending(null)}
             >
-              {GMAIL_BACKEND_CONFIRM.cancelLabel}
+              {APP_MODE_CONFIRM.cancelLabel}
             </button>
           </div>
         </div>

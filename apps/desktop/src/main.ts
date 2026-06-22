@@ -10,10 +10,10 @@
  *      never collides with the dev server on :8100),
  *   3. open one BrowserWindow on http://127.0.0.1:<port>.
  *
- * Safety: REAL-SEND-BY-DEFAULT. A normal launch arms nothing send-related — real
+ * Safety: BUYER-BY-DEFAULT. A normal launch arms nothing send-related — real
  * Gmail/web-form send is reachable, always behind the per-action human-approval
  * gate (the same server+SPA code as the web form; the shell adds NO second path
- * to any side effect). The DEMO showcase brakes real send (AUTOBROKER_REAL_SEND=0)
+ * to any side effect). The DEMO showcase pins test mode (AUTOBROKER_MODE=test)
  * since it runs on seeded sample data. The L1 fuse is no longer auto-armed; set
  * AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS=1 in the environment to opt into the
  * redundant hard kill-switch. MASTRA_TELEMETRY_DISABLED=1 is still always pinned.
@@ -289,14 +289,14 @@ function startServer(): Promise<number> {
       : process.env.AUTOBROKER_DATA_DIR ?? dotEnv.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts"),
     AUTOBROKER_UI_DIST: join(bundleDir, "ui-dist"),
     MASTRA_TELEMETRY_DISABLED: "1",
-    // Real-send-by-default: a NORMAL launch arms nothing send-related (real send
-    // reachable, still behind the human-approval gate). The DEMO showcase brakes
-    // real send — keyed on the EFFECTIVE demo posture (the dialog flag OR an
-    // externally-exported AUTOBROKER_DEMO_SEED), so an already-demo launch is braked
+    // Buyer-by-default: a NORMAL launch arms nothing send-related (real send
+    // reachable, still behind the human-approval gate). The DEMO showcase pins
+    // test mode — keyed on the EFFECTIVE demo posture (the dialog flag OR an
+    // externally-exported AUTOBROKER_DEMO_SEED), so an already-demo launch is test
     // too; boot re-applies this server-side as the floor. The L1 fuse is opt-in only
     // (honored from process.env via the spread above; no longer auto-armed here).
     ...(demoMode || process.env.AUTOBROKER_DEMO_SEED === "1"
-      ? { AUTOBROKER_DEMO_SEED: "1", AUTOBROKER_REAL_SEND: "0" }
+      ? { AUTOBROKER_DEMO_SEED: "1", AUTOBROKER_MODE: "test" }
       : {}),
   };
   hook.forkEnvSafety = {
@@ -305,7 +305,7 @@ function startServer(): Promise<number> {
     AUTOBROKER_UI_DIST: env.AUTOBROKER_UI_DIST!,
     MASTRA_TELEMETRY_DISABLED: env.MASTRA_TELEMETRY_DISABLED!,
     ...(env.AUTOBROKER_DEMO_SEED !== undefined ? { AUTOBROKER_DEMO_SEED: env.AUTOBROKER_DEMO_SEED } : {}),
-    ...(env.AUTOBROKER_REAL_SEND !== undefined ? { AUTOBROKER_REAL_SEND: env.AUTOBROKER_REAL_SEND } : {}),
+    ...(env.AUTOBROKER_MODE !== undefined ? { AUTOBROKER_MODE: env.AUTOBROKER_MODE } : {}),
     ...(env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS !== undefined
       ? { AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS: env.AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS }
       : {}),

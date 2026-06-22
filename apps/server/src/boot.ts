@@ -47,9 +47,9 @@ import {
   getDb,
   seedDemoData,
   ensureProductSchema,
-  isTestLane,
-  forceTestLaneInternal,
-  assertTestLaneInternal,
+  isHarnessContext,
+  forceTestMode,
+  assertTestModeSafe,
 } from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
@@ -102,21 +102,21 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   // untouched; missing file = no-op.
   loadEnvConfigIntoEnv();
 
-  // (1b·realSend) Real-send floor. The product is real-send-by-default, so the
-  // ONE place external sending is disabled is a test/harness lane — and that must
-  // hold INDEPENDENTLY of the global default. boot() is the chokepoint every lane
-  // (fixture, e2e serve, serve-live, dev, desktop) shares, so we force the
-  // internal posture for any lane here and then fail CLOSED: assertTestLaneInternal
-  // throws if a test process is somehow still real-send capable. A no-op for a
-  // real production run.
+  // (1b·mode) App-mode floor. The product is BUYER-by-default (real send), so the
+  // ONE place external sending is disabled is a harness/test context — and that
+  // must hold INDEPENDENTLY of the chosen mode. boot() is the chokepoint every
+  // lane (fixture, e2e serve, serve-live, dev, desktop) shares, so we force test
+  // mode for any harness context here and then fail CLOSED: assertTestModeSafe
+  // throws if a harness process is somehow still real-send capable. A no-op for a
+  // real buyer run.
   //
-  // Demo is a seeded PRACTICE showcase — brake real send whenever the demo seed is
+  // Demo is a seeded PRACTICE showcase — pin test mode whenever the demo seed is
   // armed, no matter HOW it was armed (the desktop fresh-install dialog, an
   // externally-exported AUTOBROKER_DEMO_SEED, or any future demo entry point). This
   // lives in boot (not just the launcher) so every demo path is covered server-side.
-  if (process.env.AUTOBROKER_DEMO_SEED === "1") process.env.AUTOBROKER_REAL_SEND = "0";
-  if (isTestLane()) forceTestLaneInternal();
-  assertTestLaneInternal();
+  if (process.env.AUTOBROKER_DEMO_SEED === "1") forceTestMode();
+  if (isHarnessContext()) forceTestMode();
+  assertTestModeSafe();
 
   // (1b'') Instantiate the product schema on a fresh install (idempotent — the
   // drizzle migrator no-ops an already-migrated DB). The app delegates DOWN into

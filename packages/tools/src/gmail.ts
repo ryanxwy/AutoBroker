@@ -5,8 +5,8 @@
  * The RFC-2822 message is hand-built (no MIME library) precisely so the fake/real
  * seam is ONE function: a backend's `send()` either hands the assembled raw
  * message to the live Gmail API (`users.messages.send`) or writes it to the local
- * fake mailbox. The backend is chosen by `createGmailAdapter` (real-by-default,
- * fake when the AUTOBROKER_REAL_SEND brake is engaged); there is no other place a
+ * fake mailbox. The backend is chosen by `createGmailAdapter` (real in buyer
+ * mode, fake in test mode — AUTOBROKER_MODE="test"); there is no other place a
  * real send can originate.
  *
  * Adapters: @googleapis/gmail (per-API package) + a system-browser loopback OAuth
@@ -36,7 +36,7 @@ import {
 } from "./gate/index.js";
 import { createRealGmailAdapter } from "./gmail/adapter.js";
 import { FakeGmailAdapter } from "./gmail/fakeAdapter.js";
-import { isRealSendEnabled } from "./realSend.js";
+import { isBuyerMode } from "./realSend.js";
 import { type GmailAdapter, type GmailBackend } from "./gmail/types.js";
 import { assertNoBudget, assertUnicodeSafe, BUDGET_PHRASE_PATTERNS } from "./validators.js";
 
@@ -154,17 +154,17 @@ function unfold(value: string): string {
  * Resolve which backend to build. An explicit argument wins; otherwise the
  * AUTOBROKER_GMAIL_BACKEND env var is read FRESH on every call (never cached at
  * module scope), so a Keys-UI change takes effect with no restart. Unset/empty
- * follows the AUTOBROKER_REAL_SEND master brake — REAL by default, "fake" only
- * when braked; anything other than "fake"/"real" is refused loudly.
+ * follows the AUTOBROKER_MODE switch — "real" in buyer mode, "fake" in test mode;
+ * anything other than "fake"/"real" is refused loudly.
  */
 function resolveBackend(explicit?: GmailBackend): GmailBackend {
   if (explicit !== undefined) return explicit;
   const raw = process.env.AUTOBROKER_GMAIL_BACKEND;
   if (raw === undefined || raw === "") {
-    // No explicit backend: follow the master brake. REAL-BY-DEFAULT — a normal
-    // run resolves the real backend (still gated by the L2 approval + L1 fuse at
-    // the send seam); AUTOBROKER_REAL_SEND="0" brakes it back to the fake mailbox.
-    return isRealSendEnabled() ? "real" : "fake";
+    // No explicit backend: follow the app mode. BUYER-BY-DEFAULT — a normal run
+    // resolves the real backend (still gated by the L2 approval + L1 fuse at the
+    // send seam); AUTOBROKER_MODE="test" resolves the fake mailbox instead.
+    return isBuyerMode() ? "real" : "fake";
   }
   if (raw === "fake" || raw === "real") return raw;
   throw new GmailBackendRefusedError(
@@ -197,8 +197,8 @@ function assertRealBackendAllowed(): void {
 }
 
 /**
- * Build the active Gmail backend. Default follows the AUTOBROKER_REAL_SEND brake
- * (real-by-default; fake when braked). A "real" backend is constructed lazily
+ * Build the active Gmail backend. Default follows the AUTOBROKER_MODE switch
+ * (real in buyer mode; fake in test mode). A "real" backend is constructed lazily
  * (no I/O until first use) only after the data-dir isolation check passes.
  * The Fake's constructor opens the shared DB connection, so it is built ONLY here
  * at call time — never at module scope.

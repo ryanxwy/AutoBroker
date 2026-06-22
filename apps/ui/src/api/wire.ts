@@ -627,7 +627,7 @@ export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
 // ---------------------------------------------------------------------------
 
 /** The editable env ids the route accepts on PUT. */
-export const ENV_EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
+export const ENV_EDITABLE_IDS = ["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
 export type EnvEditableId = (typeof ENV_EDITABLE_IDS)[number];
 
 /** One curated env-var row with its current effective value — mirrors the store

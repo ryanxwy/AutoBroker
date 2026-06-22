@@ -212,10 +212,15 @@ async function main(): Promise<void> {
   process.env.MASTRA_TELEMETRY_DISABLED ??= "1";
   // Never auto-approve — keep the decline path live (the runner asserted this too).
   delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
-  // The harness host must NEVER really send. The product is real-send-by-default,
-  // so brake it explicitly here (boot's assertTestLaneInternal re-asserts this).
-  process.env.AUTOBROKER_E2E_LANE = "1";
-  process.env.AUTOBROKER_REAL_SEND = "0";
+  // The harness host must NEVER really send. The product is buyer-by-default, so
+  // mark this a harness context, pin test mode, and pin the fake Gmail backend —
+  // ALL unconditionally (the LIVE host is not a fixture lane, but is still a
+  // harness context). AUTOBROKER_HARNESS=1 makes boot's isHarnessContext() force
+  // test mode and the assertTestModeSafe tripwire fire even if a persisted
+  // app_mode tried to flip it; the fake backend is a mode-independent floor.
+  process.env.AUTOBROKER_HARNESS = "1";
+  process.env.AUTOBROKER_MODE = "test";
+  process.env.AUTOBROKER_GMAIL_BACKEND = "fake";
 
   if (FIXTURE_MODE) {
     // Arm the workflows test-only deps seam (it refuses outside a test runner)

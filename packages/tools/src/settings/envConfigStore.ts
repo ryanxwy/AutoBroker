@@ -49,7 +49,7 @@ import {
  *  unreachable through this store. */
 export type EnvVarId =
   // editable
-  | "gmail_backend"
+  | "app_mode"
   | "gmail_account"
   | "chrome_headless"
   | "per_dealer_record_cap"
@@ -95,17 +95,17 @@ export interface EnvVarDescriptor {
  *  absent (structurally unreachable). */
 export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
   {
-    id: "gmail_backend",
-    envVar: "AUTOBROKER_GMAIL_BACKEND",
+    id: "app_mode",
+    envVar: "AUTOBROKER_MODE",
     classification: "editable-enum",
     editable: true,
-    allowedValues: ["fake", "real"],
-    default: "fake",
+    allowedValues: ["buyer", "test"],
+    default: "buyer",
     numericMin: null,
     numericMax: null,
-    label: "Email mode",
+    label: "Mode",
     tooltip:
-      "Email mode. Sample uses a built-in practice inbox (nothing leaves your computer). Live reads your real Gmail. Sending stays off either way until you approve each message.",
+      "Buyer mode really emails dealers and submits forms (you still approve each one). Test mode keeps everything internal — nothing leaves your computer.",
   },
   {
     id: "gmail_account",
@@ -204,7 +204,7 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
 ];
 
 /** The editable ids only — the write allow-list. */
-export const EDITABLE_IDS = ["gmail_backend", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
+export const EDITABLE_IDS = ["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
 
 /** Max length for a free-text editable value (an email address — RFC 5321 caps
  *  the full address at 254 chars). Guards against a pathological payload. */
@@ -358,7 +358,7 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
       return resolveDataDir();
     case "db_path":
       return resolveActiveDbPath();
-    case "gmail_backend":
+    case "app_mode":
     case "gmail_account":
     case "chrome_headless":
     case "per_dealer_record_cap": {
@@ -451,6 +451,14 @@ export function loadEnvConfigIntoEnv(): void {
     if (value !== undefined) {
       const descriptor = findDescriptor(id);
       if (descriptor !== undefined) {
+        // The mode is safety-critical: a launch/lane-supplied AUTOBROKER_MODE
+        // (e.g. a harness lane pinning "test", or a desktop demo launch) must WIN
+        // over a stored override, so NEVER clobber an already-set mode back to a
+        // persisted "buyer". Other editable settings still apply the stored value
+        // (the persisted choice is authoritative for those).
+        if (descriptor.id === "app_mode" && process.env[descriptor.envVar] !== undefined) {
+          continue;
+        }
         process.env[descriptor.envVar] = value;
       }
     }

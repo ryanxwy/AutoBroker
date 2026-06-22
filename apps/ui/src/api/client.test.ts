@@ -116,17 +116,17 @@ const ERROR_ENVELOPE_FIXTURE = {
 const ENV_CONFIG_FIXTURE = {
   vars: [
     {
-      id: "gmail_backend",
-      envVar: "AUTOBROKER_GMAIL_BACKEND",
+      id: "app_mode",
+      envVar: "AUTOBROKER_MODE",
       classification: "editable-enum",
       editable: true,
-      allowedValues: ["fake", "real"],
-      default: "fake",
+      allowedValues: ["buyer", "test"],
+      default: "buyer",
       numericMin: null,
       numericMax: null,
-      label: "Email mode",
-      tooltip: "Email mode.",
-      value: "fake",
+      label: "Mode",
+      tooltip: "Mode.",
+      value: "buyer",
     },
     {
       id: "block_external_mutations",
@@ -314,8 +314,8 @@ describe("ApiClient — settings / environment", () => {
     const client = new ApiClient({ fetchImpl: mockFetch(200, ENV_CONFIG_FIXTURE) });
     const cfg = await client.getEnvConfig();
     expect(cfg.vars).toHaveLength(2);
-    expect(cfg.vars[0]!.id).toBe("gmail_backend");
-    expect(cfg.vars[0]!.allowedValues).toEqual(["fake", "real"]);
+    expect(cfg.vars[0]!.id).toBe("app_mode");
+    expect(cfg.vars[0]!.allowedValues).toEqual(["buyer", "test"]);
     const fuse = cfg.vars.find((v) => v.id === "block_external_mutations");
     expect(fuse?.editable).toBe(false);
     expect(fuse?.value).toBe("armed");
@@ -325,12 +325,12 @@ describe("ApiClient — settings / environment", () => {
   it("setEnvConfig issues a PUT with { id, value } and tolerates the { ok, vars } echo", async () => {
     const { fetch, calls } = spyFetch(200, SET_ENV_ACK_FIXTURE);
     const client = new ApiClient({ fetchImpl: fetch });
-    await client.setEnvConfig("gmail_backend", "real");
+    await client.setEnvConfig("app_mode", "buyer");
     expect(calls[0]!.url).toBe("/api/settings/env");
     expect(calls[0]!.init?.method).toBe("PUT");
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
-      id: "gmail_backend",
-      value: "real",
+      id: "app_mode",
+      value: "buyer",
     });
   });
 
