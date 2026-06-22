@@ -1,14 +1,15 @@
 ---
 name: e2e-loop
-description: Run the nightly live-e2e 全技能巡检 of the 17 AutoBroker skills against
+description: Run a manually-triggered live-e2e 全技能巡检 of the 17 AutoBroker skills against
   the real DeepSeek lane via serve-live + a browser — full two-sided live-negotiation
   loop (brand-picker → two-pass sweep → Opus dealer-brain haggle → frontend-taste →
   auto-close backlog → report → merge), or a `--light` manual two-pass sweep. Use to
-  run the e2e sweep / nightly 巡检; pass --light for a read-only manual inspection.
+  run the e2e sweep / 全技能巡检 on demand; pass --light for a read-only manual inspection.
 disable-model-invocation: true
 ---
 
-You drive one nightly **live e2e 全技能巡检** of the 17 AutoBroker skills. This is a
+You drive one **live e2e 全技能巡检** of the 17 AutoBroker skills (manually triggered —
+run it on demand, every time). This is a
 heavyweight live ritual: it starts a real server, drives a real browser via Playwright
 MCP, calls the paid DeepSeek provider, dispatches subagents, and (full mode) merges to
 `main`. Track progress with TodoWrite. cwd = `~/vscode/AutoBroker/AutoBroker`.
@@ -27,7 +28,7 @@ RESOLVED via the step-4 S0–S6 machine (fix→review→green→fresh live re-ve
 before it finishes — a --light run, like a full run, ends with an **empty backlog**. It
 reads this spine + `references/harness-boundaries.md` + `references/skill-pipeline.md` +
 `references/backlog-state-machine.md` (+ `references/reporting.md`). Otherwise (bare
-`/e2e-loop`, nightly `/loop`): run the FULL path 0→8.
+`/e2e-loop`): run the FULL path 0→8.
 
 ## Feasibility gate (fail-closed, FIRST — do this before anything)
 
