@@ -39,6 +39,12 @@ export {
   type SchedulerTrace,
 } from "./scheduler.js";
 export { catchUpDecision, mostRecentScheduledFire, type CatchUpDecision } from "./schedulerCatchup.js";
+// TEST-ONLY seam (refused outside a vitest/NODE_ENV=test runner, see routes.ts):
+// the functional-lane host injects a deterministic NL-route classifier so freeform
+// (chat_freeform) func cases exercise the POST /api/route → intake wiring WITHOUT a
+// live router LLM call. Keyless (as CI is) that call returns empty tool_calls and
+// trips the #1244 fail-closed abort before the gate renders, hanging the case.
+export { __setRouteClassifierForTests } from "./routes.js";
 
 /** Default bind: 127.0.0.1:8100 (the trust-boundary host). */
 const HOST = "127.0.0.1";

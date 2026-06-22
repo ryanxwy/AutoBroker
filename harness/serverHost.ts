@@ -48,7 +48,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildServer } from "@autobroker/server";
+import { __setRouteClassifierForTests, buildServer } from "@autobroker/server";
 import { __setSecretsProbeForTests, openDb, resolveDataDir } from "@autobroker/tools";
 import {
   __setDealerReplyExtractDepsForTests,
@@ -254,6 +254,25 @@ async function main(): Promise<void> {
       harnessGenerate: harnessGenerateStub as never,
       resolveLocation: resolveLocationStub as never,
     });
+    // Freeform (chat_freeform) cases POST /api/route, which the REAL handler
+    // resolves via the NL classifier — a LIVE router LLM call the func lane must
+    // NOT make. Keyless (as CI is) that call returns empty tool_calls, so the
+    // #1244 output processor fail-closes (MalformedToolCallAbort) before the
+    // data_collection gate ever renders and the case hangs on waitForURL. Inject a
+    // deterministic classifier that routes the prose straight to intake with the
+    // freeform seed — exactly what router.ts mapInput emits for an intake-shaped
+    // message. Slash cases bypass /api/route entirely, so this only affects the
+    // freeform cases. NOTE: the func corpus has exactly ONE freeform case today
+    // (search_profile_intake.ui_humanized) — if a freeform case for a DIFFERENT
+    // skill is ever added, branch this stub on the message instead of routing all
+    // freeform straight to intake.
+    __setRouteClassifierForTests(async (nl: string) => ({
+      kind: "launch" as const,
+      skillId: "search_profile_intake",
+      inputData: { input_mode: "freeform", freeform_text: nl },
+      confidence: 0.95,
+      reason: "func-lane deterministic intake route (no live router LLM)",
+    }));
     // X1 (dealer_web_lead_submit) — inject the browser-touching collaborators so
     // the keystone func cases drive the REAL workflow + REAL suspend/resume gate
     // chain WITHOUT a real chromium. The scout boundary returns the seeded
