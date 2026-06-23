@@ -3,155 +3,206 @@
 Runs AFTER the two-pass sweep (step 3), BEFORE frontend-taste (step 3.7).
 Skipped in `--light` mode.
 
+The dealer-brain drives the **headline realism of the whole 全技能巡检**: a deep,
+mutual, multi-dealer email negotiation that mirrors how a real US buyer shops a
+new car. It is NOT a 2-3 round cooperative haggle — see the reality model below.
+
 ---
 
 ## What it is
 
 Dispatch a **local Opus subagent** as the dealer-brain. Same api-key lane —
 no charge to the SUT, no outbound email. All writes flow through
-`inject_replies` / `inject_reply_to_thread`; external SQLite writes are
-invisible to the running server (see `harness-boundaries.md`).
+`inject_replies` / `inject_reply_to_thread` / `inject_contact`; external SQLite
+writes are invisible to the running server (see `harness-boundaries.md`). The
+Opus subagent only GENERATES the email corpus (round-0 replies + the multi-round
+counter script); the main agent injects it through the control routes and drives
+the SUT skills through the chat rail / `/slash`.
+
+---
+
+## The reality model (research-grounded — do NOT regress to "cooperative")
+
+Sourced from the 2026-06-22 deep-research report (`AutoBroker-dev-plan/
+ts-rebuild/20260622-email-negotiation-realism-research/`, 90+ cited sources: DAS
+Technology 2025 NADA study, AutoAlert/CDK org charts, CarEdge/Edmunds/Consumer
+Reports buyer guides, Conversica/Impel AI-BDC docs, r/askcarsales). Live-validated
+2026-06-22 (RAV4 XLE / LA, 32 dealers). The dealer side MUST exhibit:
+
+1. **One dealer ≠ one contact.** A lead flows through a titled hierarchy:
+   CRM **auto-responder** (instant, no price) → **BDC rep / Internet Coordinator**
+   ("sells the appointment, not the car" — withholds OTD) → **Sales Consultant**
+   → **Sales/Desk Manager** (the only one who actually approves price) → **GSM**
+   (escalation) → **F&I** (only after agreement). The buyer's *only* rank cue is
+   the **title in the signature**.
+2. **Escalation / turnover.** When a thread stalls or the buyer pushes price, a
+   **higher-title person takes over** — often from a NEW `From:` address. The new
+   sender must bind to the SAME dealer (model via `inject_reply_to_thread{from:
+   managerEmail}` + `inject_contact{role,isPrimary:true}` — a contact-flip).
+3. **AI first-touch.** The first reply is usually **automated** (Conversica/Impel
+   style), human-sounding name, pushes the appointment, **withholds price**, runs
+   a nudge cadence.
+4. **74% of first replies carry NO price** (DAS 2025). Deflection is deliberate.
+   4% never respond.
+5. **Round depth: shallow-per-thread, deep-across-threads.** Buyers email
+   **3-5 dealers in parallel (up to ~10)**; each thread is *typically* 2-4
+   round-trips, but the front-runners legitimately run **>4** as trade-in /
+   financing / fee disputes layer in. Depth comes from the cross-thread
+   **"leapfrog"** (cite the running-best OTD, ask others to beat it).
+6. **Ghosting is endemic.** Dealers go silent on lowballs / competitor-shopping;
+   dealer follow-up persistence is finite (44% quit after 1, 92% after 4).
+7. **Fee stack.** State-dependent doc fee (CA $85 / FL ~$999 / TX ~$225),
+   non-negotiable zip-scaled tax/title/reg, bundled add-ons (nitrogen/VIN-etch/
+   "recon", presented as pre-installed), ADM on hot trims (~$4k), payment-pivot,
+   F&I back-end *post*-agreement, and a **lump OTD that hides add-ons** until itemized.
+
+---
+
+## Owner directives (2026-06-22, load-bearing)
+
+- **≥10 dealers per full run.** A big metro + high-volume vehicle (LA + RAV4 ⇒
+  32 dealers). Negotiate the front-runners; the long tail is ghosts / auto-replies.
+- **Multiple parallel DEEP threads**, each driven to **≥4 mutual rounds** — not
+  one single "main" thread.
+- **Realism over cost.** Spend the LLM calls; do the full negotiation + full
+  pre-flight market search (geosearch + site_scan + compare + incentives).
+
+These are enabled by the **responsive-aware follow-up cap** (product change,
+2026-06-22, `replyTargets.ts followupCapDecision`, supersedes the old flat
+`MAX_FOLLOWUP_ROUNDS=3`): a thread is throttled only by **consecutive UNANSWERED
+follow-ups** (`MAX_UNANSWERED_FOLLOWUPS=2`, reset whenever the dealer replies)
+plus a hard total ceiling (`MAX_TOTAL_FOLLOWUPS=10`). So an actively-countering
+thread runs deep; a silent dealer is dropped after 2 nudges.
 
 ---
 
 ## Corpus study (once per run, before generating)
 
-Feed the subagent:
-
-1. **Real phrasing corpus** — read
-   `harness/cases/dealer_reply_extract.live_extract.toml`. Learn the email
-   register: greetings, OTD line-item breakdown layout (MSRP / destination /
-   dealer adj / rebate / net vehicle / doc fee / tax / title / total OTD),
-   APR disclosure phrasing, add-on mentions, urgency/scarcity language
-   ("this unit is allocated", "offer expires Friday"). Goal = learning the
-   register, not copying fixed text.
-
-2. **This run's brand and metro** (from step 2.5). Match prose register to
-   brand tier (luxury = formal; high-volume = conversational).
-
-3. **Live dealers** from geosearch — use actual names/websites.
+Feed the Opus subagent: (1) the **register** of
+`harness/cases/dealer_reply_extract.live_extract.toml` (OTD line-item layout, APR
+phrasing, scarcity language) — learn the register, don't copy text; (2) this run's
+**brand + metro** (match prose to brand tier); (3) the **live dealer names +
+websites** from geosearch (read-only `sqlite3 -readonly <dataDir>/autobroker.db
+"SELECT name, website FROM dealers ORDER BY rowid"`); (4) the **state doc-fee cap**
+for the metro (CA $85 / NY $175 / WA $200; TX/FL uncapped).
 
 ---
 
-## Round protocol (invariants, sourced from `harness-boundaries.md` §f)
+## Round 0 — initial dealer replies (the archetype mix)
 
-- **≤4 dealers** across all quotes.
-- **≤2 counter-cycles** (initial injection = round 0; each
-  `inject_reply_to_thread` pair = one cycle).
-- **7-day window** — serve-live's monotonic clock (`BASE_MS = Date.now() − 2d`
-  + `injectSeq++`) handles timestamps automatically. Do NOT set
-  `internalDate` manually.
-- **3-round cap** per thread across all injections.
+Generate **~12 round-0 replies** (for a ≥10-dealer field) with a REALISTIC
+distribution — most are no-price first touches:
+
+- **~40% NO-PRICE first touches** — AI/BDC autoresponders (instant, generic,
+  "still in the market? when can you come in?") + BDC reps who deflect price and
+  push a call. (`no_quote`: extractor writes **0 rows, no error**.)
+- **~35% ITEMIZED OTD** — draw from the audit-firing archetypes so the audit
+  codes wake up:
+  - clean + compliant (doc fee at the state cap) — the honest control.
+  - **fee-loaded** — ADM + 2 add-ons + doc fee OVER the state cap (in a CA/NY/WA
+    metro) → fires `DOC_FEE_CAP` + `DEALER_FEE_OUTLIER` + (if the stack doesn't
+    reconcile) `MATH_SANITY`.
+  - **math-inconsistent** — itemized, **non-null** sales_tax, line items miss the
+    stated total by ~$200-500 → fires `MATH_SANITY` (null-tax would hit the
+    null-skip guard — NOT a firing).
+  - a clean LOWER price — the eventual front-runner.
+- **~15% LUMP-OTD only** ("$XX,XXX out the door, best I can do") → `MISSING_BREAKDOWN`.
+- **~8% PAYMENT-ONLY** ("just $429/mo!", no OTD) → monthly-without-total handling.
+- **Ghosts:** leave **≥2 dealers with no round-0 reply at all** (silent the whole
+  run) — the structurally-untested mainstream experience.
+
+These audit firings are **correct behavior**, not bugs (see the don't-re-propose
+ledger in `backlog-state-machine.md`). DON'T re-flag DOC_FEE_CAP/MATH_SANITY/
+MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
+
+POST `/__e2e/inject_replies` `{ profileId, replies:[…] }`. **Record the full
+`applied.threadIds[]`** (`[{dealerName, from, threadId}]`) — the only source of
+valid threadIds; you cannot mint your own.
+
+**Anchor first:** the inbox gate needs ≥1 `lead_submissions` row, so run
+`dealer_web_lead_submit` (pin → form-scout → batch gate → fake-send; ~3 min for a
+32-dealer scout) BEFORE the email pipeline. inject_replies is NOT the anchor.
 
 ---
 
-## Execution
+## The deep mutual-negotiation loop (the centerpiece)
 
-### Round 0 — initial quotes
+A "round" = one **back-and-forth exchange** (buyer follow-up + dealer counter).
+Drive the FRONT-RUNNERS (the ~4-6 dealers with competitive numbers, plus the
+no-price-until-pushed ones) to **≥4 buyer rounds** by interleaving
+`negotiation_followup` with dealer counters. The responsive cap makes this work:
+each buyer follow-up is answered by a dealer counter (higher message rowid →
+`unansweredFollowups` resets to 0), so the thread never trips the cap.
 
-After `dealer_web_lead_submit`:
+**Per-round sequence (repeat to ≥4 rounds):**
+1. **`negotiation_followup`** (pin → batch gate → fake-send, BLOCK floor). Pin is
+   REQUIRED (it STOPs `pin_required` even with 1 active — pick the vehicle once).
+   `/slash` it for rounds 2+ (faster + deterministic than NL). Confirm
+   `threads.state='negotiating'`.
+2. **Generate ≤N dealer counters** (Opus) with a realistic floor (keep ≥$150-400
+   gross), grinding the OTD DOWN with diminishing concessions. For the front-runners,
+   have a **higher-title MANAGER take over at round 2** (escalation) from a NEW
+   email. Match the corpus register.
+3. **Inject each counter** via `/__e2e/inject_reply_to_thread {threadId, from,
+   subject, body, dealerName}` (threadId from round-0). For an **escalation**,
+   FIRST `/__e2e/inject_contact {threadId, email:managerEmail, displayName, role,
+   isPrimary:true}` so the reply-target ladder rung-1 flips to the manager.
+4. (Optional, for the final-OTD payoff) re-run `dealer_reply_extract` to land the
+   revised (lower) `dealer_quotes` rows. NOT required between every round — the cap
+   keys off message rowid, not the extracted quote — so re-extract ONCE at the end
+   to capture the floor OTDs and keep wall-clock down.
+5. **Ghosts:** for the dealers you want to drop, inject NO counter. After the buyer's
+   2nd unanswered follow-up the responsive cap removes them from the batch.
 
-1. **Generate 4 initial dealer reply emails** with deliberate OTD/doc-fee/APR
-   variance to fire three audit codes:
-   - **≥1 doc fee over the state cap** → fires `DOC_FEE_CAP`. Only CA/NY/WA
-     have statutory caps; TX/FL correctly produce no firing — that is not
-     a bug. See the don't-re-propose ledger in `backlog-state-machine.md`.
-   - **≥1 with no line-item breakdown** (lump OTD only) → fires
-     `MISSING_BREAKDOWN`.
-   - **≥1 math-inconsistent** (components don't sum to stated total), but set
-     `sales_tax` to a **non-null** value — `MATH_SANITY` skips rows where
-     `sales_tax IS NULL` (null-skip is intentional; see don't-re-propose
-     ledger).
-
-   These audit firings are **correct behavior**, not bugs. Do not add them to
-   the backlog.
-
-   **Archetype rotation (A1–A20) — draw a varied set, not 4 clean quotes.** Real
-   first-touch dealer email rarely carries a clean itemized quote — ~74% of first
-   replies have no price at all (Hyperleap). Each round 0, draw ~4 archetypes
-   spanning at minimum: 1 no-price/stall, 1 fee-loaded, 1 audit-firing, 1 clean
-   control. This wakes audit codes the 3-code default never fires.
-
-   | # | Archetype | Reply behavior | Stress |
-   |---|---|---|---|
-   | A1 | BDC auto-reply | instant generic "thanks!", ZERO numbers, books a visit | `no_quote`: extractor writes **0 rows, no error** |
-   | A2 | Stall / come-in | warm, no numbers, then silent | `dealer_stalls`; aged past silence → thread drops |
-   | A3 | Price-only tease | nice selling price, OMITS doc fee + tax | `MISSING_BREAKDOWN` |
-   | A4 | Lump OTD only | `"$38,420 out the door, best I can do"` | `MISSING_BREAKDOWN` |
-   | A5 | Tax bundled into TT&L | itemized but tax folded → `sales_tax` null | `MATH_SANITY` **null-skip guard** (NOT a firing) |
-   | A6 | Math-inconsistent | itemized, non-null tax, sum ≠ stated OTD (±$1) | `MATH_SANITY` **fires** |
-   | A7 | Doc-fee markup | clean breakdown, doc fee $599/$899 in a CA/NY/WA metro | `DOC_FEE_CAP` (**pin a capped-state metro**) |
-   | A8 | Add-on stack | `nitrogen $599 / paint protect $895 / VIN etch $299` | `ADD_ON_*` dynamic code (dormant) |
-   | A9 | Hidden add-on | markup disguised as a **non-keyword** name (`"reconditioning"`, `"lot fee"` — NOT `"prep"`, which IS a listed keyword) | edge: ADD_ON keyword-table completeness |
-   | A10 | Market adjustment / ADM | one `"$995 market adjustment"` line | `DEALER_FEE_OUTLIER` (needs ≥1 cheap peer for a median) |
-   | A11 | Finance + lease two-mode | finance (APR/term/down/mo) + lease (MF/fees/mo) | 2 `dealer_quotes` rows, one message, keyed `(source_gmail_message_id, financing_mode)` |
-   | A12 | Clean compliant quote | honest baseline (current default) | control, fires nothing |
-   | A13 | Payment-only | `"just $429/mo!"`, no OTD, no selling price | monthly-without-total handling |
-   | A14 | Scarcity / just-sold | `"that trim was allocated — I have a higher one, here's the price"` | `quote_compare` same-trim vs mismatch ranking |
-   | A15 | Counters high, holds | after buyer cites a competing OTD, quotes clearly HIGHER, won't budge | multi-round nego + re-extract chain |
-   | A16 | Matches | matches competing OTD, same trim, "when can you come in" | price-drop chain → best-OTD update |
-   | A17 | Adds fees on the counter | "matches" selling price but adds ADM + nitrogen so true OTD RISES | `dealer_adds_fees` + OTD-rises detection |
-   | A18 | Contact-flip | `"Hi, this is Sam taking over for Jordan"` | contact-flip 2nd-suspend (needs `/__e2e/inject_contact`) |
-   | A19 | Competing-name lure | `"who quoted you that? I'll beat it"` | `competing_name_leak` → buyer gives NUMBER only (keep — realistic) |
-   | A20 | F&I back-end upsell | after price, pushes warranty/GAP "protect your investment" | budget redaction; F&I must NOT be eaten as vehicle OTD |
-
-   **Audit-mapping discipline (verified):** only **A3,A4,A5,A6,A7,A8,A10,A17**
-   touch `audit.ts`. The other 9 (A1,A2,A13,A14,A15,A16,A18,A19,A20) are
-   extraction-outcome / timing / compare-ranking / negotiation / redaction
-   behaviors — do NOT expect an audit firing from them.
-
-   **Disappearance directive (prompt-only):** of the ≤4 dealers, leave **≥1
-   silent the whole run** and **≥1 replying only after the buyer's follow-up** —
-   so the skip / cold-thread / silent-thread-closeout paths run. Ghosting is the
-   mainstream real experience and is structurally untested today.
-
-2. **POST `/__e2e/inject_replies`** `{ profileId, replies:[…] }`. **Record
-   the full `applied.threadIds[]` array** (`[{ dealerName, from, threadId }]`)
-   — this is the only source of valid threadIds; you cannot mint your own.
-
-3. Run: `dealer_inbox_check` → `dealer_reply_extract` → `quote_audit` →
-   `quote_compare`.
-
-### Round 1 — buyer negotiates, dealer counters
-
-4. Run `negotiation_followup` (pin → batch gate → fake-send, `BLOCK=1`).
-   Confirm `threads.state = 'negotiating'` via `/__e2e/rows?table=threads`.
-
-5. **Generate ≤4 dealer counter-reply emails.** Revise OTD downward with a
-   realistic floor (keep ≥$200 gross). Match the corpus register.
-
-6. For each counter, **POST `/__e2e/inject_reply_to_thread`**:
-   ```
-   { threadId, from, subject, body, dealerName }
-   ```
-   `threadId` MUST come from `applied.threadIds[].threadId` (step 2). A
-   different threadId = a different dealer thread — the same-dealer
-   price-drop chain breaks and negotiation/closeout will not connect.
-
-7. Re-run `dealer_reply_extract`. New pending messages → new `dealer_quotes`
-   rows with revised OTDs. Confirm via `/__e2e/rows?table=dealer_quotes`.
-
-### Round 2 (optional, ≤1 more cycle)
-
-8. If exercising a second counter-cycle, repeat steps 5–7 once. Honor the
-   3-round cap: do NOT inject a third message on any thread already at 2.
+A scripted injector (`inject_round.sh <N>` over a `counters.json` keyed by
+dealerName→threadId, with the `isEscalation` contact-flip baked in) keeps the
+rounds mechanical.
 
 ### Closeout (always last)
-
-9. Run `dealer_closeout_email` against open threads. Verify draft + fake-send
-   + receipt UI via the Replies tab DOM and `/__e2e/audit`. Decline = Δ0 on
-   `threads` (CLAUDE.md inv #10).
+Run `dealer_closeout_email` against open threads. Verify draft + fake-send +
+receipt UI via the Replies tab DOM and `/__e2e/audit`. Decline = Δ0 on `threads`
+(CLAUDE.md inv #10).
 
 ---
 
-## Verification checkpoints
+## Verification checkpoints (rows/audit > DOM > screenshot > LLM-judge)
 
 | after | check |
 |---|---|
-| `inject_replies` | `/__e2e/rows?table=messages` +4 |
-| `inject_reply_to_thread` | `messages` +1; thread has 2+ messages |
-| `reply_extract` | `/__e2e/rows?table=dealer_quotes` increases |
-| `negotiation_followup` | batch-gate rendered + approved; `threads.state='negotiating'` |
+| `inject_replies` | `/__e2e/rows?table=messages` +N; `threadIds[]` recorded |
+| each `negotiation_followup` | batch gate rendered BEFORE prose + approved; `threads.state='negotiating'`; "sent N" |
+| `inject_reply_to_thread` (+contact) | `messages` +1; on escalation a new `dealer_contacts` row, `is_primary_reply_target=1` |
+| **the responsive cap (the proof)** | per-thread `COUNT(outbound)` vs unanswered — **active threads reach ≥4 outbound** (past the old flat 3); **silent threads freeze at 2 outbound / unanswered=2 and DROP from the next batch** (12→6 in the live run) |
+| `reply_extract` | `dealer_quotes` grows; revised OTDs grind to the floors; **#1244 CLEAN** on the largest extraction |
 | closeout decline | `/__e2e/rows?table=threads` Δ0 |
 
-Spine hierarchy: rows/audit > DOM > screenshot > LLM-judge.
+The cap proof SQL (run against `<dataDir>/autobroker.db`, read-only):
+```sql
+SELECT d.name,
+  (SELECT COUNT(*) FROM messages m WHERE m.thread_id=t.thread_id AND m.direction='outbound') buyer_FUs,
+  (SELECT COUNT(*) FROM messages mo WHERE mo.thread_id=t.thread_id AND mo.direction='outbound'
+     AND mo.rowid > COALESCE((SELECT MAX(mi.rowid) FROM messages mi WHERE mi.thread_id=t.thread_id AND mi.direction='inbound'),0)) unanswered
+FROM threads t JOIN dealers d ON d.dealer_id=t.dealer_id ORDER BY buyer_FUs DESC;
+```
+Active threads → `buyer_FUs ≥ 4`; ghosts → `buyer_FUs = 2, unanswered = 2`.
+
+---
+
+## DON'T re-discover (validated 2026-06-22)
+
+- The inject clock backdates round-0 replies to `BASE_MS = now-2d`; counters land
+  at `BASE_MS+injectSeq` (still ~2d ago). This is fine: the responsive cap keys off
+  **message rowid (insertion order)**, NOT `received_at`, so the clock skew never
+  breaks the unanswered count. No inject-clock change is needed.
+- The timing gate's `minGapHours=24` "wait" branch never fires for these threads
+  (outbound rows carry NULL `received_at`; `sendRecord` writes `processed_at`), so
+  rapid same-session rounds are not throttled. The cap is the only limiter.
+- `negotiation_followup` is **pin-required** (STOP even with 1 active). `/slash`
+  still needs the pin picked once.
+- The batch gate's `select-all` disables once everything is selected (it is NOT a
+  no-op — `batch-submit` then fires). After submit, the gate buttons disable while
+  the fake-sends process; wait for "sent N" / `Done`.
+- `reply_extract` occasionally tags a finance quote `cash`/`unspecified`
+  (`MODE_MISMATCH`) — benign LLM variance; OTD is mode-agnostic.
+- `frontend-taste` skill is `disable-model-invocation` → can't Skill-invoke; apply
+  its rubric inline (advisory, never blocks merge).

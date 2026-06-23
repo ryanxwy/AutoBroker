@@ -155,15 +155,27 @@ The ~2-days-ago base is deliberate: replies sit inside the `negotiation_followup
 reply) so those drafts are exercisable. The deterministic func lane uses a fixed
 `BASE_MS = 1_717_000_000_000` floor instead — that is not this host.
 
-**Round protocol (per spine):** ≤4 dealers, ≤2 counter loops, respecting the
-7-day window + 3-round cap + monotonic timestamps. Sequence:
-1. `inject_replies` (record `threadIds[]`)
+**Round protocol (per spine, 2026-06-22 — deep mutual negotiation):** ≥10 dealers,
+front-runners driven to **≥4 buyer rounds** under the **responsive-aware follow-up
+cap** (`MAX_UNANSWERED_FOLLOWUPS=2`, `MAX_TOTAL_FOLLOWUPS=10`; supersedes the old
+flat 3-round cap). See `references/dealer-brain.md` for the full loop. Sequence:
+1. `dealer_web_lead_submit` (the inbox anchor) → `inject_replies` (record `threadIds[]`)
 2. `dealer_inbox_check` → `dealer_reply_extract` → `quote_audit` → `quote_compare`
-3. `negotiation_followup`
-4. dealer counter via `inject_reply_to_thread` (same `threadId`) → re-extract → loop ≤2×
-5. `dealer_closeout_email` last
+3. **Loop to ≥4 rounds:** `negotiation_followup` (`/slash`, batch gate → approve) →
+   dealer counters via `inject_reply_to_thread` (same `threadId`; `inject_contact`
+   + `isPrimary` for a manager escalation) → repeat. A counter resets that thread's
+   unanswered count, so an actively-countering thread stays eligible; a dealer you
+   leave silent is dropped after the buyer's 2nd unanswered follow-up.
+4. re-extract ONCE at the end (the cap keys off message **rowid**, not the quote) to
+   land the floor OTDs.
+5. `dealer_closeout_email` last.
 
-Because the clock is monotonic and the base is ~2 days ago, all rounds stay inside the windows without manual timestamp bookkeeping.
+**rowid, not timestamp, is the cap signal.** Because the inject clock backdates ALL
+injected messages to ~`BASE_MS` (2 days ago) while the buyer's outbound carries no
+`received_at` (it writes `processed_at`), the responsive cap counts trailing outbound
+by **insertion order (rowid)** — immune to the clock skew. So no inject-clock change
+is needed for deep rounds, and the monotonic `injectSeq` is enough for the
+fake-mailbox / watermark assertions.
 
 ---
 

@@ -47,9 +47,9 @@ reads this spine + `references/harness-boundaries.md` + `references/skill-pipeli
 | 0 | read lessons (fixed read-list) + feasibility gate + `touch .claude/.e2e-loop-active` | keys/MCP present; stdout listening line | spine only |
 | 1 | new worktree off `origin/main` + better-sqlite3 rebuild + `pnpm -r build` | build OK | `references/harness-boundaries.md` |
 | 2 | start `pnpm e2e:serve-live` | `listening` line seen, `dataDir` recorded, floor armed | (in-context) |
-| 2.5 | brand-picker (random metro+brand+persona) | geosearch ≥1 dealer | `references/brand-picker.md` |
+| 2.5 | brand-picker (random metro+brand+persona) | geosearch ≥1 dealer (**≥10 for a full run** — big metro + high-volume vehicle) | `references/brand-picker.md` |
 | 3 | two-pass sweep: PASS-A freeform-persona, PASS-B `/slash`; per-skill rows/audit + DOM verify | terminal `skill_runs` row + table delta + active-panel testid | `references/skill-pipeline.md` (+`references/ui-lane-personas.md`) |
-| 3.5 | dealer-brain live ≤2 rounds × ≤4 dealers | re-extract → new `dealer_quotes` row | `references/dealer-brain.md` |
+| 3.5 | dealer-brain: **deep mutual negotiation — multiple parallel threads ≥4 rounds each, ≥10 dealers, multi-titled-contact escalation + AI-auto first-touch + ghosting** (realism > cost) | active threads `buyer_FUs ≥4` (past old cap); ghosts capped at 2 unanswered → drop; re-extract → revised `dealer_quotes` | `references/dealer-brain.md` |
 | 3.7 | frontend-taste per data tab | ranked findings list | `references/ui-lane-personas.md` (→ `frontend-taste` skill by name) |
 | 4 | backlog state machine S0–S6 (enumerate→research→fix-in-worktree→review→green→fresh live re-verify) | backlog-empty grep; green GREEN | `references/backlog-state-machine.md` |
 | 4.5 | Electron sync (only if `apps/ui/src` or a testid touched) | `desktop:smoke` 14/14 | `references/reporting.md` |
@@ -80,6 +80,11 @@ blocks a merge.
   pipeline_reset last.
 - Budget never renders as a number (inv #9). Fresh-context auditors stay separate from
   the fixer; "needs live verify" ≠ defer — run a fresh serve-live.
+- **Realism > cost (owner, 2026-06-22).** A full run mimics the REAL email quote
+  pipeline: ≥10 dealers, full pre-flight market search, and **deep mutual negotiation
+  driven to ≥4 rounds on multiple parallel threads** with multi-titled-contact
+  escalation, AI-auto first-touch, and ghosting (`references/dealer-brain.md`). Spend
+  the LLM calls — saving cost is secondary to exercising the realities.
 - Self-contained `YYYY-MM-DD` HTML report; `MEMORY.md` pointer ≤200 chars (it is over
   budget — detail goes in the topic file).
 
