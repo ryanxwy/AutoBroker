@@ -50,6 +50,9 @@ export type SupersedeReason = "not_observed" | "vin_promoted" | "manual";
 export interface ClassifiedListingRow {
   listing: InventoryListing;
   matchStatus: MatchStatus;
+  /** MSRP harvested off the VDP (a tools-layer derived field, NOT part of the
+   *  frozen 11-field LLM emit shape); null when no MSRP label resolved. */
+  msrp?: number | null;
   /** Provenance blob for raw_listing_json (32 KB cap applied at write). */
   raw: string | Record<string, unknown> | null;
 }
@@ -140,8 +143,8 @@ const LISTING_INSERT_COLS = `(
   listing_id, search_profile_id, dealer_id, source_id, vin, stock_number,
   year, make, model, trim, exterior_color, interior_color, listed_price,
   inventory_status, listing_url, normalized_listing_url, match_status,
-  raw_listing_json, first_seen_at, last_seen_at, observed_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  raw_listing_json, first_seen_at, last_seen_at, observed_at, msrp
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 /** Refresh semantics on conflict: identity fields merge null-preserving
  *  (a sparser re-scan never blanks a known value); status/match/raw and the
@@ -156,6 +159,7 @@ const LISTING_ON_CONFLICT_BODY = `
   exterior_color         = COALESCE(excluded.exterior_color, inventory_listings.exterior_color),
   interior_color         = COALESCE(excluded.interior_color, inventory_listings.interior_color),
   listed_price           = COALESCE(excluded.listed_price, inventory_listings.listed_price),
+  msrp                   = COALESCE(excluded.msrp, inventory_listings.msrp),
   inventory_status       = excluded.inventory_status,
   listing_url            = COALESCE(excluded.listing_url, inventory_listings.listing_url),
   normalized_listing_url = COALESCE(excluded.normalized_listing_url, inventory_listings.normalized_listing_url),
@@ -189,6 +193,7 @@ UPDATE inventory_listings SET
   exterior_color         = COALESCE(?, exterior_color),
   interior_color         = COALESCE(?, interior_color),
   listed_price           = COALESCE(?, listed_price),
+  msrp                   = COALESCE(?, msrp),
   inventory_status       = ?,
   listing_url            = COALESCE(?, listing_url),
   normalized_listing_url = COALESCE(?, normalized_listing_url),
@@ -363,6 +368,7 @@ export function persistScanResults(opts: {
           now,
           now,
           now,
+          row.msrp ?? null,
         ];
 
         if (vin !== null) {
@@ -399,6 +405,7 @@ export function persistScanResults(opts: {
               row.listing.exterior_color,
               row.listing.interior_color,
               row.listing.price,
+              row.msrp ?? null,
               row.listing.inventory_status,
               listingUrl,
               nlurl,

@@ -246,7 +246,7 @@ function scannedOutcome(
     errorJson: null,
     snapshotText: `New 2026 Hyundai Tucson SEL ${VIN_A} $33,999`,
     cardHrefs: ["https://www.d-a.com/new/Hyundai-Tucson-1.htm"],
-    vdpVins: [],
+    vdpFacts: [],
     ...over,
   };
 }
@@ -981,7 +981,7 @@ describe("scanDealersParallelImpl — task isolation", () => {
         errorJson: null,
         snapshotText: "snapshot",
         cardHrefs: [],
-        vdpVins: [],
+        vdpFacts: [],
       }));
     });
     // outcome order follows target order; the boom bucket failed, fine scanned.
@@ -1062,7 +1062,7 @@ describe("inventory_site_scan — extract phase", () => {
       ]),
       scanDealers: scanStub({ calls: [] }, (args) =>
         args.targets.map((t) =>
-          scannedOutcome(t, { vdpVins: [{ url: vdpUrl, vin: VIN_B }] }),
+          scannedOutcome(t, { vdpFacts: [{ url: vdpUrl, vin: VIN_B, listedPrice: null, msrp: null }] }),
         ),
       ),
     });
@@ -1075,6 +1075,32 @@ describe("inventory_site_scan — extract phase", () => {
       vin: string | null;
     }>;
     expect(rows).toEqual([{ vin: VIN_B }]); // tracking param stripped, URL matched
+  });
+
+  it("a VDP-harvested price + MSRP attach to an SRP-gated (price-null) row by normalized URL", async () => {
+    seedOne();
+    const vdpUrl = "https://www.d-a.com/new/Hyundai-Tucson-1.htm";
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        // SRP card showed the car but gated the price (Get Instant Price) and
+        // exposed no VIN → both come from the VDP the scan already loaded.
+        listing({ vin: null, price: null, listing_url: `${vdpUrl}?utm_source=srp` }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) =>
+        args.targets.map((t) =>
+          scannedOutcome(t, {
+            vdpFacts: [{ url: vdpUrl, vin: VIN_B, listedPrice: 30480, msrp: 32100 }],
+          }),
+        ),
+      ),
+    });
+    const final = await runApproved("scan-vdp-price-1");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const rows = db.$client
+      .prepare("SELECT vin, listed_price, msrp FROM inventory_listings")
+      .all() as Array<{ vin: string | null; listed_price: number | null; msrp: number | null }>;
+    expect(rows).toEqual([{ vin: VIN_B, listed_price: 30480, msrp: 32100 }]);
   });
 
   it("an LLM-emitted listing_url OUTSIDE the collected href set is cleared + counted; the key-less row dies at persist", async () => {

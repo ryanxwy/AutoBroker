@@ -116,6 +116,7 @@ import { z } from "zod";
 
 import { InventoryListingSchema, type InventoryListing } from "@autobroker/core";
 import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
+import { harvestPriceFromSnapshot } from "./inventoryPriceHarvest.js";
 import {
   buildFilteredSrpUrl,
   capSnapshot,
@@ -196,14 +197,18 @@ export const SCAN_CONCURRENCY = 4;
 /** Gap between consecutive browser launches (a Browser launch is heavyweight
  *  and the first-contact requests must not land in the same instant). */
 const SCAN_LAUNCH_STAGGER_MS = 4_000;
-/** Max VDP harvest tabs per dealer (page-doc budget below also clamps). */
-const VDP_MAX_PER_DEALER = 3;
+/** Max VDP harvest tabs per dealer (page-doc budget below also clamps). Raised
+ *  from 3 → 10 once the VDP yields PRICE (not just a VIN): dealers that gate the
+ *  SRP price behind a "Get Instant Price" CTA expose it only on the VDP, so to
+ *  price a typical filtered inventory page (≤~10 matching cars) most of its
+ *  cars need a VDP visit. Still bounded + concurrent + staggered. */
+const VDP_MAX_PER_DEALER = 10;
 /** Concurrent VDP tabs actively loading within one dealer task. */
 const VDP_TAB_CONCURRENCY = 2;
 /** Gap between consecutive VDP tab opens within one dealer task. */
 const VDP_TAB_STAGGER_MS = 1_500;
 /** Hard per-dealer page-document budget (SRP loads + VDP loads). */
-const PAGE_DOC_BUDGET_PER_DEALER = 6;
+const PAGE_DOC_BUDGET_PER_DEALER = 13;
 /** Concurrent `inventory_extract` LLM calls in the extract phase. */
 const EXTRACT_CONCURRENCY = 4;
 /** A filtered SRP whose rendered text is thinner than this is treated as a
@@ -955,8 +960,17 @@ export interface DealerCaptureOutcome {
   /** The collected per-card hrefs (absolute, same-host) — the URL-provenance
    *  set the extract phase validates LLM-emitted listing_urls against. */
   cardHrefs: string[];
-  /** VDP-harvested VINs: normalized listing URL → verbatim-validated VIN. */
-  vdpVins: Array<{ url: string; vin: string }>;
+  /** VDP-harvested facts keyed by normalized listing URL: the
+   *  verbatim-validated VIN (or null) plus the deterministically-parsed price
+   *  off the SAME VDP snapshot (the detail page shows price the SRP card may
+   *  have gated behind a "Get Instant Price" CTA). Price parsing never reaches
+   *  an LLM — pure regex over the already-fetched snapshot. */
+  vdpFacts: Array<{
+    url: string;
+    vin: string | null;
+    listedPrice: number | null;
+    msrp: number | null;
+  }>;
 }
 
 /** One bucket task's runner (the seam the pool test fakes). */
@@ -974,7 +988,7 @@ function failedOutcome(dealer: ScanTargetRow, reason: string, message: string): 
     errorJson: JSON.stringify({ reason, message }),
     snapshotText: null,
     cardHrefs: [],
-    vdpVins: [],
+    vdpFacts: [],
   };
 }
 
@@ -987,7 +1001,7 @@ function blockedOutcome(dealerId: string, url: string, marker: string | null): D
     errorJson: JSON.stringify({ reason: "blocked", marker }),
     snapshotText: null,
     cardHrefs: [],
-    vdpVins: [],
+    vdpFacts: [],
   };
 }
 
@@ -1102,7 +1116,7 @@ export async function captureOneDealer(deps: {
     // SRP page closed BEFORE the VDP fan-out (tab budget discipline).
     await srpPage.close().catch(() => undefined);
 
-    const vdpVins = await harvestVdpVins({ session, queueNav, links: vdpLinks });
+    const vdpFacts = await harvestVdpFacts({ session, queueNav, links: vdpLinks });
     return {
       dealerId: dealer.dealer_id,
       status: "scanned",
@@ -1111,22 +1125,31 @@ export async function captureOneDealer(deps: {
       errorJson: null,
       snapshotText,
       cardHrefs: cards.map((c) => c.href),
-      vdpVins,
+      vdpFacts,
     };
   } finally {
     await srpPage.close().catch(() => undefined);
   }
 }
 
+type VdpFact = {
+  url: string;
+  vin: string | null;
+  listedPrice: number | null;
+  msrp: number | null;
+};
+
 /** VDP tab fan-out: ≤2 tabs concurrently loading, staggered opens, navigation
  *  serialized by the task's per-host queue; navigate by captured href, NEVER
- *  click. Each VDP gets the deterministic VIN regex + provenance check only.
- *  A dead VDP is silently a no-harvest — it never fails the dealer. */
-async function harvestVdpVins(deps: {
+ *  click. Each VDP yields the deterministic VIN regex (+ provenance check) AND
+ *  the deterministic price harvest off the SAME snapshot — both pure, no LLM.
+ *  A VDP that yields neither a VIN nor a price is a no-harvest; a dead VDP is
+ *  silently a no-harvest — it never fails the dealer. */
+async function harvestVdpFacts(deps: {
   session: BrowserSession;
   queueNav: (page: SessionPage, url: string) => Promise<{ blocked: string | null }>;
   links: readonly string[];
-}): Promise<Array<{ url: string; vin: string }>> {
+}): Promise<VdpFact[]> {
   const { session, queueNav, links } = deps;
   if (links.length === 0) return [];
   const headed = process.env["AUTOBROKER_CHROME_HEADLESS"] === "0";
@@ -1141,7 +1164,7 @@ async function harvestVdpVins(deps: {
     if (waitMs > 0) await sleep(waitMs);
   };
 
-  const harvested = await runWorkerPool<{ url: string; vin: string } | null>(
+  const harvested = await runWorkerPool<VdpFact | null>(
     tabLimit,
     links.length,
     async (i) => {
@@ -1154,7 +1177,9 @@ async function harvestVdpVins(deps: {
           if (nav.blocked !== null) return null;
           const vdpSnapshot = await session.snapshot(page);
           const vin = harvestVinFromSnapshot(vdpSnapshot);
-          return vin === null ? null : { url: normalizeListingUrl(link), vin };
+          const { listedPrice, msrp } = harvestPriceFromSnapshot(vdpSnapshot);
+          if (vin === null && listedPrice === null && msrp === null) return null;
+          return { url: normalizeListingUrl(link), vin, listedPrice, msrp };
         } finally {
           await page.close().catch(() => undefined);
         }
@@ -1163,7 +1188,7 @@ async function harvestVdpVins(deps: {
       }
     },
   );
-  return harvested.filter((h): h is { url: string; vin: string } => h !== null);
+  return harvested.filter((h): h is VdpFact => h !== null);
 }
 
 /** The REAL per-bucket task: ONE isolated throwaway browser for the bucket's
@@ -1286,7 +1311,7 @@ interface ScanCarry {
     {
       snapshotText: string;
       cardHrefs: string[];
-      vdpVins: Array<{ url: string; vin: string }>;
+      vdpFacts: Array<{ url: string; vin: string | null; listedPrice: number | null; msrp: number | null }>;
     }
   >;
   classified: Map<string, ClassifiedListingRow[]>;
@@ -1782,7 +1807,7 @@ const scanDealersStep = createStep({
       {
         snapshotText: string;
         cardHrefs: string[];
-        vdpVins: Array<{ url: string; vin: string }>;
+        vdpFacts: Array<{ url: string; vin: string | null; listedPrice: number | null; msrp: number | null }>;
       }
     >();
     let rungUrlTemplateHits = 0;
@@ -1793,7 +1818,7 @@ const scanDealersStep = createStep({
         captures.set(o.dealerId, {
           snapshotText: o.snapshotText,
           cardHrefs: o.cardHrefs,
-          vdpVins: o.vdpVins,
+          vdpFacts: o.vdpFacts,
         });
       }
       if (o.rung === "i_hit") rungUrlTemplateHits += 1;
@@ -1888,7 +1913,12 @@ const extractStep = createStep({
           throw new MalformedToolCallAbort(result.signals);
         }
 
-        const vdpVinByUrl = new Map(capture.vdpVins.map((v) => [v.url, v.vin]));
+        const vdpVinByUrl = new Map(
+          capture.vdpFacts
+            .filter((f): f is typeof f & { vin: string } => f.vin !== null)
+            .map((f) => [f.url, f.vin]),
+        );
+        const vdpFactByUrl = new Map(capture.vdpFacts.map((f) => [f.url, f]));
         // URL-provenance set (mirrors the VIN guard): only URLs the capture
         // actually collected off the live DOM may survive as listing_url.
         const collectedUrls = new Set(capture.cardHrefs.map((h) => normalizeListingUrl(h)));
@@ -1935,6 +1965,21 @@ const extractStep = createStep({
             }
           }
 
+          // VDP-harvested price attach: a card whose SRP listing showed no
+          // price (the SRP gated it behind a CTA) gets the price + MSRP
+          // deterministically parsed off its VDP — the same page the VIN came
+          // from, keyed by the same normalized URL. Never overwrites a non-null
+          // SRP price; MSRP is VDP-only (the SRP card never carries it).
+          let price = listing.price;
+          let msrp: number | null = null;
+          if (listingUrl !== null) {
+            const fact = vdpFactByUrl.get(normalizeListingUrl(listingUrl));
+            if (fact !== undefined) {
+              if (price === null) price = fact.listedPrice;
+              msrp = fact.msrp;
+            }
+          }
+
           const matchStatus = classifyMatchStatus(
             state.year,
             state.make,
@@ -1947,8 +1992,9 @@ const extractStep = createStep({
             listing.trim,
           );
           classified.push({
-            listing: { ...listing, vin, listing_url: listingUrl },
+            listing: { ...listing, vin, price, listing_url: listingUrl },
             matchStatus,
+            msrp,
             raw: { ...raw },
           });
           listingsFound += 1;
