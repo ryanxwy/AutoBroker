@@ -517,7 +517,9 @@ const forceOverrideStep = createStep({
     if (resumeData === undefined) {
       return (await suspend({
         kind: "force_override",
-        question: "This trim could not be verified. Keep it, revise it, or cancel?",
+        question:
+          "We couldn't verify this trim from our records — we'll cross-check it against " +
+          "real dealer inventory after the search. Keep it, revise it, or cancel?",
         trim: fields.trim ?? "",
         reason: trimVerdict.attestation,
       })) as never;
@@ -589,7 +591,8 @@ const forceOverrideStep = createStep({
     return (await suspend({
       kind: "force_override",
       question:
-        "The revised trim still could not be verified. Keep it, revise it again, or cancel?",
+        "The revised trim also couldn't be verified from our records — we'll cross-check it " +
+        "against dealer inventory after the search. Keep it, revise it again, or cancel?",
       trim: resumeData.trim,
       reason: r.verdict.attestation,
     })) as never;

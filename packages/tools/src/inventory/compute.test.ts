@@ -260,6 +260,7 @@ describe("rankInventoryForProfile", () => {
       recommendedCount: 0,
       sourcesScanned: 0,
       sourcesBlocked: 0,
+      allInventoryTrims: [],
     });
   });
 });

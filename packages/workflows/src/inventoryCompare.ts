@@ -35,6 +35,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
 import {
+  classifyTrimAvailability,
   getDb,
   rankInventoryForProfile as rankInventoryForProfileImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
@@ -111,6 +112,10 @@ export function __resetInventoryCompareDepsForTests(): void {
  */
 const InventoryCompareStateSchema = z.object({
   searchProfileId: z.string(),
+  /** The profile's requested trim — grounded post-scan against the real in-stock
+   *  trims to flag a trim no dealer actually carries (the authoritative trim
+   *  check; intake can't ground because no inventory exists yet at intake). */
+  profileTrim: z.string().nullable(),
   /** pinned vs inferred-newest — the resolution provenance, always recorded. */
   resolution: z.enum(["pinned", "inferred_newest"]),
   /** Ranked candidates (after step 1); null until then. */
@@ -122,6 +127,10 @@ const InventoryCompareStateSchema = z.object({
    *  reached vs blocked. Lets the empty-state distinguish scanned-0 from never-scanned. */
   sourcesScanned: z.number().int(),
   sourcesBlocked: z.number().int(),
+  /** Distinct trims over ALL the profile's live listings (UNFILTERED — before
+   *  the budget/availability hard-filter), the ground-truth set for the trim
+   *  cross-check. */
+  allInventoryTrims: z.array(z.string()),
 });
 type InventoryCompareState = z.infer<typeof InventoryCompareStateSchema>;
 
@@ -189,6 +198,7 @@ const resolveProfileStep = createStep({
     // pinned | inferred_newest — the run proceeds, provenance recorded in state.
     return {
       searchProfileId: resolved.profile.id,
+      profileTrim: resolved.profile.trim ?? null,
       resolution: resolved.kind,
       candidates: null,
       scannedAtMax: null,
@@ -196,6 +206,7 @@ const resolveProfileStep = createStep({
       recommendedCount: 0,
       sourcesScanned: 0,
       sourcesBlocked: 0,
+      allInventoryTrims: [],
     };
   },
 });
@@ -219,6 +230,7 @@ const computeRankingStep = createStep({
       recommendedCount: ranked.recommendedCount,
       sourcesScanned: ranked.sourcesScanned,
       sourcesBlocked: ranked.sourcesBlocked,
+      allInventoryTrims: ranked.allInventoryTrims,
     };
   },
 });
@@ -240,7 +252,7 @@ const renderStep = createStep({
     // a dead end (the live 巡检 hit this when a buyer asked "what's in stock?" and
     // the router chose compare over a scan), so point to the next step in plain
     // words — no slash command, no jargon.
-    const summary =
+    const baseSummary =
       state.totalListings === 0
         ? state.sourcesScanned > 0
           ? // A scan ran but matched nothing — say so, don't tell them to scan again.
@@ -254,6 +266,31 @@ const renderStep = createStep({
             "Scan the dealers' inventory to see what they have in stock."
         : `Listed ${state.totalListings} inventory candidates ` +
           `(recommended: ${state.recommendedCount}).`;
+
+    // Post-scan trim grounding — the AUTHORITATIVE trim check (intake can't
+    // ground: no inventory exists yet at intake). Compare the requested trim
+    // against ALL scanned trims (the UNFILTERED set, so a trim a dealer stocks
+    // only over-budget / on-order still counts — never a false "no dealer carries
+    // it"), token-normalized ("LX" matches "LX CVT", "EX-L" matches "EX-L
+    // Hybrid"); when truly absent, name the closest real trims. Gate on any
+    // scanned trim (not just the budget-filtered candidates) so the note never
+    // fires while a matching trim sits in the unfiltered set.
+    let trimNote = "";
+    if (
+      state.totalListings > 0 &&
+      state.profileTrim !== null &&
+      state.profileTrim.trim() !== ""
+    ) {
+      const avail = classifyTrimAvailability(state.profileTrim, state.allInventoryTrims);
+      if (!avail.matched) {
+        trimNote =
+          ` No in-stock car matches the "${state.profileTrim}" trim` +
+          (avail.suggestions.length > 0
+            ? ` — closest in stock: ${avail.suggestions.join(", ")}.`
+            : ".");
+      }
+    }
+    const summary = baseSummary + trimNote;
 
     return {
       outcome: "ranked" as const,

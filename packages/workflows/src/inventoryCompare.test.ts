@@ -174,6 +174,30 @@ describe("inventory_compare — read-only three-branch", () => {
     expect(out.summary).not.toContain("50000");
   });
 
+  it("grounds the requested trim against real inventory: a trim no dealer carries gets a 'closest in stock' note", async () => {
+    // Profile wants 'Limited'; the only in-stock car is a 'SEL' → the post-scan
+    // grounding flags the absent trim and names the real in-stock trim.
+    seedProfile();
+    seedDealer();
+    db.$client
+      .prepare(
+        "INSERT INTO inventory_listings " +
+          "(listing_id, search_profile_id, dealer_id, vin, year, make, model, trim, " +
+          "msrp, listed_price, inventory_status, match_status, raw_listing_json, " +
+          "first_seen_at, last_seen_at, observed_at) " +
+          "VALUES ('lst_sel', ?, ?, ?, 2026, 'Hyundai', 'Tucson', 'SEL Convenience', 40000, 38000, " +
+          "'in_stock', 'near', '{}', '2026-06-01', '2026-06-10', '2026-06-01')",
+      )
+      .run(PROFILE_ID, DEALER_NEAR, FULL_VIN);
+
+    const { result } = await startRun("invcmp-trimnote-1", null);
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as { summary: string };
+    expect(out.summary).toContain('No in-stock car matches the "Limited" trim');
+    expect(out.summary).toContain("SEL Convenience"); // the real in-stock trim suggested
+  });
+
   it("runs with resolution 'pinned' when a valid pin is supplied", async () => {
     seedProfile();
     const { result } = await startRun("invcmp-pinned-1", PROFILE_ID);

@@ -81,6 +81,11 @@ export interface RankInventoryResult {
   /** # of dealer_inventory_sources rows with last_status='blocked' (sites that
    *  blocked automated scanning). */
   sourcesBlocked: number;
+  /** Distinct trim strings over ALL of the profile's live listings — the
+   *  UNFILTERED set (before the budget/availability hard-filter), so trim
+   *  grounding sees a trim a dealer stocks even when it is over budget or
+   *  on-order. Verbatim dealer strings (e.g. "LX CVT", "EX-L Hybrid"). */
+  allInventoryTrims: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +186,7 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
       recommendedCount: 0,
       sourcesScanned: 0,
       sourcesBlocked: 0,
+      allInventoryTrims: [],
     };
   }
 
@@ -203,6 +209,17 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
   const ranked = rankListings(ctx, listings, dealerDistances);
   const candidates = ranked.map(toCandidate);
 
+  // Distinct trims over the UNFILTERED listings (before the budget/availability
+  // hard-filter) — so trim grounding sees a trim a dealer stocks even when it is
+  // over budget or on-order, never falsely reporting "no dealer carries it".
+  const allInventoryTrims = [
+    ...new Set(
+      listings
+        .map((l) => asString(l["trim"]))
+        .filter((t): t is string => t !== null && t.trim() !== ""),
+    ),
+  ];
+
   // scannedAtMax = max last_seen_at over the (post-filter) candidate listings.
   // Listings carry last_seen_at as an ISO/text timestamp; pick the lexically
   // greatest non-empty value (ISO-8601 sorts chronologically).
@@ -224,5 +241,6 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     recommendedCount,
     sourcesScanned,
     sourcesBlocked,
+    allInventoryTrims,
   };
 }

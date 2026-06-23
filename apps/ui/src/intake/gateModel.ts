@@ -68,7 +68,9 @@ export function classifyGate(specInline: Record<string, unknown> | null): GateMo
   if (kind === "force_override") {
     return {
       kind: "force_override",
-      question: str(specInline["question"]) ?? "This trim did not pass validation. Continue anyway?",
+      question:
+        str(specInline["question"]) ??
+        "We couldn't verify this trim from our records — we'll cross-check it against dealer inventory after the search. Keep it, revise, or cancel?",
       trim: str(specInline["trim"]) ?? "",
       reason: str(specInline["reason"]) ?? "",
     };

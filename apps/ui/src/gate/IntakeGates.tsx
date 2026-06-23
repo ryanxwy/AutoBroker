@@ -49,7 +49,8 @@ export function ForceOverrideBar({
     <div className="gate-card" data-testid="gate-force-override" role="alertdialog" aria-label="Trim override">
       <strong>{gate.question}</strong>
       <p className="muted">
-        Trim <code>{gate.trim}</code> did not pass validation.
+        Trim <code>{gate.trim}</code> isn&apos;t verified against dealer inventory yet — we&apos;ll
+        cross-check it against the real in-stock cars once we search dealers. Keep it, revise, or cancel.
       </p>
       <div className="field">
         <label htmlFor="force-override-reason">Reason (recorded for audit)</label>
