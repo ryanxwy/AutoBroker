@@ -547,10 +547,23 @@ export class UiDriver {
 
   /** Launch a skill from the Skills popover's real Run button (waits for the
    *  pin gate to enable it — `:not([disabled])` on a real <button>). No
-   *  return-to-Home step: the popover is reachable from every route. */
+   *  return-to-Home step: the popover is reachable from every route. The popover
+   *  surfaces only the SUGGESTED next-available skills by default; the rest hide
+   *  behind a collapsed "More skills" disclosure, so when the target Run button
+   *  is not present we expand that disclosure first to reveal it. */
   async launchSkillFromPopover(skillId: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
     await this.openSkillsPopover(timeoutMs);
-    const sel = `${tid(`ledger-run-${skillId}`)}:not([disabled])`;
+    const runSel = tid(`ledger-run-${skillId}`);
+    // The skill may be tucked behind the collapsed "More skills" disclosure —
+    // when its Run button isn't on the page yet and the disclosure exists,
+    // expand it (a real user click) before waiting on the row.
+    if (
+      (await this.page.locator(runSel).count()) === 0 &&
+      (await this.page.locator(tid("skills-more-toggle")).count()) > 0
+    ) {
+      await this.page.click(tid("skills-more-toggle"));
+    }
+    const sel = `${runSel}:not([disabled])`;
     await this.page.waitForSelector(sel, { timeout: timeoutMs });
     await this.page.click(sel);
   }
