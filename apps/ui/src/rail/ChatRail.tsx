@@ -98,6 +98,10 @@ export function ChatRail({
   onRunSkill,
   onRunSuggested,
 }: ChatRailProps): JSX.Element {
+  // The most-recently-run skill drives the Skills-tray suggested-set window:
+  // the last turn's skill if the last turn is an assistant run, else null.
+  const lastTurn = turns[turns.length - 1];
+  const lastSkill = lastTurn?.kind === "assistant" ? lastTurn.turn.skill : null;
   return (
     <aside className="chat-rail" id="chat-rail" data-testid="chat-rail" aria-label="Conversation">
       <div className="rail-header">
@@ -173,6 +177,7 @@ export function ChatRail({
             pin={pinnedProfileId}
             hasActiveProfile={hasActiveProfile}
             deepseekReady={deepseekReady}
+            lastSkill={lastSkill}
             onRun={onRunSkill}
           />
         </div>

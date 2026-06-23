@@ -86,6 +86,59 @@ export function groupSkillsByReadiness(
  *  intake needs the model), so the whole list is disabled with this hint. */
 export const DEEPSEEK_LOCK_TIP = "Add your DeepSeek key in Settings first.";
 
+/** The canonical pipeline stages, in order. Each skill belongs to exactly one
+ *  stage; the suggested-set window is the stage the last-run skill belongs to
+ *  PLUS the next stage. This models the natural new-car quote flow:
+ *  intake → discover dealers → scan inventory → lead → read replies →
+ *  negotiate/report → close out. */
+export const PIPELINE_STAGES: string[][] = [
+  ["search_profile_intake"],
+  ["dealer_geosearch"],
+  ["inventory_site_scan", "inventory_link_scan", "incentive_scrape", "inventory_compare"],
+  ["dealer_web_lead_submit"],
+  ["dealer_inbox_check", "dealer_reply_extract", "quote_audit", "quote_compare"],
+  ["negotiation_followup", "quote_pipeline", "daily_digest"],
+  ["dealer_hygiene", "dealer_closeout_email", "pipeline_reset"],
+];
+
+/** The stage index a skill name belongs to, or -1 if it is not in any stage. */
+function stageIndexOf(skillName: string): number {
+  return PIPELINE_STAGES.findIndex((stage) => stage.includes(skillName));
+}
+
+/**
+ * The suggested next-available subset of the ready skills — the small set the
+ * rail surfaces by default so the popover is not a 17-row wall. With no
+ * profile/pin only `search_profile_intake` is suggested (it is the only thing
+ * that can run). Otherwise the window is the stage the `lastSkill` belongs to
+ * PLUS the next stage (a sliding window over PIPELINE_STAGES), narrowed to
+ * skills whose pin posture is satisfied. If that window is empty (e.g. lastSkill
+ * is unknown and the next stage is all-blocked) we fall back to the full ready
+ * list, so a suggested set is NEVER smaller than nothing actionable.
+ */
+export function nextSuggestedSkills(
+  skills: SkillManifest[],
+  state: { pin: string | null; hasActiveProfile: boolean; lastSkill?: string | null },
+): SkillManifest[] {
+  const ready = skills.filter((s) => pinPostureSatisfied(s, state));
+  // No profile and no pin: intake is the only launchable thing — suggest it alone.
+  if (state.pin === null && !state.hasActiveProfile) {
+    return ready.filter((s) => s.name === "search_profile_intake");
+  }
+  // Window = the lastSkill's stage + the next stage. With no lastSkill (or an
+  // unknown one) we open from the FIRST pipeline stage so the post-intake user
+  // sees the start of the flow.
+  const baseStage = state.lastSkill != null ? stageIndexOf(state.lastSkill) : -1;
+  const fromStage = baseStage >= 0 ? baseStage : 0;
+  const windowNames = new Set([
+    ...(PIPELINE_STAGES[fromStage] ?? []),
+    ...(PIPELINE_STAGES[fromStage + 1] ?? []),
+  ]);
+  const suggested = ready.filter((s) => windowNames.has(s.name));
+  // Empty window → fall back to the full ready list (always actionable).
+  return suggested.length > 0 ? suggested : ready;
+}
+
 export interface SkillsPopoverProps {
   skills: SkillManifest[];
   /** The session's TRUE pinned profile id (hydrated), or null when unpinned. */
@@ -95,6 +148,9 @@ export interface SkillsPopoverProps {
   /** Whether the required DeepSeek key is configured. When false, EVERY skill is
    *  locked (no model = nothing runs) with the Settings pointer. */
   deepseekReady: boolean;
+  /** The most-recently-run skill id (drives the suggested-set sliding window),
+   *  or null when no run has happened yet. */
+  lastSkill?: string | null;
   onRun: (skill: SkillManifest) => void;
 }
 
@@ -141,6 +197,7 @@ export function SkillsPopoverList({
   pin,
   hasActiveProfile,
   deepseekReady,
+  lastSkill = null,
   onRun,
 }: SkillsPopoverProps): JSX.Element {
   // First-run gate wins over the readiness grouping: with no DeepSeek key no
@@ -159,6 +216,12 @@ export function SkillsPopoverList({
 
   const state = { pin, hasActiveProfile };
   const groups = groupSkillsByReadiness(skills, state);
+  // The Ready group is split: the suggested next-available subset surfaces by
+  // default (so the popover is not a 17-row wall), the rest of the ready skills
+  // hide behind a collapsed "More skills" disclosure (still reachable).
+  const suggested = nextSuggestedSkills(skills, { ...state, lastSkill });
+  const suggestedNames = new Set(suggested.map((s) => s.name));
+  const moreReady = groups.ready.filter((s) => !suggestedNames.has(s.name));
   // The blocked group mixes two reasons (no search vs no pin); the group header
   // shows the pin-required hint when ANY blocked skill is pin-required with an
   // active search, else the create-a-search hint. Each row still carries its
@@ -171,7 +234,13 @@ export function SkillsPopoverList({
   return (
     <div data-testid="skills-list">
       <h3 className="skills-group-title">Ready</h3>
-      <SkillRows skills={groups.ready} disabled={false} onRun={onRun} />
+      <SkillRows skills={suggested} disabled={false} onRun={onRun} />
+      {moreReady.length > 0 && (
+        <details data-testid="skills-more">
+          <summary data-testid="skills-more-toggle">More skills</summary>
+          <SkillRows skills={moreReady} disabled={false} onRun={onRun} />
+        </details>
+      )}
       {groups.blocked.length > 0 && (
         <>
           <h3 className="skills-group-title">Needs an active search</h3>
