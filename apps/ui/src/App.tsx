@@ -181,6 +181,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // The server session (Mastra thread) the rail is currently on — intake forks
   // FROM it (the fork rule), so the last ack's session_id is remembered here.
   const sessionIdRef = useRef<string | null>(null);
+  // The session whose turns are CURRENTLY accumulated in the rail. A skill run
+  // within the same session keeps the prior turns (one continuous conversation
+  // across the whole journey); only a NEW session (intake forks one) clears the
+  // rail — so a 17-skill run shows its full history instead of resetting each step.
+  const streamedSessionRef = useRef<string | null>(null);
   // Runs already bound to the rail (fresh launches need no refresh recovery).
   const recoveredRef = useRef<string | null>(null);
   // Transient browser activity view (live-only; never persisted into the
@@ -319,7 +324,15 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     } catch {
       /* no active stream */
     }
-    chat.messages = [];
+    // Keep the rail's history WITHIN a session (each skill run appends its own
+    // turn); clear only when the session changed — i.e. intake forked a new one,
+    // or a session-less headless run. bindAck has already set sessionIdRef to
+    // this run's session before calling streamRun.
+    const sid = sessionIdRef.current;
+    if (sid === null || sid !== streamedSessionRef.current) {
+      chat.messages = [];
+    }
+    streamedSessionRef.current = sid;
     setBrowserView(EMPTY_BROWSER_VIEW);
     // The chat message is the stream CARRIER only: the run is already started.
     // A button launch has no prose — send a silent (part-less) user message.
