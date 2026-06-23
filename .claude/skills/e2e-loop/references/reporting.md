@@ -4,11 +4,18 @@ Loaded at steps 4.5, 6, and 8 (see spine).
 
 ---
 
-## Step 6 — HTML report → plan repo
+## Step 6 — HTML report → plan repo (Live-E2E run ledger)
 
-Path: `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/<YYYYMMDD>-live-e2e-全技能巡检/`
-Same-day re-runs: append `b`, `c`, … suffix. Self-contained `index.html`,
+Home: `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/live-e2e/<run-id>/`
+where `<run-id>` = `<YYYY-MM-DD>` for the day's **first** run, then
+`<YYYY-MM-DD>-run2`, `-run3`, … for same-day re-runs (the old flat
+`<YYYYMMDD>-live-e2e-全技能巡检` + `b/c/d` scheme is retired — runs now live
+under the dedicated `live-e2e/` ledger dir). Self-contained `index.html`,
 warm-paper ledger CSS, key sections 中文.
+
+**Required: one `<!-- E2E-META: … -->` line in the report `<head>`** — the run
+ledger (`live-e2e/index.html`) is rebuilt from it, so this is what files the run.
+See **"Register in the ledger"** below.
 
 **Required sections (in order):**
 
@@ -23,6 +30,24 @@ warm-paper ledger CSS, key sections 中文.
 9. **工件** — branch, commit hashes, PR URL.
 
 Copy `xunjian/` → `<report-dir>/shots/`; remove at teardown.
+
+### Register in the ledger (replaces the old append-to-box ritual)
+
+The ledger at `ts-rebuild/live-e2e/index.html` is auto-built — never hand-edit
+its rows. To file this run:
+
+1. **E2E-META line** — insert one comment line right after `<head>` in the
+   report. ` | `-separated `key=value`, summary last; values must be free of
+   `|`, `--`, and raw `< > &`. All 15 fields, use `—` when N/A:
+   `run | date | vehicle | metro | mode | persona | skills | nego | findings | cost | wall | commit | pr | verdict | summary`
+   - `run` = the dir's run-id · `skills` = `17/17` (or `N/N` for a negotiation
+     sub-arc, e.g. `7/7`) · `nego` = e.g. `2r → $33,400` or `—` · `findings` =
+     e.g. `0` / `1 fixed` · `verdict` = `pass` (all green, no code change) /
+     `pass+fix` (passed + fixed findings) / `partial` (not all skills passed).
+2. **Rebuild** — from `ts-rebuild/`, run `bash tools/build-e2e-index.sh`. It
+   rescans every `live-e2e/<run-id>/index.html` E2E-META line and regenerates
+   the reverse-chron ledger table. (Pure bash + python3, no node; read-only on
+   the code repo — same sanctioned exception as `daily/`'s machine sections.)
 
 ---
 
@@ -110,9 +135,13 @@ Report: **"桌面包已刷新 @ commit `<hash>` — 可手测"**. Smoke < 14/14 
 
 ## Plan-repo discipline
 
-- `git add <report-dir>` only — never `git add .` / `-A`.
-- After commit: refresh `CURRENT STATE (live)` box at top of `ts-rebuild/index.html`
-  (date, verdict, PR URL). Box = canonical; reports = history.
+- `git add ts-rebuild/live-e2e/<run-id>/ ts-rebuild/live-e2e/index.html` only —
+  never `git add .` / `-A` (the new run dir + the rebuilt ledger are the only adds).
+- Refresh the `CURRENT STATE (live)` box at top of `ts-rebuild/index.html` by
+  **replacing** its single latest-run paragraph with this run's (date, verdict,
+  PR, `Full report →` link to `live-e2e/<run-id>/index.html`) — do **not** append.
+  The box keeps only the newest run + the `Live-E2E 运行台账 →` link; the ledger
+  (`live-e2e/index.html`) is the canonical run history, the box is just the latest.
 
 ---
 
