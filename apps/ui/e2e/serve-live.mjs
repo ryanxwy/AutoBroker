@@ -26,6 +26,9 @@
  *        dealer COUNTER into an existing thread (live multi-round negotiation).
  *   GET  /__e2e/audit?action=  → count audit_log rows (verification).
  *   GET  /__e2e/rows?table=    → count rows in an allow-listed table (verification).
+ *   GET  /__e2e/dataquality?skill=&profileId= → per-skill USABILITY coverage
+ *                              (covered/n + nullEscape/gated escapes), NOT count —
+ *                              catches a count-green / quality-empty scan.
  *
  * Run: pnpm e2e:serve-live   (from the repo root; prints a JSON line). Plain
  * node — every import resolves to a built @autobroker/* dist, so no tsx loader.
@@ -596,6 +599,96 @@ built.app.get("/__e2e/rows", async (req, reply) => {
     const row = adb.$client.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get();
     reply.code(200);
     return { table, count: row.n };
+  } finally {
+    adb.$client.close();
+  }
+});
+
+// Data-QUALITY verdict (not count). /__e2e/rows can only count rows, so a scan
+// that writes N listings with every price NULL reads identical to N good rows —
+// the exact blind spot that passed a 0-priced scan GREEN (2026-06-22). This
+// route returns per-skill USABILITY coverage: covered/n plus the structural
+// escapes (nullEscape, gated) that distinguish a legitimately-empty result from
+// a silent data-loss. Brand-agnostic ratios — names no make/metro/row-count, so
+// it generalizes to the next random brand. Test-host only; product wall untouched.
+const DATAQUALITY_SKILLS = new Set(["inventory_site_scan", "dealer_reply_extract"]);
+built.app.get("/__e2e/dataquality", async (req, reply) => {
+  const q = req.query ?? {};
+  const skill = q.skill;
+  const profileId = typeof q.profileId === "string" && q.profileId.length > 0 ? q.profileId : null;
+  if (typeof skill !== "string" || !DATAQUALITY_SKILLS.has(skill)) {
+    reply.code(400);
+    return { ok: false, error: "unknown dataquality skill" };
+  }
+  const round2 = (x) => Math.round(x * 100) / 100;
+  const adb = openDb();
+  try {
+    if (skill === "inventory_site_scan") {
+      // Usable price coverage over the LIVE (non-superseded) listings.
+      const where = profileId
+        ? "WHERE superseded_at IS NULL AND search_profile_id = ?"
+        : "WHERE superseded_at IS NULL";
+      const r = adb.$client
+        .prepare(
+          `SELECT COUNT(*) AS n,
+             SUM(CASE WHEN listed_price IS NOT NULL THEN 1 ELSE 0 END) AS priced,
+             SUM(CASE WHEN msrp IS NOT NULL THEN 1 ELSE 0 END) AS msrp_present,
+             SUM(CASE WHEN listed_price IS NOT NULL OR msrp IS NOT NULL THEN 1 ELSE 0 END) AS covered,
+             SUM(CASE WHEN listing_url IS NOT NULL THEN 1 ELSE 0 END) AS vdp_linked
+           FROM inventory_listings ${where}`,
+        )
+        .get(...(profileId ? [profileId] : []));
+      const n = r.n ?? 0;
+      const covered = r.covered ?? 0;
+      reply.code(200);
+      return {
+        skill,
+        n,
+        metric: "price_coverage",
+        covered,
+        coverage: n > 0 ? round2(covered / n) : 0,
+        priced: r.priced ?? 0,
+        msrp_present: r.msrp_present ?? 0,
+        // Honest gated-vs-lost discriminator (inventory_status='price_gated') is
+        // not yet persisted (a separate backlog item); structurally 0 today, so a
+        // genuinely all-gated dealer still FAILs — acceptable because in the bug
+        // the VDP exposed the price and the scan dropped it.
+        gated: 0,
+        vdp_linked: r.vdp_linked ?? 0,
+        nullEscape: n === 0,
+      };
+    }
+    // dealer_reply_extract — OTD coverage over the extracted quotes.
+    const whereQ = profileId ? "WHERE search_profile_id = ?" : "";
+    const rq = adb.$client
+      .prepare(
+        `SELECT COUNT(*) AS n,
+           SUM(CASE WHEN otd_total IS NOT NULL THEN 1 ELSE 0 END) AS otd_present
+         FROM dealer_quotes ${whereQ}`,
+      )
+      .get(...(profileId ? [profileId] : []));
+    const rm = adb.$client
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN quote_extraction_status = 'succeeded' THEN 1 ELSE 0 END) AS extract_succeeded,
+           SUM(CASE WHEN quote_extraction_status = 'failed' THEN 1 ELSE 0 END) AS extract_failed
+         FROM messages ${whereQ}`,
+      )
+      .get(...(profileId ? [profileId] : []));
+    const n = rq.n ?? 0;
+    const otd = rq.otd_present ?? 0;
+    reply.code(200);
+    return {
+      skill,
+      n,
+      metric: "otd_coverage",
+      covered: otd,
+      coverage: n > 0 ? round2(otd / n) : 0,
+      otd_present: otd,
+      extract_succeeded: rm.extract_succeeded ?? 0,
+      extract_failed: rm.extract_failed ?? 0,
+      nullEscape: n === 0,
+    };
   } finally {
     adb.$client.close();
   }

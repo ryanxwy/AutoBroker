@@ -104,6 +104,43 @@ Counts rows in one allow-listed table → `{ table, count }`. Returns `400 { ok:
 
 **When:** verify writes / assert decline = Δ0 after any skill; assert `search_profiles = 0` after per-PASS cleanup.
 
+**`/__e2e/rows` is COUNT-ONLY — it returns `{table,count}` and CANNOT see a
+column.** A scan that writes 10 listings with every `listed_price`/`msrp` NULL
+reads `count:10`, identical to 10 good rows. For data-bearing skills the verdict
+is the data-quality route below, NOT this count.
+
+---
+
+### `GET /__e2e/dataquality?skill=<name>&profileId=<id>` — per-skill USABILITY coverage
+
+Returns the COVERAGE of the load-bearing fields the downstream pipeline consumes
+(not a count), plus the structural escapes that distinguish a legitimately-empty
+result from silent data-loss. `profileId` optional (omit = whole DB). A `skill`
+not in the supported set → `400 { ok:false, error:"unknown dataquality skill" }`.
+Test-host only; product wall untouched; verdict-rung-1.
+
+- `skill=inventory_site_scan` → `{ skill, n, metric:"price_coverage", covered,
+  coverage, priced, msrp_present, gated, vdp_linked, nullEscape }` over
+  `inventory_listings WHERE superseded_at IS NULL`. **Hard FAIL iff `n>0 AND
+  priced==0 AND msrp_present==0 AND gated==0`** (TOTAL price loss — the 2026-06-22
+  miss); `coverage≥0.5` is the healthy target, below-but->0 a soft note (the
+  per-dealer VDP budget bounds gated-car coverage). `nullEscape:true` (n==0) = SKIP.
+  (`gated` is structurally 0 until `inventory_status='price_gated'` is persisted — a
+  backlog item; an all-gated dealer still FAILs today, acceptable since in the bug the
+  VDP exposed the price and the scan dropped it.)
+- `skill=dealer_reply_extract` → `{ skill, n, metric:"otd_coverage", covered,
+  coverage, otd_present, extract_succeeded, extract_failed, nullEscape }` over
+  `dealer_quotes` + `messages`. PASS iff `otd_present/n ≥ 0.5`; `nullEscape:true`
+  (n==0, nothing extractable) = SKIP.
+
+Ratios name no brand/metro/row-count, so the check generalizes to the next random
+pick. Extend by adding a case to the route's skill switch (geosearch website
+coverage, quote_audit expected-finding-code, inventory_compare real-price-axis are
+filed T7 backlog items).
+
+**When:** the data-quality floor in the spine self-check — for every data-bearing
+skill that wrote ≥1 row, BEFORE declaring it PASS.
+
 ---
 
 ## External-SQLite writes are invisible to the running server

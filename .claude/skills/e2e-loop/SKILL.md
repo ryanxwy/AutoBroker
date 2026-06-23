@@ -66,6 +66,17 @@ artifact) **>** `frontend-taste` LLM-judge (advisory). A lower rung NEVER overri
 higher one: a pretty screenshot never beats a missing row; a taste finding alone never
 blocks a merge.
 
+**A row COUNT alone is NEVER a skill PASS for a data-bearing skill.** A route
+that returns only `{table,count}` cannot see a null-price listing or a null-OTD
+quote — so a scan that writes N rows whose load-bearing payload (`listed_price`/
+`msrp`, `otd_total`) is empty reads identical to N good rows and passes GREEN
+(the 2026-06-22 miss: 10 listings, every price NULL, marked PASS while the buyer
+saw `0 rec / 10`). For `inventory_site_scan` and `dealer_reply_extract` the
+verdict is the `GET /__e2e/dataquality?skill=&profileId=` COVERAGE ratio, not the
+`/__e2e/rows` count. Coverage is rung 1; the `price_missing` / `0 rec` chips a DOM
+read shows (rung 2) only corroborate — a count-green / coverage-empty result is
+itself the FAIL and the lower rungs cannot rescue it upward.
+
 ## Guardrails
 
 - Isolated tmp data-dir; `AUTOBROKER_MODE=test` pinned (the sole send-control var);
@@ -96,6 +107,19 @@ blocks a merge.
   `RUN_UI_FUNCTIONAL=1` green → fresh live re-verify → merge) OR given a written
   `live-verified, no-code-change` ruling. The report's "本轮新 backlog" section is then
   **empty** — verify with a grep, not a rhetorical question.
+- **Data-quality floor (count-green is NOT quality-green).** For every
+  data-bearing skill that wrote ≥1 row, hit `GET /__e2e/dataquality?skill=&profileId=`
+  and apply the per-skill threshold — never accept a `/__e2e/rows` count as the PASS.
+  `inventory_site_scan`: **hard FAIL when `n>0 AND priced==0 AND msrp_present==0 AND
+  gated==0`** (TOTAL price loss — the 2026-06-22 bug). A healthy scan covers
+  `covered/n ≥ 0.5`; below that but `>0` is a soft report note, not a FAIL (the
+  per-dealer VDP budget legitimately bounds how many CTA-gated cars get a VDP visit).
+  `dealer_reply_extract`: hard FAIL when `n>0 AND otd_present==0` (every quote
+  OTD-empty); `otd_present/n ≥ 0.5` is the healthy target. The ONLY non-FAIL
+  zero-coverage paths are the machine-checkable escapes the route surfaces as DATA,
+  never prose: `nullEscape:true` (n==0, empty metro / nothing extractable) OR
+  `gated==n` (every listing explicitly price-withheld). A FAIL goes through the
+  step-4 S0–S6 machine; record the coverage ratio in the report's per-skill row.
 - All 6 cross-session artifacts written (report, live-status box, memory file +
   pointer, git commit, telemetry export, marker handled).
 - `.claude/.e2e-loop-active` removed (on done AND on any abort).
