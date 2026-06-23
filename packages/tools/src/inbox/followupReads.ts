@@ -108,16 +108,25 @@ export interface FollowupCandidateThread {
   lastInboundAtMs: number | null;
   /** Latest OUTBOUND message timestamp (epoch ms), or null when never sent. */
   lastOutboundAtMs: number | null;
-  /** How many follow-ups we have already sent on this thread (the 3-round cap is
-   *  applied in code over this count). */
+  /** Total follow-ups we have ever sent on this thread (the hard backstop ceiling
+   *  is applied in code over this count). */
   roundsSent: number;
+  /** Consecutive UNANSWERED follow-ups: outbound messages whose insertion order
+   *  (rowid) is after the latest inbound reply — i.e. follow-ups the dealer has
+   *  not yet answered. Resets to 0 the moment a dealer reply lands. The
+   *  responsive-aware cap throttles THIS (anti-pester at a silent dealer) while
+   *  leaving an actively-countering thread free to run deep. rowid (insertion
+   *  order), NOT received_at, is the signal: outbound rows carry no received_at
+   *  (they timestamp processed_at), and an append-only message log's insertion
+   *  order is the authoritative conversational sequence. */
+  unansweredFollowups: number;
 }
 
 /**
  * The needs-response threads for one profile, joined to their dealer name with
  * the latest inbound / latest outbound timestamps and the outbound (follow-up)
  * round count per thread. The pure deciders downstream do the ranking, the
- * timing gate, and the 3-round cap; this read only assembles the rows. Read-only,
+ * timing gate, and the responsive follow-up cap; this read only assembles the rows. Read-only,
  * profile-scoped.
  */
 export function listFollowupCandidateThreads(
@@ -129,7 +138,14 @@ export function listFollowupCandidateThreads(
       "SELECT t.thread_id AS threadId, t.dealer_id AS dealerId, d.name AS dealerName, t.state AS state, " +
         "(SELECT MAX(m.received_at) FROM messages m WHERE m.thread_id = t.thread_id AND m.direction = 'inbound') AS lastInbound, " +
         "(SELECT MAX(m.received_at) FROM messages m WHERE m.thread_id = t.thread_id AND m.direction = 'outbound') AS lastOutbound, " +
-        "(SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.thread_id AND m.direction = 'outbound') AS roundsSent " +
+        "(SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.thread_id AND m.direction = 'outbound') AS roundsSent, " +
+        // Consecutive unanswered follow-ups = outbound rows whose rowid (insertion
+        // order) is past the latest inbound rowid. rowid, not received_at: outbound
+        // has no received_at, and insertion order is the authoritative thread
+        // sequence (immune to inbound timestamps that may be backfilled out of band).
+        // COALESCE(...,0) → with no inbound yet, every outbound counts as unanswered.
+        "(SELECT COUNT(*) FROM messages mo WHERE mo.thread_id = t.thread_id AND mo.direction = 'outbound' " +
+        "  AND mo.rowid > COALESCE((SELECT MAX(mi.rowid) FROM messages mi WHERE mi.thread_id = t.thread_id AND mi.direction = 'inbound'), 0)) AS unansweredFollowups " +
         "FROM threads t LEFT JOIN dealers d ON d.dealer_id = t.dealer_id " +
         "WHERE t.search_profile_id = ? " +
         "ORDER BY t.thread_id",
@@ -142,6 +158,7 @@ export function listFollowupCandidateThreads(
     lastInbound: string | number | null;
     lastOutbound: string | number | null;
     roundsSent: number;
+    unansweredFollowups: number;
   }>;
 
   return rows.map((r) => ({
@@ -152,6 +169,7 @@ export function listFollowupCandidateThreads(
     lastInboundAtMs: toEpochMs(r.lastInbound),
     lastOutboundAtMs: toEpochMs(r.lastOutbound),
     roundsSent: r.roundsSent,
+    unansweredFollowups: r.unansweredFollowups,
   }));
 }
 

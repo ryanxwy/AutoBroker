@@ -21,7 +21,8 @@
  *   3. SEND n (approve) → per draft sendAndRecord called + threads.state→negotiating,
  *      the body has NO budget and NO competing-dealer name (numbers only);
  *   4. the tone is the classifyQuoteSituation tone (assertive here), picked in code;
- *   5. a 3-round-cap thread (single-thread mode) → typed error, never drafted/gated;
+ *   5. the responsive cap: too many UNANSWERED follow-ups → typed error / silent
+ *      drop, but a deep thread the dealer keeps answering is NOT capped;
  *   6. a contact-flip override → ② re-confirm → setPrimaryReplyTarget called once
  *      (decline → not called);
  *   7. no candidates → a graceful no_candidates summary (not an error).
@@ -147,6 +148,10 @@ function seedThread(over: {
   contactId?: string | null;
   senderEmail?: string;
   outboundRounds?: number;
+  /** When true, seed one final INBOUND reply AFTER the outbound rounds — the
+   *  dealer countered last, so the responsive cap sees 0 unanswered follow-ups
+   *  no matter how many rounds were sent. */
+  trailingInbound?: boolean;
 }): void {
   const c = db.$client;
   c.prepare(
@@ -173,8 +178,9 @@ function seedThread(over: {
     "Sales Team",
     PROFILE_ID,
   );
-  // Optional prior outbound follow-up rounds (drives the 3-round cap). Each is set
-  // well in the past so they never become the latest-outbound that triggers `wait`.
+  // Optional prior outbound follow-up rounds (drive the responsive cap's
+  // unanswered count when no trailing inbound follows). Each is set well in the
+  // past so they never become the latest-outbound that triggers `wait`.
   const rounds = over.outboundRounds ?? 0;
   for (let i = 0; i < rounds; i++) {
     c.prepare(
@@ -191,6 +197,30 @@ function seedThread(over: {
       "Following up.",
       over.inboundAtMs - (rounds - i + 30) * 24 * 60 * 60 * 1000, // far in the past.
       over.inboundAtMs - (rounds - i + 30) * 24 * 60 * 60 * 1000,
+      PROFILE_ID,
+    );
+  }
+  // A trailing dealer reply (inserted LAST → highest rowid) so the responsive cap
+  // counts 0 unanswered follow-ups: the dealer answered our latest round.
+  if (over.trailingInbound) {
+    c.prepare(
+      "INSERT INTO messages (message_id, thread_id, gmail_message_id, direction, sender, recipient, " +
+        "subject, body_text, received_at, processed_at, contact_id, sender_email, sender_name, " +
+        "search_profile_id, quote_extraction_status) " +
+        "VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+    ).run(
+      `msg-in2-${over.threadId}`,
+      over.threadId,
+      `gmail2-${over.threadId}`,
+      over.senderEmail ?? "sales@jimclick.example.com",
+      "jordan.buyer@example.com",
+      over.subject ?? "Quote request",
+      "Thanks for following up — here is a sharper number.",
+      over.inboundAtMs,
+      over.inboundAtMs,
+      over.contactId ?? null,
+      over.senderEmail ?? "sales@jimclick.example.com",
+      "Sales Team",
       PROFILE_ID,
     );
   }
@@ -533,15 +563,17 @@ describe("negotiation_followup — SEND n (the fake send happy path)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// case 5 — a 3-round-cap thread (single-thread mode) → typed error, never drafted
+// case 5 — the responsive-aware follow-up cap (unanswered nudges vs deep mutual
+// negotiation) — single-thread typed error, batch silent drop, and the
+// dealer-answered thread that runs DEEP without being capped
 // ---------------------------------------------------------------------------
 
-describe("negotiation_followup — the 3-round cap precondition", () => {
-  it("a named thread at the 3-round cap → typed error, never drafted/gated", async () => {
+describe("negotiation_followup — the responsive follow-up cap precondition", () => {
+  it("a named thread with too many UNANSWERED follow-ups → typed error, never drafted/gated", async () => {
     seedProfile();
     seedDealer({ dealerId: DEALER_TARGET, name: "Jim Click Hyundai", website: "https://jimclick.example.com" });
     const recent = Date.now() - 3 * 24 * 60 * 60 * 1000;
-    // 3 prior outbound rounds → at the cap.
+    // 3 prior outbound rounds, dealer never replied → 3 unanswered (over the cap).
     seedThread({ threadId: THREAD_TARGET, dealerId: DEALER_TARGET, inboundAtMs: recent, outboundRounds: 3 });
     seedQuote({ dealerId: DEALER_TARGET, otdTotal: 33_900, itemized: true });
 
@@ -556,12 +588,12 @@ describe("negotiation_followup — the 3-round cap precondition", () => {
       thread_id: THREAD_TARGET,
     });
     expect(result.status).toBe("failed");
-    expect(errorMessageOf(result)).toContain("3-round follow-up cap");
+    expect(errorMessageOf(result)).toContain("unanswered follow-ups");
     // The gate was never reached for the capped thread → the prose stub never ran.
     expect(prose.prompts.length).toBe(0);
   });
 
-  it("(batch mode) a capped thread is SILENTLY filtered → no_candidates, never an error", async () => {
+  it("(batch mode) an over-nudged silent thread is SILENTLY filtered → no_candidates, never an error", async () => {
     seedProfile();
     seedDealer({ dealerId: DEALER_TARGET, name: "Jim Click Hyundai", website: "https://jimclick.example.com" });
     const recent = Date.now() - 3 * 24 * 60 * 60 * 1000;
@@ -579,6 +611,37 @@ describe("negotiation_followup — the 3-round cap precondition", () => {
     if (result.status !== "success") return;
     expect((result.result as { outcome: string }).outcome).toBe("no_candidates");
     expect(prose.prompts.length).toBe(0);
+  });
+
+  it("a deep thread the dealer KEEPS answering is NOT capped — mutual negotiation runs on", async () => {
+    // The proven assertive drafting scenario, but with a DEEP thread: 3 prior
+    // outbound rounds AND a trailing dealer counter → 0 unanswered → eligible even
+    // though roundsSent (3) would have tripped the old flat 3-round cap.
+    seedProfile();
+    seedDealer({ dealerId: DEALER_TARGET, name: "Jim Click Hyundai", website: "https://jimclick.example.com" });
+    seedDealer({ dealerId: DEALER_COMPETE, name: COMPETING_NAME, website: "https://tucsonkia.example.com" });
+    const recent = Date.now() - 3 * 24 * 60 * 60 * 1000;
+    seedThread({
+      threadId: THREAD_TARGET,
+      dealerId: DEALER_TARGET,
+      inboundAtMs: recent,
+      outboundRounds: 3,
+      trailingInbound: true,
+    });
+    seedQuote({ dealerId: DEALER_TARGET, otdTotal: 33_900, itemized: true });
+    seedQuote({ dealerId: DEALER_COMPETE, otdTotal: 31_200, itemized: true });
+    seedContact({ contactId: "ct-jim-1", dealerId: DEALER_TARGET, email: "rep@jimclick.example.com", primary: true });
+
+    const prose = { prompts: [] as string[], bodies: [] as string[] };
+    __setNegotiationFollowupDepsForTests({
+      draftProse: draftProseStub(prose),
+      sendAndRecord: sendNeverCalled,
+    });
+
+    const { result } = await startRun("nf-cap-deep-1", { search_profile_id: PROFILE_ID });
+    // Drafted + suspended at the batch gate (NOT filtered as no_candidates).
+    expect(result.status).toBe("suspended");
+    expect(prose.prompts.length).toBe(1);
   });
 });
 

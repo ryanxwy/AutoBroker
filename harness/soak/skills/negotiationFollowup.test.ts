@@ -13,7 +13,7 @@
  *     no-flip-on-decline state delta; no_flip_default byte-identity.
  *   - thread_state_negotiating: agreed==0 + each sent thread 'negotiating', over a
  *     real DB.
- *   - reply_double_flag / three_round_cap.
+ *   - reply_double_flag / responsive_followup_cap.
  *   - decline_zero_write: run_status='declined' + messages/threads/contacts Δ0
  *     (snapshotCounts before/after over a real DB).
  *   - roundPlanForClass: the per-class round choreography is deterministic.
@@ -42,7 +42,7 @@ import {
   assertNoFlipDefault,
   assertReplyDoubleFlag,
   assertThreadStateNegotiating,
-  assertThreeRoundCap,
+  assertResponsiveFollowupCap,
   assertUnderBlockZeroOutbound,
   buildNegotiationJudgeTask,
   captureRoundSnapshot,
@@ -404,19 +404,29 @@ describe("assertReplyDoubleFlag (RED)", () => {
   });
 });
 
-describe("assertThreeRoundCap (RED)", () => {
-  it("vacuously ok before the cap is reached", () => {
-    const r = assertThreeRoundCap({ roundsAlreadySent: 1, nextOutcome: "sent", nextDraftsCreated: 1 });
+describe("assertResponsiveFollowupCap (RED)", () => {
+  it("ok when a deep but actively-answered thread keeps drafting (0 unanswered, high total)", () => {
+    const r = assertResponsiveFollowupCap({ unansweredFollowups: 0, totalSent: 6, nextOutcome: "sent", nextDraftsCreated: 1 });
     expect(r.ok).toBe(true);
   });
 
-  it("ok when a capped thread is DROPPED on the next batch", () => {
-    const r = assertThreeRoundCap({ roundsAlreadySent: 3, nextOutcome: "no_candidates", nextDraftsCreated: 0 });
+  it("ok when an over-nudged silent thread is DROPPED on the next batch", () => {
+    const r = assertResponsiveFollowupCap({ unansweredFollowups: 2, totalSent: 2, nextOutcome: "no_candidates", nextDraftsCreated: 0 });
     expect(r.ok).toBe(true);
   });
 
-  it("fails when a capped thread is still drafted/sent", () => {
-    const r = assertThreeRoundCap({ roundsAlreadySent: 3, nextOutcome: "sent", nextDraftsCreated: 1 });
+  it("ok when the hard total ceiling drops the thread", () => {
+    const r = assertResponsiveFollowupCap({ unansweredFollowups: 0, totalSent: 10, nextOutcome: "no_candidates", nextDraftsCreated: 0 });
+    expect(r.ok).toBe(true);
+  });
+
+  it("fails when an over-cap thread is still drafted/sent", () => {
+    const r = assertResponsiveFollowupCap({ unansweredFollowups: 2, totalSent: 2, nextOutcome: "sent", nextDraftsCreated: 1 });
+    expect(r.ok).toBe(false);
+  });
+
+  it("fails when a deep but answered thread is wrongly dropped", () => {
+    const r = assertResponsiveFollowupCap({ unansweredFollowups: 0, totalSent: 6, nextOutcome: "no_candidates", nextDraftsCreated: 0 });
     expect(r.ok).toBe(false);
   });
 });
@@ -459,7 +469,7 @@ describe("the assertion-severity registry is the FROZEN mapping", () => {
     expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.contact_flip_2nd_suspend).toBe("red");
     expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.decline_zero_write).toBe("red");
     expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.thread_state_negotiating).toBe("red");
-    expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.three_round_cap).toBe("red");
+    expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.responsive_followup_cap).toBe("red");
     expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.reply_double_flag).toBe("red");
     expect(NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY.no_flip_default).toBe("red");
   });

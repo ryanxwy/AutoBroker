@@ -61,7 +61,7 @@ export const NEGOTIATION_FOLLOWUP_ASSERTION_SEVERITY = {
   contact_flip_2nd_suspend: "red",
   no_flip_default: "red",
   thread_state_negotiating: "red",
-  three_round_cap: "red",
+  responsive_followup_cap: "red",
   reply_double_flag: "red",
   decline_zero_write: "red",
 } as const;
@@ -494,30 +494,36 @@ export function assertReplyDoubleFlag(replies: readonly ReplyFlagPair[]): Determ
 }
 
 /**
- * 3-ROUND CAP (RED): after MAX_FOLLOWUP_ROUNDS (3) sent rounds on a thread the next
- * /negotiation_followup batch DROPS it (roundsSent>=3, no draft, no_candidates).
- * The caller supplies the round-4 outcome + draftsCreated; a drop is
- * outcome='no_candidates' with 0 drafts. (Single-thread mode throws
- * ThreeRoundCapError — that branch is asserted by the workflow's own unit tests;
- * this soak assertion covers the batch DROP.)
+ * RESPONSIVE FOLLOW-UP CAP (RED): the cap throttles a SILENT dealer (too many
+ * consecutive UNANSWERED follow-ups, >= MAX_UNANSWERED_FOLLOWUPS=2) or the hard
+ * total backstop (>= MAX_TOTAL_FOLLOWUPS=10) — NOT a deep thread the dealer keeps
+ * answering. An over-cap thread is DROPPED on the next batch (no draft,
+ * no_candidates). The caller supplies the unanswered/total counts + the next
+ * outcome + draftsCreated; a drop is outcome='no_candidates' with 0 drafts.
+ * (Single-thread mode throws FollowupCapError — that branch is asserted by the
+ * workflow's own unit tests; this soak assertion covers the batch DROP and,
+ * crucially, that an actively-answered deep thread is NOT dropped.) Mirrors
+ * @autobroker/tools followupCapDecision; keep the thresholds in lock-step.
  */
-export function assertThreeRoundCap(args: {
-  roundsAlreadySent: number;
+export function assertResponsiveFollowupCap(args: {
+  unansweredFollowups: number;
+  totalSent: number;
   nextOutcome: string;
   nextDraftsCreated: number;
 }): DeterministicResult {
-  const capped = args.roundsAlreadySent >= 3;
+  const overCap = args.unansweredFollowups >= 2 || args.totalSent >= 10;
   const dropped = args.nextOutcome === "no_candidates" && args.nextDraftsCreated === 0;
-  // Only meaningful once the thread is at/over the cap; before that the assertion
-  // vacuously holds (the cap is not yet in play).
-  const ok = !capped || dropped;
+  const drafted = args.nextDraftsCreated > 0;
+  // Over the cap → must be dropped. Under the cap (incl. a deep answered thread)
+  // → must NOT be dropped as no_candidates (it stays an eligible candidate).
+  const ok = overCap ? dropped : !dropped || drafted;
   return {
-    assertionId: "three_round_cap",
+    assertionId: "responsive_followup_cap",
     ok,
     severity: "red",
-    expected: "a thread at the 3-round cap is DROPPED (no_candidates, 0 drafts) on the next batch",
-    observed: `roundsSent=${args.roundsAlreadySent} nextOutcome=${args.nextOutcome} drafts=${args.nextDraftsCreated}`,
-    ...(ok ? {} : { detail: "a capped thread was still drafted/sent (the 3-round cap did not fire)" }),
+    expected: "an over-cap (silent/over-nudged) thread is DROPPED; a deep but answered thread stays eligible",
+    observed: `unanswered=${args.unansweredFollowups} total=${args.totalSent} nextOutcome=${args.nextOutcome} drafts=${args.nextDraftsCreated}`,
+    ...(ok ? {} : { detail: "the responsive cap mis-fired (dropped an answered thread, or kept an over-cap one)" }),
   };
 }
 

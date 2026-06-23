@@ -2,7 +2,7 @@
  * negotiation_followup contracts — the typed input/output, the typed STOP
  * vocabulary, the generalized profile-STOP classifier, the two suspend payloads
  * (batch_review ① reused + the contact-flip approval ② re-confirm), the typed
- * tool-precondition errors (3-round cap / 7-day silence), and the PROSE-draft
+ * tool-precondition errors (responsive follow-up cap / 7-day silence), and the PROSE-draft
  * prompt builder with the red-line fence. Skill-local, single-use (only the
  * workflow file and its tests import them).
  *
@@ -14,8 +14,8 @@
  *
  * TONE IS PICKED IN CODE. classifyQuoteSituation (a tools-layer pure function)
  * chooses the register from the numbers; the LLM only writes the chosen tone's
- * prose. The 3-round cap + 7-day silence are TOOL PRECONDITIONS (pre-filter in
- * batch mode, typed throw in single-thread mode) — never prose.
+ * prose. The responsive follow-up cap + 7-day silence are TOOL PRECONDITIONS
+ * (pre-filter in batch mode, typed throw in single-thread mode) — never prose.
  *
  * Dependency wall: imports zod + the sibling skill's batch-review schemas only.
  */
@@ -101,25 +101,37 @@ export function profileStopCode(activeCount: number): NegotiationFollowupStopCod
 // TOOL PRECONDITION errors — thrown ONLY in single-thread (thread_id) mode
 // ---------------------------------------------------------------------------
 
+/** Why a named thread is over the responsive-aware follow-up cap. */
+export type FollowupCapReason = "unanswered" | "total";
+
 /**
- * Thrown when the user explicitly NAMED a thread that has already hit the
- * follow-up round cap (3). These are PRECONDITIONS, not fatal in batch mode: the
- * target selection silently DROPS a capped thread before the draft step in batch
- * mode, so the gate never sees it; only a single-thread request for an impossible
- * action throws.
+ * Thrown when the user explicitly NAMED a thread that is over the responsive-aware
+ * follow-up cap — either too many consecutive UNANSWERED follow-ups (a silent
+ * dealer; `reason: "unanswered"`) or the hard total backstop (`reason: "total"`).
+ * Supersedes the old flat 3-round cap (owner-directed, 2026-06-22): a mutual
+ * negotiation where the dealer keeps countering is NOT throttled. These are
+ * PRECONDITIONS, not fatal in batch mode: target selection silently DROPS an
+ * over-cap thread before the draft step, so the gate never sees it; only a
+ * single-thread request for an impossible action throws.
  */
-export class ThreeRoundCapError extends Error {
+export class FollowupCapError extends Error {
   readonly threadId: string;
-  constructor(threadId: string) {
-    super(`thread ${threadId} has hit the 3-round follow-up cap`);
-    this.name = "ThreeRoundCapError";
+  readonly reason: FollowupCapReason;
+  constructor(threadId: string, reason: FollowupCapReason) {
+    super(
+      reason === "total"
+        ? `thread ${threadId} has hit the follow-up total ceiling`
+        : `thread ${threadId} has unanswered follow-ups outstanding (silent dealer)`,
+    );
+    this.name = "FollowupCapError";
     this.threadId = threadId;
+    this.reason = reason;
   }
 }
 
 /**
  * Thrown when the user explicitly NAMED a thread the dealer has gone silent on
- * past the follow-up window (a cold thread). Like ThreeRoundCapError, this is a
+ * past the follow-up window (a cold thread). Like FollowupCapError, this is a
  * silent batch-mode filter and a typed throw only in single-thread mode.
  */
 export class SevenDaySilenceError extends Error {

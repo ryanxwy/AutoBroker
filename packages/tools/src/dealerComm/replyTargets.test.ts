@@ -11,7 +11,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDraftContext,
+  followupCapDecision,
   gateDecisionForTarget,
+  MAX_TOTAL_FOLLOWUPS,
+  MAX_UNANSWERED_FOLLOWUPS,
   resolveReplyTarget,
   reuseThreadIdForReply,
   selectNextReplyTargets,
@@ -55,6 +58,34 @@ describe("gateDecisionForTarget", () => {
 
   it("skip precedence: a cold inbound skips even if we also recently sent", () => {
     expect(gateDecisionForTarget(days(20), hours(1), { nowMs: now })).toBe("skip");
+  });
+});
+
+describe("followupCapDecision (responsive-aware cap)", () => {
+  it("allows a thread the dealer keeps answering to run deep (0 unanswered → ok at any round)", () => {
+    // A mutual negotiation: every buyer turn responds to a fresh dealer counter,
+    // so unanswered is 0 each time → never throttled, even at round 7.
+    expect(followupCapDecision(0, 0)).toBe("ok");
+    expect(followupCapDecision(0, 5)).toBe("ok");
+    expect(followupCapDecision(0, MAX_TOTAL_FOLLOWUPS - 1)).toBe("ok");
+  });
+
+  it("caps consecutive UNANSWERED follow-ups at a silent dealer", () => {
+    // 1 unanswered nudge is allowed; a 2nd (== MAX_UNANSWERED_FOLLOWUPS) is capped.
+    expect(followupCapDecision(MAX_UNANSWERED_FOLLOWUPS - 1, 4)).toBe("ok");
+    expect(followupCapDecision(MAX_UNANSWERED_FOLLOWUPS, 4)).toBe("unanswered_cap");
+    expect(followupCapDecision(MAX_UNANSWERED_FOLLOWUPS + 1, 9)).toBe("unanswered_cap");
+  });
+
+  it("enforces the hard total ceiling as a runaway backstop, regardless of responsiveness", () => {
+    // total_cap takes precedence even when unanswered is 0 (dealer still active).
+    expect(followupCapDecision(0, MAX_TOTAL_FOLLOWUPS)).toBe("total_cap");
+    expect(followupCapDecision(0, MAX_TOTAL_FOLLOWUPS + 3)).toBe("total_cap");
+  });
+
+  it("honors explicit overrides", () => {
+    expect(followupCapDecision(1, 1, { maxUnanswered: 1 })).toBe("unanswered_cap");
+    expect(followupCapDecision(0, 2, { maxTotal: 2 })).toBe("total_cap");
   });
 });
 

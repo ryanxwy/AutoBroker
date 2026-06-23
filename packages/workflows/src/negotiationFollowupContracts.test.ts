@@ -22,7 +22,7 @@ import {
   NegotiationFollowupStopError,
   profileStopCode,
   SevenDaySilenceError,
-  ThreeRoundCapError,
+  FollowupCapError,
 } from "./negotiationFollowupContracts.js";
 
 describe("NegotiationFollowupInputSchema", () => {
@@ -92,11 +92,16 @@ describe("profileStopCode", () => {
 });
 
 describe("tool-precondition errors", () => {
-  it("ThreeRoundCapError carries the thread id", () => {
-    const e = new ThreeRoundCapError("t-9");
-    expect(e.name).toBe("ThreeRoundCapError");
-    expect(e.threadId).toBe("t-9");
-    expect(e.message).toContain("3-round");
+  it("FollowupCapError carries the thread id and the cap reason", () => {
+    const u = new FollowupCapError("t-9", "unanswered");
+    expect(u.name).toBe("FollowupCapError");
+    expect(u.threadId).toBe("t-9");
+    expect(u.reason).toBe("unanswered");
+    expect(u.message).toContain("unanswered");
+
+    const t = new FollowupCapError("t-9", "total");
+    expect(t.reason).toBe("total");
+    expect(t.message).toContain("ceiling");
   });
 
   it("SevenDaySilenceError carries the thread id", () => {

@@ -184,6 +184,9 @@ describe("listFollowupCandidateThreads", () => {
     expect(r.lastInboundAtMs).toBe(NOW - 1000);
     expect(r.lastOutboundAtMs).toBe(NOW - 90000);
     expect(r.roundsSent).toBe(1);
+    // The lone outbound was inserted (rowid) BEFORE both inbound replies, so the
+    // dealer has answered it: zero unanswered follow-ups outstanding.
+    expect(r.unansweredFollowups).toBe(0);
     expect(r.state).toBe("replied");
   });
 
@@ -194,6 +197,37 @@ describe("listFollowupCandidateThreads", () => {
     expect(rows[0]!.lastInboundAtMs).toBeNull();
     expect(rows[0]!.lastOutboundAtMs).toBeNull();
     expect(rows[0]!.roundsSent).toBe(0);
+    expect(rows[0]!.unansweredFollowups).toBe(0);
+  });
+
+  it("counts unanswered follow-ups by insertion order (rowid) and resets on a dealer reply", () => {
+    const c = db.$client;
+    c.prepare("INSERT INTO threads (thread_id, dealer_id, subject, state, search_profile_id) VALUES ('t-cap', ?, 'Re: Tucson', 'replied', ?)").run(DEALER, PROFILE);
+    // Insertion order IS the conversational order: outbound rows carry no
+    // received_at in production, so the count keys off rowid, not timestamps.
+    const ins = (id: string, dir: string) =>
+      c.prepare(
+        "INSERT INTO messages (message_id, thread_id, direction, search_profile_id, quote_extraction_status) VALUES (?, 't-cap', ?, ?, 'pending')",
+      ).run(id, dir, PROFILE);
+    ins("m-in0", "inbound"); // dealer's initial quote
+    ins("m-out1", "outbound"); // buyer follow-up #1 (unanswered)
+    ins("m-out2", "outbound"); // buyer follow-up #2 (still unanswered)
+    let r = listFollowupCandidateThreads(db, PROFILE).find((x) => x.threadId === "t-cap")!;
+    expect(r.roundsSent).toBe(2);
+    expect(r.unansweredFollowups).toBe(2); // both outbounds are past the latest inbound rowid
+
+    ins("m-in1", "inbound"); // dealer finally counters → resets the unanswered count
+    r = listFollowupCandidateThreads(db, PROFILE).find((x) => x.threadId === "t-cap")!;
+    expect(r.roundsSent).toBe(2); // total is unchanged
+    expect(r.unansweredFollowups).toBe(0); // no outbound is past the new latest inbound
+  });
+
+  it("counts every outbound as unanswered when the dealer has never replied", () => {
+    const c = db.$client;
+    c.prepare("INSERT INTO threads (thread_id, dealer_id, state, search_profile_id) VALUES ('t-noreply', ?, 'replied', ?)").run(DEALER, PROFILE);
+    c.prepare("INSERT INTO messages (message_id, thread_id, direction, search_profile_id, quote_extraction_status) VALUES ('m-o1', 't-noreply', 'outbound', ?, 'pending')").run(PROFILE);
+    const r = listFollowupCandidateThreads(db, PROFILE).find((x) => x.threadId === "t-noreply")!;
+    expect(r.unansweredFollowups).toBe(1); // COALESCE(...,0) → all outbound count
   });
 });
 

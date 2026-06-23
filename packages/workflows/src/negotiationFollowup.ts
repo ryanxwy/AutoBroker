@@ -18,7 +18,7 @@
  *                      by vehicle). A supplied pin must resolve `pinned`.
  *   1 selectTargets — listFollowupCandidateThreads → the PURE selectNextReplyTargets
  *                      ranker (latest-inbound recency, exclude agreed/closed,
- *                      tie-break thread_id). The 3-round cap + 7-day silence are
+ *                      tie-break thread_id). The responsive follow-up cap + 7-day silence are
  *                      TOOL PRECONDITIONS: a batch DROPS a capped/cold thread
  *                      BEFORE the draft (the gate never sees it); a single-thread
  *                      request for an impossible target THROWS the typed error. No
@@ -81,6 +81,7 @@ import {
   setPrimaryReplyTarget as setPrimaryReplyTargetImpl,
   subjectForFollowup,
   gateDecisionForTarget,
+  followupCapDecision,
   type Approver,
   type QuoteTone,
   type SendRecordTarget,
@@ -98,7 +99,7 @@ import {
   NegotiationFollowupStopError,
   profileStopCode,
   SevenDaySilenceError,
-  ThreeRoundCapError,
+  FollowupCapError,
   type FollowupTone,
 } from "./negotiationFollowupContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
@@ -122,10 +123,6 @@ const APPROVED: Approver = { async decide() { return true; } };
 // ---------------------------------------------------------------------------
 // follow-up gating constants (PRECONDITIONS, in code, never in a prompt)
 // ---------------------------------------------------------------------------
-
-/** The maximum number of follow-ups we send on one thread. A thread with this
- *  many (or more) outbound rounds is dropped in batch mode / throws in named mode. */
-const MAX_FOLLOWUP_ROUNDS = 3;
 
 /** The cold-thread window: a dealer silent past this many days is dropped /
  *  throws. The X0 timing gate defaults the max-gap to 14d; this skill's success
@@ -468,8 +465,9 @@ const selectTargetsStep = createStep({
           `Thread ${state.threadIdMode} is not a follow-up candidate for this search.`,
         );
       }
-      if (cand.roundsSent >= MAX_FOLLOWUP_ROUNDS) {
-        throw new ThreeRoundCapError(cand.threadId);
+      const cap = followupCapDecision(cand.unansweredFollowups, cand.roundsSent);
+      if (cap !== "ok") {
+        throw new FollowupCapError(cand.threadId, cap === "total_cap" ? "total" : "unanswered");
       }
       const gate = gateDecisionForTarget(cand.lastInboundAtMs, cand.lastOutboundAtMs, {
         maxGapDays: SILENCE_WINDOW_DAYS,
@@ -488,10 +486,12 @@ const selectTargetsStep = createStep({
     }
 
     // BATCH MODE: the cap + silence are SILENT pre-filters (drop, never throw). Keep
-    // only ranked threads that are under the round cap and `ready` (not wait/skip).
+    // only ranked threads under the responsive follow-up cap and `ready` (not
+    // wait/skip). The cap drops a silent dealer's over-nudged thread but keeps an
+    // actively-countering thread eligible no matter how deep the negotiation runs.
     const eligible = ranked
       .map((r) => byThreadId.get(r.threadId)!)
-      .filter((c) => c.roundsSent < MAX_FOLLOWUP_ROUNDS)
+      .filter((c) => followupCapDecision(c.unansweredFollowups, c.roundsSent) === "ok")
       .filter(
         (c) =>
           gateDecisionForTarget(c.lastInboundAtMs, c.lastOutboundAtMs, {

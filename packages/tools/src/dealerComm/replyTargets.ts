@@ -88,6 +88,51 @@ export function gateDecisionForTarget(
 }
 
 // ---------------------------------------------------------------------------
+// the responsive-aware follow-up cap
+// ---------------------------------------------------------------------------
+
+/**
+ * Max CONSECUTIVE UNANSWERED buyer follow-ups before a silent thread is held off
+ * (anti-pester). Two = one substantive reply plus one nudge at a dealer who has
+ * gone quiet; a third unanswered poke is suppressed. A dealer reply resets the
+ * unanswered count to 0, so this never throttles an actively-countering thread.
+ */
+export const MAX_UNANSWERED_FOLLOWUPS = 2;
+
+/**
+ * Hard backstop ceiling on TOTAL follow-ups ever sent on one thread, regardless
+ * of how responsive the dealer is. Well above a realistic deep email negotiation
+ * (~4-8 buyer turns); a runaway-loop guard, not the normal limiter.
+ */
+export const MAX_TOTAL_FOLLOWUPS = 10;
+
+/** Why a follow-up was (not) allowed on a thread. */
+export type FollowupCapDecision = "ok" | "unanswered_cap" | "total_cap";
+
+/**
+ * The responsive-aware follow-up cap. Supersedes the old flat 3-round cap
+ * (owner-directed, 2026-06-22): a real OTD negotiation is a MUTUAL back-and-forth,
+ * so a buyer responding to a dealer who keeps countering is normal — not pestering.
+ * Only consecutive UNANSWERED follow-ups (the dealer has not replied since our last
+ * send) are throttled; a dealer reply resets that count and the thread runs deep.
+ * The total ceiling is a runaway backstop. Pure: takes already-fetched counts.
+ *   - total_cap     — total follow-ups hit the hard backstop (checked first).
+ *   - unanswered_cap — too many consecutive un-replied-to follow-ups (silent dealer).
+ *   - ok            — under both limits; send.
+ */
+export function followupCapDecision(
+  unansweredFollowups: number,
+  totalFollowups: number,
+  opts: { maxUnanswered?: number; maxTotal?: number } = {},
+): FollowupCapDecision {
+  const maxUnanswered = opts.maxUnanswered ?? MAX_UNANSWERED_FOLLOWUPS;
+  const maxTotal = opts.maxTotal ?? MAX_TOTAL_FOLLOWUPS;
+  if (totalFollowups >= maxTotal) return "total_cap";
+  if (unansweredFollowups >= maxUnanswered) return "unanswered_cap";
+  return "ok";
+}
+
+// ---------------------------------------------------------------------------
 // the 4-level reply-target ladder
 // ---------------------------------------------------------------------------
 

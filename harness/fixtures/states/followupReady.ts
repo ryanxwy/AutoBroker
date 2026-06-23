@@ -21,7 +21,7 @@
  *     message is an INBOUND dealer reply with a gmail_message_id (the reply
  *     double-flag anchor) and a recent received_at (so gateDecisionForTarget
  *     returns `ready` — NOT `skip`/`wait`). NO prior outbound rows (roundsSent=0,
- *     under the 3-round cap; no recent outbound to trigger `wait`).
+ *     0 unanswered → under the responsive follow-up cap; no recent outbound to trigger `wait`).
  *   - 1 dealer_quotes row per dealer (open — quote_expires_at NULL), itemized
  *     (a real selling_price + itemized fee columns) so the current quote is not
  *     read as estimate-only (estimate-only → `conservative`). The target's
