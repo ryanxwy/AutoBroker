@@ -145,7 +145,15 @@ function injectDealerReplies(profileId, replies) {
     const threadIds = [];
     for (const reply of replies) {
       const slug = `${profileId}-${randomUUID().slice(0, 8)}`;
-      const dealerId = `live-dealer-${slug}`;
+      // B2 SHARED-DEALER MODE: if the caller supplies an explicit `dealer_key`, that
+      // string is used as the dealer_id directly instead of the per-profile-unique
+      // slug. Calling inject_replies for a SECOND profile with the SAME dealer_key
+      // reuses the existing dealers row (ON CONFLICT DO UPDATE) and inserts a fresh
+      // profile_dealers candidate row for that profile — so both profiles share one
+      // rooftop. Omitting dealer_key preserves the old per-profile-unique behavior.
+      const dealerId = typeof reply.dealer_key === "string" && reply.dealer_key.length > 0
+        ? `live-dealer-${reply.dealer_key}`
+        : `live-dealer-${slug}`;
       const threadId = `live-thread-${slug}`;
       const messageId = `live-msg-${slug}`;
       const gmailMessageId = `live-gmsg-${slug}`;
@@ -463,6 +471,9 @@ built.app.post("/__e2e/inject_replies", async (req, reply) => {
     subject: String(r.subject ?? "Re: your inquiry"),
     body: String(r.body ?? ""),
     attachment: r.attachment ?? null,
+    // B2: pass through dealer_key when present so injectDealerReplies uses a
+    // shared dealer_id across profiles instead of a per-profile-unique slug.
+    ...(typeof r.dealer_key === "string" && r.dealer_key.length > 0 ? { dealer_key: r.dealer_key } : {}),
     ...(typeof r.ageHoursAgo === "number" ? { ageHoursAgo: r.ageHoursAgo } : {}),
     ...(typeof r.delayMinutes === "number" ? { delayMinutes: r.delayMinutes } : {}),
   }));
