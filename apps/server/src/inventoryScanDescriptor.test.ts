@@ -18,6 +18,11 @@ import {
   inventorySiteScanDescriptor,
 } from "./skillRuns.js";
 import { RunPubSub } from "./runPubSub.js";
+import { useFreshProductDb } from "./testProductDb.js";
+
+// SkillRunService.start()/terminal teardown writes the activation registry
+// (pipeline_state) on the product DB — give each case a fresh, migrated DB.
+useFreshProductDb();
 
 afterEach(() => {
   resetRuntimeGlueForTests();

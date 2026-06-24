@@ -18,6 +18,11 @@ import { resetRuntimeGlueForTests } from "@autobroker/workflows";
 
 import { SkillRunService, FormDecisionError, RUN_DESCRIPTORS } from "./skillRuns.js";
 import { RunPubSub } from "./runPubSub.js";
+import { useFreshProductDb } from "./testProductDb.js";
+
+// SkillRunService.start()/terminal teardown writes the activation registry
+// (pipeline_state) on the product DB — give each case a fresh, migrated DB.
+useFreshProductDb();
 
 // startRunGuarded keeps a module-global ownership set; reset it between cases so
 // a prior test's runId never leaks into this one's dup-guard.
