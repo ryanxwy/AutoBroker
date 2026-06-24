@@ -60,3 +60,17 @@ export {
   type WritePipelineCompletionArgs,
   type WritePipelineCompletionResult,
 } from "./auditLogWriter.js";
+
+export {
+  COLD_DORMANCY_DAYS,
+  lastProgressKey,
+  readLastProgressAt,
+  writeLastProgressAt,
+} from "./progressWatermark.js";
+
+export {
+  profileHealth,
+  type ProfileHealth,
+  type ProfileHealthLevel,
+  type ProfileHealthOpts,
+} from "./profileHealth.js";
