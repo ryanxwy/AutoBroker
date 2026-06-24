@@ -143,7 +143,14 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
 2. **Generate ≤N dealer counters** (Opus) with a realistic floor (keep ≥$150-400
    gross), grinding the OTD DOWN with diminishing concessions. For the front-runners,
    have a **higher-title MANAGER take over at round 2** (escalation) from a NEW
-   email. Match the corpus register.
+   email. Match the corpus register. **But do NOT make every thread converge to a
+   number — sustained resistance is mainstream (`dealer.md` "Sustained resistance"):
+   keep ~1-2 dealers per field as COME-ONSITE-ONLY that never email an OTD even at
+   round 4 (every counter pushes the appointment / reverse-induces "tell me your
+   timeline + financing first"), and let ~1-2 GHOST mid-thread (replied once, then
+   silent on the lowball). Only the genuine front-runners email a real itemized OTD,
+   late and grudgingly.** A run where most dealers eventually quote cleanly is the
+   over-cooperation failure the realism research flags as the #1 unrealism.
 3. **Inject each counter** via `/__e2e/inject_reply_to_thread {threadId, from,
    subject, body, dealerName}` (threadId from round-0). For an **escalation**,
    FIRST `/__e2e/inject_contact {threadId, email:managerEmail, displayName, role,
@@ -175,6 +182,7 @@ receipt UI via the Replies tab DOM and `/__e2e/audit`. Decline = Δ0 on `threads
 | `inject_reply_to_thread` (+contact) | `messages` +1; on escalation a new `dealer_contacts` row, `is_primary_reply_target=1` |
 | **the responsive cap (the proof)** | per-thread `COUNT(outbound)` vs unanswered — **active threads reach ≥4 outbound** (past the old flat 3); **silent threads freeze at 2 outbound / unanswered=2 and DROP from the next batch** (12→6 in the live run) |
 | `reply_extract` | `dealer_quotes` grows; revised OTDs grind to the floors; **#1244 CLEAN** on the largest extraction |
+| **come-onsite / ghost (realistic no-OTD)** | the pipeline does NOT fail when most dealers never quote: each come-onsite-only / ghost thread yields **0 `dealer_quotes` rows (`no_quote`, no error — never a fabricated number)**; the data-quality verdict's `nullEscape` / `gated` escape PASSES a realistic low quote-rate; a profile's best OTD may come from only **1-2** dealers, or be legitimately **absent** (a valid terminal — "go visit / keep waiting", not a bug). Distinguish this from the real FAIL: a dealer that DID email a number whose OTD the extractor dropped (`n>0 AND otd_present==0`). |
 | closeout decline | `/__e2e/rows?table=threads` Δ0 |
 
 The cap proof SQL (run against `<dataDir>/autobroker.db`, read-only):

@@ -41,6 +41,38 @@ behavior** (book-a-visit, qualify-back, "let me check with my manager") and save
 itemized numbers for a later round. A reply that is always a tidy quote is the
 single most common unrealism in dealer simulation.
 
+## Sustained resistance is the MAINSTREAM — not just the first touch
+
+The #1 dealer-sim unrealism is treating "no price" as a first-touch-only phase that
+melts into a clean OTD once the buyer pushes. In reality the resistance **persists
+across the whole thread**, and a real cross-shopper often ends a search with an OTD
+from only a FEW of the dealers they emailed — sometimes none. Honor the role you are
+assigned (the orchestrator seeds a realistic mix; play yours fully, do NOT all
+converge on "eventually quotes"):
+
+- **Come-onsite-only (a large minority): NEVER put an out-the-door number in
+  email.** Every reply deflects to an in-person visit — "I can't give an accurate
+  OTD without you here," "my manager only approves real numbers in person,"
+  "come in and I'll beat any written offer." Even at round 4 with a buyer saying
+  "ready to buy today," you hold the line and push the appointment. A clean OTD by
+  email is exactly what these dealers refuse.
+- **Reverse-inducement before any number.** Demand buyer info first — "to get you
+  our best price I need: 1) your timeline, 2) are you financing with us, 3) any
+  trade." Treat a budget/monthly-payment question as a price-discovery tactic
+  (content only — see Chaos escalation / inv #9).
+- **Mid-thread ghosting.** Replying once does NOT commit you to replying again. On a
+  lowball or obvious competitor-shopping, go **silent for the rest of the thread**
+  (~4% never respond at all; many more drop out after 1-2 exchanges). A dealer who
+  answers every round is itself unrealistic.
+- **Lump / payment-pivot / fee-buried numbers** when you DO give a figure: a bare
+  "$XX,XXX out the door" with no breakdown, or "$429/mo" with no OTD, or an OTD that
+  hides add-ons until itemized — not always a clean line-item quote.
+
+So across a field of dealers a realistic outcome is: a chunk come-onsite-only, a
+chunk ghost, a chunk reverse-induce, and only the genuine front-runners ever email a
+real itemized OTD — and they give it late, grudgingly, with manager sign-off. The
+buyer's pipeline must work fine when most dealers never quote.
+
 ## Send safety
 
 The multi-round mode is the only mode where an outbound gate is *approved*, so a

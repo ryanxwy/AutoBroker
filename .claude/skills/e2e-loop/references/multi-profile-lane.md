@@ -93,6 +93,18 @@ multi-titled-contact escalation. Re-extract after each round → revised
 `dealer_quotes`. The threads of different profiles must be alive at the same time
 (interleave the inject calls), so the concurrency machinery is genuinely exercised.
 
+**Sustained dealer resistance applies PER profile (realism, not just round 0).**
+Per `dealer-brain.md`, keep a realistic share of each profile's dealers
+**come-onsite-only** (never an email OTD, even at round 4) or **ghosting** — so a
+profile can legitimately finish with an OTD from only 1-2 dealers, or **none**. The
+portfolio must handle that gracefully, not assume every profile yields a clean best
+deal: a profile whose dealers all came-onsite / went silent is a valid **`ghosted` /
+`cold`** outcome the real `profileHealth` derives (`all_threads_capped`), surfaced in
+the board's COUNTS header — NOT a pipeline failure, and NOT a reason to fabricate a
+quote. The portfolio "best OTD per profile" projection must tolerate null (no email
+quote) and the data-quality verdict must PASS a realistic low quote-rate
+(`no_quote` / `nullEscape`), reserving FAIL for a dropped-but-present OTD.
+
 ---
 
 ## ASSERT — shared-dealer collision
