@@ -48,6 +48,37 @@ describe("QuoteCompare — cash bucket preserved", () => {
   });
 });
 
+describe("QuoteCompare — cross-state tax note", () => {
+  it("shows the home-state tax-normalization note when a home state is known", () => {
+    const data: QuoteCompareResult = {
+      financingPreference: "finance",
+      finance: [compareRow()],
+      lease: [],
+      totalRanked: 1,
+      homeState: "CA",
+      homeStateTaxRate: 0.0725,
+    };
+    const { container } = render(<QuoteCompare quotes={ok(data)} />);
+    const note = container.querySelector('[data-testid="quote-compare-tax-note"]');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain("CA");
+    expect(note!.textContent).toContain("7.25%");
+    // Honest framing: crossing state lines does NOT win on tax.
+    expect(note!.textContent?.toLowerCase()).toContain("not tax");
+  });
+
+  it("omits the note when no home state is known", () => {
+    const data: QuoteCompareResult = {
+      financingPreference: "finance",
+      finance: [compareRow()],
+      lease: [],
+      totalRanked: 1,
+    };
+    const { container } = render(<QuoteCompare quotes={ok(data)} />);
+    expect(container.querySelector('[data-testid="quote-compare-tax-note"]')).toBeNull();
+  });
+});
+
 describe("QuoteCompare — clickable rows", () => {
   it("calls onOpenCompare with the row's quote_id when a compare row is clicked", () => {
     const onOpenCompare = vi.fn<(quoteId: string) => void>();

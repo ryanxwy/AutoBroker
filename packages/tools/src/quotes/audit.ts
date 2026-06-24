@@ -12,7 +12,7 @@
 
 import type { AuditFinding } from "@autobroker/core";
 
-import { STATE_DOC_FEE_CAP, validateOfferMath } from "../calc.js";
+import { DOC_FEE_HIGH_REFERENCE_USD, STATE_DOC_FEE_CAP, validateOfferMath } from "../calc.js";
 
 // --------------------------------------------------------------------------- //
 // Local row shapes (float-dollar projections; not the core Zod schema)        //
@@ -98,6 +98,7 @@ const BLOCK_CODES: ReadonlySet<string> = new Set(["UNSAFE_SALVAGE", "UNSAFE_RECA
 const WARN_CODES: ReadonlySet<string> = new Set([
   "MATH_SANITY",
   "DOC_FEE_CAP",
+  "DOC_FEE_UNCAPPED",
   "APR_MARKUP",
   "MF_MARKUP",
   "DEALER_FEE_OUTLIER",
@@ -256,13 +257,28 @@ function checkDocFeeCap(quote: AuditQuote, profileState: string | null): AuditFi
   if (quote.doc_fee === null || !profileState) return null;
   const stateKey = profileState.toUpperCase();
   const cap = STATE_DOC_FEE_CAP[stateKey];
-  if (cap === null || cap === undefined) return null;
-  if (quote.doc_fee <= cap) return null;
-  return finding(
-    "DOC_FEE_CAP",
-    `Doc fee $${money2(quote.doc_fee)} exceeds ${stateKey} statutory cap of $${money2(cap)}.`,
-    `Ask dealer to bring doc fee within the ${stateKey} cap of $${money2(cap)}.`,
-  );
+
+  // Statutorily capped state: flag a fee over the cap (a likely overcharge).
+  if (typeof cap === "number") {
+    if (quote.doc_fee <= cap) return null;
+    return finding(
+      "DOC_FEE_CAP",
+      `Doc fee $${money2(quote.doc_fee)} exceeds ${stateKey} statutory cap of $${money2(cap)}.`,
+      `Ask dealer to bring doc fee within the ${stateKey} cap of $${money2(cap)}.`,
+    );
+  }
+
+  // Explicitly uncapped state (cap === null): no statute to cite, but a high doc
+  // fee is still a negotiation target. An ABSENT key (cap === undefined) means
+  // "unknown state" — stay silent.
+  if (cap === null && quote.doc_fee > DOC_FEE_HIGH_REFERENCE_USD) {
+    return finding(
+      "DOC_FEE_UNCAPPED",
+      `Doc fee $${money2(quote.doc_fee)} is high — ${stateKey} has no statutory doc-fee cap, so it is set by the dealer.`,
+      `Ask dealer to reduce the $${money2(quote.doc_fee)} doc fee; ${stateKey} doesn't cap it, so it's negotiable.`,
+    );
+  }
+  return null;
 }
 
 function checkAprMarkup(quote: AuditQuote, peers: readonly AuditPeer[]): AuditFinding | null {

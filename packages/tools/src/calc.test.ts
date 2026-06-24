@@ -12,23 +12,35 @@
 
 import { describe, expect, it } from "vitest";
 
-import { STATE_DOC_FEE_CAP, validateOfferMath } from "./calc.js";
+import { DOC_FEE_HIGH_REFERENCE_USD, STATE_DOC_FEE_CAP, validateOfferMath } from "./calc.js";
 
 describe("STATE_DOC_FEE_CAP", () => {
-  it("carries the full ported table (capped + uncapped states)", () => {
-    expect(STATE_DOC_FEE_CAP).toEqual({
-      CA: 85,
-      NY: 175,
-      WA: 200,
-      OR: null,
-      TX: null,
-      FL: null,
-    });
+  it("preserves the original capped + uncapped entries (no regression)", () => {
+    expect(STATE_DOC_FEE_CAP["CA"]).toBe(85);
+    expect(STATE_DOC_FEE_CAP["NY"]).toBe(175);
+    expect(STATE_DOC_FEE_CAP["WA"]).toBe(200);
+    expect(STATE_DOC_FEE_CAP["OR"]).toBeNull();
+    expect(STATE_DOC_FEE_CAP["TX"]).toBeNull();
+    expect(STATE_DOC_FEE_CAP["FL"]).toBeNull();
   });
 
-  it("distinguishes an uncapped state (null) from an absent state (undefined)", () => {
+  it("is extended beyond CA/NY/WA with maintained caps", () => {
+    // Data-driven: the table carries more than the original three capped states.
+    const cappedStates = Object.entries(STATE_DOC_FEE_CAP).filter(
+      ([, cap]) => typeof cap === "number",
+    );
+    expect(cappedStates.length).toBeGreaterThan(3);
+    expect(STATE_DOC_FEE_CAP["MN"]).toBe(125);
+  });
+
+  it("distinguishes capped (number) / uncapped (null) / absent (undefined)", () => {
+    expect(typeof STATE_DOC_FEE_CAP["CA"]).toBe("number");
     expect(STATE_DOC_FEE_CAP["OR"]).toBeNull();
     expect(STATE_DOC_FEE_CAP["ZZ"]).toBeUndefined();
+  });
+
+  it("exposes a positive high-doc-fee reference for uncapped states", () => {
+    expect(DOC_FEE_HIGH_REFERENCE_USD).toBeGreaterThan(0);
   });
 });
 

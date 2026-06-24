@@ -725,6 +725,7 @@ export {
   validateOfferMath,
   OFFER_MATH_TOLERANCE_USD,
   STATE_DOC_FEE_CAP,
+  DOC_FEE_HIGH_REFERENCE_USD,
   type OfferMathInput,
   type MathCheck,
   type MathStatus,
@@ -771,8 +772,22 @@ export { flagCodesFromJson } from "./quotes/flags.js";
 export {
   rankQuotesForProfile,
   type QuoteRanking,
+  type OtdAttributionRow,
   type CompareResult,
 } from "./quotes/compare.js";
+// Pure cross-state OTD math — home-state tax normalization (sales/use tax follows
+// the buyer's registration state) + OTD-delta attribution. quote_compare consumes
+// both; exported for reuse + direct unit cover.
+export {
+  STATE_SALES_TAX_RATE,
+  homeStateTaxRate,
+  normalizeQuoteTax,
+  attributeOtdDelta,
+  type TaxNormalizationInput,
+  type TaxNormalization,
+  type OtdComponents,
+  type OtdAttribution,
+} from "./quotes/crossState.js";
 
 // Pure validators (post-validation + safety rules).
 export {
