@@ -337,14 +337,41 @@ export async function beginRunGuarded<TInput = unknown>(
   workflow: Workflow,
   args: StartRunGuardedArgs<TInput>,
 ): Promise<BegunRun> {
-  const existing = await workflow.getWorkflowRunById(args.runId);
-  if (existing !== null) {
-    throw new DuplicateRunIdError(workflow.id, args.runId, existing.status);
+  // SYNCHRONOUS reservation closes the in-process TOCTOU. The check (has) and
+  // the claim (add) run with NO await between them, so under the single-Node
+  // event loop two CONCURRENT same-runId callers cannot both pass: the first
+  // reserves; any racing caller sees the reservation and refuses loud. This
+  // turns the prior "sequential re-submit only" guard into an airtight
+  // in-process one (a cross-process guard would still need a storage-level
+  // unique constraint on Mastra's own table — out of scope, single-process).
+  if (ownedRunIds.has(args.runId)) {
+    throw new DuplicateRunIdError(workflow.id, args.runId, "running");
   }
-
-  // Register ownership BEFORE start: the run is live in-process for the whole
-  // drive window, and recoverOnBoot must never classify it as stale.
   ownedRunIds.add(args.runId);
-  const run = await workflow.createRun({ runId: args.runId });
-  return { runId: args.runId, started: run.start({ inputData: args.inputData }) };
+  try {
+    const existing = await workflow.getWorkflowRunById(args.runId);
+    if (existing !== null) {
+      throw new DuplicateRunIdError(workflow.id, args.runId, existing.status);
+    }
+    const run = await workflow.createRun({ runId: args.runId });
+    return { runId: args.runId, started: run.start({ inputData: args.inputData }) };
+  } catch (err) {
+    // Roll back the reservation if we never actually took ownership of a live
+    // run (a storage-existing duplicate, or a createRun failure). The
+    // concurrent loser threw at the synchronous `has` check ABOVE this try, so
+    // it never reaches here and never clears the winner's reservation.
+    ownedRunIds.delete(args.runId);
+    throw err;
+  }
+}
+
+/**
+ * Release a run's in-process ownership reservation. Called from the app's
+ * terminal projection when a run reaches a terminal state, so {@link ownedRunIds}
+ * stays a bounded "currently live" set rather than growing once per run ever
+ * started. Returns whether the id was owned (Set.delete semantics) — the
+ * observable signal a terminated/rolled-back run no longer holds a reservation.
+ */
+export function releaseRunOwnership(runId: string): boolean {
+  return ownedRunIds.delete(runId);
 }

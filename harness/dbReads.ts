@@ -285,6 +285,83 @@ export function externalMutationDbCount(
   return { total, breakdown };
 }
 
+/** One profile's (or the orphan NULL bucket's) keystone tally. */
+export interface ProfileMutationCount {
+  total: number;
+  breakdown: Record<string, number>;
+}
+
+/**
+ * Per-profile mutation accounting + the portfolio aggregate keystone. This is the
+ * concurrency-aware companion to {@link externalMutationDbCount}: under a
+ * multi-profile fan-out, profile A's lane must not false-flag on B/C's writes, so
+ * each keystone leg is PARTITIONED by `search_profile_id` into per-profile buckets
+ * plus a NULL bucket (the three keystone tables — lead_submissions, audit_log,
+ * messages — all carry a NULLABLE search_profile_id, so an orphan-profile send must
+ * land in `nullBucket`, never vanish). Because the partition uses the SAME
+ * predicates as the global scan, `portfolioTotal` is EXACTLY
+ * `externalMutationDbCount(...).total` by construction — so the portfolio assertion
+ * `portfolioTotal === 0` in test mode is equivalent to the existing global floor,
+ * and the single-profile case stays byte-identical (the global function is unchanged).
+ * READ-ONLY (every statement a SELECT, like the rest of this module).
+ */
+export function externalMutationByProfile(
+  db: Db,
+  opts: { allowFakeOutbound?: boolean } = {},
+): {
+  perProfile: Record<string, ProfileMutationCount>;
+  nullBucket: ProfileMutationCount;
+  portfolioTotal: number;
+} {
+  const perProfile: Record<string, ProfileMutationCount> = {};
+  const nullBucket: ProfileMutationCount = { total: 0, breakdown: {} };
+
+  const add = (pid: string | null, leg: string, n: number): void => {
+    const bucket = pid === null ? nullBucket : (perProfile[pid] ??= { total: 0, breakdown: {} });
+    bucket.breakdown[leg] = (bucket.breakdown[leg] ?? 0) + n;
+    bucket.total += n;
+  };
+
+  // (1) submitted leads, partitioned by profile. Suppressed by allowFakeOutbound
+  // exactly like the global scan (the X1 fake-submit keystone opt-in).
+  if (!opts.allowFakeOutbound) {
+    const rows = readAll<{ pid: string | null; n: number }>(
+      db,
+      `SELECT search_profile_id AS pid, COUNT(*) AS n FROM lead_submissions WHERE outcome = 'submitted' GROUP BY search_profile_id`,
+      [],
+    );
+    for (const r of rows) add(r.pid, "lead_submissions.submitted", r.n);
+  }
+
+  // (2) send/submit-shaped audit actions, partitioned by (action, profile). Filter
+  // in JS against the same single-source-of-truth SEND_SUBMIT_ACTIONS set.
+  const auditRows = readAll<{ action: string; pid: string | null; n: number }>(
+    db,
+    `SELECT action, search_profile_id AS pid, COUNT(*) AS n FROM audit_log GROUP BY action, search_profile_id`,
+    [],
+  );
+  for (const r of auditRows) {
+    if (SEND_SUBMIT_ACTIONS.has(r.action)) add(r.pid, "audit_log.send_submit", r.n);
+  }
+
+  // (3) real (non-sandbox) outbound messages, partitioned by profile. Same
+  // direction='outbound' + non-sandbox predicate as the global scan.
+  try {
+    const rows = readAll<{ pid: string | null; n: number }>(
+      db,
+      `SELECT search_profile_id AS pid, COUNT(*) AS n FROM messages WHERE direction = 'outbound' AND gmail_message_id IS NOT NULL AND gmail_message_id NOT LIKE 'sandbox-out-%' GROUP BY search_profile_id`,
+      [],
+    );
+    for (const r of rows) add(r.pid, "messages.real_outbound", r.n);
+  } catch {
+    // messages table absent/empty — nothing outbound.
+  }
+
+  let portfolioTotal = nullBucket.total;
+  for (const pid of Object.keys(perProfile)) portfolioTotal += perProfile[pid]!.total;
+  return { perProfile, nullBucket, portfolioTotal };
+}
+
 /** Read every test_run_records row for a runId (the cost_and_time ledger rows the
  *  SUT wrote, one per harness.generate call). Read-only. */
 export function readLedgerRowsForRun(db: Db, runId: string): LedgerRow[] {
