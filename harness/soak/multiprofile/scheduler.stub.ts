@@ -1,19 +1,25 @@
 /**
- * multiprofile/scheduler.stub — the Phase-2 PortfolioScheduler seam (stub).
+ * multiprofile/scheduler.stub — a deterministic in-process hot-set helper.
  *
- * INTEGRATION: real impl from PROMPT-phase2 — PortfolioScheduler with
- * profileHealth-driven hot-set, MAX_CONCURRENT_ACTIVE_PROFILES cap + LRU/recency
- * eviction + WFQ fairness + dealer-lock-blocked = non-hot.
- * This stub only does the trivial first-N cap so the orchestrator typechecks +
- * demonstrates the hot/deferred shape deterministically; integration replaces it
- * with the real apps/server scheduler.
+ * The REAL bounded hot-set scheduler landed in Phase 2 at
+ * `apps/server/src/portfolio/portfolioScheduler.ts` — but it is a STATEFUL,
+ * server-coupled `RunLifecycleListener` class (mounted by `buildServer` via
+ * `startPortfolioScheduler`) that admits + schedules live runs against the
+ * `SkillRunService`, the activation registry, and `profileHealth`. The harness
+ * does NOT (and must not) import that impure app-layer class into a pure plan:
+ *   - the LIVE multi-profile lane (`runMultiProfileLane` → `startSoakHost` →
+ *     `buildServer`) drives the real scheduler transparently INSIDE the server;
+ *   - the PURE `planMultiProfileRun` + the in-process collision test need a
+ *     deterministic, side-effect-free hot/deferred split, which this helper gives
+ *     (trivial first-N cap). It is permanent, not a temporary swap target.
  *
  * Dependency wall: harness layer. Pure — no DB, no provider, no framework,
  * no playwright, no node builtins.
  */
 
 // ---------------------------------------------------------------------------
-// types (the Phase-2 seam contract — FROZEN shape; real impl must satisfy it)
+// types — the harness's own deterministic hot/deferred contract (independent of
+// the app-layer PortfolioScheduler class shape; see the header).
 // ---------------------------------------------------------------------------
 
 export interface PortfolioScheduleInput {
