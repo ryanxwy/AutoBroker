@@ -71,6 +71,7 @@ describe("DealerWebLeadSubmitOutputSchema", () => {
     captcha_manual_count: 0,
     us_gate_rejected: 1,
     skipped_duplicate: 0,
+    excluded_conflict_count: 0,
     summary: "Submitted 1 lead for your Hyundai Tucson search.",
     search_profile_id: UUID,
   };

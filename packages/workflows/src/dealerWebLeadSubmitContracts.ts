@@ -68,6 +68,10 @@ export const DealerWebLeadSubmitOutputSchema = z.discriminatedUnion("outcome", [
     captcha_manual_count: z.number().int(),
     us_gate_rejected: z.number().int(),
     skipped_duplicate: z.number().int(),
+    /** Approved dealers DROPPED by dealership exclusivity (already engaged by
+     *  another of the buyer's searches, or no longer claimable) — voiced in the
+     *  summary; never a budget, never a send for these. */
+    excluded_conflict_count: z.number().int(),
     summary: z.string(),
     /** For affectedKinds profile scoping. */
     search_profile_id: z.string(),
