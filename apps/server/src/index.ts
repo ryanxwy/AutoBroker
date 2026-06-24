@@ -13,8 +13,13 @@
 
 import { pathToFileURL } from "node:url";
 
+import { getDb, listProfileRows } from "@autobroker/tools";
+
 import { buildServer, type BuiltServer } from "./server.js";
 import { BackgroundScheduler } from "./scheduler.js";
+import { PortfolioScheduler } from "./portfolio/portfolioScheduler.js";
+import { InMemoryActivationRegistry } from "./portfolio/activationRegistry.js";
+import { StubProfileHealthProvider } from "./portfolio/profileHealth.js";
 import type { SkillRunService } from "./skillRuns.js";
 
 export { buildServer, type BuiltServer } from "./server.js";
@@ -119,6 +124,51 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
   return scheduler;
 }
 
+/**
+ * Mount the PortfolioScheduler — the bounded hot-set fan-out that makes N
+ * independent profile pipelines actually run. It is GATED OFF by default
+ * (AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") so the single-profile / pinned path stays
+ * byte-identical: when off, nothing is constructed and no profile run is ever
+ * auto-started; the ApprovalInbox + saga coordinator (wired in buildServer) still
+ * work. When on (the multi-profile lane), it ticks on an interval, scheduling each
+ * HOT profile as its own quote_pipeline run (the explicit-pin N=1 case) under the
+ * MAX_CONCURRENT_ACTIVE_PROFILES cap, and tracks slots via the run-lifecycle stream.
+ *
+ * KNOWN BOUNDARY (single-process, in-memory — see CLAUDE.md run-drive note): the
+ * activation registry is populated only by scheduler-started runs; a manually
+ * (HTTP) started run for the same profile is not registered, so the scheduler could
+ * in principle double-schedule it. The durable ProfileId->runId registry from
+ * PROMPT-phase0-rest closes this; a multi-process move needs a storage-level
+ * run-ownership lock first.
+ */
+function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler | undefined {
+  if (process.env.AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") return undefined;
+  const activationRegistry = new InMemoryActivationRegistry();
+  // INTEGRATION: real impl from PROMPT-phase0-rest — the derived hot/warm/cold
+  // projection. The stub enumerates status∈{active,NULL} via the tools layer and
+  // marks lock-blocked profiles non-hot.
+  const healthProvider = new StubProfileHealthProvider(() =>
+    listProfileRows(getDb(), "active")
+      .map((r) => r["search_profile_id"])
+      .filter((x): x is string => typeof x === "string"),
+  );
+  const descriptor = skillRuns.descriptorFor("quote_pipeline");
+  const scheduler = new PortfolioScheduler({
+    healthProvider,
+    activationRegistry,
+    cap: Number(process.env.MAX_CONCURRENT_ACTIVE_PROFILES ?? 4),
+    startProfileRun: async (profileId) => {
+      const input =
+        descriptor?.buildInput({ search_profile_id: profileId }) ?? { search_profile_id: profileId };
+      return skillRuns.start({ skill: "quote_pipeline", input });
+    },
+  });
+  // The scheduler manages slots off the run-lifecycle stream.
+  skillRuns.addLifecycleListener(scheduler);
+  scheduler.start(Number(process.env.AUTOBROKER_PORTFOLIO_TICK_MS ?? 15_000));
+  return scheduler;
+}
+
 /** Boot + listen. Returns the built server (so a caller could close it). */
 export async function main(): Promise<BuiltServer> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
@@ -127,6 +177,8 @@ export async function main(): Promise<BuiltServer> {
   // Long-running-background machinery: croner + the catch-up watermark live in
   // THIS process (the durable backend), not the Electron main launcher.
   startScheduler(built.skillRuns);
+  // The portfolio fan-out (off by default — byte-identical single-profile path).
+  startPortfolioScheduler(built.skillRuns);
   // Report the ACTUAL bound port (PORT=0 → ephemeral), not the configured one.
   console.info(JSON.stringify({ server: "listening", host: HOST, port: (built.app.server.address() as { port: number }).port }));
   return built;
