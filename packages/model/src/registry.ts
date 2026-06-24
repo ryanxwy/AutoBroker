@@ -120,8 +120,11 @@ export const defaultProvider: Provider = DEFAULT_PROVIDER;
  */
 export function resolveModel(alias: ModelAlias): LanguageModel {
   const real = registry.languageModel(alias);
-  if (_harnessGenerateFault === "none") return real;
-  return wrapWithGenerateFault(real, _harnessGenerateFault);
+  const result =
+    _harnessGenerateFault === "none" ? real : wrapWithGenerateFault(real, _harnessGenerateFault);
+  // The harness model-wrapper (record/replay) applies on TOP of the fault wrap.
+  // When unset (production default) this is byte-identical to returning `result`.
+  return _harnessModelWrapper ? _harnessModelWrapper(result, alias) : result;
   // TODO: surface a typed "alias not registered" error instead of letting the
   // SDK throw, so policy() down-routing can react. Fail-LOUD, never silent.
 }
@@ -178,4 +181,27 @@ function wrapWithGenerateFault(
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+// --- TEST-ONLY model-wrapper seam (Phase-4 record/replay) ------------------
+// Lets the harness swap a wrapped model in through resolveModel WITHOUT touching
+// @autobroker/workflows: the wrapper (e.g. recordingModel / replayModel) is
+// applied on TOP of the fault wrap. NEVER armed in production — the set() refuses
+// outside a test runner, the same guard rule as __setHarnessGenerateFaultForTests.
+// When unset (null default) resolveModel is byte-identical to today.
+let _harnessModelWrapper: ((model: LanguageModel, alias: string) => LanguageModel) | null = null;
+
+export function __setHarnessModelWrapper(
+  fn: (model: LanguageModel, alias: string) => LanguageModel,
+): void {
+  if (process.env["VITEST"] === undefined && process.env["NODE_ENV"] !== "test") {
+    throw new Error(
+      "__setHarnessModelWrapper is a test-only seam (refused outside a test runner)",
+    );
+  }
+  _harnessModelWrapper = fn;
+}
+
+export function __resetHarnessModelWrapper(): void {
+  _harnessModelWrapper = null;
 }

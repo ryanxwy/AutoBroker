@@ -19,6 +19,25 @@ export {
   __resetHarnessGenerateFaultForTests,
 } from "./registry.js";
 export type { HarnessGenerateFault } from "./registry.js";
+// Test-only model-wrapper seam (Phase-4 record/replay): swap a wrapped model in
+// through resolveModel (refused outside a test runner; null default = no-op).
+export { __setHarnessModelWrapper, __resetHarnessModelWrapper } from "./registry.js";
+
+// Record/Replay model seam (Phase-4 multi-profile harness): record every LLM call
+// to JSONL and replay it token-for-token with no provider (fail-loud on
+// exhaustion / prompt-hash mismatch).
+export {
+  recordingModel,
+  replayModel,
+  TraceIndex,
+  JsonlFileSink,
+  hashPrompt,
+  parseTranscriptJsonl,
+  serializeTranscriptEvent,
+  ReplayExhaustedError,
+  ReplayPromptMismatchError,
+} from "./recordReplay.js";
+export type { TranscriptEvent, TranscriptSink } from "./recordReplay.js";
 
 // useCase -> ModelAlias -> CapabilityFlags routing policy.
 export { policy, USE_CASES } from "./policy.js";
