@@ -29,6 +29,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@autobroker/model": "workspace:*",
     "@autobroker/server": "workspace:*",
     "@autobroker/tools": "workspace:*",
     "@autobroker/workflows": "workspace:*",
