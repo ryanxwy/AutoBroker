@@ -89,6 +89,15 @@ export function staleDisposition(
  *    conservative orphan sweep (releases ONLY non-live + dormant bound claims;
  *    the conservatism lives inside sweepOrphanedBoundClaims).
  * Returns the sweep result so the caller can LOG it — there is no silent sweep.
+ *
+ * DESIGN ASSUMPTION + KNOWN LIMITATION (honest): the activation registry
+ * (pipeline.active_run.<profileId>) is the SOLE runId → profileId bridge — Mastra's
+ * recovery snapshots carry no profileId — and a run started under THIS build is
+ * always recorded at start, so the bridge is complete going forward. The one
+ * uncovered window: a run suspended by a PRE-feature build (no activation row) that
+ * still holds a `bound` claim dormant >14d could have that claim released here. It
+ * is moot on greenfield (no pre-feature suspended runs exist) and self-heals once
+ * the run re-executes under this build (it records its activation row then).
  */
 export function sweepOrphansOnBoot(
   recovery: BootRecoveryReport,

@@ -47,7 +47,10 @@ const SELECT_BOUND_PROFILES =
   "SELECT DISTINCT search_profile_id FROM profile_dealers WHERE status = 'bound'";
 
 // The profile's most-recent bind timestamp among its still-bound rows — the
-// fallback dormancy marker when no progress watermark was ever written.
+// fallback dormancy marker when no progress watermark was ever written. MAX over
+// the numeric-affinity column is a lexicographic max, which IS chronologically
+// correct for the fixed 'YYYY-MM-DD HH:MM:SS' CURRENT_TIMESTAMP shape (the only
+// form bound_at is ever written in — fixed-width fields sort the same as time).
 const SELECT_MAX_BOUND_AT =
   "SELECT MAX(bound_at) AS bound_at FROM profile_dealers " +
   "WHERE search_profile_id = ? AND status = 'bound'";

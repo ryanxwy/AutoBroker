@@ -207,6 +207,31 @@ describe("profileHealth: HOT via a ready thread", () => {
     expect(h.health).toBe("hot");
     expect(h.reasons).toContain("thread_ready");
   });
+
+  // The AND-semantics: thread_ready requires gate==="ready" AND cap==="ok".
+  // A thread that is gate=ready but capped (the dealer went silent and we already
+  // sent our limit of unanswered follow-ups) must NOT produce a thread_ready reason.
+  it("recent inbound + outbound >24h ago but 2 unanswered follow-ups (cap) → NOT thread_ready", () => {
+    seedProfile("prof-A", "active");
+    seedDealer("dealer-1");
+    seedThread("t-1", "prof-A", "dealer-1");
+    // Inbound FIRST (lowest rowid), 2d ago → gate not skip (within 14d).
+    seedMessage({ id: "m-in", threadId: "t-1", profileId: "prof-A", direction: "inbound", receivedAtMs: NOW - 2 * DAY_MS });
+    // Two outbound follow-ups AFTER the inbound (higher rowid) → unanswered=2 →
+    // followupCapDecision = unanswered_cap. MAX(outbound received_at) is 2d ago →
+    // gate not wait → gate stays "ready". So gate=ready AND cap!=ok.
+    seedMessage({ id: "m-out1", threadId: "t-1", profileId: "prof-A", direction: "outbound", receivedAtMs: NOW - 2 * DAY_MS });
+    seedMessage({ id: "m-out2", threadId: "t-1", profileId: "prof-A", direction: "outbound", receivedAtMs: NOW - 3 * DAY_MS });
+    // Stale watermark so the profile (not hot via this thread) lands cleanly in COLD.
+    writeLastProgressAt(db, "prof-A", new Date(NOW - 30 * DAY_MS).toISOString());
+
+    const rows = profileHealth(db, [], { nowMs: NOW });
+    const h = findHealth(rows, "prof-A");
+    expect(h.reasons).not.toContain("thread_ready");
+    // ready-but-capped is a capped thread → with the stale watermark, cold.
+    expect(h.health).toBe("cold");
+    expect(h.reasons).toContain("all_threads_capped");
+  });
 });
 
 // ===========================================================================
