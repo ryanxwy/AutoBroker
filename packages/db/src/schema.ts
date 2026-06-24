@@ -11,20 +11,28 @@
  * MANUAL CORRECTIONS re-applied after every `db:pull` (verified against
  * drizzle-kit 0.31.x behaviour on 2026-06-03 — KEEP THIS LIST CURRENT):
  *
- *   1. THREE partial indexes — introspection DROPS the WHERE predicate:
+ *   1. FOUR partial indexes — introspection DROPS the WHERE predicate:
  *        - uq_search_profiles_active_account_brand  WHERE status = 'active'
  *        - idx_message_analysis_current             WHERE is_current = 1
  *        - idx_il_url_fallback                      WHERE vin IS NULL
+ *        - uq_profile_dealers_bound_dealer          WHERE status = 'bound'
+ *          (dealership-exclusivity backstop: at most ONE profile may hold a
+ *          given dealer_id as status='bound' across all profiles)
  *
  *   2. CHECK constraints — introspection is UNUSABLE for CHECKs on this
  *      schema: it misattributes every CHECK to every table (26×12) and
  *      truncates trailing parens (`IN (0, 1` ← broken). Strip ALL pulled
- *      check() entries and re-author the 12 real ones from the oracle DDL
- *      (sqlite_master) on the 7 true CHECK tables: message_analysis (4),
+ *      check() entries and re-author the 13 real ones from the oracle DDL
+ *      (sqlite_master) on the 8 true CHECK tables: message_analysis (4),
  *      message_questions (1), thread_suppression (3), session_turns (1),
  *      messages (1), dealers (1), lead_submissions (1 — ck_lead_submissions_xor,
  *      the keystone irreversible-scope invariant: a row is reached via EXACTLY
- *      ONE of {web-form submit, email send}; email_fallback_reason gated).
+ *      ONE of {web-form submit, email send}; email_fallback_reason gated),
+ *      profile_dealers (1 — ck_profile_dealers_status, the bind-status enum:
+ *      status IN candidate/bound/excluded_conflict/closed_out). NOTE: this is
+ *      a TS-authored CHECK with NO legacy oracle origin (the dealership-
+ *      exclusivity feature is new in the TS rebuild), so it will NOT round-trip
+ *      from a future db:pull of the frozen oracle — re-author it after a pull.
  *
  *   3. FK actions — the oracle declares NO ON DELETE / ON UPDATE anywhere, so
  *      the pulled FKs (18) are faithful as-is; nothing to re-add today. If a
@@ -258,6 +266,8 @@ export const profileDealers = sqliteTable("profile_dealers", {
 },
 (table) => [
 	index("idx_profile_dealers_dealer").on(table.dealerId),
+	uniqueIndex("uq_profile_dealers_bound_dealer").on(table.dealerId).where(sql`status = 'bound'`),
+	check("ck_profile_dealers_status", sql`status IN ('candidate', 'bound', 'excluded_conflict', 'closed_out')`),
 	primaryKey({ columns: [table.searchProfileId, table.dealerId], name: "profile_dealers_search_profile_id_dealer_id_pk"})
 ]);
 
