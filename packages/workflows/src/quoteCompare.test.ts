@@ -284,6 +284,70 @@ describe("quote_compare — read-only three-branch + gating", () => {
     expect(out.finance[1]!.otd_total).toBeNull();
   });
 
+  it("carries cross-state normalized tax + OTD attribution through to the output", async () => {
+    // Profile registers in CA; two finance quotes for the same vehicle from
+    // dealers in different states. The contract must expose the home-state rate,
+    // identical normalized tax across both, and the OTD-delta attribution.
+    db.$client
+      .prepare(
+        "INSERT INTO search_profiles (search_profile_id, year, make, model, trim, account_id, brand, financing_preference, state, status) " +
+          "VALUES (?, 2026, 'Hyundai', 'Tucson', 'Limited', 'acct-test-1', 'Hyundai', 'finance', 'CA', 'active')",
+      )
+      .run(PROFILE_ID);
+    seedDealer("d-A", "Alpha CA");
+    seedDealer("d-B", "Bravo OR");
+    const seedFull = (
+      quoteId: string,
+      dealerId: string,
+      sellingPrice: number,
+      docFee: number,
+      salesTax: number,
+      otd: number,
+    ): void => {
+      const m = `m-${quoteId}`;
+      db.$client
+        .prepare(
+          "INSERT INTO messages (message_id, direction, quote_extraction_status, quote_extraction_intent) " +
+            "VALUES (?, 'inbound', 'succeeded', 'quote')",
+        )
+        .run(m);
+      db.$client
+        .prepare(
+          "INSERT INTO dealer_quotes " +
+            "(quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, financing_mode, " +
+            " selling_price, doc_fee, sales_tax, otd_total, finance_term_months) " +
+            "VALUES (?, ?, ?, ?, ?, 'finance', ?, ?, ?, ?, 60)",
+        )
+        .run(quoteId, dealerId, m, m, PROFILE_ID, sellingPrice, docFee, salesTax, otd);
+    };
+    seedFull("f-A", "d-A", 40000, 85, 2900, 42985); // CA dealer, CA tax
+    seedFull("f-B", "d-B", 40000, 85, 0, 40085); // OR dealer, no tax
+
+    const { result } = await startRun("qcmp-crossstate-1", null);
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as unknown as {
+      homeState: string | null;
+      homeStateTaxRate: number | null;
+      finance: Array<{
+        quote_id: string;
+        normalized_tax: number | null;
+        normalized_otd: number | null;
+        attribution: { baseline_quote_id: string; sale_price_delta: number } | null;
+      }>;
+    };
+    expect(out.homeState).toBe("CA");
+    expect(out.homeStateTaxRate).toBe(0.0725);
+    const byId = new Map(out.finance.map((q) => [q.quote_id, q]));
+    expect(byId.get("f-A")!.normalized_tax).toBe(2900);
+    expect(byId.get("f-B")!.normalized_tax).toBe(2900); // IDENTICAL across states
+    expect(byId.get("f-A")!.normalized_otd).toBe(42985);
+    expect(byId.get("f-B")!.normalized_otd).toBe(42985);
+    // Same vehicle + price → the only delta is zero (no cross-state tax illusion).
+    const baseline = out.finance.find((q) => q.attribution === null)!;
+    expect(["f-A", "f-B"]).toContain(baseline.quote_id);
+  });
+
   it("STOPs with no_active_profile on a pin-less input with 0 active profiles", async () => {
     const { result } = await startRun("qcmp-none-1", null);
     expect(result.status).toBe("failed");

@@ -107,7 +107,13 @@ import {
   requestContactFlipForRun,
   type createMastraInstance,
 } from "@autobroker/workflows";
-import { validateResetToken } from "@autobroker/tools";
+import {
+  getDb,
+  validateResetToken,
+  recordActivation,
+  clearActivationByRunId,
+  writeLastProgressAt,
+} from "@autobroker/tools";
 import { z } from "zod";
 
 import type { RunPubSub } from "./runPubSub.js";
@@ -2163,6 +2169,15 @@ export class SkillRunService {
       claims: new Map(),
     });
 
+    // Register this run in the durable activation registry IF its input carries
+    // a profile (the virtual-actor at-most-one-live-run map). A profile-less run
+    // (intake, daily-digest fan-out) records nothing.
+    const pid = (args.input as { search_profile_id?: string | null } | null | undefined)
+      ?.search_profile_id;
+    if (typeof pid === "string" && pid !== "") {
+      recordActivation({ profileId: pid, runId, db: getDb() });
+    }
+
     void started
       .then((result) => {
         this.translate(runId, result);
@@ -2171,6 +2186,7 @@ export class SkillRunService {
         const run = this.runs.get(runId);
         if (run !== undefined && !run.terminal) {
           run.terminal = true;
+          this.finalizeActivation(runId);
           this.pubsub.append(runId, { kind: "error", payload: this.errorFramePayload(err) });
           this.fireTerminal(run, runId, "error");
         }
@@ -2317,6 +2333,15 @@ export class SkillRunService {
   }
 
   /**
+   * Tear down this run's durable activation entry at its terminal. Idempotent
+   * (delete-by-runId no-ops when a newer run already overwrote the profile's
+   * entry); profile-less runs that recorded nothing also no-op.
+   */
+  private finalizeActivation(runId: string): void {
+    clearActivationByRunId({ runId, db: getDb() });
+  }
+
+  /**
    * Translate a WorkflowResult into SSE frames + run state. A discriminated
    * result on status (live-probed 1.41: suspended | success | failed | ...).
    */
@@ -2360,6 +2385,7 @@ export class SkillRunService {
         // A decline is terminal: wire kind aborted → status projects declined
         // (the app metadata is the decline outcome).
         run.terminal = true;
+        this.finalizeActivation(runId);
         this.pubsub.append(runId, {
           kind: "aborted",
           payload: { reason: "user_declined" },
@@ -2373,6 +2399,7 @@ export class SkillRunService {
       // the terminal TEXT frame payload — skill-agnostic copy, the done frame
       // stays {}.
       run.terminal = true;
+      this.finalizeActivation(runId);
       const descriptor = this.descriptorOf(run);
       const textPayload: Record<string, unknown> = {
         text: descriptor.summaryText(r.result),
@@ -2380,6 +2407,13 @@ export class SkillRunService {
       const resolution = (r.result as { resolution?: unknown } | undefined)?.resolution;
       if (typeof resolution === "string") textPayload["resolution"] = resolution;
       this.pubsub.append(runId, { kind: "text", payload: textPayload });
+      // A successful skill run = forward progress for its profile: advance the
+      // durable progress watermark (the dormancy marker the profileHealth /
+      // orphan-sweep reconcile reads). Declined/failed/canceled runs skip this.
+      const completedProfileId = resultProfileId(r.result);
+      if (completedProfileId !== null) {
+        writeLastProgressAt(getDb(), completedProfileId, new Date().toISOString());
+      }
       // The fresh-by-default pulse: a completed skill wrote rows, so name the
       // touched data families (off the workflowId) + the profile they belong to
       // (off r.result.profileId) so the dashboard refetches exactly the stale
@@ -2390,7 +2424,7 @@ export class SkillRunService {
       this.pubsub.append(runId, {
         kind: "data.changed",
         payload: {
-          profile_id: resultProfileId(r.result),
+          profile_id: completedProfileId,
           kinds: affectedKinds(descriptor.workflowId),
         },
       });
@@ -2402,6 +2436,7 @@ export class SkillRunService {
     // failed | tripwire | bailed → error (the #1244 hard-abort path).
     if (r.status === "failed" || r.status === "tripwire" || r.status === "bailed") {
       run.terminal = true;
+      this.finalizeActivation(runId);
       this.pubsub.append(runId, {
         kind: "error",
         payload: this.errorFramePayload(r.error),
@@ -2412,6 +2447,7 @@ export class SkillRunService {
 
     if (r.status === "canceled") {
       run.terminal = true;
+      this.finalizeActivation(runId);
       this.pubsub.append(runId, { kind: "aborted", payload: { reason: "canceled" } });
       this.fireTerminal(run, runId, "canceled");
       return;

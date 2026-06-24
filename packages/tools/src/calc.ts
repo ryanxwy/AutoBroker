@@ -13,18 +13,51 @@
 export const OFFER_MATH_TOLERANCE_USD = 1.0;
 
 /**
- * Per-state documentation-fee caps (USD). A `null` value means the state has no
- * statutory cap (present-but-uncapped, distinct from an absent key — both yield
- * "no doc-fee-cap finding"). Sanity reference data, not authoritative law.
+ * Per-state documentation-fee caps (USD), the maintained source of truth for the
+ * audit's DOC_FEE_CAP / DOC_FEE_UNCAPPED checks. A numeric value is the statutory
+ * cap; an explicit `null` means the state has no statutory cap (present-but-
+ * uncapped — a high fee there is flagged DOC_FEE_UNCAPPED against
+ * {@link DOC_FEE_HIGH_REFERENCE_USD} instead); an ABSENT key means "unknown"
+ * (no finding either way).
+ *
+ * Caps change over time and are set by statute or negotiated maxima — this is a
+ * data-driven table to extend/correct, NOT logic hardcoded forever. Sanity
+ * reference data, not authoritative law; maintained as-of 2026-06.
  */
 export const STATE_DOC_FEE_CAP: Readonly<Record<string, number | null>> = {
+  // Statutorily capped states (value = cap, USD).
   CA: 85,
   NY: 175,
   WA: 200,
+  MN: 125,
+  MI: 260,
+  OH: 250,
+  MD: 500,
+  // No statutory cap (present-but-uncapped — DOC_FEE_UNCAPPED applies above the
+  // high reference).
   OR: null,
   TX: null,
   FL: null,
+  GA: null,
+  AZ: null,
+  NV: null,
+  CO: null,
+  IL: null,
+  VA: null,
+  NJ: null,
+  PA: null,
+  MA: null,
+  TN: null,
+  NC: null,
 };
+
+/**
+ * The "high doc fee" reference (USD) for a state with NO statutory cap. A doc fee
+ * above this in an uncapped state is surfaced as DOC_FEE_UNCAPPED — a negotiation
+ * target, not a legal violation. Sanity reference (uncapped-state doc fees of
+ * $500+ are common and negotiable), maintained alongside {@link STATE_DOC_FEE_CAP}.
+ */
+export const DOC_FEE_HIGH_REFERENCE_USD = 500;
 
 /** A fee is either a raw number or a `{name?, amount?}` line-item dict. */
 export type FeeItem = number | { amount?: unknown; [key: string]: unknown };

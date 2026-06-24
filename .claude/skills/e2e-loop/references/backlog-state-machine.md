@@ -96,8 +96,9 @@ All-green and all auditors APPROVE/SAFE →
 
 ## DON'T-RE-PROPOSE LEDGER (filtered out at S0, never re-surfaced)
 
-MATH_SANITY null-skip (FINDING I) · DOC_FEE_CAP only CA/NY/WA, state-from-geocoder
-(A4) · cash/unspecified compare-bucket fold (FINDING J/A5) · closeout fake-count
+MATH_SANITY null-skip (FINDING I) · DOC_FEE_CAP capped-set (CA/NY/WA+MN/MI/OH/MD)
++ DOC_FEE_UNCAPPED for uncapped states >~$500 (Phase 5), state-from-geocoder (A4) ·
+cash/unspecified compare-bucket fold (FINDING J/A5) · closeout fake-count
 (A8) · site_scan scanned-0 vs never-scanned empty-state (A2) · incentive sources
 Hyundai/Toyota/Honda/Chevrolet added · scout `boundedConcurrentMap` parallelize
 (FINDING H) · Best-OTD bento reconcile / one-number-one-home (FINDING G) · audit

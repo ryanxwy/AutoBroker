@@ -523,6 +523,24 @@ export const QuoteCompareRowSchema = z
     monthly: z.number().nullable(),
     audit_flag_summary: z.array(z.string()),
     financing_mode: z.string(),
+    // Cross-state correctness (Phase 5): tax re-computed at the buyer's home
+    // state, the normalized OTD, and the OTD-delta attribution vs the bucket
+    // best. Optional for tolerance of older payloads.
+    normalized_tax: z.number().nullable().optional(),
+    normalized_otd: z.number().nullable().optional(),
+    attribution: z
+      .object({
+        baseline_quote_id: z.string(),
+        otd_delta: z.number(),
+        sale_price_delta: z.number(),
+        doc_fee_delta: z.number(),
+        tax_delta: z.number(),
+        incentive_delta: z.number(),
+        other_delta: z.number(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 export type QuoteCompareRow = z.infer<typeof QuoteCompareRowSchema>;
@@ -536,6 +554,11 @@ export const QuoteCompareResultSchema = z
      *  otherwise). Optional for tolerance of older payloads. */
     cash: z.array(QuoteCompareRowSchema).optional(),
     totalRanked: z.number(),
+    /** The buyer's home (registration) state — the rate every quote's tax is
+     *  normalized to. Optional for tolerance of older payloads. */
+    homeState: z.string().nullable().optional(),
+    /** The home-state sales/use tax rate (fraction, e.g. 0.0725). Optional. */
+    homeStateTaxRate: z.number().nullable().optional(),
   })
   .passthrough();
 export type QuoteCompareResult = z.infer<typeof QuoteCompareResultSchema>;

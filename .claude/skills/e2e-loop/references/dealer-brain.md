@@ -84,7 +84,8 @@ phrasing, scarcity language) — learn the register, don't copy text; (2) this r
 **brand + metro** (match prose to brand tier); (3) the **live dealer names +
 websites** from geosearch (read-only `sqlite3 -readonly <dataDir>/autobroker.db
 "SELECT name, website FROM dealers ORDER BY rowid"`); (4) the **state doc-fee cap**
-for the metro (CA $85 / NY $175 / WA $200; TX/FL uncapped).
+for the metro (capped: CA $85 / NY $175 / WA $200 / MN $125 / MI $260 / OH $250 /
+MD $500; uncapped TX/FL/OR fire `DOC_FEE_UNCAPPED` above ~$500, Phase 5).
 
 ---
 
