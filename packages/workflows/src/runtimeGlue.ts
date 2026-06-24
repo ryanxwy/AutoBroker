@@ -102,7 +102,9 @@ export interface BootRecoveryReport {
  * to restart/cancel — clobbering live work). CONTRACT: all production starts
  * go through startRunGuarded (it is also the dup-runId gate, the single entry);
  * a run started via a raw workflow.createRun().start() bypasses this set and
- * recoverOnBoot cannot tell it from a stale row.
+ * recoverOnBoot cannot tell it from a stale row. The app's terminal projection
+ * calls {@link releaseRunOwnership} when a run ends, so the set stays a bounded
+ * "currently live" set rather than growing once per run ever started.
  */
 const ownedRunIds = new Set<string>();
 
@@ -296,13 +298,12 @@ export interface StartRunGuardedArgs<TInput = unknown> {
  * the typed result use the workflow's own start() directly once the guard has
  * confirmed the id is free.
  *
- * KNOWN LIMIT — TOCTOU (review F-glue-2): the existence check and the
- * create+start are two separate awaits with no lock; two CONCURRENT callers
- * racing the same runId can both see null and both start (the underlying
- * clobber is Mastra's, #5549 residue). This guard closes the SEQUENTIAL
- * re-submit only. Single-process serialization comes from the in-memory
- * ownership set + the single-Node-process topology (127.0.0.1:8100, one
- * server); a cross-process airtight guard would need a storage-level unique
+ * CONCURRENCY (review F-glue-2): {@link beginRunGuarded} closes the IN-PROCESS
+ * dup-runId race airtight — a synchronous ownership reservation (has()+add() with
+ * no await between) means two CONCURRENT callers racing the same runId cannot both
+ * pass: the loser throws {@link DuplicateRunIdError} before any await. Under the
+ * single-Node-process topology (127.0.0.1:8100, one server) that is a complete
+ * guard. A cross-PROCESS airtight guard would still need a storage-level unique
  * constraint, which is Mastra's table, not ours (never raw-SQL mastra.db).
  */
 export async function startRunGuarded<TInput = unknown>(
