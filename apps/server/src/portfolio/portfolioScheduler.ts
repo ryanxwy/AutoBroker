@@ -31,9 +31,20 @@
  * future multi-process move needs a storage-level run-ownership lock first).
  */
 
+import type { ProfileHealth } from "@autobroker/tools";
+
 import type { ActivationRegistry } from "./activationRegistry.js";
-import type { ProfileHealthProvider } from "./profileHealth.js";
 import type { RunLifecycleEvent, RunLifecycleListener, RunTerminalEvent } from "../skillRuns.js";
+
+/**
+ * The scheduler's health-projection seam: classify the active set hot/warm/cold at a
+ * point in time, given the profiles that currently hold a live run. Production wires
+ * the real `profileHealth(db, liveRunProfileIds)` (a one-line adapter); tests inject a
+ * fake. Matches the tools-layer `profileHealth` signature minus the bound `db`.
+ */
+export interface ProfileHealthProvider {
+  snapshot(liveRunProfileIds: ReadonlySet<string>): ProfileHealth[];
+}
 
 export interface PortfolioSchedulerDeps {
   /** Classifies the active set hot/warm/cold (lock-blocked profiles are non-hot —

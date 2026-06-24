@@ -1,16 +1,17 @@
 /**
- * activationRegistry — the durable `ProfileId -> live runId` map that the
- * PortfolioScheduler and the ApprovalInbox route through: it enforces per-profile
- * concurrency = 1 (a profile holds AT MOST ONE live run), and lets any inbound
- * event resolve the one correct pipeline.
+ * activationRegistry — the `ProfileId -> live runId` map the PortfolioScheduler reads
+ * for per-profile concurrency = 1 (a profile holds AT MOST ONE live run).
  *
- * INTEGRATION: real impl from PROMPT-phase0-rest. Phase 0 deferred the DURABLE
- * registry (a mastra.db-adjacent / pipeline_state KV row + a boot-orphan sweep).
- * This in-memory implementation is the Phase-2 stub behind the `ActivationRegistry`
- * interface: single-process, in-memory, matching the documented run-drive
- * single-process invariant (a future multi-process move needs a storage-level
- * run-ownership lock first). When the durable version lands, replace the class
- * body — the interface is the contract the scheduler/inbox depend on.
+ * The `ActivationRegistry` interface is the scheduler's DI seam. PRODUCTION wires it
+ * (in index.ts) as a thin adapter over the DURABLE tools-layer registry that landed
+ * in phase0-rest (`recordActivation` / `clearActivationByRunId` /
+ * `lookupRunIdForProfile` / `lookupProfileIdForRunId` / `listActiveProfileIds`), which
+ * SkillRunService already records/clears on every run's lifecycle — so the scheduler's
+ * key=1 respects HTTP-started runs too. `InMemoryActivationRegistry` below is the
+ * in-memory implementation used by the scheduler's unit tests (it also throws on a
+ * key=1 conflict, a stricter check than the durable upsert; the scheduler's candidate
+ * filter never triggers it). Single-process by design (Phase 0-2); a multi-process
+ * move needs a storage-level run-ownership lock first.
  */
 
 /** Thrown when a second, DIFFERENT run is registered for a profile that already

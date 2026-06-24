@@ -13,9 +13,10 @@
 
 import { describe, it, expect } from "vitest";
 
-import { PortfolioScheduler } from "./portfolioScheduler.js";
+import type { ProfileHealth } from "@autobroker/tools";
+
+import { PortfolioScheduler, type ProfileHealthProvider } from "./portfolioScheduler.js";
 import { InMemoryActivationRegistry } from "./activationRegistry.js";
-import { StubProfileHealthProvider, type ProfileHealth, type ProfileHealthProvider } from "./profileHealth.js";
 
 /** A controllable health provider — the test mutates `hot` between ticks. */
 function fakeHealth(): ProfileHealthProvider & { hot: string[] } {
@@ -26,6 +27,11 @@ function fakeHealth(): ProfileHealthProvider & { hot: string[] } {
     },
   };
   return p;
+}
+
+/** A fixed health list (for the lock-blocked test): some profiles warm (non-hot). */
+function fixedHealth(list: Array<{ profileId: string; health: "hot" | "warm" | "cold" }>): ProfileHealthProvider {
+  return { snapshot: () => list.map((h) => ({ ...h, reasons: [] })) };
 }
 
 function recorder() {
@@ -128,20 +134,21 @@ describe("PortfolioScheduler", () => {
     expect(rec.starts.filter((p) => p === "A")).toHaveLength(1); // A never double-started
   });
 
-  it("treats a lock-blocked profile as NON-HOT (never scheduled)", async () => {
+  it("treats a NON-HOT (warm/lock-blocked) profile as never scheduled", async () => {
     const reg = new InMemoryActivationRegistry();
     const rec = recorder();
     const sched = new PortfolioScheduler({
-      healthProvider: new StubProfileHealthProvider(
-        () => ["A", "B"],
-        () => new Set(["B"]),
-      ),
+      // The real profileHealth classifies a lock-blocked profile 'warm'; here B is warm.
+      healthProvider: fixedHealth([
+        { profileId: "A", health: "hot" },
+        { profileId: "B", health: "warm" },
+      ]),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 4,
     });
     await sched.tick();
-    expect(rec.starts).toEqual(["A"]); // B is lock-blocked -> warm -> never started
+    expect(rec.starts).toEqual(["A"]); // B is non-hot -> never started
   });
 
   it("a resumed run RE-OCCUPIES its slot so the cap is not exceeded when new work arrives", async () => {

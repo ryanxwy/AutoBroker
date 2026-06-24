@@ -13,13 +13,23 @@
 
 import { pathToFileURL } from "node:url";
 
-import { getDb, listProfileRows } from "@autobroker/tools";
+import {
+  getDb,
+  profileHealth,
+  recordActivation,
+  clearActivationByRunId,
+  lookupRunIdForProfile,
+  lookupProfileIdForRunId,
+  listActiveProfileIds,
+} from "@autobroker/tools";
 
 import { buildServer, type BuiltServer } from "./server.js";
 import { BackgroundScheduler } from "./scheduler.js";
-import { PortfolioScheduler } from "./portfolio/portfolioScheduler.js";
-import { InMemoryActivationRegistry } from "./portfolio/activationRegistry.js";
-import { StubProfileHealthProvider } from "./portfolio/profileHealth.js";
+import {
+  PortfolioScheduler,
+  type ProfileHealthProvider,
+} from "./portfolio/portfolioScheduler.js";
+import type { ActivationRegistry } from "./portfolio/activationRegistry.js";
 import type { SkillRunService } from "./skillRuns.js";
 
 export { buildServer, type BuiltServer } from "./server.js";
@@ -143,17 +153,24 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
  */
 function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler | undefined {
   if (process.env.AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") return undefined;
-  const activationRegistry = new InMemoryActivationRegistry();
-  // INTEGRATION: real impl from PROMPT-phase0-rest — the derived hot/warm/cold
-  // projection. The stub enumerates status∈{active,NULL} via the tools layer; it is
-  // constructed with NO lock-blocked source here, so lock-blocked-non-hot detection
-  // is INERT in production (a blocked profile is classified hot and only conflicts
-  // out later at claimDealersStep, fail-closed) until the real profileHealth lands.
-  const healthProvider = new StubProfileHealthProvider(() =>
-    listProfileRows(getDb(), "active")
-      .map((r) => r["search_profile_id"])
-      .filter((x): x is string => typeof x === "string"),
-  );
+  // The DURABLE ProfileId->runId registry (phase0-rest), adapted to the scheduler's
+  // ActivationRegistry seam. SkillRunService already records/clears these entries on
+  // every run's lifecycle, so the scheduler's register/release are idempotent
+  // re-writes over the same rows (and its key=1 view includes HTTP-started runs).
+  const activationRegistry: ActivationRegistry = {
+    liveRunFor: (profileId) => lookupRunIdForProfile(profileId, getDb()) ?? undefined,
+    profileForRun: (runId) => lookupProfileIdForRunId(runId, getDb()) ?? undefined,
+    register: (profileId, runId) => recordActivation({ profileId, runId, db: getDb() }),
+    releaseRun: (runId) => {
+      clearActivationByRunId({ runId, db: getDb() });
+    },
+    liveProfileIds: () => new Set(listActiveProfileIds(getDb())),
+  };
+  // The real derived hot/warm/cold projection (it enumerates the active set + derives
+  // lock-blocked/dormancy from the DB itself, given the live-run set).
+  const healthProvider: ProfileHealthProvider = {
+    snapshot: (liveRunProfileIds) => profileHealth(getDb(), liveRunProfileIds),
+  };
   const descriptor = skillRuns.descriptorFor("quote_pipeline");
   const scheduler = new PortfolioScheduler({
     healthProvider,
