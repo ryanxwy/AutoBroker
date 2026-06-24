@@ -104,7 +104,11 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   approval gate** (read-only; the `batch-*` testids no longer render for it; there is
   no site_scan decline path). The shared batch gate still guards the 3 send skills +
   `inventory_link_scan`. (3) **Chat history stays in one session** — only a deliberate
-  new-search (intake fork) or explicit session switch resets the rail.
+  new-search (intake fork) or explicit session switch resets the rail. (4)
+  **`incentive_scrape` always auto-approves new OEM sources** (read-only; no
+  first-encounter `approval-*` gate renders for it). (5) **`dealer_web_lead_submit`'s
+  batch card shows a `batch-summary`** (vehicle, email, placeholder-phone — never budget)
+  and the dealer list is height-capped + scrollable.
 - **Worktree needs `.env` (step-1 trap).** `.env` is gitignored, so a fresh sibling
   worktree has none and `loadDotEnvKeys`' walk-up won't find the main checkout's copy
   — serve-live then reports "Add your DeepSeek key" and the NL router 500s. Copy

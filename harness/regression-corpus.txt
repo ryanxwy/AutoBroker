@@ -19,20 +19,18 @@ dealer_geosearch.ui_button.toml
 dealer_geosearch.stop_intake_cta.toml
 dealer_geosearch.stop_picker.toml
 
-# inventory_site_scan — accepted 2026-06-12 (UI-lane two rounds + decline; full 7-step loop).
-# ui_button (the popover round) is accepted but ROTATED OUT of the always-on corpus:
-# it re-scans the same ~33 rooftops the journey case already covers — one full
-# site-pass per guardian run is the politeness budget. Decline costs zero contact.
-inventory_site_scan.ui_decline.toml
+# inventory_site_scan — accepted 2026-06-12 (full 7-step loop). The scan now
+# auto-scans every in-radius rooftop (no gate, no decline path — owner 2026-06-23),
+# so the dealer_pipeline prefix below carries its always-on slot; the ui_button
+# popover round stays rotated out (one full site-pass per guardian run is the budget).
 dealer_pipeline.ui_prefix.toml
 
 # inventory_link_scan — accepted 2026-06-12 (UI-lane two rounds + decline; seeds verified against the live Maps world)
 # ui_button stays accepted-but-rotated (2 rooftop contacts per run — politeness budget)
 inventory_link_scan.ui_decline.toml
 
-# incentive_scrape — accepted 2026-06-13 (UI-lane first-encounter + decline; full 7-step loop, P2 关账).
-# ui_first_encounter stays accepted-but-rotated: it contacts the OEM offers page
-# (one site contact + ~$0.005 extraction LLM per run, true-path Δ=10 cash rows at
-# acceptance). The decline case proves the first-encounter gate at zero contact /
-# zero cost, so it carries the always-on slot.
-incentive_scrape.ui_decline.toml
+# incentive_scrape — accepted 2026-06-13 (full 7-step loop, P2 关账). New OEM
+# sources are now auto-approved (no first-encounter gate — owner 2026-06-23), so
+# ui_first_encounter (one OEM-page contact + ~$0.005 extraction LLM per run,
+# true-path Δ cash rows) carries the always-on slot.
+incentive_scrape.ui_first_encounter.toml

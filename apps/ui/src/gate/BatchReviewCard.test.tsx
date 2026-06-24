@@ -172,7 +172,64 @@ describe("BatchReviewCard — skip-all (closeout-only opt-in)", () => {
   });
 });
 
+describe("BatchReviewCard — submission summary (opt-in)", () => {
+  const WITH_SUMMARY: BatchReviewSpec = {
+    ...SPEC,
+    submitLabel: "Submit leads to approved dealers",
+    summary: {
+      heading: "Each approved dealer gets one brief inquiry containing only:",
+      lines: [
+        { label: "Vehicle", value: "2026 Honda Pilot EX-L" },
+        { label: "Your email", value: "pat.buyer@example.com" },
+        { label: "Phone", value: "a placeholder number — your real number is never shared" },
+      ],
+    },
+  };
+
+  it("renders NO summary block when the spec has no summary (read-only/scan gates)", () => {
+    const { r } = mount(); // SPEC has no summary
+    expect(r.query("batch-summary")).toBeNull();
+    r.unmount();
+  });
+
+  it("renders the summary heading + each labelled line when summary is present", () => {
+    const { r } = mount(WITH_SUMMARY);
+    const block = r.get("batch-summary");
+    expect(block.textContent).toContain("Each approved dealer gets one brief inquiry");
+    expect(r.get("batch-summary-Vehicle").textContent).toContain("2026 Honda Pilot EX-L");
+    expect(r.get("batch-summary-Your email").textContent).toContain("pat.buyer@example.com");
+    // The phone line states the placeholder-and-never-shared guarantee (inv #9).
+    expect(r.get("batch-summary-Phone").textContent).toContain("never shared");
+    r.unmount();
+  });
+});
+
 describe("readBatchReviewSpec — defensive wire parse", () => {
+  it("parses an opt-in summary block off the wire; a malformed summary degrades to undefined", () => {
+    const ok = readBatchReviewSpec({
+      kind: "batch_review",
+      question: "Submit lead inquiries to these dealers?",
+      targets: [{ dealer_id: "a", name: "A", website: "" }],
+      skipped: [],
+      total_targets: 1,
+      total_in_radius: 1,
+      summary: { heading: "Each dealer gets:", lines: [{ label: "Vehicle", value: "2026 Honda Pilot EX-L" }] },
+    });
+    expect(ok!.summary!.heading).toBe("Each dealer gets:");
+    expect(ok!.summary!.lines[0]!.value).toBe("2026 Honda Pilot EX-L");
+    // A malformed summary (line missing value) ⇒ undefined, never a thrown gate.
+    const bad = readBatchReviewSpec({
+      kind: "batch_review",
+      question: "q",
+      targets: [{ dealer_id: "a", name: "A", website: "" }],
+      skipped: [],
+      total_targets: 1,
+      total_in_radius: 1,
+      summary: { heading: "h", lines: [{ label: "Vehicle" }] },
+    });
+    expect(bad!.summary).toBeUndefined();
+  });
+
   it("parses the committed spec_inline shape", () => {
     const spec = readBatchReviewSpec({
       kind: "batch_review",

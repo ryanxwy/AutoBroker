@@ -122,23 +122,6 @@ deterministic_assertions = ["inv_freeform_while_suspended_fixed", "inv_last_run_
 judge_dims = []
 gate_verbs = ["approval_approve"]
 
-# --- incentive_scrape-OEM-suspend-handling ------------------------------------
-# During /quote_pipeline fan-out the scrape child hits an OEM first-encounter →
-# child 'suspended' → orchestrator runChildImpl cancel()-reaps it. The child is
-# 'canceled' in mastra.db (never resurfaced by recoverOnBoot), scrape excluded
-# from completed_steps, finalState='partial', nextAction → /incentive_scrape. Then
-# a DIRECT /incentive_scrape suspends at resolveOemSource → buyer clickApprovalApprove/Deny.
-[[scenarios]]
-id = "sc_scrape_oem_suspend_reap"
-surface = "quote_pipeline"
-class_name = "sc_scrape_oem_suspend_reap"
-stresses = "the scrape child suspends on an OEM first-encounter → the orchestrator cancel-reaps it (status='canceled', never floated across its boundary), scrape excluded from completed_steps, final_state='partial', next_action → /incentive_scrape; then a direct /incentive_scrape resolves the gate via buttons."
-buyer_model = "opus"
-dealer_needed = true
-deterministic_assertions = ["inv_scrape_child_reaped", "inv_single_completion_row", "no_external_mutation", "test_mode_armed"]
-judge_dims = []
-gate_verbs = ["approval_approve", "approval_deny"]
-
 # --- pin-required-STOP-in-journey ---------------------------------------------
 # /quote_pipeline while the rail is UNPINNED but exactly 1 active profile exists.
 # quote_pipeline NEVER infers — even the single-active case STOPs with pin_required.

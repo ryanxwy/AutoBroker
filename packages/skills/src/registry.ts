@@ -73,7 +73,7 @@ export const INVENTORY_SITE_SCAN_SKILL_ID = "inventory_site_scan" as const;
  *  pending dealer_inventory_sources links). */
 export const INVENTORY_LINK_SCAN_SKILL_ID = "inventory_link_scan" as const;
 
-/** The incentive scrape skill id (skill #5, OEM first-encounter approval). */
+/** The incentive scrape skill id (skill #5, read-only OEM scrape, auto-approved). */
 export const INCENTIVE_SCRAPE_SKILL_ID = "incentive_scrape" as const;
 
 /** The dealer inbox check skill id (skill #6, email-pull + one batch_review). */
@@ -202,7 +202,7 @@ export const SKILLS: readonly SkillDef[] = [
     slash: "/incentive_scrape",
     title: "Incentive scrape",
     summary:
-      "Scrape current manufacturer incentives for each active profile's vehicle (first-encounter source approval).",
+      "Scrape current manufacturer incentives for each active profile's vehicle (read-only; new sources auto-approved).",
     phase: 2,
     riskClass: "local_write",
     status: "implemented",

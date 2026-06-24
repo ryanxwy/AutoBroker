@@ -37,6 +37,12 @@ export interface BatchReviewSpec {
    *  lead-submit/closeout/negotiation set their own send verb so the same card
    *  reads correctly for every gate (the question is already payload-driven). */
   submitLabel?: string;
+  /** Opt-in submission preview: the MINIMAL info each approved item receives,
+   *  rendered as a labelled block above the list so the user sees exactly what
+   *  is sent before approving. Absent ⇒ no summary block (e.g. read-only gates).
+   *  Explicit `| undefined` so `readSummary`'s undefined return assigns under
+   *  exactOptionalPropertyTypes. */
+  summary?: { heading: string; lines: Array<{ label: string; value: string }> } | undefined;
 }
 
 /** Defensively read a batch_review spec_inline off the wire. Returns null on a
@@ -77,7 +83,24 @@ export function readBatchReviewSpec(spec: Record<string, unknown>): BatchReviewS
     allowSkipAll,
     submitLabel:
       typeof spec["submit_label"] === "string" ? spec["submit_label"] : "Scan approved dealers",
+    summary: readSummary(spec["summary"]),
   };
+}
+
+/** Defensively read the optional submission-preview block. Any malformed shape
+ *  (or absence) ⇒ undefined ⇒ no summary block renders — never a thrown gate. */
+function readSummary(raw: unknown): BatchReviewSpec["summary"] {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const heading = (raw as { heading?: unknown }).heading;
+  const linesRaw = (raw as { lines?: unknown }).lines;
+  if (typeof heading !== "string" || !Array.isArray(linesRaw)) return undefined;
+  const lines: Array<{ label: string; value: string }> = [];
+  for (const l of linesRaw) {
+    const row = l as { label?: unknown; value?: unknown };
+    if (typeof row.label !== "string" || typeof row.value !== "string") return undefined;
+    lines.push({ label: row.label, value: row.value });
+  }
+  return { heading, lines };
 }
 
 /** The header line: full-radius default vs the max_targets-truncated form. */
@@ -140,7 +163,21 @@ export function BatchReviewCard({
         {batchHeaderLine(spec)}
       </p>
 
-      <div className="batch-rows">
+      {spec.summary && (
+        <div className="batch-summary" data-testid="batch-summary">
+          <p className="batch-summary-heading">{spec.summary.heading}</p>
+          <dl>
+            {spec.summary.lines.map((line) => (
+              <div className="batch-summary-line" key={line.label} data-testid={`batch-summary-${line.label}`}>
+                <dt>{line.label}</dt>
+                <dd>{line.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      <div className="batch-rows" data-testid="batch-rows">
         {spec.targets.map((t) => {
           const decision = decisions[t.dealer_id];
           return (
