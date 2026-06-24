@@ -28,7 +28,7 @@
 
 import { join } from "node:path";
 
-import { openReadHandle } from "../../dbReads.js";
+import { openReadHandleAt } from "../../dbReads.js";
 import { startSoakHost } from "../orchestrator.js";
 import type { DeterministicResult } from "../verdict.js";
 import {
@@ -196,16 +196,28 @@ export async function runMultiProfileLane(opts: RunMultiProfileLaneOpts): Promis
     AUTOBROKER_RECORD_TRANSCRIPT: transcriptPath,
   };
 
+  // Guard: if the caller supplies a plan without the seed inputs, the world cannot
+  // be seeded and interleaveClaims would run against an empty DB. Fail fast.
+  const profiles = opts.profiles;
+  const dealer = opts.dealer;
+  if (profiles === undefined || dealer === undefined) {
+    throw new Error(
+      "runMultiProfileLane: opts.profiles and opts.dealer are required to seed the world " +
+        "(supply them even when a precomputed plan is passed)",
+    );
+  }
+
   const host = await startSoakHost({ dataDir, dbPath, parentEnv });
   try {
-    for (const roundPlan of plan.rounds) {
-      // (1) seed the world into the isolated run DB (sanctioned harness setup).
-      const { db, close } = openReadHandle();
-      try {
-        if (opts.profiles !== undefined && opts.dealer !== undefined) {
-          seedMultiActiveSharedDealer(db, opts.profiles, opts.dealer);
-        }
+    // (1) Seed the world ONCE before the round loop. seedMultiActiveSharedDealer
+    // does plain INSERTs (no ON CONFLICT), so seeding inside the loop would throw
+    // a PK violation on round 2. The multiActive world + shared dealer are stable
+    // across rounds; only per-round chaos/claims/inject differs.
+    const { db, close } = openReadHandleAt(dbPath);
+    try {
+      seedMultiActiveSharedDealer(db, profiles, dealer);
 
+      for (const roundPlan of plan.rounds) {
         // (2) inject the dealer replies per profile in the round's replyOrder
         // (serve-live /__e2e/inject_replies with dealer_key = shared rooftop).
         for (const profileId of roundPlan.replyOrder) {
@@ -227,9 +239,9 @@ export async function runMultiProfileLane(opts: RunMultiProfileLaneOpts): Promis
             return;
           }
         }
-      } finally {
-        close();
       }
+    } finally {
+      close();
     }
   } finally {
     await host.stop();
