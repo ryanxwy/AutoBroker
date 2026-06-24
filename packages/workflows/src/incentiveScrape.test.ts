@@ -12,16 +12,12 @@
  *
  * Coverage (the step-3 core chain; the fallback-gating map has its own
  * suite):
- *   - first-encounter chain → suspend payload shape (approval kind, the seed
- *     candidate URL) BEFORE any capture; approve → registry file written →
- *     capture → extraction → whitelist → DELETE-then-INSERT persist; output
- *     contract round-trip.
- *   - re-run after approve → NO suspend (registry memory), cache-fresh skip
- *     with ZERO capture (the no-re-ask + no-navigation behavioral pair).
- *   - decline → terminal declined, zero capture, zero DB writes, NO registry
- *     entry; a re-run asks AGAIN.
- *   - skip → that brand skipped (run completes 0-scraped), registry NOT
- *     written; per-run only — a fresh run asks again.
+ *   - first-encounter chain → AUTO-approve (no suspend): the seed source is
+ *     recorded (registry file written) and scraped automatically → capture →
+ *     extraction → whitelist → DELETE-then-INSERT persist; output contract
+ *     round-trip.
+ *   - re-run after a first encounter → still no suspend; cache-fresh skip with
+ *     ZERO capture (the no-re-navigation behavior).
  *   - resolver branches → 0-active typed STOP; pinned wins exactly one
  *     target; 2+ active are ALL enumerated (the documented exception).
  *   - the missing-zip target gate.
@@ -31,7 +27,7 @@
  * there; NEVER ~/.autobroker*.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,10 +37,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, openDb, readIncentiveRegistry, type Db } from "@autobroker/tools";
 
 import { createMastraInstance } from "./mastra.js";
-import {
-  IncentiveScrapeOutputSchema,
-  OemFirstEncounterSuspendSchema,
-} from "./incentiveScrapeContracts.js";
+import { IncentiveScrapeOutputSchema } from "./incentiveScrapeContracts.js";
 import {
   incentiveScrapeWorkflow,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
@@ -64,8 +57,7 @@ const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0001_redundant_ozymandia
 );
 
 // The brand seed is the param-free offers page; the registry remembers it
-// verbatim (no {zip} fill), and the suspend / capture / persist all use the
-// same URL.
+// verbatim (no {zip} fill), and the capture / persist all use the same URL.
 const SEED_TEMPLATE = "https://www.hyundaiusa.com/us/en/offers";
 const SEED_URL = "https://www.hyundaiusa.com/us/en/offers";
 
@@ -202,14 +194,6 @@ async function startRun(runId: string, searchProfileId: string | null = null) {
   return { run, result };
 }
 
-function suspendPayloadOf(result: unknown): Record<string, unknown> {
-  const steps = (result as { steps?: Record<string, { suspendPayload?: Record<string, unknown> }> })
-    .steps;
-  const payload = steps?.["resolveOemSource"]?.suspendPayload;
-  expect(payload).toBeDefined();
-  return payload!;
-}
-
 function outputOf(result: unknown): Record<string, unknown> {
   return (result as { result: Record<string, unknown> }).result;
 }
@@ -233,36 +217,20 @@ function incentiveRows(): Array<Record<string, unknown>> {
 const registryPath = (): string => join(tmpDir, "incentive_sources.toml");
 
 // ---------------------------------------------------------------------------
-// the first-encounter approve chain
+// the first-encounter auto-approve chain (READ-ONLY scrape — NO human gate)
 // ---------------------------------------------------------------------------
 
-describe("incentive_scrape first-encounter approve chain", () => {
-  it("suspends the approval BEFORE any capture, writes the registry on save, scrapes and persists", async () => {
+describe("incentive_scrape first-encounter auto-approve chain", () => {
+  it("records the seed source automatically (no suspend), scrapes and persists", async () => {
     seedProfile();
     const captures = { calls: [] as OfferCaptureArgs[] };
     installDeps({ captureOffers: captureStub(captures) });
 
-    const { run, result } = await startRun("inc-run-1");
-    expect((result as { status: string }).status).toBe("suspended");
+    // No suspend: a first encounter is auto-recorded and scraped in one start.
+    const { result } = await startRun("inc-run-1");
+    expect((result as { status: string }).status).toBe("success");
 
-    // The payload is the typed first-encounter approval: the seed candidate
-    // URL, the banner approval kind. NOTHING has been captured or written.
-    const payload = OemFirstEncounterSuspendSchema.parse(suspendPayloadOf(result));
-    expect(payload.oemUrl).toBe(SEED_URL);
-    expect(payload.make).toBe("Hyundai");
-    expect(payload.reason).toBe("oem_first_encounter");
-    expect(captures.calls).toHaveLength(0);
-    expect(incentiveRows()).toHaveLength(0);
-    expect(existsSync(registryPath())).toBe(false);
-
-    // Approve the shown candidate → the registry entry lands, the OEM page is
-    // captured, the cash row persists (the "other" row is whitelist-dropped).
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    expect((final as { status: string }).status).toBe("success");
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
     if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
     expect(output.resolution).toBe("all_active");
     expect(output.targetsTotal).toBe(1);
@@ -272,13 +240,14 @@ describe("incentive_scrape first-encounter approve chain", () => {
     expect(output.incentivesWritten).toBe(1);
     expect(output.rowsDroppedNonCash).toBe(1);
 
-    // Registry memory: the brand entry holds the SEED template verbatim.
+    // Registry memory: the brand entry was written automatically, holding the
+    // SEED template verbatim.
     const registry = readIncentiveRegistry(registryPath());
     expect(registry["hyundai"]).toBeDefined();
     expect(registry["hyundai"]!.url_template).toBe(SEED_TEMPLATE);
     expect(registry["hyundai"]!.added_for_profile).toBe("prof-1");
 
-    // The capture walked exactly the approved URL.
+    // The capture walked exactly the seed URL.
     expect(captures.calls).toHaveLength(1);
     expect(captures.calls[0]!.urls).toEqual([SEED_URL]);
 
@@ -290,14 +259,14 @@ describe("incentive_scrape first-encounter approve chain", () => {
     expect(rows[0]!["scrape_source_url"]).toBe(SEED_URL);
   });
 
-  it("a re-run after approve never asks again (registry) and never navigates (cache skip)", async () => {
+  it("a re-run never re-records the source (registry) and never navigates (cache skip)", async () => {
     seedProfile();
     installDeps();
-    const { run } = await startRun("inc-run-2a");
-    await run.resume({ step: "resolveOemSource", resumeData: { action: "save", url: null } });
+    const first = await startRun("inc-run-2a");
+    expect((first.result as { status: string }).status).toBe("success");
     expect(incentiveRows()).toHaveLength(1);
 
-    // Second run, same world: NO suspend, NO capture, NO LLM, slice untouched.
+    // Second run, same world: NO capture, NO LLM, slice untouched.
     installDeps({ captureOffers: captureNeverCalled, harnessGenerate: harnessNeverCalled });
     const second = await startRun("inc-run-2b");
     expect((second.result as { status: string }).status).toBe("success");
@@ -307,55 +276,6 @@ describe("incentive_scrape first-encounter approve chain", () => {
     expect(output.brandsSkipped).toBe(1);
     expect(output.summary).toContain("fresh <7d");
     expect(incentiveRows()).toHaveLength(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// decline / skip
-// ---------------------------------------------------------------------------
-
-describe("incentive_scrape first-encounter decline / skip", () => {
-  it("decline → terminal declined, zero capture, zero writes, NO registry; a re-run asks again", async () => {
-    seedProfile();
-    installDeps({ captureOffers: captureNeverCalled, harnessGenerate: harnessNeverCalled });
-
-    const { run, result } = await startRun("inc-run-3a");
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "decline", url: null },
-    });
-    expect((final as { status: string }).status).toBe("success");
-    expect(outputOf(final)).toEqual({ outcome: "declined" });
-    expect(incentiveRows()).toHaveLength(0);
-    expect(existsSync(registryPath())).toBe(false);
-
-    // Nothing was remembered: a fresh run fires the approval AGAIN.
-    const again = await startRun("inc-run-3b");
-    expect((again.result as { status: string }).status).toBe("suspended");
-  });
-
-  it("skip → that brand only: run completes with brandsSkipped, no registry; a fresh run asks again", async () => {
-    seedProfile();
-    installDeps({ captureOffers: captureNeverCalled, harnessGenerate: harnessNeverCalled });
-
-    const { run, result } = await startRun("inc-run-4a");
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "skip", url: null },
-    });
-    expect((final as { status: string }).status).toBe("success");
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
-    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
-    expect(output.brandsScraped).toBe(0);
-    expect(output.brandsSkipped).toBe(1);
-    expect(output.summary).toContain("skipped by you");
-    expect(existsSync(registryPath())).toBe(false);
-
-    // The skip was per-run: a fresh run asks again.
-    const again = await startRun("inc-run-4b");
-    expect((again.result as { status: string }).status).toBe("suspended");
   });
 });
 
@@ -375,13 +295,9 @@ describe("incentive_scrape profile resolution", () => {
     seedProfile({ id: "prof-a", accountId: "acct-1" });
     seedProfile({ id: "prof-b", make: "Mazda", model: "CX-50", accountId: "acct-2" });
     installDeps();
-    const { run, result } = await startRun("inc-run-6", "prof-a");
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    const { result } = await startRun("inc-run-6", "prof-a");
+    expect((result as { status: string }).status).toBe("success");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
     if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
     expect(output.resolution).toBe("pinned");
     expect(output.targetsTotal).toBe(1);
@@ -391,14 +307,11 @@ describe("incentive_scrape profile resolution", () => {
     seedProfile({ id: "prof-a", accountId: "acct-1" });
     seedProfile({ id: "prof-b", make: "Mazda", model: "CX-50", accountId: "acct-2" });
     installDeps();
-    const { run, result } = await startRun("inc-run-7");
-    // Hyundai (seeded brand) suspends; Mazda has no seed → no_oem_source.
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    // Hyundai (seeded brand) auto-records + scrapes; Mazda has no seed →
+    // no_oem_source — all in one start, no suspend.
+    const { result } = await startRun("inc-run-7");
+    expect((result as { status: string }).status).toBe("success");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
     if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
     expect(output.resolution).toBe("all_active");
     expect(output.targetsTotal).toBe(2);
@@ -730,9 +643,10 @@ describe("incentive_scrape dual-source gating (the voiced fallback map)", () => 
   });
 
   async function approvedRun(runId: string) {
-    const { run, result } = await startRun(runId);
-    expect((result as { status: string }).status).toBe("suspended");
-    return run.resume({ step: "resolveOemSource", resumeData: { action: "save", url: null } });
+    // No suspend: the first encounter is auto-recorded and scraped in one start.
+    const { result } = await startRun(runId);
+    expect((result as { status: string }).status).toBe("success");
+    return result;
   }
 
   it("OEM blocked → rooftop becomes the source: VOICED oem_source_fallback, rooftop provenance persisted", async () => {
@@ -844,18 +758,13 @@ describe("incentive_scrape dual-source gating (the voiced fallback map)", () => 
     expect(rows[0]!["amount"]).toBe(1500);
   });
 
-  it("two profiles, ONE brand: a single first-encounter approval covers both targets", async () => {
+  it("two profiles, ONE brand: a single auto-recorded source covers both targets", async () => {
     seedProfile({ id: "prof-a", accountId: "acct-1", zip: "92614" });
     seedProfile({ id: "prof-b", model: "Elantra", accountId: "acct-2", zip: "90001" });
     installDeps();
-    const { run, result } = await startRun("inc-fb-5");
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    expect((final as { status: string }).status).toBe("success");
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    const { result } = await startRun("inc-fb-5");
+    expect((result as { status: string }).status).toBe("success");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
     if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
     expect(output.targetsTotal).toBe(2);
     expect(output.brandsScraped).toBe(2); // brand-keyed registry covered both
@@ -872,14 +781,9 @@ describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
         throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
       }) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"],
     });
-    const { run, result } = await startRun("inc-1244-a");
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    expect((final as { status: string }).status).toBe("failed");
-    expect(errorMessageOf(final)).toMatch(/[Mm]alformed/);
+    const { result } = await startRun("inc-1244-a");
+    expect((result as { status: string }).status).toBe("failed");
+    expect(errorMessageOf(result)).toMatch(/[Mm]alformed/);
     expect(incentiveRows()).toHaveLength(0); // capture happened; persist never did
   });
 
@@ -892,13 +796,8 @@ describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
         signals: ["finish_reason_not_tool_calls"],
       })) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"],
     });
-    const { run, result } = await startRun("inc-1244-b");
-    expect((result as { status: string }).status).toBe("suspended");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    expect((final as { status: string }).status).toBe("failed");
+    const { result } = await startRun("inc-1244-b");
+    expect((result as { status: string }).status).toBe("failed");
     expect(incentiveRows()).toHaveLength(0);
   });
 
@@ -911,12 +810,8 @@ describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
         { type: "customer_cash", amount: 500, expires: "July 6", eligibility: "all" }, // prose date
       ]),
     });
-    const { run } = await startRun("inc-zod-1");
-    const final = await run.resume({
-      step: "resolveOemSource",
-      resumeData: { action: "save", url: null },
-    });
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(final));
+    const { result } = await startRun("inc-zod-1");
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
     if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
     expect(output.rowsInvalidDropped).toBe(2);
     expect(output.incentivesWritten).toBe(1);

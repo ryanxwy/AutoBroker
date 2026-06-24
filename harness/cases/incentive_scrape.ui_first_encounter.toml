@@ -1,22 +1,24 @@
 # harness/cases/incentive_scrape.ui_first_encounter.toml — the OEM
-# first-encounter approval + the behavioral no-re-ask proof, UI-LANE, ONE
-# browser session end-to-end on ONE isolated world:
+# first-encounter AUTO-RECORD + the behavioral no-re-navigation proof, UI-LANE,
+# ONE browser session end-to-end on ONE isolated world. incentive_scrape is
+# READ-ONLY (public OEM offers pages → local manufacturer_incentives rows; no
+# send), so a brand-new source is recorded and scraped AUTOMATICALLY — there is
+# NO approval gate on any run (owner directive 2026-06-23):
 #
 #   step 1  intake via chat-rail SLASH (the corpus Tucson profile; the
 #           geocoded ZIP becomes the scrape key's zip — the intake location
 #           must resolve a postal code or the scrape target fails loud).
 #   step 2  "/incentive_scrape" via slash — FIRST run: the registry file is
 #           empty, the brand has an in-code seed candidate (the OEM offers
-#           URL), so the first-encounter APPROVAL card renders on the
-#           gate-banner track BEFORE any navigation. The driver clicks the
-#           REAL Approve button → the registry entry is written → the OEM
-#           offers page renders in an isolated browser → offer cards extracted
-#           (LLM) → cash whitelist → DELETE-then-INSERT refresh of the
-#           profile's (make, model, zip) incentive slice.
+#           URL), so the seed source is auto-recorded (the registry entry is
+#           written) and the run proceeds with NO suspend → the OEM offers page
+#           renders in an isolated browser → offer cards extracted (LLM) → cash
+#           whitelist → DELETE-then-INSERT refresh of the profile's
+#           (make, model, zip) incentive slice.
 #   step 3  "/incentive_scrape" again, SAME world — SECOND run: the registry
-#           remembers the approval, so approval_gate expect=absent is the
-#           behavioral NO-RE-ASK proof — proven independently of whether the
-#           page carried cash.
+#           already holds the source and step 2 left a <7d cache marker, so the
+#           run proceeds with no gate and the 7-day cache gate skips
+#           re-navigation — the slice nets Δ=0 EXACT.
 #
 # No [[seed.*]] sections and no geosearch step: scrape targets derive from
 # the active profile itself, and with no bound dealers the rooftop secondary
@@ -43,14 +45,13 @@
 #     is now the GENUINE-EMPTY FALLBACK ONLY — it fires only if a future run
 #     truly finds zero whitelist cash, never as the expected path. A
 #     blocked/failed scrape is NOT waivable — it surfaces RED.
-#   - step 3 proves NO-RE-ASK (approval_gate absent). The registry entry written
-#     in step 2 means no gate fires here; and because step 2 just scraped this
-#     same URL seconds earlier, the in-run 7-day cache gate SKIPS re-navigation
-#     ("0 scraped, 1 skipped (fresh <7d)") — the slice nets Δ=0 EXACT with no
-#     second site contact. (step 3 asserts nothing about browser_activity, so it
-#     holds whether the cache skips now or a future >7d replace re-navigates; the
-#     delete-then-insert replace path is unit-pinned separately.) The no-re-ask
-#     proof is the load-bearing behavior and holds regardless of cash volume.
+#   - step 3 proves NO-RE-NAVIGATION. The registry already holds the source, and
+#     because step 2 just scraped this same URL seconds earlier, the in-run
+#     7-day cache gate SKIPS re-navigation ("0 scraped, 1 skipped (fresh <7d)")
+#     — the slice nets Δ=0 EXACT with no second site contact. (step 3 asserts
+#     nothing about browser_activity, so it holds whether the cache skips now or
+#     a future >7d replace re-navigates; the delete-then-insert replace path is
+#     unit-pinned separately.) No run on this case ever renders an approval gate.
 
 [meta]
 id = "incentive_scrape_ui_first_encounter"
@@ -122,19 +123,15 @@ kind = "cost_and_time"
 kind = "malformed_tool_call"
 expect = "absent"
 
-# ---- step 2: first run — the first-encounter approval fires, Approve --------
+# ---- step 2: first run — the seed source is auto-recorded, no gate ----------
 
 [[steps]]
 id = "scrape_first"
 skill = "incentive_scrape"
-purpose = "First encounter: approval card fires BEFORE any navigation; Approve writes the registry; the OEM page is scraped."
+purpose = "First encounter: the seed source is auto-recorded (registry written) and the OEM page is scraped — NO approval gate (read-only scrape)."
 gate_policy = "approve_safe"
 launch = "chat_slash"
 max_seconds = 1200          # PER-STEP budget: one OEM page render + extraction.
-
-[[steps.resume]]
-on = "oem_first_encounter"
-action = "accept"           # the REAL Approve button → approve the shown candidate.
 
 [[steps.anchors]]
 kind = "run_status"
@@ -145,10 +142,11 @@ kind = "driver_kind"
 expect = "deepseek_apikey"
 
 [[steps.anchors]]
-kind = "approval_gate"      # the first-encounter gate RENDERED on this run.
+kind = "approval_gate"      # NO gate fires — the scrape auto-records its source.
+expect = "absent"
 
 [[steps.anchors]]
-kind = "browser_activity"   # the approved scrape really navigated.
+kind = "browser_activity"   # the auto-approved scrape really navigated.
 
 [[steps.anchors]]
 kind = "table_min_rows"     # the profile's (make,model,zip) incentive slice

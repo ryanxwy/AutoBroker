@@ -1093,7 +1093,7 @@ const buildPayloadsStep = createStep({
 // ---------------------------------------------------------------------------
 
 /** The batch_review card question (fixed copy). */
-const BATCH_REVIEW_QUESTION = "Submit leads to these dealers?";
+const BATCH_REVIEW_QUESTION = "Submit lead inquiries to these dealers?";
 
 const batchReviewStep = createStep({
   id: "batchReview",
@@ -1133,9 +1133,31 @@ const batchReviewStep = createStep({
     // FULL BATCH: the batch_review card (gate before prose). Nothing has been
     // written and no mutating face has been reached.
     if (resumeData === undefined) {
+      // The submission summary: the MINIMAL info each approved dealer receives,
+      // shown above the dealer list so the user sees exactly what is sent before
+      // approving. Phone is always a placeholder and the budget is never shared
+      // (a hard redaction floor), stated explicitly here.
+      const vehicleLabel =
+        [
+          state.messageProfile.year,
+          state.messageProfile.make,
+          state.messageProfile.model,
+          state.messageProfile.trim,
+        ]
+          .filter((x) => x !== null && x !== undefined && x !== "")
+          .join(" ") || "your pinned search";
+      const summaryLines: Array<{ label: string; value: string }> = [
+        { label: "Vehicle", value: vehicleLabel },
+        { label: "Your email", value: state.followUpEmail ?? "(none on file)" },
+        { label: "Phone", value: "a placeholder number — your real number is never shared" },
+      ];
       return (await suspend({
         kind: "batch_review",
         question: BATCH_REVIEW_QUESTION,
+        summary: {
+          heading: "Each approved dealer gets one brief inquiry containing only:",
+          lines: summaryLines,
+        },
         targets: eligible.map((d) => ({
           dealer_id: d.dealer_id,
           name: d.name,

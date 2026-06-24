@@ -873,8 +873,8 @@ describe("U-C pure-UI step grammar (kind=ui / fixture_state / ui_actions / dom_s
   });
 });
 
-describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", () => {
-  it("loads the first-encounter case: approve step then the behavioral no-ask step", () => {
+describe("B4 incentive_scrape cases (first-encounter auto-record, no gate)", () => {
+  it("loads the first-encounter case: auto-record scrape then the behavioral no-re-navigation step", () => {
     const c = loadCase(join(CASES, "incentive_scrape.ui_first_encounter.toml"));
     expect(c.lane).toBe("ui");
     expect(c.seed).toBeNull(); // targets derive from the profile — no seeds.
@@ -882,8 +882,10 @@ describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", 
     const first = c.steps[1]!;
     expect(first.skill).toBe("incentive_scrape");
     expect(first.maxSeconds).toBe(1200);
-    expect(first.resume[0]).toMatchObject({ on: "oem_first_encounter", action: "accept" });
-    expect(first.anchors.find((a) => a.kind === "approval_gate")).toEqual({ kind: "approval_gate" });
+    // Read-only scrape: no approval gate, no resume — the seed source is
+    // auto-recorded and the run proceeds in one start.
+    expect(first.resume).toHaveLength(0);
+    expect(first.anchors.find((a) => a.kind === "approval_gate")).toMatchObject({ expect: "absent" });
     expect(first.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
       table: "manufacturer_incentives",
       scope: "profile",
@@ -892,11 +894,10 @@ describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", 
 
     const noAsk = c.steps[2]!;
     expect(noAsk.resume).toHaveLength(0); // nothing suspends on the re-run.
-    // The load-bearing proof of step 3 is NO-RE-ASK (registry hit → gate
-    // absent). It does NOT assert a cache-skip / zero-navigation: an empty
-    // slice leaves no cache marker, so the second run re-navigates and stays
-    // empty (Δ=0 EXACT). browser_activity is therefore intentionally not
-    // pinned (it differs between the empty and the real-cash worlds).
+    // The load-bearing proof of step 3 is NO-RE-NAVIGATION (registry hit + fresh
+    // cache marker → cache-skip). browser_activity is intentionally not pinned
+    // (it differs between the cache-skip and a future >7d re-navigation), and no
+    // run ever renders an approval gate.
     expect(noAsk.anchors.find((a) => a.kind === "approval_gate")).toMatchObject({ expect: "absent" });
     expect(noAsk.anchors.find((a) => a.kind === "browser_activity")).toBeUndefined();
     expect(noAsk.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
@@ -904,26 +905,6 @@ describe("B4 incentive_scrape cases (first-encounter approval + decline twin)", 
       deltaMin: 0,
       exact: true,
     });
-  });
-
-  it("loads the decline twin: declined terminal, zero nav, slice exact-0, asks AGAIN on the re-run", () => {
-    const c = loadCase(join(CASES, "incentive_scrape.ui_decline.toml"));
-    for (const stepIdx of [1, 2]) {
-      const step = c.steps[stepIdx]!;
-      expect(step.resume[0]).toMatchObject({ on: "oem_first_encounter", action: "decline", content: null });
-      expect(step.anchors.find((a) => a.kind === "run_status")).toMatchObject({ expect: ["declined"] });
-      // The gate RENDERED on every decline round (the re-run still asking is
-      // the behavioral proof no registry entry was written).
-      expect(step.anchors.find((a) => a.kind === "approval_gate")).toEqual({ kind: "approval_gate" });
-      expect(step.anchors.find((a) => a.kind === "browser_activity")).toMatchObject({ expect: "absent" });
-      expect(step.anchors.find((a) => a.kind === "table_min_rows")).toMatchObject({
-        table: "manufacturer_incentives",
-        deltaMin: 0,
-        exact: true,
-      });
-      // The decline path is zero-LLM by construction — no cost anchor at all.
-      expect(step.anchors.find((a) => a.kind === "cost_and_time")).toBeUndefined();
-    }
   });
 
   it("fails LOUD on an approval_gate anchor with a bad expect", () => {

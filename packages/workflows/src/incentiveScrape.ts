@@ -1,9 +1,10 @@
 /**
  * incentive_scrape — skill #5 (the OEM offers scraper). ONE flat linear
  * Mastra `createWorkflow`: 7 named steps chained with `.then()`, no nested
- * workflow. The single suspend is the OEM FIRST-ENCOUNTER approval (Class 1 —
- * trusting a new external source domain) BEFORE any navigation: decline =
- * terminal, ZERO navigation, ZERO DB writes, NO registry entry.
+ * workflow. There is NO suspend: this skill is READ-ONLY (it fetches public OEM
+ * offers pages and writes only local manufacturer_incentives rows — no email,
+ * no form submit), so a brand-new incentive source is recorded and scraped
+ * AUTOMATICALLY, never gated by a human approval (owner directive 2026-06-23).
  *
  * STEP MAP:
  *   0 resolveProfile  — the DOCUMENTED EXCEPTION to the single-profile
@@ -17,21 +18,17 @@
  *                       gate (the scrape key is (make, model, zip)) and the
  *                       7-day cache marker read (newest persisted scraped_at
  *                       + source URL per slice). No navigation, no LLM.
- *   2 resolveOemSource— suspend ① (the only one). Per brand: the data-dir
- *                       file registry is the cross-run "already approved"
- *                       memory — a hit resolves the URL with NO ask; a miss
- *                       consults the in-code seed candidate table and
- *                       SUSPENDS the first-encounter approval (kind:
- *                       "approval" on the banner track) with the substituted
- *                       candidate URL. save → registry entry written →
- *                       resume; skip → that BRAND skipped, run continues;
- *                       decline → terminal, zero nav, zero writes. No seed
- *                       and no registry = an honest no_oem_source failure
- *                       (this build runs web-search-free). Every resolved
- *                       URL passes classifyOemHost (aggregator/non-US
- *                       rejection) + the SSRF validator, then the 7-day
- *                       cache gate (fresh + same URL → brands_skipped,
- *                       ZERO navigation).
+ *   2 resolveOemSource— AUTO-APPROVE (no suspend). Per brand: the data-dir
+ *                       file registry is the cross-run memory — a hit resolves
+ *                       the URL directly; a miss consults the in-code seed
+ *                       candidate table and, on a first encounter, AUTOMATICALLY
+ *                       records the seed source (writes the registry entry) and
+ *                       proceeds — no human ask. No seed and no registry = an
+ *                       honest no_oem_source failure (this build runs
+ *                       web-search-free). Every resolved URL passes
+ *                       classifyOemHost (aggregator/non-US rejection) + the
+ *                       SSRF validator, then the 7-day cache gate (fresh + same
+ *                       URL → brands_skipped, ZERO navigation).
  *   3 renderExtract   — PURE READ + the LLM phase; performs NO SQLite
  *                       writes and holds NO gate Approver (the one mutating
  *                       browser face — submitForm — structurally requires an
@@ -84,10 +81,11 @@
  * embedded instructions; the extraction prompt fences the page text. Budget
  * red line: the profile's budget is structurally absent from this file.
  *
- * FALLBACK GATING MAP (semantic → suspend; transient → auto + voiced):
- *   - OEM first encounter            → suspend ① (Class 1, human-decided);
- *                                      skip = that brand only; decline =
- *                                      terminal, zero nav, zero writes.
+ * FALLBACK GATING MAP (transient → auto + voiced):
+ *   - OEM first encounter            → AUTO-recorded + scraped, no human gate
+ *                                      (read-only scrape — owner directive
+ *                                      2026-06-23); the seed URL is still
+ *                                      host-classified + SSRF-validated in code.
  *   - card-less DOM → plain snapshot → AUTO-allowed equivalent read, voiced
  *                                      `snapshot_fallback` + tallied.
  *   - OEM blocked → rooftop source   → AUTO-allowed source-level fallback
@@ -133,7 +131,6 @@ import {
   readIncentiveRegistry as readIncentiveRegistryImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   substituteOemUrlTemplate,
-  urlNormalize,
   validateSourceUrl as validateSourceUrlImpl,
   withBrowserContext,
   writeIncentiveRegistryEntry as writeIncentiveRegistryEntryImpl,
@@ -149,9 +146,6 @@ import {
   IncentiveScrapeOutputSchema,
   IncentiveScrapeStopError,
   type IncentiveFailReason,
-  type OemFirstEncounterResume,
-  OemFirstEncounterResumeSchema,
-  OemFirstEncounterSuspendSchema,
 } from "./incentiveScrapeContracts.js";
 import { isDeniedScanHost, scanHostnameOf } from "./inventorySiteScan.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
@@ -453,26 +447,6 @@ export async function captureOffersImpl(args: OfferCaptureArgs): Promise<OfferCa
 }
 
 // ---------------------------------------------------------------------------
-// per-run first-encounter decision carry (skip/invalid answers are not
-// durable like a saved registry entry, so the step remembers them in-process;
-// a crash mid-run simply re-asks — fail-closed, never fail-open)
-// ---------------------------------------------------------------------------
-
-const firstEncounterDecisionsByRun = new Map<
-  string,
-  Map<string, "user_skipped" | "invalid_source_url">
->();
-
-function decisionsFor(runId: string): Map<string, "user_skipped" | "invalid_source_url"> {
-  let m = firstEncounterDecisionsByRun.get(runId);
-  if (m === undefined) {
-    m = new Map();
-    firstEncounterDecisionsByRun.set(runId, m);
-  }
-  return m;
-}
-
-// ---------------------------------------------------------------------------
 // dependency-injection seam (test-runner-guarded, mirroring the other skills)
 // ---------------------------------------------------------------------------
 
@@ -539,7 +513,6 @@ export function __setIncentiveScrapeDepsForTests(
 /** Restore the real wiring between test cases. */
 export function __resetIncentiveScrapeDepsForTests(): void {
   injectedDeps = undefined;
-  firstEncounterDecisionsByRun.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -582,7 +555,7 @@ const IncentiveTargetStateSchema = z.object({
   make: z.string(),
   model: z.string(),
   zip: z.string().nullable(),
-  /** Normalized brand key (the registry/seed/suspend identity). */
+  /** Normalized brand key (the registry/seed identity). */
   brand: z.string(),
   status: z.enum(["pending", "ready", "scraped", "skipped", "failed"]),
   skip_reason: z.enum(INCENTIVE_SKIP_REASONS).nullable(),
@@ -726,7 +699,7 @@ const loadTargetsStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 2 — resolveOemSource (suspend ①: the first-encounter approval)
+// step 2 — resolveOemSource (auto-approve every new source; NO human gate)
 // ---------------------------------------------------------------------------
 
 /** Resolve one target against a registry/seed URL template: substitute →
@@ -775,20 +748,19 @@ const resolveOemSourceStep = createStep({
   id: "resolveOemSource",
   inputSchema: IncentiveScrapeStateSchema,
   outputSchema: IncentiveScrapeStateSchema,
-  resumeSchema: OemFirstEncounterResumeSchema,
-  suspendSchema: OemFirstEncounterSuspendSchema,
-  execute: async ({ inputData, resumeData, suspend, runId }) => {
+  execute: async ({ inputData }) => {
     const state = asState(inputData);
     if (state.declined) return state;
 
-    // The single resume answers the FIRST undecided brand the loop reaches
-    // (deterministic: saved brands became registry hits, skipped/invalid
-    // brands are remembered in the per-run carry, so re-execution re-derives
-    // the same order). Consumed at most once per execution.
-    let pendingResume: OemFirstEncounterResume | undefined =
-      resumeData === undefined ? undefined : OemFirstEncounterResumeSchema.parse(resumeData);
-
-    const carry = decisionsFor(runId);
+    // AUTO-APPROVE (owner directive 2026-06-23): incentive_scrape is READ-ONLY —
+    // it fetches PUBLIC OEM offers pages and writes only local
+    // manufacturer_incentives rows; it sends no email and submits no form, so a
+    // brand-new incentive source is a UX choice, not a safety/L2 send gate.
+    // Every first-encounter source is therefore recorded and scraped
+    // automatically with NO suspend: a registry hit resolves as before, and a
+    // first encounter with an in-code seed writes the registry entry itself
+    // (the cross-run memory) and proceeds. No seed and no registry is still an
+    // honest no_oem_source failure (this build runs web-search-free).
     const targets: IncentiveTargetState[] = [];
     const decidedBrands = new Map<string, IncentiveTargetState>();
 
@@ -806,22 +778,10 @@ const resolveOemSourceStep = createStep({
         continue;
       }
 
-      // Per-run carry: a skipped/invalid first-encounter answer holds for the
-      // brand for the rest of the run.
-      const remembered = carry.get(target.brand);
-      if (remembered === "user_skipped") {
-        targets.push({ ...target, status: "skipped", skip_reason: "user_skipped" });
-        continue;
-      }
-      if (remembered === "invalid_source_url") {
-        targets.push(failTarget(target, "invalid_source_url"));
-        continue;
-      }
-
       const registry = deps().readRegistry();
       const entry = registry[target.brand];
       if (entry !== undefined) {
-        // Cross-run memory hit: NO ask (the behavioral no-re-ask proof).
+        // Cross-run memory hit: resolve against the remembered template.
         const decided = await resolveTargetAgainstTemplate(
           target,
           entry.url_template,
@@ -841,65 +801,23 @@ const resolveOemSourceStep = createStep({
         continue;
       }
 
-      // FIRST ENCOUNTER. A pending resume answers THIS brand; otherwise
-      // suspend the approval (Class 1 — before any navigation).
-      let candidateUrl: string;
-      try {
-        candidateUrl = substituteOemUrlTemplate(seed.urlTemplate, {
-          zip: target.zip ?? "",
-          model: target.model,
-        });
-      } catch {
-        const decided = failTarget(target, "invalid_source_url");
-        decidedBrands.set(target.brand, decided);
-        targets.push(decided);
-        continue;
-      }
-
-      if (pendingResume === undefined) {
-        return (await suspend({
-          kind: "approval",
-          summary:
-            `First encounter with a new incentive source for ${target.make} ` +
-            `${target.model}: scrape ${candidateUrl} ? Approving remembers ` +
-            "this source for future runs.",
-          sensitive: true,
-          oemUrl: candidateUrl,
-          normalizedUrl: urlNormalize(candidateUrl),
-          make: target.make,
-          model: target.model,
-          reason: "oem_first_encounter",
-        })) as never;
-      }
-
-      const answer = pendingResume;
-      pendingResume = undefined; // consumed — at most one brand per resume
-
-      if (answer.action === "decline") {
-        // The WHOLE run terminates declined: zero navigation, zero writes.
-        firstEncounterDecisionsByRun.delete(runId);
-        return { ...state, declined: true };
-      }
-      if (answer.action === "skip") {
-        carry.set(target.brand, "user_skipped");
-        targets.push({ ...target, status: "skipped", skip_reason: "user_skipped" });
-        continue;
-      }
-
-      // save — approve the candidate (or a corrected URL). The template the
-      // registry remembers is the SEED template when the candidate was
-      // approved as-shown (so other zips/models substitute correctly), or the
-      // user-supplied URL verbatim.
-      const template = answer.url ?? seed.urlTemplate;
-      const probe = await resolveTargetAgainstTemplate(target, template, "invalid_source_url");
+      // FIRST ENCOUNTER → auto-record the seed source (the registry remembers
+      // the SEED template verbatim so other zips/models substitute correctly)
+      // and proceed. The seed template is still SSRF-/host-classified and
+      // cache-gated inside resolveTargetAgainstTemplate before anything trusts
+      // it; a candidate that fails those code-level gates is a failed target.
+      const probe = await resolveTargetAgainstTemplate(
+        target,
+        seed.urlTemplate,
+        "invalid_source_url",
+      );
       if (probe.status === "failed") {
-        carry.set(target.brand, "invalid_source_url");
         decidedBrands.set(target.brand, probe);
         targets.push(probe);
         continue;
       }
       deps().writeRegistryEntry(target.brand, {
-        url_template: template,
+        url_template: seed.urlTemplate,
         added_at: new Date().toISOString(),
         added_for_profile: target.search_profile_id,
       });
@@ -1122,9 +1040,8 @@ const persistStep = createStep({
   id: "persist",
   inputSchema: IncentiveScrapeStateSchema,
   outputSchema: IncentiveScrapeStateSchema,
-  execute: async ({ inputData, runId }) => {
+  execute: async ({ inputData }) => {
     const state = asState(inputData);
-    firstEncounterDecisionsByRun.delete(runId); // the carry never outlives the run
     if (state.declined) return state; // terminal decline: ZERO writes.
 
     let incentivesWritten = state.incentivesWritten;

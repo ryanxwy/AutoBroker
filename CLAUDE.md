@@ -215,6 +215,17 @@ These are durable product rules, distinct from the safety invariants above:
    deliberate user action — starting a NEW search (intake forks a new session) or
    explicitly switching sessions — resets it. A non-intake skill run, profile
    hard-delete, and `pipeline_reset` all KEEP the rail history.
+4. **`incentive_scrape` always auto-approves new OEM sources — never asks.** Like
+   site_scan it is read-only (scrapes public manufacturer incentive pages, writes only
+   local `manufacturer_incentives` rows; no send/submit), so its first-encounter
+   source-approval suspend is removed — every new source is auto-recorded and scraped.
+   SSRF / host-classification / cache gating still run in code. Scoped to the
+   `incentive_scrape` workflow; the shared approval card/seam still gates the send skills.
+5. **Send-gate transparency: a batch send gate must preview what is sent.** The
+   `dealer_web_lead_submit` batch card carries a `summary` (vehicle, buyer email,
+   placeholder-phone note — budget NEVER shown, inv #9) so the user sees the minimal
+   payload before approving; the dealer list is height-capped + scrollable so the gate
+   never swamps the layout. The summary block is opt-in on the shared `BatchReviewCard`.
 
 ## One skill, one commit
 

@@ -3,9 +3,11 @@
 Scrape current manufacturer incentives for each active profile's vehicle.
 Skill #5 (fourth browser skill, the Phase-2 capstone), phase 2, risk class
 `local_write` (writes are local product rows only — `manufacturer_incentives`;
-no external mutation). One flat linear Mastra workflow, 7 named steps, **one
-suspend** — the OEM first-encounter approval that gates the first contact with
-any incentive source the user has never approved before.
+no external mutation). One flat linear Mastra workflow, 7 named steps, **no
+suspend**: because the skill is READ-ONLY (it fetches public OEM offers pages
+and writes only local rows — it never sends email or submits a form), a
+brand-new incentive source is recorded and scraped **automatically**, never
+gated by a human approval (owner directive 2026-06-23).
 
 ## Phases
 
@@ -20,16 +22,14 @@ The runtime flow, grounded in the 7-step workflow
    never geocoded a postal code fails its target loud), and the 7-day cache
    gate in code — same `(make, model, zip)` scraped within 7 days from an
    unchanged URL → the brand is skipped and counted, no navigation.
-3. **Resolve OEM source (suspend on first encounter)** — registry file lookup
-   (`<AUTOBROKER_DATA_DIR>/incentive_sources.toml`, atomic + lock-disciplined)
-   → on miss, the in-code per-brand seed table → still unresolved or
-   unregistered → the **approval suspend**: "first encounter with a new
-   incentive source — scrape this URL?" Save writes the registry entry (the
-   cross-run memory; later runs never ask again), Skip parks the brand for
-   this run, **Decline ends the whole run: zero navigation, zero writes, no
-   registry entry.** Aggregator hosts (KBB/Edmunds/Cars.com/CarGurus/TrueCar/
-   Autoblog) and non-US OEM domains are rejected in code and are never
-   suggested or approvable.
+3. **Resolve OEM source (auto-record on first encounter)** — registry file
+   lookup (`<AUTOBROKER_DATA_DIR>/incentive_sources.toml`, atomic +
+   lock-disciplined) → on miss, the in-code per-brand seed table. On a first
+   encounter the seed source is **recorded automatically** (the registry entry
+   is written — the cross-run memory) and the run proceeds, with NO human
+   approval. No registry entry and no seed → an honest `no_oem_source` failure.
+   Aggregator hosts (KBB/Edmunds/Cars.com/CarGurus/TrueCar/Autoblog) and non-US
+   OEM domains are still rejected in code and are never recorded or scraped.
 4. **Render + extract** — Playwright render of the offers page via the read
    face (navigation cap, bounded lazy scroll, offer-card collection with a
    voiced plain-snapshot fallback). The render localizes so region-priced cash
@@ -62,12 +62,12 @@ The runtime flow, grounded in the 7-step workflow
 
 ## Guardrails
 
-- **First contact is gated** — an unregistered source never gets navigated
-  before the approval decision; decline = zero navigation, zero writes, no
-  registry entry (and the next run asks again).
-- **The registry is user consent, not cache** — only an explicit Save writes
-  it; it lives in the data dir (isolated per harness run), is read with a
-  fail-loud parser, and written atomically under a lock.
+- **First contact is ungated (read-only)** — a brand-new source is recorded
+  and scraped automatically; the read-only scrape sends nothing and submits
+  nothing, so there is no human approval to render.
+- **The registry is cross-run memory** — the first encounter writes it; it
+  lives in the data dir (isolated per harness run), is read with a fail-loud
+  parser, and written atomically under a lock.
 - **Pure-capture core** — the render/extract path holds no DB handle and no
   gate Approver; the L2 mutation funnel is structurally unreachable.
 - **Source discipline in code** — SSRF validation on every candidate URL
@@ -90,7 +90,7 @@ The runtime flow, grounded in the 7-step workflow
 In-repo paths only:
 
 - Workflow: `packages/workflows/src/incentiveScrape.ts`
-- Typed contracts (input/output, suspend/resume, fenced prompt):
+- Typed contracts (input/output, fenced prompt):
   `packages/workflows/src/incentiveScrapeContracts.ts`
 - Deterministic core (OEM host classify, cache gate, cash whitelist, merge,
   cross-verify, seed table): `packages/tools/src/incentives/pure.ts`
@@ -101,7 +101,6 @@ In-repo paths only:
 - Source-URL validation: `packages/tools/src/ssrf.ts`
 - Incentive schema (closed type/eligibility vocabularies):
   `packages/core/src/schema/incentive.ts`
-- Server descriptor (approval resume seam): `apps/server/src/skillRuns.ts`
+- Server descriptor: `apps/server/src/skillRuns.ts`
 - Registry entry: `packages/skills/src/registry.ts`
-- Harness cases: `harness/cases/incentive_scrape.ui_first_encounter.toml`,
-  `harness/cases/incentive_scrape.ui_decline.toml`
+- Harness case: `harness/cases/incentive_scrape.ui_first_encounter.toml`
