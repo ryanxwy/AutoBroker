@@ -469,22 +469,23 @@ body.resizing { cursor: col-resize; user-select: none; }
    word carry the hue, so the bar reads quiet and colour appears only at the
    safety-relevant spot. Owner colour mapping: GREEN = buyer (live / armed to
    send, with the .running-pill live pulse), AMBER = test (held on the bench,
-   steady — calm, not alarming). A fixed width stops the bar reflowing on flip. */
+   steady — calm, not alarming). Sized to MATCH the top-left Searches button
+   (same padding / radius / box height); a min-width holds it steady across the
+   Test↔Buyer label flip. */
 .mode-lamp {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: 104px;
-  height: 36px;
-  padding: 0 12px 0 11px;
+  gap: 7px;
+  min-width: 82px;
+  padding: 6px 11px;
   border: 1px solid var(--rule);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--paper);
   color: var(--ink-soft);
   font-family: var(--mono);
   font-weight: 400;
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   transition: background 0.18s, color 0.18s, border-color 0.18s;
 }

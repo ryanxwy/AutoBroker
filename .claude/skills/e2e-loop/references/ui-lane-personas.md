@@ -241,8 +241,20 @@ Six tabs → six small reads, not one giant DOM.
 - Destructive gates render BEFORE prose: `hygiene-review-card`, `gate-*`,
   `stop-pick-option`, `reset-confirm`, `approval-approve`. Gate names blast radius
   in plain words.
-- Chat rail resizer: drag `RailResizer`, confirm width persists, Canvas reflows at
+- Workbench layout is ONE always-on split (there is NO canvas/chat MODE toggle —
+  no `topbar-mode-canvas`/`topbar-mode-conversation`): drag `rail-resizer` (the
+  rail's left boundary), confirm the width persists + re-clamps, Canvas reflows at
   narrow and wide.
+- Top-bar right cluster: the app-mode LAMP (`mode-toggle` — ONE `role=switch`,
+  GREEN=buyer / AMBER=test via `data-mode`/`aria-checked`; clicking flips, but
+  switching TO buyer still opens the `mode-confirm-*` danger dialog — never auto-arm)
+  + the settings GEAR (`topbar-settings` now POPS UP `settings-overlay`, suppressed
+  on the `/settings` route — it does NOT navigate). The 巡检 pins `AUTOBROKER_MODE`
+  via env, not by clicking the lamp.
+- Rail header pinned title: when a search is pinned the title IS the search identity
+  (`rail-pin-title` → vehicle + ZIP, with `pin-chip-label`/`pin-chip-unpin`), not the
+  skill name. It is a profile-data surface, so the budget-never-leaks check applies
+  here too.
 - Budget never leaks: only the "internal-only" lock chip is permitted; any budget
   number is a BLOCKER (CLAUDE.md inv #9).
 - Two-active-profile switcher: if ≥2 active profiles exist, verify both are
