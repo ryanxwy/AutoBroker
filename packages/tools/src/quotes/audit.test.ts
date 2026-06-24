@@ -8,6 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { DOC_FEE_HIGH_REFERENCE_USD, STATE_DOC_FEE_CAP } from "../calc.js";
+
 import {
   auditQuote,
   classifyAuditSeverity,
@@ -198,6 +200,67 @@ describe("DOC_FEE_CAP", () => {
   it("is case-insensitive on the state key", () => {
     const q = quote({ doc_fee: 599 });
     expect(codes(auditQuote(q, [], [], profile({ state: "ca" })))).toContain("DOC_FEE_CAP");
+  });
+
+  it("fires for a newly-maintained capped state beyond CA/NY/WA (e.g. MN)", () => {
+    // The cap table is data-driven and extended beyond the original three states.
+    expect(STATE_DOC_FEE_CAP["MN"]).toBe(125);
+    const q = quote({ doc_fee: 599 });
+    expect(codes(auditQuote(q, [], [], profile({ state: "MN" })))).toContain("DOC_FEE_CAP");
+    const ok = quote({ doc_fee: 100 });
+    expect(codes(auditQuote(ok, [], [], profile({ state: "MN" })))).not.toContain("DOC_FEE_CAP");
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// (2b) DOC_FEE_UNCAPPED — a high doc fee in a state with NO statutory cap      //
+// --------------------------------------------------------------------------- //
+
+describe("DOC_FEE_UNCAPPED", () => {
+  it("classifies as warn", () => {
+    expect(classifyAuditSeverity("DOC_FEE_UNCAPPED")).toBe("warn");
+  });
+
+  it("fires when an UNCAPPED state's doc fee exceeds the high reference", () => {
+    expect(DOC_FEE_HIGH_REFERENCE_USD).toBeGreaterThan(0);
+    const q = quote({ doc_fee: 999 }); // TX has no statutory cap
+    const c = codes(auditQuote(q, [], [], profile({ state: "TX" })));
+    expect(c).toContain("DOC_FEE_UNCAPPED");
+    expect(c).not.toContain("DOC_FEE_CAP"); // distinct code — capped check stays silent
+  });
+
+  it("does not fire for a reasonable doc fee in an uncapped state", () => {
+    const q = quote({ doc_fee: DOC_FEE_HIGH_REFERENCE_USD - 1 });
+    expect(codes(auditQuote(q, [], [], profile({ state: "TX" })))).not.toContain(
+      "DOC_FEE_UNCAPPED",
+    );
+  });
+
+  it("does not fire AT the high reference (strict > boundary)", () => {
+    const q = quote({ doc_fee: DOC_FEE_HIGH_REFERENCE_USD });
+    expect(codes(auditQuote(q, [], [], profile({ state: "TX" })))).not.toContain(
+      "DOC_FEE_UNCAPPED",
+    );
+    const over = quote({ doc_fee: DOC_FEE_HIGH_REFERENCE_USD + 0.01 });
+    expect(codes(auditQuote(over, [], [], profile({ state: "TX" })))).toContain(
+      "DOC_FEE_UNCAPPED",
+    );
+  });
+
+  it("does not fire in a CAPPED state — there the cap check owns the finding", () => {
+    const q = quote({ doc_fee: 999 }); // CA is capped at 85
+    const c = codes(auditQuote(q, [], [], profile({ state: "CA" })));
+    expect(c).toContain("DOC_FEE_CAP");
+    expect(c).not.toContain("DOC_FEE_UNCAPPED");
+  });
+
+  it("does not fire with no profile state or no doc fee", () => {
+    expect(
+      codes(auditQuote(quote({ doc_fee: 999 }), [], [], profile({ state: null }))),
+    ).not.toContain("DOC_FEE_UNCAPPED");
+    expect(
+      codes(auditQuote(quote({ doc_fee: null }), [], [], profile({ state: "TX" }))),
+    ).not.toContain("DOC_FEE_UNCAPPED");
   });
 });
 

@@ -326,3 +326,270 @@ describe("rankQuotesForProfile", () => {
     expect(result.lease).toEqual([]);
   });
 });
+
+// --------------------------------------------------------------------------- //
+// Cross-state OTD normalization + attribution (Phase 5)                        //
+// --------------------------------------------------------------------------- //
+
+/** Seed a profile carrying a home (registration) state — the rate source for
+ *  cross-state tax normalization. */
+function insertProfileWithState(id: string, preference: string, state: string): void {
+  db.$client
+    .prepare(
+      "INSERT INTO search_profiles (search_profile_id, year, make, model, brand, financing_preference, state, status) " +
+        "VALUES (?, 2026, 'Hyundai', 'Tucson', 'Hyundai', ?, ?, 'active')",
+    )
+    .run(id, preference, state);
+}
+
+interface FullQuoteSeed {
+  quoteId: string;
+  dealerId: string;
+  sellingPrice: number | null;
+  docFee: number | null;
+  salesTax: number | null;
+  otdTotal: number | null;
+  rebates?: { amount: number }[];
+}
+
+/** Seed a finance quote with the component columns cross-state math reads. */
+function insertQuoteWithComponents(s: FullQuoteSeed): void {
+  const messageId = `msg-${s.quoteId}`;
+  insertMessage(messageId);
+  db.$client
+    .prepare(
+      "INSERT INTO dealer_quotes " +
+        "(quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, financing_mode, " +
+        " selling_price, doc_fee, sales_tax, rebates_json, otd_total, finance_term_months) " +
+        "VALUES (?, ?, ?, ?, ?, 'finance', ?, ?, ?, ?, ?, 60)",
+    )
+    .run(
+      s.quoteId,
+      s.dealerId,
+      messageId,
+      messageId,
+      PROFILE,
+      s.sellingPrice,
+      s.docFee,
+      s.salesTax,
+      s.rebates ? JSON.stringify(s.rebates) : null,
+      s.otdTotal,
+    );
+}
+
+describe("rankQuotesForProfile — cross-state normalization", () => {
+  it("surfaces the buyer's home state + rate on the result", () => {
+    insertProfileWithState(PROFILE, "finance", "CA");
+    insertDealer("d-A", "Alpha");
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 42985,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    expect(result.homeState).toBe("CA");
+    expect(result.homeStateTaxRate).toBe(0.0725);
+  });
+
+  it("TWO dealers in DIFFERENT states, same vehicle → IDENTICAL normalized tax", () => {
+    // Buyer registers in CA. Dealer A (in CA) charged CA tax; dealer B (in OR, no
+    // sales tax) charged $0 tax — B looks $2,900 cheaper on the RAW OTD. After
+    // normalizing to the buyer's home (CA) tax, both have identical tax AND
+    // identical OTD: the cross-state "win" was an illusion of where tax was
+    // collected, not a real saving.
+    insertProfileWithState(PROFILE, "finance", "CA");
+    insertDealer("d-A", "Alpha CA");
+    insertDealer("d-B", "Bravo OR");
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 42985,
+    });
+    insertQuoteWithComponents({
+      quoteId: "f-B",
+      dealerId: "d-B",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 0,
+      otdTotal: 40085,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    const byId = new Map(result.finance.map((q) => [q.quote_id, q]));
+    const a = byId.get("f-A")!;
+    const b = byId.get("f-B")!;
+    expect(a.normalized_tax).toBe(2900);
+    expect(b.normalized_tax).toBe(2900);
+    expect(a.normalized_tax).toBe(b.normalized_tax); // IDENTICAL tax
+    expect(a.normalized_otd).toBe(42985);
+    expect(b.normalized_otd).toBe(42985); // OR dealer picks up the omitted CA use tax
+    // Raw ranking is unchanged (byte-identical): B still ranks first on raw OTD.
+    expect(result.finance.map((q) => q.quote_id)).toEqual(["f-B", "f-A"]);
+  });
+
+  it("attributes an OTD delta to sale-price / doc-fee / tax components (residual reconciles)", () => {
+    insertProfileWithState(PROFILE, "finance", "CA");
+    insertDealer("d-A", "Alpha");
+    insertDealer("d-B", "Bravo");
+    // A: home CA, sp 40000 → tax 2900, otd 42985.
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 42985,
+    });
+    // B (TX dealer): sp 38000, doc 600, TX tax 2375, otd 40975. Normalized to CA:
+    // tax 0.0725*38000 = 2755, normalized_otd = 40975 - 2375 + 2755 = 41355.
+    insertQuoteWithComponents({
+      quoteId: "f-B",
+      dealerId: "d-B",
+      sellingPrice: 38000,
+      docFee: 600,
+      salesTax: 2375,
+      otdTotal: 40975,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    const byId = new Map(result.finance.map((q) => [q.quote_id, q]));
+    const a = byId.get("f-A")!;
+    const b = byId.get("f-B")!;
+    // Baseline = lowest NORMALIZED OTD = B (41355). B carries no attribution.
+    expect(b.normalized_otd).toBe(41355);
+    expect(b.attribution).toBeNull();
+    // A is $1,630 pricier than B, decomposed:
+    expect(a.attribution).not.toBeNull();
+    expect(a.attribution!.baseline_quote_id).toBe("f-B");
+    expect(a.attribution!.otd_delta).toBe(1630);
+    expect(a.attribution!.sale_price_delta).toBe(2000); // A's price is $2k higher
+    expect(a.attribution!.doc_fee_delta).toBe(-515); // A's doc fee is $515 lower
+    expect(a.attribution!.tax_delta).toBe(145); // home-state tax on the $2k price gap only
+    expect(a.attribution!.incentive_delta).toBe(0);
+    expect(a.attribution!.other_delta).toBe(0);
+    const sum =
+      a.attribution!.sale_price_delta +
+      a.attribution!.doc_fee_delta +
+      a.attribution!.tax_delta +
+      a.attribution!.incentive_delta +
+      a.attribution!.other_delta;
+    // Reconciles to the cent (float dollars — not bit-exact, per the contract).
+    expect(sum).toBeCloseTo(a.attribution!.otd_delta, 2);
+  });
+
+  it("reconciles to the cent on cents-level (non-whole-dollar) inputs", () => {
+    insertProfileWithState(PROFILE, "finance", "CA");
+    insertDealer("d-A", "Alpha");
+    insertDealer("d-B", "Bravo");
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000.33,
+      docFee: 85.1,
+      salesTax: 2900.07,
+      otdTotal: 42985.5,
+    });
+    insertQuoteWithComponents({
+      quoteId: "f-B",
+      dealerId: "d-B",
+      sellingPrice: 38000.77,
+      docFee: 599.95,
+      salesTax: 2375.49,
+      rebates: [{ amount: 125.5 }],
+      otdTotal: 41100.18,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    const withAttr = result.finance.find((q) => q.attribution !== null)!;
+    const a = withAttr.attribution!;
+    const sum =
+      a.sale_price_delta + a.doc_fee_delta + a.tax_delta + a.incentive_delta + a.other_delta;
+    expect(sum).toBeCloseTo(a.otd_delta, 2); // reconciles to the cent
+  });
+
+  it("a null-selling-price peer is non-normalizable; a normalizable peer still attributes", () => {
+    insertProfileWithState(PROFILE, "finance", "CA");
+    insertDealer("d-A", "Alpha");
+    insertDealer("d-B", "Bravo");
+    // A: complete → normalizable + the baseline.
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 42985,
+    });
+    // B: missing selling price → no taxable base → not normalizable.
+    insertQuoteWithComponents({
+      quoteId: "f-B",
+      dealerId: "d-B",
+      sellingPrice: null,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 41000,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    const byId = new Map(result.finance.map((q) => [q.quote_id, q]));
+    const b = byId.get("f-B")!;
+    expect(b.normalized_tax).toBeNull();
+    expect(b.normalized_otd).toBeNull();
+    expect(b.attribution).toBeNull(); // un-normalizable row carries no attribution
+    // A is the only normalizable row → it is the baseline → its attribution is null.
+    expect(byId.get("f-A")!.attribution).toBeNull();
+    expect(byId.get("f-A")!.normalized_otd).toBe(42985);
+  });
+
+  it("attributes a delta driven purely by an unapplied incentive", () => {
+    insertProfileWithState(PROFILE, "finance", "CA");
+    insertDealer("d-A", "Alpha");
+    insertDealer("d-B", "Bravo");
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 42985,
+    });
+    // B identical but applies a $1,500 rebate → otd 41485.
+    insertQuoteWithComponents({
+      quoteId: "f-B",
+      dealerId: "d-B",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      rebates: [{ amount: 1500 }],
+      otdTotal: 41485,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    const a = result.finance.find((q) => q.quote_id === "f-A")!;
+    expect(a.attribution!.baseline_quote_id).toBe("f-B");
+    expect(a.attribution!.otd_delta).toBe(1500);
+    expect(a.attribution!.incentive_delta).toBe(1500); // A is pricier by the missed rebate
+    expect(a.attribution!.sale_price_delta).toBe(0);
+    expect(a.attribution!.other_delta).toBe(0);
+  });
+
+  it("an unknown / missing home state leaves normalized fields null (graceful)", () => {
+    insertProfile(PROFILE, "finance"); // no state column
+    insertDealer("d-A", "Alpha");
+    insertQuoteWithComponents({
+      quoteId: "f-A",
+      dealerId: "d-A",
+      sellingPrice: 40000,
+      docFee: 85,
+      salesTax: 2900,
+      otdTotal: 42985,
+    });
+    const result = rankQuotesForProfile(db, PROFILE);
+    expect(result.homeState).toBeNull();
+    expect(result.homeStateTaxRate).toBeNull();
+    expect(result.finance[0]!.normalized_tax).toBeNull();
+    expect(result.finance[0]!.normalized_otd).toBeNull();
+    expect(result.finance[0]!.attribution).toBeNull();
+  });
+});

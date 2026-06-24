@@ -32,10 +32,12 @@ Portland 97204 · Chicago 60601 · Atlanta 30303 · Miami 33130 · Tampa 33602 �
 Charlotte 28202 · Nashville 37203 · New York 10007 · Philadelphia 19107 ·
 Boston 02110.
 
-**DOC_FEE_CAP note.** `quote_audit` fires `DOC_FEE_CAP` only for CA/NY/WA
-metros (statutory cap states). TX/FL/OR producing no flag is correct.
-Choose a CA/NY/WA metro (Irvine/LA/San Diego/New York/Seattle) when this
-run is meant to exercise that audit path.
+**DOC_FEE_CAP / DOC_FEE_UNCAPPED note.** `quote_audit` fires `DOC_FEE_CAP` for an
+over-cap doc fee in a **capped** state (CA/NY/WA + MN/MI/OH/MD). As of Phase 5 an
+**uncapped** state (TX/FL/OR…) is no longer silent: a doc fee over ~$500 fires the
+new `DOC_FEE_UNCAPPED` flag. So pick a CA/NY/WA metro (Irvine/LA/San Diego/New
+York/Seattle) for the cap path; a TX/FL metro with a high doc fee now exercises the
+uncapped path instead of producing nothing.
 
 ---
 
