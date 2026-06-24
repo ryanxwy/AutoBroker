@@ -44,6 +44,14 @@ import { fileURLToPath } from "node:url";
 import { buildServer } from "@autobroker/server";
 import { openDb, seedFakeMailbox } from "@autobroker/tools";
 import {
+  __setHarnessModelWrapper,
+  JsonlFileSink,
+  parseTranscriptJsonl,
+  recordingModel,
+  replayModel,
+  TraceIndex,
+} from "@autobroker/model";
+import {
   __setHarnessGenerateFaultForTests,
   __setIntakeDepsForTests,
   resetMastraForTests,
@@ -368,6 +376,26 @@ delete process.env.AUTOBROKER_TEST_AUTO_APPROVE;
 process.env.AUTOBROKER_MODE = "test"; // the sole send-control floor (Gmail projects to fake)
 // NOTE: DEEPSEEK_API_KEY is intentionally NOT set here — boot's loadDotEnvKeys
 // loads the real key from .env (no-clobber), so the LLM lane is LIVE.
+
+// --- Phase-4 record/replay hook (ADDITIVE, env-gated, DEFAULT OFF) ------------
+// Mirrors the generate-fault seam install above. When AUTOBROKER_RECORD_TRANSCRIPT
+// is set, every resolved model TEES its LLM calls to that JSONL file (recordingModel)
+// while still talking to the live provider — capturing a multi-profile transcript
+// the freeze can replay. When AUTOBROKER_REPLAY_TRANSCRIPT is set, every resolved
+// model returns the recorded calls token-for-token with NO provider (replayModel).
+// Neither set → NO install, byte-identical to today. NODE_ENV="test" (set above)
+// satisfies the seam's test-only guard. Record wins if both are somehow set.
+const RECORD_TRANSCRIPT = process.env.AUTOBROKER_RECORD_TRANSCRIPT;
+const REPLAY_TRANSCRIPT = process.env.AUTOBROKER_REPLAY_TRANSCRIPT;
+if (RECORD_TRANSCRIPT) {
+  const sink = new JsonlFileSink(RECORD_TRANSCRIPT);
+  __setHarnessModelWrapper((model, alias) => recordingModel(model, sink, { runId: "live", alias }));
+} else if (REPLAY_TRANSCRIPT) {
+  const events = parseTranscriptJsonl(readFileSync(REPLAY_TRANSCRIPT, "utf8"));
+  const index = new TraceIndex(events);
+  const modelId = events[0]?.modelId ?? "replay";
+  __setHarnessModelWrapper((_model, alias) => replayModel(index, { alias, modelId }));
+}
 
 const dbPath = join(tmpDir, "autobroker.db");
 const db = openDb();

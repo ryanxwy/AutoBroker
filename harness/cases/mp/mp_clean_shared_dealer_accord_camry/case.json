@@ -1,0 +1,28 @@
+{
+  "caseId": "mp_clean_shared_dealer_accord_camry",
+  "seed": 20260624,
+  "profiles": [
+    {
+      "id": "mp-accord",
+      "year": 2026,
+      "make": "Honda",
+      "model": "Accord",
+      "trim": "EX-L",
+      "budgetMax": 40000
+    },
+    {
+      "id": "mp-camry",
+      "year": 2026,
+      "make": "Toyota",
+      "model": "Camry",
+      "trim": "XSE",
+      "budgetMax": 42000
+    }
+  ],
+  "dealer": {
+    "dealerKey": "mp-collision-rooftop",
+    "name": "Collision Auto Group",
+    "website": "https://collision.example"
+  },
+  "expectedAllOk": true
+}
