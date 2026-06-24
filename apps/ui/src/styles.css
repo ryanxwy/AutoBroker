@@ -2104,3 +2104,77 @@ p.muted, span.muted { font-size: 0.95em; }
 .quotes-rawfold > summary::before { content: "▸ "; }
 .quotes-rawfold[open] > summary::before { content: "▾ "; }
 .quotes-rawfold[open] > summary { margin-bottom: 10px; }
+
+/* ── Phase 3: portfolio board + status bar + needs-you inbox ──────────────── */
+.portfolio-board { padding: 18px 22px 60px; max-width: 1100px; margin: 0 auto; }
+.portfolio-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.portfolio-head h1 { font-family: var(--chrome-x); font-size: 22px; margin: 0 0 4px; }
+.portfolio-generated-at { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+.portfolio-segments { display: flex; flex-direction: column; gap: 22px; margin-top: 14px; }
+.portfolio-segment-title {
+  font-family: var(--chrome); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--rule-soft);
+}
+.portfolio-card-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 12px;
+}
+.portfolio-card {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px;
+  box-shadow: var(--shadow); transition: transform 0.08s, box-shadow 0.15s, border-color 0.15s;
+}
+.portfolio-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-mid); border-color: var(--run-line); }
+.portfolio-card-head { display: flex; align-items: center; gap: 8px; }
+.portfolio-vehicle { font-family: var(--chrome); font-weight: 600; font-size: 14px; color: var(--ink); }
+.portfolio-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--ink-mute); }
+.portfolio-dot-hot { background: var(--go); box-shadow: 0 0 0 3px var(--go-wash); }
+.portfolio-dot-warm { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-wash); }
+.portfolio-dot-cold { background: var(--ink-mute); }
+.portfolio-city { font-size: 12px; margin: 3px 0 0; }
+.portfolio-card-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 9px; font-size: 12px; }
+.portfolio-stage {
+  font-family: var(--mono); font-size: 11px; color: var(--run);
+  background: var(--run-wash); border: 1px solid var(--run-line); border-radius: 3px; padding: 1px 6px;
+}
+.portfolio-otd { color: var(--go); font-weight: 600; }
+.portfolio-dealers { color: var(--ink-soft); }
+.portfolio-when { font-size: 11px; }
+
+/* header-by-counts strip */
+.portfolio-status-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 6px 22px; background: var(--panel); border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--chrome); font-size: 12px;
+}
+.portfolio-status-link { color: var(--run); font-weight: 600; }
+.portfolio-count { color: var(--ink-soft); }
+.portfolio-count-alert { color: var(--gate); font-weight: 600; }
+.portfolio-count-fail { color: var(--stop); font-weight: 600; }
+.portfolio-count-healthy { color: var(--go); }
+.portfolio-status-names { color: var(--stop); }
+
+/* floating "Needs you" inbox widget */
+.needsyou-widget {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60; width: 320px; max-width: calc(100vw - 36px);
+  background: var(--panel); border: 1px solid var(--gate-line); border-radius: 10px;
+  box-shadow: var(--shadow-pop); overflow: hidden;
+}
+.needsyou-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  background: var(--gate-wash); border-bottom: 1px solid var(--gate-line);
+  font-family: var(--chrome); font-weight: 700; font-size: 12px; color: var(--gate);
+}
+.needsyou-count {
+  margin-left: auto; font-family: var(--mono); font-size: 11px;
+  background: var(--gate); color: var(--paper); border-radius: 10px; padding: 0 7px;
+}
+.needsyou-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+.needsyou-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
+  background: var(--panel); border: 0; border-bottom: 1px solid var(--rule-soft); padding: 9px 12px; font-size: 12px;
+}
+.needsyou-item:hover { background: var(--gate-wash); }
+.needsyou-item-vehicle { font-weight: 600; color: var(--ink); }
+.needsyou-item-reason { color: var(--ink-soft); }
+.needsyou-item-go { margin-left: auto; color: var(--gate); font-weight: 700; }

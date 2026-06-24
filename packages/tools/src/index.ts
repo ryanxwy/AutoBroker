@@ -919,6 +919,7 @@ export {
 // generic audit_log completion row. No child workflow / LLM here.
 export {
   detectPipelineState,
+  profileHealth,
   resolveTargetedListing,
   TargetedListingNotFound,
   NoInboundThread,
@@ -935,6 +936,8 @@ export {
   PIPELINE_COMPLETE_ACTION,
   type DetectPipelineStateArgs,
   type PipelineStateFlags,
+  type ProfileHealth,
+  type ProfileHealthLevel,
   type ResolveTargetedListingArgs,
   type ResolveTargetedListingResult,
   type TargetedListing,

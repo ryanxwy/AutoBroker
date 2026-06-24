@@ -43,6 +43,8 @@ function renderRail(activeAwaiting: unknown | null) {
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}
+      onPin={() => {}}
+      onViewProfile={() => {}}
       onStartIntake={() => {}}
       onStopPick={() => {}}
       onSelectSession={() => {}}
@@ -96,6 +98,8 @@ function renderRunActive(runActive: boolean) {
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}
+      onPin={() => {}}
+      onViewProfile={() => {}}
       onStartIntake={() => {}}
       onStopPick={() => {}}
       onSelectSession={() => {}}
@@ -129,6 +133,8 @@ function renderPinned(pinLabel: string | null, pinZip: string | null) {
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}
+      onPin={() => {}}
+      onViewProfile={() => {}}
       onStartIntake={() => {}}
       onStopPick={() => {}}
       onSelectSession={() => {}}

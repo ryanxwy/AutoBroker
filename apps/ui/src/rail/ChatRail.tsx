@@ -17,8 +17,9 @@ import type { IntakeScopeNotice, SkillManifest } from "../api/wire.js";
 import type { BrowserView } from "../chat/browserView.js";
 import type { TurnView } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
-import { HistoryIcon } from "../shell/icons.js";
+import { HistoryIcon, PinIcon } from "../shell/icons.js";
 import { Popover } from "../shell/Popover.js";
+import { SearchPicker } from "../shell/SearchPicker.js";
 import { SkillsPopoverList } from "../shell/SkillsPopover.js";
 import { AssistantTurn } from "./AssistantTurn.js";
 import { ChatInput } from "./ChatInput.js";
@@ -64,6 +65,10 @@ export interface ChatRailProps {
   onSlash: (skill: string, args: Record<string, string>, note?: string) => void;
   onFreeform: (text: string) => void;
   onUnpin: () => void;
+  /** Pin the CURRENT session to a profile (the per-session pin toggle). */
+  onPin: (profileId: string) => void;
+  /** Open the view/edit modal for a profile (the picker row title). */
+  onViewProfile: (profileId: string, name: string) => void;
   /** Start a fresh intake (the 0-active STOP card CTA). */
   onStartIntake: () => void;
   /** Re-launch a STOP-carded turn's skill pinned to the picked profile. */
@@ -96,6 +101,8 @@ export function ChatRail({
   onSlash,
   onFreeform,
   onUnpin,
+  onPin,
+  onViewProfile,
   onStartIntake,
   onStopPick,
   onSelectSession,
@@ -137,7 +144,37 @@ export function ChatRail({
             </button>
           </span>
         ) : (
-          <strong style={{ flex: 1 }}>{title}</strong>
+          <span className="rail-pin-toggle-wrap" style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            {/* Per-session pin toggle (ruling #6): a pin icon at the TOP of the
+                session opens the SAME Searches picker; picking a search flips
+                THIS session into focused pinned mode. Reuses SearchPicker. */}
+            <Popover
+              label={<PinIcon filled={false} />}
+              triggerTestId="session-pin"
+              panelTestId="session-pin-popover"
+              triggerClassName="icon-btn"
+              triggerLabel="Pin a search to this session"
+            >
+              {(close) => (
+                <SearchPicker
+                  client={client}
+                  pinnedProfileId={pinnedProfileId}
+                  onPin={(id) => {
+                    close();
+                    onPin(id);
+                  }}
+                  onUnpin={onUnpin}
+                  onViewProfile={onViewProfile}
+                  onStartIntake={() => {
+                    close();
+                    onStartIntake();
+                  }}
+                  close={close}
+                />
+              )}
+            </Popover>
+            <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</strong>
+          </span>
         )}
         <Popover
           label={<HistoryIcon />}

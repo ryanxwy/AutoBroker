@@ -47,6 +47,7 @@ import {
   listProfileThreadRows,
   listProfileMessageRows,
   buildDigestView,
+  profileHealth,
   listProfileQuoteRows,
   listProfileIncentiveRows,
   readQuoteSourceDoc,
@@ -350,6 +351,69 @@ export function stripScreenshotField(ev: { ts: string; kind: string; payload: un
     return { ...ev, payload: rest };
   }
   return ev;
+}
+
+/** The six portfolio pipeline stages (mirrors the wire `PortfolioStage`). */
+type PortfolioStage =
+  | "intake"
+  | "scan"
+  | "lead_submit"
+  | "awaiting_replies"
+  | "negotiation"
+  | "closeout";
+
+/** Derive a coarse, MONOTONIC lifecycle stage for a portfolio card from the
+ *  digest's own per-profile tallies (no extra query). Quotes ⇒ negotiating;
+ *  else replies ⇒ awaiting; else a bound dealer ⇒ lead submitted; else a found
+ *  dealer ⇒ scanned; else nothing yet ⇒ intake. (Closeout closes the profile, so
+ *  a closed-out search is no longer on the active board — `closeout` stays in the
+ *  enum for the board legend / future surfacing.) */
+function deriveStage(p: {
+  dealerCount: number;
+  boundDealerCount: number;
+  threadCount: number;
+  totalQuotes: number;
+}): PortfolioStage {
+  if (p.totalQuotes > 0) return "negotiation";
+  if (p.threadCount > 0) return "awaiting_replies";
+  if (p.boundDealerCount > 0) return "lead_submit";
+  if (p.dealerCount > 0) return "scan";
+  return "intake";
+}
+
+/** The card's location label: `City, ST` when present, else the raw
+ *  location_query, else the ZIP, else "". Never a budget (#9). */
+function cityOf(row: Record<string, unknown> | null): string {
+  if (row === null) return "";
+  const str = (k: string): string => (typeof row[k] === "string" ? (row[k] as string) : "");
+  const city = str("city");
+  if (city !== "") {
+    const state = str("state");
+    return state !== "" ? `${city}, ${state}` : city;
+  }
+  const lq = str("location_query");
+  if (lq !== "") return lq;
+  return str("postal_code");
+}
+
+/** "Year Make Model Trim" from a search_profiles row (drops empties). Never a
+ *  budget (#9). Mirrors the UI's vehicleLabel for server-side gate summaries. */
+function vehicleOf(row: Record<string, unknown> | null): string {
+  if (row === null) return "";
+  const parts: string[] = [];
+  for (const k of ["year", "make", "model", "trim"]) {
+    const v = row[k];
+    if (typeof v === "string" && v !== "") parts.push(v);
+    else if (typeof v === "number") parts.push(String(v));
+  }
+  return parts.join(" ");
+}
+
+/** A parked gate's reason = the suspend payload's `kind` (batch_review /
+ *  approval / confirmation_gate / hygiene_review / …), else the step id. */
+function gateReason(payload: Record<string, unknown>, step: string): string {
+  const kind = payload["kind"];
+  return typeof kind === "string" && kind !== "" ? kind : step;
 }
 
 /**
@@ -761,6 +825,82 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return withDb((db) =>
       buildDigestView(db, { profileId: profile_id ?? null, nowMs: Date.now() }),
     );
+  });
+
+  // ---- GET /api/portfolio — the Phase-3 portfolio board projection ----------
+  // One card per ACTIVE search (newest-first), seeded from the SAME digest
+  // aggregation PLUS a derived lifecycle `stage` and the hot/warm/cold `health`
+  // dot (profileHealth). A pure server projection — every DB read delegates DOWN
+  // into the tools layer (the SQLite invariant). The board groups by segment and
+  // computes the header counts CLIENT-SIDE; budget never appears (#9).
+  app.get("/api/portfolio", async (_req: FastifyRequest, _reply: FastifyReply) => {
+    const nowMs = Date.now();
+    // Per-profile last-activity + the live-run → profile map both come from the
+    // rail sessions (the session pin is the run↔profile link). One list read.
+    const allSessions = await sessions.list();
+    const pinBySession = new Map(allSessions.map((s) => [s.id, s.pinned_profile_id]));
+    const lastActivityByProfile = new Map<string, string>();
+    for (const s of allSessions) {
+      if (s.pinned_profile_id === null) continue;
+      const prev = lastActivityByProfile.get(s.pinned_profile_id);
+      if (prev === undefined || s.last_activity_at > prev) {
+        lastActivityByProfile.set(s.pinned_profile_id, s.last_activity_at);
+      }
+    }
+    // HOT signal: profiles with a live (non-terminal) run, resolved via the pin.
+    const liveRunProfileIds = [
+      ...new Set(
+        skillRuns
+          .liveRunSessionIds()
+          .map((sid) => pinBySession.get(sid) ?? null)
+          .filter((x): x is string => x !== null),
+      ),
+    ];
+    return withDb((db) => {
+      const digest = buildDigestView(db, { profileId: null, nowMs });
+      const health = new Map(profileHealth(db, liveRunProfileIds).map((h) => [h.profileId, h]));
+      const cards = digest.profiles.map((p) => {
+        const row = readProfileRow(db, p.searchProfileId);
+        const h = health.get(p.searchProfileId);
+        return {
+          searchProfileId: p.searchProfileId,
+          vehicle: p.vehicle,
+          city: cityOf(row),
+          dealerCount: p.dealerCount,
+          bestOtd: p.bestOtd,
+          lastActivityAt: lastActivityByProfile.get(p.searchProfileId) ?? null,
+          stage: deriveStage(p),
+          health: h?.health ?? "warm",
+          reasons: h?.reasons ?? [],
+        };
+      });
+      return { empty: cards.length === 0, generatedAt: digest.generatedAt, cards };
+    });
+  });
+
+  // ---- GET /api/approval-inbox — the Phase-3 "Needs you" queue ---------------
+  // Every PARKED gate across ALL pipelines (a run awaiting a human decision),
+  // keyed by (profileId, runId, decisionId). The widget ROUTES to each item's
+  // run; it never approves inline / batch-approves. profileId + vehicle resolve
+  // from the run's session pin (null for a headless/unpinned run). Read-only
+  // auto-scans never park, so they never appear here. Budget never appears (#9).
+  // INTEGRATION: the real Phase-2 ApprovalInbox API (ranking, saga, idempotent
+  // resume, fail-closed surfacing) replaces this thin enumeration.
+  app.get("/api/approval-inbox", async (_req: FastifyRequest, _reply: FastifyReply) => {
+    const parked = skillRuns.listParkedGates();
+    const allSessions = await sessions.list();
+    const pinBySession = new Map(allSessions.map((s) => [s.id, s.pinned_profile_id]));
+    return withDb((db) => {
+      const items = parked.map((g) => {
+        const profileId = g.sessionId !== null ? (pinBySession.get(g.sessionId) ?? null) : null;
+        const row = profileId !== null ? readProfileRow(db, profileId) : null;
+        const vehicle = row !== null ? vehicleOf(row) : null;
+        const reason = gateReason(g.payload, g.step);
+        const summary = `${vehicle ?? "A search"} needs your approval`;
+        return { profileId, runId: g.runId, decisionId: g.decisionId, reason, vehicle, summary };
+      });
+      return { items };
+    });
   });
 
   // ---- GET /api/profiles/:id/quotes — read-only RAW extracted-quote projection

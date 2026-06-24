@@ -31,11 +31,16 @@
  * hygiene-skip-<id> / hygiene-select-all / hygiene-counter / hygiene-submit /
  * hygiene-decline / topbar-searches / searches-popover /
  * searches-row-<profileId> / searches-pin-<profileId> /
- * searches-unpin-<profileId> / canvas-summary / canvas-tabs /
- * canvas-tab-<key> (overview|dealers|inventory|quotes|replies|incentives — the
- * workbench tab strip; a domain's section testids render ONLY once its tab is
- * clicked, so a func case clicks canvas-tab-<domain> before touching them) /
- * canvas-panel-<key>).
+ * searches-unpin-<profileId> / session-pin / session-pin-popover (the rail's
+ * per-session pin toggle) / rail-pin-title / pin-chip-unpin / canvas-summary /
+ * canvas-tabs / canvas-tab-<key> (overview|dealers|inventory|quotes|replies|
+ * incentives — the workbench tab strip; a domain's section testids render ONLY
+ * once its tab is clicked, so a func case clicks canvas-tab-<domain> before
+ * touching them) / canvas-panel-<key> / canvas-vehicle /
+ * portfolio-board / portfolio-segment-<slug> / portfolio-card-<profileId> /
+ * portfolio-health-<profileId> / portfolio-stage-<profileId> /
+ * portfolio-status-bar / portfolio-status-link / needs-you-widget /
+ * needs-you-item-<runId>).
  *
  * Dependency wall: harness layer, with ONE sanctioned exception — this module
  * imports `playwright` to drive the test browser (the dependency-cruiser rule
@@ -962,12 +967,24 @@ export class UiDriver {
       throw new Error(`uiDriver: ambiguous Searches row label "${want}" (${matches.length} matches)`);
     }
     const row = rows.nth(matches[0]!);
-    await row.locator('[data-testid^="searches-pin-"]').click();
+    // Locate the pin/unpin controls BY PROFILE ID, not by position: pinning a
+    // search floats it into the "Pinned" group (re-sorts the list), so a
+    // positional row locator would point at a DIFFERENT row after the click in a
+    // multi-profile world. The id is stable across the re-sort. (Single-profile
+    // behaviour is identical — one row, same id.)
+    const rowTestId = (await row.getAttribute("data-testid")) ?? "";
+    const profileId = rowTestId.startsWith("searches-row-")
+      ? rowTestId.slice("searches-row-".length)
+      : "";
+    if (profileId === "") {
+      throw new Error(`uiDriver: could not read a profile id from row "${want}" (${rowTestId})`);
+    }
+    await this.page.click(tid(`searches-pin-${profileId}`));
     // The pin landing re-renders the row with the Unpin verb — the DOM proof
     // the session now carries the pin.
     let pinned = true;
     try {
-      await row.locator('[data-testid^="searches-unpin-"]').waitFor({ timeout: timeoutMs });
+      await this.page.waitForSelector(tid(`searches-unpin-${profileId}`), { timeout: timeoutMs });
     } catch {
       pinned = false;
     }

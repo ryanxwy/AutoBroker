@@ -753,3 +753,89 @@ export const DigestViewSchema = z.object({
   profiles: z.array(DigestViewProfileSchema),
 });
 export type DigestView = z.infer<typeof DigestViewSchema>;
+
+// ---------------------------------------------------------------------------
+// Portfolio — GET /api/portfolio → PortfolioView. The Phase-3 board reads ONE
+// card per active search, seeded from the (portfolio-aware) digest projection
+// PLUS the derived pipeline `stage` and the hot/warm/cold `health` dot. It is a
+// PURE server projection — newest-first, all-active. The board groups cards by
+// segment CLIENT-SIDE (segmentOf), and computes the header counts CLIENT-SIDE
+// from cards + the approval inbox (so this view never needs run-state).
+//
+// Budget red-line (#9): NO budget field. `bestOtd` is the user's own collected
+// offer (rendered); `city` is the search location label. Budget is never wired.
+// ---------------------------------------------------------------------------
+
+/** The six human pipeline stages, in flow order (Intake → … → Closeout). */
+export const PORTFOLIO_STAGES = [
+  "intake",
+  "scan",
+  "lead_submit",
+  "awaiting_replies",
+  "negotiation",
+  "closeout",
+] as const;
+export const PortfolioStageSchema = z.enum(PORTFOLIO_STAGES);
+export type PortfolioStage = z.infer<typeof PortfolioStageSchema>;
+
+/** The hot/warm/cold dot (mirrors tools ProfileHealthLevel). */
+export const PortfolioHealthSchema = z.enum(["hot", "warm", "cold"]);
+export type PortfolioHealth = z.infer<typeof PortfolioHealthSchema>;
+
+/** One portfolio card — vehicle + city + best-OTD + dealer count + last-activity
+ *  + derived stage + health dot. NO budget (#9). `lastActivityAt` is ISO-8601 or
+ *  null (a freshly-minted, never-touched search). */
+export const PortfolioCardSchema = z.object({
+  searchProfileId: z.string(),
+  vehicle: z.string(),
+  city: z.string(),
+  dealerCount: z.number(),
+  bestOtd: z.number().nullable(),
+  lastActivityAt: z.string().nullable(),
+  stage: PortfolioStageSchema,
+  health: PortfolioHealthSchema,
+  reasons: z.array(z.string()),
+});
+export type PortfolioCard = z.infer<typeof PortfolioCardSchema>;
+
+/** GET /api/portfolio → the board projection. `cards: []` ⇒ empty state.
+ *  `generatedAt` always renders. */
+export const PortfolioViewSchema = z.object({
+  empty: z.boolean(),
+  generatedAt: z.string(),
+  cards: z.array(PortfolioCardSchema),
+});
+export type PortfolioView = z.infer<typeof PortfolioViewSchema>;
+
+// ---------------------------------------------------------------------------
+// ApprovalInbox — GET /api/approval-inbox → ApprovalInboxView. The Phase-3
+// global "Needs you" widget reads every PARKED gate (a run awaiting human
+// approval) across ALL pipelines, keyed by (profileId, runId, decisionId), so a
+// gate that parked in profile C surfaces while the user is focused on B. The
+// widget ROUTES to the run (navigate /runs/:runId) — the existing per-run
+// GateBannerHost then renders the actual card; the inbox never approves inline,
+// never batch-approves. Read-only auto-scans never park, so they never appear
+// here (the four-layer attention rule). Budget is never wired (#9).
+//
+// INTEGRATION: the real Phase-2 ApprovalInbox API (ranking, saga compensation,
+// idempotency-keyed resume, fail-closed surfacing) replaces the thin server
+// enumeration; this wire shape is the stable contract.
+// ---------------------------------------------------------------------------
+
+/** One parked gate awaiting the user. `profileId`/`vehicle` are null for a
+ *  headless/unpinned run. `reason` is the gate kind (batch_review / approval /
+ *  confirmation_gate / hygiene_review) or "fail_closed". */
+export const ApprovalInboxItemSchema = z.object({
+  profileId: z.string().nullable(),
+  runId: z.string(),
+  decisionId: z.string(),
+  reason: z.string(),
+  vehicle: z.string().nullable(),
+  summary: z.string(),
+});
+export type ApprovalInboxItem = z.infer<typeof ApprovalInboxItemSchema>;
+
+export const ApprovalInboxViewSchema = z.object({
+  items: z.array(ApprovalInboxItemSchema),
+});
+export type ApprovalInboxView = z.infer<typeof ApprovalInboxViewSchema>;

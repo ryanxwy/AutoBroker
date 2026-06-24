@@ -18,19 +18,12 @@
  */
 
 import { ApiClient } from "../api/client.js";
-import { useDataRefetch } from "../api/useDataChanged.js";
-import { useAsync } from "../api/useApi.js";
-import type { AppMode, ProfileList } from "../api/wire.js";
-import { toSnapshot, vehicleLabel } from "../home/profileView.js";
+import type { AppMode } from "../api/wire.js";
 import { navigate } from "../router.js";
-import { ClosedSearchesGroup } from "./ClosedSearchesGroup.js";
-import { BrandMark, GearIcon, PinIcon } from "./icons.js";
+import { BrandMark, GearIcon } from "./icons.js";
 import { ModeToggle } from "./ModeToggle.js";
 import { Popover } from "./Popover.js";
-
-// Module-level stable literal — the data-change bus key the active-searches list
-// subscribes under (stable identity so useDataRefetch's effect deps don't churn).
-const PROFILE_KINDS = ["profiles"] as const;
+import { SearchPicker } from "./SearchPicker.js";
 
 export interface TopBarProps {
   client: ApiClient;
@@ -68,95 +61,21 @@ export function TopBar({
   onViewProfile,
   onOpenSettings,
 }: TopBarProps): JSX.Element {
-  const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
-  useDataRefetch(PROFILE_KINDS, profiles.refetch);
-
-  // Pinned-first ordering: the single bound profile floats to the top under a
-  // "Pinned" header; the rest follow. (The rail pins ONE session→profile binding,
-  // so the Pinned group holds 0 or 1 rows — sorting still makes the pin visible.)
-  const rows = profiles.kind === "ok" ? profiles.data.map(toSnapshot).filter((s) => s.id !== null) : [];
-  const pinned = rows.filter((s) => s.id === pinnedProfileId);
-  const rest = rows.filter((s) => s.id !== pinnedProfileId);
-
-  const SearchRow = ({ snap }: { snap: (typeof rows)[number] }): JSX.Element => {
-    const id = snap.id!;
-    const isPinned = id === pinnedProfileId;
-    return (
-      <div className="popover-row searches-row" data-pinned={isPinned} data-testid={`searches-row-${id}`}>
-        <button
-          type="button"
-          className="pin-toggle"
-          aria-pressed={isPinned}
-          aria-label="Pin to top"
-          title={isPinned ? "Unpin" : "Pin to top"}
-          data-testid={isPinned ? `searches-unpin-${id}` : `searches-pin-${id}`}
-          onClick={() => (isPinned ? onUnpin() : onPin(id))}
-        >
-          <PinIcon filled={isPinned} />
-        </button>
-        <button
-          type="button"
-          className="searches-row-title"
-          data-testid={`searches-view-${id}`}
-          onClick={() => onViewProfile(id, vehicleLabel(snap) || id)}
-        >
-          {vehicleLabel(snap) || id}
-        </button>
-      </div>
-    );
-  };
-
   return (
     <header className="topbar">
       <div className="topbar__left">
         <nav aria-label="Primary">
-          <Popover
-            label="Searches"
-            triggerTestId="topbar-searches"
-            panelTestId="searches-popover"
-            onOpen={() => profiles.refetch()}
-          >
+          <Popover label="Searches" triggerTestId="topbar-searches" panelTestId="searches-popover">
             {(close) => (
-              <div>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  data-testid="searches-new"
-                  onClick={() => {
-                    close();
-                    onStartIntake();
-                  }}
-                >
-                  + New search
-                </button>
-                {profiles.kind === "ok" && rows.length === 0 && (
-                  <p className="muted">No active searches yet.</p>
-                )}
-                {pinned.length > 0 && (
-                  <>
-                    <h3 className="skills-group-title">Pinned</h3>
-                    {pinned.map((snap) => (
-                      <SearchRow key={snap.id} snap={snap} />
-                    ))}
-                  </>
-                )}
-                {rest.length > 0 && (
-                  <>
-                    {pinned.length > 0 && <h3 className="skills-group-title">All searches</h3>}
-                    {rest.map((snap) => (
-                      <SearchRow key={snap.id} snap={snap} />
-                    ))}
-                  </>
-                )}
-                {profiles.kind === "error" && (
-                  <p className="danger-text" role="alert">
-                    Couldn&apos;t load searches: {profiles.message}
-                  </p>
-                )}
-
-                {/* Closed searches — the soft-deleted set, each row restorable. */}
-                <ClosedSearchesGroup client={client} />
-              </div>
+              <SearchPicker
+                client={client}
+                pinnedProfileId={pinnedProfileId}
+                onPin={onPin}
+                onUnpin={onUnpin}
+                onViewProfile={onViewProfile}
+                onStartIntake={onStartIntake}
+                close={close}
+              />
             )}
           </Popover>
         </nav>

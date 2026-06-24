@@ -1,0 +1,85 @@
+# multi_profile_portfolio.func.toml — FUNCTIONAL lane: the Phase-3 portfolio
+# board + per-session pin toggle + header-by-counts.
+#
+# Installs the multi_active fixture (two active, DIFFERENT-brand searches —
+# Hyundai Tucson Hybrid + Toyota RAV4, both Compact SUVs) and, in ONE real-DOM
+# step, proves:
+#   - /portfolio renders ONE card per active search, GROUPED BY SEGMENT (both
+#     land in the "Compact SUVs" group — different-brand competitors sit
+#     together);
+#   - the multi-profile header strip appears (header-by-counts, 2+ active);
+#   - PINNING one search (via the Searches picker) flips THIS session into
+#     focused pinned mode (rail-pin-title shows the pinned identity) WHILE the
+#     /portfolio board STILL lists BOTH searches — focus and the portfolio-wide
+#     view coexist (a session pin does not collapse the board).
+#
+# (The unpin-reverts transition, the cross-pipeline "Needs you" gate routing, and
+# the Canvas rebind are pinned by deterministic vitest; the single-pinned flow is
+# the FROZEN existing func cases. This case is the real-DOM portfolio proof.)
+#
+# DETERMINISTIC: seeded fixture, no live LLM. apply-fixture does not wipe the DB,
+# so the case uses a SINGLE fixture-backed step (re-seeding would PK-conflict).
+
+[meta]
+id = "multi_profile_portfolio_func"
+archetype = "B"
+skills = ["dealer_geosearch"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "board_pin_coexist"
+kind = "ui"
+fixture_state = "multi_active"
+purpose = "The /portfolio board groups both active searches by segment + shows the header strip; pinning one focuses THIS session while the board stays portfolio-wide."
+# After the ui_actions land on the board, PIN one search via the Searches picker
+# (pinProfileInSearches opens topbar-searches → clicks searches-pin → awaits the
+# Unpin flip). The rail then shows the pinned identity.
+pin_label = "2026 Hyundai Tucson Hybrid SEL"
+
+# Land on the portfolio board (the SPA route mounts portfolio-board).
+[[steps.ui_actions]]
+verb = "navigate"
+value = "/portfolio"
+testid = "portfolio-board"
+
+# The board rendered.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "portfolio-board"
+expect = "visible"
+
+# Both active searches surface as cards (a real cardinality proof) — the board
+# stays portfolio-wide even though a session is now pinned.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "portfolio-card-"
+expect = "count"
+count = 2
+match = "prefix"
+
+# Different-brand competitors sit together: Tucson + RAV4 share the Compact SUVs
+# segment group.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "portfolio-segment-compact-suvs"
+expect = "visible"
+
+# The multi-profile header strip (counts, never a blended color) renders with 2+
+# active searches.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "portfolio-status-bar"
+expect = "visible"
+
+# This session is now FOCUSED on the pinned search (the rail shows the pinned
+# identity) — focus and the portfolio-wide board coexist.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "rail-pin-title"
+expect = "visible"

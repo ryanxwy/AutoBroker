@@ -22,6 +22,12 @@ export {
 } from "./detectPipelineState.js";
 
 export {
+  profileHealth,
+  type ProfileHealth,
+  type ProfileHealthLevel,
+} from "./profileHealth.js";
+
+export {
   resolveTargetedListing,
   TargetedListingNotFound,
   NoInboundThread,

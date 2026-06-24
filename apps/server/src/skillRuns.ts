@@ -1921,6 +1921,54 @@ export class SkillRunService {
     return this.runs.has(runId);
   }
 
+  /** Every PARKED gate this service still tracks — a live run with a pending
+   *  suspend (awaiting a human decision). The Phase-3 "Needs you" ApprovalInbox
+   *  aggregates these across ALL pipelines; the caller resolves each gate's
+   *  profile id from its `sessionId` (the session pin). Read-only auto-scans never
+   *  suspend, so they never appear here (the four-layer attention rule).
+   *  INTEGRATION: the real Phase-2 ApprovalInbox API (ranking, saga, idempotent
+   *  resume, fail-closed surfacing) consumes this same enumeration. */
+  listParkedGates(): Array<{
+    runId: string;
+    skill: string;
+    sessionId: string | null;
+    step: string;
+    decisionId: string;
+    payload: Record<string, unknown>;
+  }> {
+    const out: Array<{
+      runId: string;
+      skill: string;
+      sessionId: string | null;
+      step: string;
+      decisionId: string;
+      payload: Record<string, unknown>;
+    }> = [];
+    for (const [runId, st] of this.runs) {
+      if (st.terminal || st.pending === null) continue;
+      out.push({
+        runId,
+        skill: st.skill,
+        sessionId: st.sessionId,
+        step: st.pending.step,
+        decisionId: st.pending.decisionId,
+        payload: st.pending.payload,
+      });
+    }
+    return out;
+  }
+
+  /** The sessionIds of every LIVE (non-terminal) run — running OR awaiting a
+   *  decision. profileHealth marks a profile HOT when one of its runs is live;
+   *  the caller maps each sessionId → its pinned profile id. */
+  liveRunSessionIds(): string[] {
+    const out: string[] = [];
+    for (const st of this.runs.values()) {
+      if (!st.terminal && st.sessionId !== null) out.push(st.sessionId);
+    }
+    return out;
+  }
+
   /** The descriptor a tracked run was started under — always registered, since
    *  run.skill is only ever set from a descriptor's own skillId. */
   private descriptorOf(run: RunState): RunDescriptor {

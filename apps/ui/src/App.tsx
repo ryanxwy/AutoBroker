@@ -38,10 +38,12 @@ import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
 import { invalidate, useDataRefetch, useRefocusRefetch } from "./api/useDataChanged.js";
 import type {
+  ApprovalInboxView,
   EnvConfigResponse,
   IntakeScopeNotice,
   KeyPresenceResponse,
   Mode,
+  PortfolioView,
   ProfileList,
   RouteAck,
   SkillManifest,
@@ -64,16 +66,19 @@ import {
 import { RunChatTransport } from "./chat/transport.js";
 import { useDecision } from "./chat/useDecision.js";
 import { GateBannerHost } from "./gate/GateBannerHost.js";
+import { NeedsYouInbox } from "./gate/NeedsYouInbox.js";
 import { toSnapshot, vehicleLabel, zipOf } from "./home/profileView.js";
 import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
 import { ChatRail } from "./rail/ChatRail.js";
 import { Digest } from "./routes/Digest.js";
 import { NotFound } from "./routes/NotFound.js";
+import { Portfolio } from "./routes/Portfolio.js";
 import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { Settings } from "./routes/Settings.js";
 import { SettingsBody } from "./settings/SettingsBody.js";
 import { navigate, useRoute } from "./router.js";
 import { Modal } from "./shell/Modal.js";
+import { PortfolioStatusBar } from "./shell/PortfolioStatusBar.js";
 import { RailResizer } from "./shell/RailResizer.js";
 import { Toast } from "./shell/Toast.js";
 import { TopBar } from "./shell/TopBar.js";
@@ -87,6 +92,21 @@ const INTAKE_SKILL = "search_profile_intake";
 
 // Stable bus keys (module-level so useDataRefetch's effect deps don't churn).
 const PROFILE_KINDS = ["profiles"] as const;
+// The portfolio header + "Needs you" widget overview EVERY pipeline, so they
+// refetch on any write family (plus on window refocus). Global scope.
+const PORTFOLIO_KINDS = [
+  "portfolio",
+  "profiles",
+  "sessions",
+  "dealers",
+  "leads",
+  "threads",
+  "messages",
+  "listings",
+  "quotes",
+  "incentives",
+  "digest",
+] as const;
 // After a hard purge, refetch the profile LIST + sessions only. The Canvas's
 // per-profile sub-resource reads (dealers/threads/quotes/…) are keyed on the
 // active profile id, so the list refetch re-derives the active profile and
@@ -111,6 +131,15 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
   const hasActiveProfile = profiles.kind === "ok" && profiles.data.length > 0;
+  // The portfolio board projection + the global "Needs you" approval inbox —
+  // owned here (App never unmounts) so the header counts strip and the floating
+  // widget stay in sync across pages. Both refetch on any write pulse / refocus.
+  const portfolio = useAsync<PortfolioView>(() => client.getPortfolio(), []);
+  const inbox = useAsync<ApprovalInboxView>(() => client.approvalInbox(), []);
+  useDataRefetch(PORTFOLIO_KINDS, portfolio.refetch);
+  useDataRefetch(PORTFOLIO_KINDS, inbox.refetch);
+  const portfolioCards = portfolio.kind === "ok" ? portfolio.data.cards : [];
+  const inboxItems = inbox.kind === "ok" ? inbox.data.items : [];
 
   // The Settings pop-up overlay (the top-right gear). The /settings ROUTE still
   // exists for the first-run gate + deep links; the gear opens the SAME settings
@@ -214,9 +243,16 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     if (part.type === "data-frame") {
       const data = part.data as { kind?: unknown; payload?: unknown } | null;
       if (data !== null && typeof data === "object" && data.kind === "data.changed") {
-        const kinds = (data.payload as { kinds?: unknown } | null)?.kinds;
+        const payload = data.payload as { kinds?: unknown; profile_id?: unknown } | null;
+        const kinds = payload?.kinds;
         if (Array.isArray(kinds)) {
-          invalidate(kinds.filter((k): k is string => typeof k === "string"));
+          // Honor the pulse's profile_id so a write in A refreshes only A's
+          // scoped views (a null profile_id is a global pulse → refetch all).
+          const profileId = typeof payload?.profile_id === "string" ? payload.profile_id : null;
+          invalidate(
+            kinds.filter((k): k is string => typeof k === "string"),
+            profileId,
+          );
         }
       }
     }
@@ -289,6 +325,23 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       .catch((err: unknown) => {
         setLaunchError(err instanceof Error ? err.message : "Could not unpin the search.");
       });
+  };
+
+  // ---- portfolio drill-in: focus a profile's workbench ----------------------
+  // The board card is the entry; opening it PINS that profile to the session and
+  // navigates to the workbench (home), where the Canvas binds to the pin — the
+  // single-profile workbench is the drill-in leaf. Heavy detail loads there.
+  const onOpenPortfolioProfile = (profileId: string): void => {
+    onPin(profileId);
+    navigate("/");
+  };
+
+  // ---- "Needs you" routing: a parked gate surfaces in the global inbox even
+  // when focused on another pipeline; reviewing it navigates to THAT run, where
+  // the existing per-run GateBannerHost renders the card and the decision routes
+  // to that run's (runId, decisionId). The widget never approves inline.
+  const onReviewGate = (runId: string): void => {
+    navigate(`/runs/${runId}`);
   };
 
   // ---- hard delete (irreversible): purge the profile + everything scoped to it
@@ -634,6 +687,10 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           banner-tracked gate precedes app-main and all prose in document order. */}
       <GateBannerHost awaiting={activeAwaiting} decision={decision} />
 
+      {/* Multi-profile header strip — renders only with 2+ active searches, so
+          the single-active path stays byte-identical. Reports by COUNTS. */}
+      <PortfolioStatusBar cards={portfolioCards} items={inboxItems} />
+
       <div className="app-body" ref={appBodyRef}>
         <main className="app-main" data-testid="app-main">
           {launchError !== null && (
@@ -645,6 +702,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
             <Canvas
               client={client}
               onStartIntake={startIntakeFresh}
+              profileId={pinnedProfileId}
               deepseekReady={deepseekReady}
               onEditProfile={onViewProfile}
               onDeleteProfile={onDeleteProfile}
@@ -655,11 +713,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               client={client}
               onStartIntake={startIntakeFresh}
               runId={route.runId}
+              profileId={pinnedProfileId}
               deepseekReady={deepseekReady}
               onEditProfile={onViewProfile}
               onDeleteProfile={onDeleteProfile}
             />
           )}
+          {route.name === "portfolio" && <Portfolio client={client} onOpen={onOpenPortfolioProfile} />}
           {route.name === "profile" && <ProfileWorkspace client={client} profileId={route.profileId} />}
           {route.name === "digest" && <Digest client={client} profileId={route.profileId} />}
           {route.name === "settings" && (
@@ -699,6 +759,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           onSlash={onSlash}
           onFreeform={onFreeform}
           onUnpin={onUnpin}
+          onPin={onPin}
+          onViewProfile={onViewProfile}
           onStartIntake={startIntakeFresh}
           onStopPick={onStopPick}
           onSelectSession={onSelectSession}
@@ -767,6 +829,12 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           </div>
         </Modal>
       )}
+
+      {/* Global "Needs you" approval inbox — a floating widget that follows the
+          user across pages, aggregating every parked gate across all pipelines
+          (error-first). Reviewing routes to the parked run; it never approves
+          inline. Absent when nothing is parked (read-only/idle world). */}
+      <NeedsYouInbox items={inboxItems} onReview={onReviewGate} />
     </div>
   );
 }

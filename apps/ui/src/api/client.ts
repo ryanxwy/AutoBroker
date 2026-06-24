@@ -32,6 +32,7 @@
 import { z } from "zod";
 
 import {
+  ApprovalInboxViewSchema,
   DealerListSchema,
   DigestViewSchema,
   EnvConfigResponseSchema,
@@ -44,6 +45,7 @@ import {
   QuoteListSchema,
   IncentiveListSchema,
   ModeSchema,
+  PortfolioViewSchema,
   ProfileListSchema,
   ProfileRowSchema,
   PurgeProfileAckSchema,
@@ -56,9 +58,11 @@ import {
   SkillRunSummarySchema,
   StartAckSchema,
   ThreadListSchema,
+  type ApprovalInboxView,
   type CreateSessionBody,
   type DealerList,
   type DigestView,
+  type PortfolioView,
   type ThreadList,
   type EnvConfigResponse,
   type EnvEditableId,
@@ -404,6 +408,23 @@ export class ApiClient {
         : "";
     const res = await this.fetchImpl(this.url(`/api/digest${q}`));
     return decode(res, DigestViewSchema);
+  }
+
+  /** GET /api/portfolio → the PortfolioView board projection (one card per
+   *  active search, newest-first, with derived stage + hot/warm/cold health).
+   *  Seeded from the same digest aggregation + profileHealth; budget never on the
+   *  wire. The board groups by segment + computes header counts client-side. */
+  async getPortfolio(): Promise<PortfolioView> {
+    const res = await this.fetchImpl(this.url("/api/portfolio"));
+    return decode(res, PortfolioViewSchema);
+  }
+
+  /** GET /api/approval-inbox → every PARKED gate across all pipelines (the
+   *  global "Needs you" queue, keyed by profileId/runId/decisionId). The widget
+   *  routes to each item's run; it never approves inline. */
+  async approvalInbox(): Promise<ApprovalInboxView> {
+    const res = await this.fetchImpl(this.url("/api/approval-inbox"));
+    return decode(res, ApprovalInboxViewSchema);
   }
 
   // ---- settings / keys (the four managed API keys; presence-only reads) -----

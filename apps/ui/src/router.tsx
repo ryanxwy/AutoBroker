@@ -19,12 +19,14 @@ export type Route =
   | { name: "profile"; profileId: string }
   | { name: "settings" }
   | { name: "digest"; profileId: string | null }
+  | { name: "portfolio" }
   | { name: "not_found"; path: string };
 
 /** Parse a pathname into a typed Route. Order: most-specific first. */
 export function matchRoute(pathname: string): Route {
   if (pathname === "/" || pathname === "") return { name: "home" };
   if (pathname === "/settings" || pathname === "/settings/") return { name: "settings" };
+  if (pathname === "/portfolio" || pathname === "/portfolio/") return { name: "portfolio" };
   // /digest = the all-active digest (profileId null); /digest/:id pins it to one
   // search (path-param form, consistent with /profiles/:id — the client maps it
   // to ?profile_id). This router parses pathnames only, no query string.

@@ -4,6 +4,9 @@
  * view's refetch fires when invalidate names an intersecting kind, when the
  * window refocuses, and never after unmount. Pure (happy-dom + a tiny harness
  * component); no network.
+ *
+ * Phase 3 adds an optional profile SCOPE: a scoped refetcher fires only when the
+ * pulse names its profile (or names no profile); an unscoped one always fires.
  */
 
 import { act } from "react";
@@ -22,17 +25,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** A throwaway view that registers `refetch` under `kinds` for its lifetime. */
+/** A throwaway view that registers `refetch` under `kinds` (with an optional
+ *  profile `scope`) for its lifetime. */
 function View({
   kinds,
   refetch,
   refocus = false,
+  scope = null,
 }: {
   kinds: readonly string[];
   refetch: () => void;
   refocus?: boolean;
+  scope?: string | null;
 }): JSX.Element {
-  useDataRefetch(kinds, refetch);
+  useDataRefetch(kinds, refetch, scope);
   if (refocus) useRefocusRefetch();
   return <div data-testid="view" />;
 }
@@ -116,5 +122,51 @@ describe("useDataChanged — fresh-on-refocus", () => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(dealers).toHaveBeenCalledTimes(1);
+  });
+
+  it("refocus fires a SCOPED refetcher too (refresh everything visible, ignore scope)", () => {
+    const dealers = vi.fn();
+    const r = render(<View kinds={DEALER_KINDS} refetch={dealers} refocus scope="profile-A" />);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(dealers).toHaveBeenCalledTimes(1);
+    r.unmount();
+  });
+});
+
+describe("useDataChanged — profile scope (Phase 3)", () => {
+  it("an unscoped refetcher fires for any profile's pulse", () => {
+    const fn = vi.fn();
+    const r = render(<View kinds={DEALER_KINDS} refetch={fn} />);
+    act(() => invalidate(["dealers"], "profile-A"));
+    act(() => invalidate(["dealers"], null));
+    expect(fn).toHaveBeenCalledTimes(2);
+    r.unmount();
+  });
+
+  it("a scoped refetcher fires only for its own profile or a global (null) pulse", () => {
+    const fn = vi.fn();
+    const r = render(<View kinds={DEALER_KINDS} refetch={fn} scope="profile-A" />);
+    act(() => invalidate(["dealers"], "profile-A")); // match
+    act(() => invalidate(["dealers"], null)); // global
+    expect(fn).toHaveBeenCalledTimes(2);
+    r.unmount();
+  });
+
+  it("a scoped refetcher does NOT fire for a different profile's pulse (a write in A never refetches B)", () => {
+    const fn = vi.fn();
+    const r = render(<View kinds={DEALER_KINDS} refetch={fn} scope="profile-A" />);
+    act(() => invalidate(["dealers"], "profile-B"));
+    expect(fn).not.toHaveBeenCalled();
+    r.unmount();
+  });
+
+  it("a refetcher under two kinds with a scope still fires once for a matching pulse", () => {
+    const fn = vi.fn();
+    const r = render(<View kinds={["dealers", "leads"]} refetch={fn} scope="profile-A" />);
+    act(() => invalidate(["dealers", "leads"], "profile-A"));
+    expect(fn).toHaveBeenCalledTimes(1);
+    r.unmount();
   });
 });

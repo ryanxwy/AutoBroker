@@ -26,6 +26,7 @@ import type {
   IncentiveList,
   InventoryCompareResult,
   ProfileList,
+  ProfileRow,
   QuoteCompareResult,
   QuoteList,
   SkillRunSummary,
@@ -80,6 +81,11 @@ export interface CanvasProps {
   onStartIntake: () => void;
   /** Present when rendered at /runs/:id — binds the workbench to that run. */
   runId?: string | null;
+  /** The EXPLICIT focused profile (the route/run pipeline's profile, threaded
+   *  from the session pin). When set, the workbench binds to THIS profile instead
+   *  of the newest-active `data[0]` — the multi-profile rebind. When absent
+   *  (the single-active home path), `data[0]` is used, byte-identical to before. */
+  profileId?: string | null;
   /** Whether the required DeepSeek key is configured. When false, the start CTA
    *  is disabled and points to Settings (the first-run gate). */
   deepseekReady?: boolean;
@@ -340,14 +346,29 @@ export function Canvas({
   client,
   onStartIntake,
   runId = null,
+  profileId = null,
   deepseekReady = true,
   onEditProfile,
   onDeleteProfile,
 }: CanvasProps): JSX.Element {
   const [tab, setTab] = useState<TabKey>("overview");
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
+  // The EXPLICIT focused profile (the route/run pipeline's profile). Fetched only
+  // when a profileId is supplied — the multi-profile rebind. When absent the
+  // workbench falls back to the newest-active `data[0]`, byte-identical to before.
+  const explicit = useAsync<ProfileRow>(
+    () => client.getProfile(profileId!),
+    [profileId],
+    profileId !== null,
+  );
   const active: ProfileSnapshot | null =
-    profiles.kind === "ok" && profiles.data.length > 0 ? toSnapshot(profiles.data[0]!) : null;
+    profileId !== null
+      ? explicit.kind === "ok"
+        ? toSnapshot(explicit.data)
+        : null
+      : profiles.kind === "ok" && profiles.data.length > 0
+        ? toSnapshot(profiles.data[0]!)
+        : null;
   const activeId = active?.id ?? null;
   const dealers = useAsync<DealerList>(
     () => client.listProfileDealers(activeId ?? ""),
@@ -397,15 +418,20 @@ export function Canvas({
   // exactly these views in place — no manual reload. The active-profile list
   // tracks "profiles"; the dealer tiles track "dealers"; the Threads section
   // tracks "threads"/"messages" (the inbox-pull skill's data families).
+  // The profile LIST stays GLOBAL (it isn't profile-specific); the explicit
+  // profile read + every per-profile sub-resource is SCOPED to activeId so a
+  // write in ANOTHER profile never refetches this focused workbench (a null
+  // profile_id pulse — a global/headless write — still refetches everything).
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
-  useDataRefetch(DEALER_KINDS, dealers.refetch);
-  useDataRefetch(THREAD_KINDS, threads.refetch);
-  useDataRefetch(LEAD_KINDS, dealers.refetch);
-  useDataRefetch(INVENTORY_KINDS, inventory.refetch);
-  useDataRefetch(QUOTE_KINDS, quotes.refetch);
-  useDataRefetch(QUOTE_KINDS, quotesRaw.refetch);
-  useDataRefetch(INCENTIVE_KINDS, incentives.refetch);
-  useDataRefetch(DIGEST_KINDS, digest.refetch);
+  useDataRefetch(PROFILE_KINDS, explicit.refetch, activeId);
+  useDataRefetch(DEALER_KINDS, dealers.refetch, activeId);
+  useDataRefetch(THREAD_KINDS, threads.refetch, activeId);
+  useDataRefetch(LEAD_KINDS, dealers.refetch, activeId);
+  useDataRefetch(INVENTORY_KINDS, inventory.refetch, activeId);
+  useDataRefetch(QUOTE_KINDS, quotes.refetch, activeId);
+  useDataRefetch(QUOTE_KINDS, quotesRaw.refetch, activeId);
+  useDataRefetch(INCENTIVE_KINDS, incentives.refetch, activeId);
+  useDataRefetch(DIGEST_KINDS, digest.refetch, activeId);
 
   // Scalar inputs for the summary bento header.
   const digestProfile =
