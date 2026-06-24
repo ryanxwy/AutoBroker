@@ -711,6 +711,33 @@ describe("App — first-run gate (no DeepSeek key)", () => {
   });
 });
 
+describe("App — settings pop-up (the top-right gear)", () => {
+  /** The settings overlay is a portal (createPortal → document.body), so query
+   *  the document directly rather than the render container. */
+  const docQuery = (testId: string): HTMLElement | null =>
+    document.querySelector(`[data-testid="${testId}"]`);
+
+  it("the gear opens the settings overlay in place (no route change)", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    // Closed by default; the app is on home (a DeepSeek key is present).
+    expect(docQuery("settings-overlay")).toBeNull();
+    expect(window.location.pathname).toBe("/");
+
+    // Click the gear → the overlay opens, rendering the shared SettingsBody…
+    click(r.get("topbar-settings"));
+    await flush();
+    expect(docQuery("settings-overlay")).not.toBeNull();
+    expect(docQuery("settings-keys")).not.toBeNull();
+    expect(docQuery("settings-diagnostics")).not.toBeNull();
+    // …and the route did NOT change (it is a pop-up, not navigation).
+    expect(window.location.pathname).toBe("/");
+    r.unmount();
+  });
+});
+
 describe("App — declined terminal renders the cancelled line", () => {
   it("an aborted{user_declined} data-frame + abort chunk projects data-status declined", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });

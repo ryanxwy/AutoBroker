@@ -31,7 +31,7 @@
  * each assistant turn. Which kind renders where is the single gateTrack map.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Chat, useChat } from "@ai-sdk/react";
 
 import { ApiClient, apiClient } from "./api/client.js";
@@ -64,18 +64,20 @@ import {
 import { RunChatTransport } from "./chat/transport.js";
 import { useDecision } from "./chat/useDecision.js";
 import { GateBannerHost } from "./gate/GateBannerHost.js";
-import { toSnapshot, vehicleLabel } from "./home/profileView.js";
+import { toSnapshot, vehicleLabel, zipOf } from "./home/profileView.js";
 import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
 import { ChatRail } from "./rail/ChatRail.js";
 import { Digest } from "./routes/Digest.js";
 import { NotFound } from "./routes/NotFound.js";
 import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { Settings } from "./routes/Settings.js";
+import { SettingsBody } from "./settings/SettingsBody.js";
 import { navigate, useRoute } from "./router.js";
+import { Modal } from "./shell/Modal.js";
 import { RailResizer } from "./shell/RailResizer.js";
 import { Toast } from "./shell/Toast.js";
 import { TopBar } from "./shell/TopBar.js";
-import { clampRailWidth, loadRailWidth, useLayout } from "./store/layout.js";
+import { clampRailWidth, loadRailWidth } from "./store/layout.js";
 
 // Pre-load fallback only: the live skill list comes from GET /api/skills
 // (knownSkills below). This literal is used until that fetch resolves; the UI
@@ -109,7 +111,12 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
   const hasActiveProfile = profiles.kind === "ok" && profiles.data.length > 0;
-  const layoutMode = useLayout((s) => s.mode);
+
+  // The Settings pop-up overlay (the top-right gear). The /settings ROUTE still
+  // exists for the first-run gate + deep links; the gear opens the SAME settings
+  // body in a Modal so the owner never leaves the workbench to adjust env config.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsTitleId = useId();
 
   // ---- draggable rail width: own the --rail-width on the .app-body host ------
   // RailResizer writes the CSS var imperatively during a drag; App sets the
@@ -178,6 +185,10 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // hydrated from GET /api/sessions/:id together with the scope notice.
   const [pinnedProfileId, setPinnedProfileId] = useState<string | null>(null);
   const [pinLabel, setPinLabel] = useState<string | null>(null);
+  // The pinned search's ZIP (postal_code, else parsed from location_query) — the
+  // rail header renders it after the vehicle so the title reads as the pinned
+  // search identity (year make model trim · zip) instead of the skill name.
+  const [pinZip, setPinZip] = useState<string | null>(null);
   // The server session (Mastra thread) the rail is currently on — intake forks
   // FROM it (the fork rule), so the last ack's session_id is remembered here.
   const sessionIdRef = useRef<string | null>(null);
@@ -231,11 +242,16 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     setPinnedProfileId(s.pinned_profile_id);
     setScopeNotice(s.scope_notice);
     setPinLabel(null);
+    setPinZip(null);
     if (s.pinned_profile_id !== null) {
       const pin = s.pinned_profile_id;
       client
         .getProfile(pin)
-        .then((row) => setPinLabel(vehicleLabel(toSnapshot(row)) || pin))
+        .then((row) => {
+          const snap = toSnapshot(row);
+          setPinLabel(vehicleLabel(snap) || pin);
+          setPinZip(zipOf(snap));
+        })
         .catch(() => setPinLabel(pin)); // label only — the pin itself is set.
     }
   };
@@ -288,6 +304,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         if (id === pinnedProfileId) {
           setPinnedProfileId(null);
           setPinLabel(null);
+          setPinZip(null);
         }
         setProfileModal(null);
         if (route.name === "profile" && route.profileId === id) navigate("/");
@@ -354,6 +371,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     else {
       setPinnedProfileId(null);
       setPinLabel(null);
+      setPinZip(null);
     }
     void streamRun(ack.run_id, userText);
     navigate(`/runs/${ack.run_id}`);
@@ -589,6 +607,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
         onPin={onPin}
         onUnpin={onUnpin}
         onViewProfile={onViewProfile}
+        // On the /settings ROUTE the full page is already showing — don't also
+        // open the pop-up (it would duplicate the same SettingsBody).
+        onOpenSettings={() => {
+          if (route.name !== "settings") setSettingsOpen(true);
+        }}
       />
 
       {backendDown !== null && (
@@ -611,7 +634,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           banner-tracked gate precedes app-main and all prose in document order. */}
       <GateBannerHost awaiting={activeAwaiting} decision={decision} />
 
-      <div className="app-body" data-layout={layoutMode} ref={appBodyRef}>
+      <div className="app-body" ref={appBodyRef}>
         <main className="app-main" data-testid="app-main">
           {launchError !== null && (
             <p className="danger-text" role="alert" data-testid="launch-error">
@@ -652,8 +675,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           {route.name === "not_found" && <NotFound path={route.path} />}
         </main>
 
-        {/* The draggable seam — canvas-layout affordance only (CSS hides it in
-            conversation layout, where the rail is flex:1). */}
+        {/* The draggable seam — the single way to rebalance the workbench: drag
+            the rail's left boundary to narrow/widen it (always active). */}
         <RailResizer containerRef={appBodyRef} />
 
         <ChatRail
@@ -668,6 +691,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           scopeNotice={scopeNotice}
           pinnedProfileId={pinnedProfileId}
           pinLabel={pinLabel}
+          pinZip={pinZip}
           currentSessionId={sessionIdRef.current}
           skills={skills.kind === "ok" ? skills.data : []}
           hasActiveProfile={hasActiveProfile}
@@ -705,6 +729,43 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           onClose={closeProfileModal}
           onConfirm={() => doPurge(profileModal.id)}
         />
+      )}
+
+      {/* Settings pop-up — the top-right gear's overlay. Renders the SAME body as
+          the /settings route (one shared SettingsBody); a calm "dialog" Modal
+          (Escape + backdrop both close — adjusting env config destroys nothing).
+          Suppressed on the /settings route so the body never renders twice. */}
+      {settingsOpen && route.name !== "settings" && (
+        <Modal open onClose={() => setSettingsOpen(false)} labelId={settingsTitleId}>
+          <div className="settings-overlay" data-testid="settings-overlay">
+            <header className="settings-overlay-head">
+              <h2 id={settingsTitleId}>Settings</h2>
+              <a
+                href="/settings"
+                className="settings-overlay-expand"
+                data-testid="settings-overlay-expand"
+                title="Open the full settings page"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setSettingsOpen(false);
+                  navigate("/settings");
+                }}
+              >
+                Full page ↗
+              </a>
+            </header>
+            <div className="settings-overlay-body">
+              <SettingsBody
+                client={client}
+                presence={keyPresence}
+                onChanged={keyPresence.refetch}
+                env={env}
+                onEnvChanged={env.refetch}
+                mode={mode}
+              />
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

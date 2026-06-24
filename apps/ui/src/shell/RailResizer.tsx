@@ -10,8 +10,9 @@
  * (collapse↔restore). Double-click resets to the default. Every path runs the
  * same clamp → set-var → set-aria-valuenow → persist helper.
  *
- * Hidden in conversation layout (CSS) — there is no fixed rail width to drag when
- * the rail takes flex:1; the drag is a canvas-layout affordance only.
+ * The workbench is ONE layout (the rail is always present at a fixed
+ * `--rail-width`), so this seam is always active — it is the single way to
+ * rebalance the canvas against the rail.
  *
  * Dependency wall: app/ui layer. react + the layout-store helpers only.
  */

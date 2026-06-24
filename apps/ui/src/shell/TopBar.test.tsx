@@ -67,6 +67,7 @@ const baseProps = {
   onPin: noop,
   onUnpin: noop,
   onViewProfile: noop,
+  onOpenSettings: noop,
 };
 
 beforeEach(() => {

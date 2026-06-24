@@ -23,7 +23,6 @@ import { useAsync } from "../api/useApi.js";
 import type { AppMode, ProfileList } from "../api/wire.js";
 import { toSnapshot, vehicleLabel } from "../home/profileView.js";
 import { navigate } from "../router.js";
-import { useLayout } from "../store/layout.js";
 import { ClosedSearchesGroup } from "./ClosedSearchesGroup.js";
 import { BrandMark, GearIcon, PinIcon } from "./icons.js";
 import { ModeToggle } from "./ModeToggle.js";
@@ -53,6 +52,8 @@ export interface TopBarProps {
   onUnpin: () => void;
   /** Open the view/edit modal for a profile (replaces the dead /profiles/:id link). */
   onViewProfile: (profileId: string, name: string) => void;
+  /** Open the Settings pop-up (the top-right gear) — App owns the overlay. */
+  onOpenSettings: () => void;
 }
 
 export function TopBar({
@@ -65,11 +66,10 @@ export function TopBar({
   onPin,
   onUnpin,
   onViewProfile,
+  onOpenSettings,
 }: TopBarProps): JSX.Element {
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
   useDataRefetch(PROFILE_KINDS, profiles.refetch);
-  const layoutMode = useLayout((s) => s.mode);
-  const setLayoutMode = useLayout((s) => s.setMode);
 
   // Pinned-first ordering: the single bound profile floats to the top under a
   // "Pinned" header; the rest follow. (The rail pins ONE session→profile binding,
@@ -184,38 +184,16 @@ export function TopBar({
           <ModeToggle mode={appMode} onSwitched={onModeSwitched} client={client} />
         )}
 
-        <div className="modeswitch" role="tablist" aria-label="Workbench mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={layoutMode === "canvas"}
-            className={layoutMode === "canvas" ? "on" : ""}
-            data-testid="topbar-mode-canvas"
-            onClick={() => setLayoutMode("canvas")}
-          >
-            Canvas
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={layoutMode === "conversation"}
-            className={layoutMode === "conversation" ? "on" : ""}
-            data-testid="topbar-mode-conversation"
-            onClick={() => setLayoutMode("conversation")}
-          >
-            Chat
-          </button>
-        </div>
-
-        {/* Settings — an icon-only gear routing to /settings (Diagnostics now
-            lives there too). The accessible name is on aria-label + the tooltip. */}
+        {/* Settings — an icon-only gear that POPS UP the settings overlay (keys,
+            connections, environment, diagnostics; App owns the modal). The
+            accessible name is on aria-label + the tooltip. */}
         <button
           type="button"
           className="icon-btn topbar-settings"
           aria-label="Settings"
           title="Settings"
           data-testid="topbar-settings"
-          onClick={() => navigate("/settings")}
+          onClick={onOpenSettings}
         >
           <GearIcon />
         </button>

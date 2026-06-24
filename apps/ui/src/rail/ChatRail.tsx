@@ -1,8 +1,10 @@
 /**
  * ChatRail — the chat-rail container. Renders the projected turns of the
  * App-level chat (UserTurn + AssistantTurn three-zone), the non-skippable
- * IntakeScopeNotice, the PinChip, a top-right HISTORY popover (recent sessions),
- * a collapsible SKILLS tray directly above the composer, and the ChatInput.
+ * IntakeScopeNotice, a top-right HISTORY popover (recent sessions), a
+ * collapsible SKILLS tray directly above the composer, and the ChatInput. When a
+ * search is pinned, the header title becomes the pinned-search identity
+ * (vehicle + ZIP) with a folded unpin, instead of the launch/skill title.
  *
  * It is presentational w.r.t. streaming: the SINGLE useChat lives in App (which
  * never unmounts); this component receives the projected TurnViews + the decision
@@ -21,7 +23,6 @@ import { SkillsPopoverList } from "../shell/SkillsPopover.js";
 import { AssistantTurn } from "./AssistantTurn.js";
 import { ChatInput } from "./ChatInput.js";
 import { IntakeScopeNoticeCard } from "./IntakeScopeNotice.js";
-import { PinChip } from "./PinChip.js";
 import { SessionHistory } from "./SessionHistory.js";
 
 export interface ChatRailProps {
@@ -48,8 +49,10 @@ export interface ChatRailProps {
   scopeNotice: IntakeScopeNotice | null;
   /** The session's TRUE pinned profile (hydrated from GET /api/sessions/:id). */
   pinnedProfileId: string | null;
-  /** Human label for the pin chip (vehicle name; falls back to the id). */
+  /** Human label for the pinned search (vehicle name; falls back to the id). */
   pinLabel: string | null;
+  /** The pinned search's ZIP (rendered after the vehicle in the rail title), or null. */
+  pinZip: string | null;
   /** The rail's current session (History highlights it), or null. */
   currentSessionId: string | null;
   /** The implemented skill manifest (the rail Skills tray directory). */
@@ -85,6 +88,7 @@ export function ChatRail({
   scopeNotice,
   pinnedProfileId,
   pinLabel,
+  pinZip,
   currentSessionId,
   skills,
   hasActiveProfile,
@@ -105,9 +109,35 @@ export function ChatRail({
   return (
     <aside className="chat-rail" id="chat-rail" data-testid="chat-rail" aria-label="Conversation">
       <div className="rail-header">
-        <strong style={{ flex: 1 }}>{title}</strong>
-        {pinnedProfileId !== null && (
-          <PinChip label={pinLabel ?? pinnedProfileId} title={pinnedProfileId} onUnpin={onUnpin} />
+        {/* When a search is PINNED the title IS the pinned search identity —
+            ● year make model trim · ZIP — with the unpin folded in (so every
+            skill in this session reads as acting on that one search). Unpinned,
+            it falls back to the launch/skill title. */}
+        {pinnedProfileId !== null ? (
+          <span
+            className="rail-pin-title"
+            data-testid="rail-pin-title"
+            title={pinnedProfileId}
+            style={{ flex: 1, minWidth: 0 }}
+          >
+            <span className="rail-pin-dot" aria-hidden="true" />
+            <span className="rail-pin-id" data-testid="pin-chip-label">
+              {pinLabel ?? pinnedProfileId}
+              {pinZip !== null && <span className="rail-pin-zip"> · {pinZip}</span>}
+            </span>
+            <button
+              type="button"
+              className="rail-pin-unpin"
+              data-testid="pin-chip-unpin"
+              aria-label="Unpin profile"
+              title="Unpin this search"
+              onClick={onUnpin}
+            >
+              ✕
+            </button>
+          </span>
+        ) : (
+          <strong style={{ flex: 1 }}>{title}</strong>
         )}
         <Popover
           label={<HistoryIcon />}

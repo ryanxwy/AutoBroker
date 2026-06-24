@@ -47,10 +47,10 @@ kind = "ui"
 fixture_state = "keys_unset"
 purpose = "Fresh install (no DeepSeek key): the SPA auto-lands on /settings with the setup strip + the four key rows + the Gmail shell; Test connection (a stubbed pass) reads Connected; and the Skills popover is locked behind the Settings pointer."
 
-# Open the Keys panel (idempotent with the auto-nav to /settings — deterministic).
-[[steps.ui_actions]]
-verb = "click"
-testid = "topbar-settings"
+# No DeepSeek key → the SPA AUTO-navigates to the /settings ROUTE (the first-run
+# setup framing); the panel is already shown. (The top-right gear now opens a
+# settings POP-UP overlay; on this auto-navigated route the panel is the route
+# page itself, so the first ui_action acts directly on it.)
 
 # Type a candidate DeepSeek key into the masked input.
 [[steps.ui_actions]]
@@ -112,10 +112,8 @@ kind = "ui"
 fixture_state = "keys_unset_reclear"
 purpose = "From a clean fresh-install start: fill the DeepSeek key, Test (stubbed pass), Save (a real secretsStore write proven by the Saved-badge wait), reload. The persisted key durably clears the gate: the setup strip is gone, the DeepSeek row shows the configured (Clear) state, and the Skills popover is unlocked."
 
-# Open the Keys panel.
-[[steps.ui_actions]]
-verb = "click"
-testid = "topbar-settings"
+# Fresh install again → the SPA auto-navigates to the /settings ROUTE; the panel
+# is already shown (no gear click needed — see step 1).
 
 # Type + test + save the DeepSeek key.
 [[steps.ui_actions]]

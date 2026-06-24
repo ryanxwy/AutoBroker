@@ -25,16 +25,20 @@
   --go: #1e7a47;     /* success / GREEN — racing green */
   --stop: #c92a2a;   /* destruction / declined */
   --run: #2b4a6f;    /* running — graphite blue */
+  --amber: #c8920a;  /* test/bench posture — the "yellow" pole of the mode lamp */
 
   /* washes + tinted keylines */
   --gate-wash: #fdebe0;
   --go-wash: #e4f0e9;
   --run-wash: #e6ecf2;
   --stop-wash: #f7e3e3;
+  --amber-wash: #fbf1d6;
   --gate-line: #f0c9b3;
   --go-line: #bcdcc9;
   --run-line: #c2cfdc;
   --stop-line: #e3b6b6;
+  --amber-line: #e8cd8a;
+  --amber-ink: #855d06;  /* label text on --amber-wash (AA-legible) */
 
   /* shadow scale: rest → mid → pop → focus */
   --shadow: 0 1px 2px rgba(21, 23, 28, 0.06);
@@ -261,10 +265,6 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   flex-direction: column;
   min-height: 0;
 }
-/* conversation mode: the rail takes the space, the canvas pane shrinks. */
-.app-body[data-layout="conversation"] .app-main { flex: 0 0 320px; min-width: 320px; }
-.app-body[data-layout="conversation"] .chat-rail { flex: 1; width: auto; }
-
 /* ---- rail resizer (the draggable seam) ---------------------------------- */
 /* A zero-footprint focusable separator straddling the rail's border-left: a
    thin visible line, a 10px transparent hit strip (negative margin overlap). */
@@ -283,8 +283,6 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   background: linear-gradient(90deg, transparent 4px, var(--rule) 4px, var(--rule) 6px, transparent 6px);
 }
 .rail-resizer:focus-visible { outline: 2px solid var(--gate); outline-offset: -1px; }
-/* No fixed rail width to drag when the rail is flex:1 — hide the seam there. */
-.app-body[data-layout="conversation"] .rail-resizer { display: none; }
 /* Global cursor + no text-select for the whole drag (survives passing over pane
    content). Set on <body> by the resizer's pointerdown. */
 body.resizing { cursor: col-resize; user-select: none; }
@@ -465,75 +463,77 @@ body.resizing { cursor: col-resize; user-select: none; }
 .modeswitch button.on:hover:not(:disabled) { color: var(--panel); }
 .modeswitch button + button { border-left: 1px solid var(--rule); }
 
-/* ---- app-mode posture toggle (Buyer = live/can-send · Test = safe) --------
-   Reuses the segmented .modeswitch idiom so it adds no new control vocabulary,
-   but tints the ACTIVE segment with the role color carrying the safety meaning:
-   buyer = safety-orange --gate (live), test = racing-green --go (calm). A small
-   status dot echoes the .running-pill pulse-dot, lit only on the active side. */
-.mode-toggle {
+/* ---- app-mode posture lamp (Buyer = green/live · Test = amber/held) -------
+   ONE control (a role=switch "lamp plate"), not a two-segment group: a status
+   lamp dot + the current mode's word. The plate stays neutral; only the lamp +
+   word carry the hue, so the bar reads quiet and colour appears only at the
+   safety-relevant spot. Owner colour mapping: GREEN = buyer (live / armed to
+   send, with the .running-pill live pulse), AMBER = test (held on the bench,
+   steady — calm, not alarming). A fixed width stops the bar reflowing on flip. */
+.mode-lamp {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
+  width: 104px;
+  height: 36px;
+  padding: 0 12px 0 11px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--paper);
-  overflow: hidden;
-  box-shadow: var(--shadow);
-}
-.mode-toggle button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-mute);
-  padding: 7px 11px;
-  transition: background 0.18s, color 0.18s;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
 }
-.mode-toggle button + button { border-left: 1px solid var(--rule); }
-.mode-toggle button:hover:not(:disabled) { color: var(--ink); }
-.mode-toggle button:disabled { cursor: default; }
-/* the status dot: muted on an inactive segment, role-colored + lit when active. */
-.mode-toggle .mode-dot {
-  width: 7px;
-  height: 7px;
+.mode-lamp:hover:not(:disabled) { box-shadow: var(--shadow); }
+.mode-lamp:disabled { cursor: default; opacity: 0.7; }
+.mode-lamp .mode-lamp-text { line-height: 1; padding-top: 1px; }
+.mode-lamp .mode-lamp-dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: var(--rule);
   flex: 0 0 auto;
+  background: var(--rule);
 }
-/* active TEST segment — calm green safe state. */
-.mode-toggle button[data-mode="test"].on {
-  background: var(--go-wash);
+/* BUYER = green, LIVE: the lamp is racing-green --go with a soft halo + the
+   live pulse (the 'armed / real-send' state, echoing .running-pill). */
+.mode-lamp[data-mode="buyer"] {
   color: var(--go);
+  border-color: var(--go-line);
+  background: var(--go-wash);
 }
-.mode-toggle button[data-mode="test"].on .mode-dot { background: var(--go); }
-/* active BUYER segment — live, can-send orange (the gate/approval accent). */
-.mode-toggle button[data-mode="buyer"].on {
-  background: var(--gate-wash);
-  color: var(--gate);
+.mode-lamp[data-mode="buyer"] .mode-lamp-dot {
+  background: var(--go);
+  box-shadow: 0 0 0 3px rgba(30, 122, 71, 0.16);
+  animation: pulse 1.9s ease-in-out infinite;
 }
-.mode-toggle button[data-mode="buyer"].on .mode-dot {
-  background: var(--gate);
-  /* a gentle live pulse only on the armed side (respects reduced-motion below). */
-  animation: pulse 1.8s ease-in-out infinite;
+/* TEST = amber, SAFE: a steady (un-pulsing) bench lamp — nothing leaves the
+   machine, so it is calm, not alarming. */
+.mode-lamp[data-mode="test"] {
+  color: var(--amber-ink);
+  border-color: var(--amber-line);
+  background: var(--amber-wash);
+}
+.mode-lamp[data-mode="test"] .mode-lamp-dot {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(200, 146, 10, 0.16);
 }
 @media (prefers-reduced-motion: reduce) {
-  .mode-toggle button[data-mode="buyer"].on .mode-dot { animation: none; }
+  .mode-lamp[data-mode="buyer"] .mode-lamp-dot { animation: none; }
 }
 
-/* the confirm dialog's go-live button — the safety-orange gate primary (the
-   same accent the gate-card affirmative uses), since turning buyer ON arms real
-   external send. Distinct from .btn-danger (stop-red) — this is "go", not "delete". */
+/* the confirm dialog's go-live button — GREEN (the buyer posture's hue), since
+   turning buyer ON arms real external send. Distinct from .btn-danger (stop-red)
+   — this is "go", not "delete". */
 .btn-go-live {
-  background: var(--gate);
-  border-color: var(--gate);
+  background: var(--go);
+  border-color: var(--go);
   color: #fff;
 }
-.btn-go-live:hover:not(:disabled) { background: #d24f08; }
+.btn-go-live:hover:not(:disabled) { background: #186b3d; }
 
 .diagnostics { position: relative; font-size: 12px; }
 .diagnostics summary {
@@ -1182,21 +1182,49 @@ body.resizing { cursor: col-resize; user-select: none; }
 .turn .zone-meta [data-resolution="pinned"] { color: var(--run); }
 .turn .zone-meta [data-resolution="inferred_newest"], .turn .zone-meta [data-resolution="inferred-newest"] { color: var(--gate); }
 
-.pin-chip {
+/* rail pinned-search title — when a search is pinned the rail header title IS
+   the search identity: a graphite-blue "bound" dot + the vehicle (the heading
+   face) + the ZIP in mono, with the unpin ✕ folded in. Replaces the old separate
+   title + pin chip (the pin no longer needs a second chip — it's the title). */
+.rail-pin-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--run);
-  background: var(--run-wash);
-  border: 1px solid var(--run-line);
-  border-radius: 3px;
-  padding: 2px 7px;
-  white-space: nowrap;
+  gap: 7px;
+  overflow: hidden;
 }
-.pin-chip button { color: var(--run); font-family: var(--mono); font-size: 11px; line-height: 1; opacity: 0.7; }
-.pin-chip button:hover:not(:disabled) { opacity: 1; color: var(--stop); box-shadow: none; }
+.rail-pin-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+}
+.rail-pin-id {
+  min-width: 0;
+  font-family: var(--chrome-x);
+  font-stretch: 125%;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-pin-zip { color: var(--run); }
+.rail-pin-unpin {
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  padding: 0 0 0 1px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-mute);
+  opacity: 0.65;
+  transition: color 0.12s, opacity 0.12s;
+}
+.rail-pin-unpin:hover:not(:disabled) { opacity: 1; color: var(--stop); box-shadow: none; }
 
 /* scope notice — non-dismissable wash-tinted slip (graphite blue) */
 .scope-notice {
@@ -1716,6 +1744,39 @@ details.optional[open] summary { margin-bottom: 10px; }
 .modal-dialog .modal-foot .spacer { flex: 1; }
 /* the profile-edit panel inside the modal needs no entrance of its own. */
 .modal-dialog .profile-edit-panel { margin-top: 14px; padding-top: 0; border-top: 0; animation: none; }
+
+/* settings pop-up overlay (the top-right gear) — the SAME SettingsBody the
+   /settings route renders, hosted in the dialog Modal. A titled head with a
+   "Full page ↗" escape hatch over a scrolling body (the modal already caps its
+   own height + scrolls; this just sets the rhythm + sticks the head). */
+.settings-overlay { display: flex; flex-direction: column; min-height: 0; }
+.settings-overlay-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.settings-overlay-head h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+.settings-overlay-expand {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.settings-overlay-expand:hover { color: var(--run); text-decoration: none; }
+/* reuse the route page's hairline-rule section headings inside the overlay. */
+.settings-overlay-body section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin: 18px 0 10px;
+}
+.settings-overlay-body section > h2::after { content: ""; flex: 1; height: 1px; background: var(--rule-soft); }
+.settings-overlay-body .scope-notice { margin-bottom: 14px; }
 .hard-delete-consequence { font-family: var(--serif); font-size: 13px; line-height: 1.5; color: var(--ink); margin: 6px 0 0; }
 /* the inventory-detail modal's two-column label/value list (read-only double-check) */
 .inventory-detail-list {

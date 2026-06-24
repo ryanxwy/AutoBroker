@@ -31,6 +31,8 @@ export interface ProfileSnapshot {
   model: string | null;
   trim: string | null;
   location: string | null;
+  /** Postal/ZIP code (postal_code column) — used for the rail pinned-search title. */
+  postalCode: string | null;
   searchRadiusMiles: number | null;
   financingPreference: string | null;
   phonePolicy: string | null;
@@ -53,6 +55,7 @@ export function toSnapshot(row: ProfileRow): ProfileSnapshot {
     model: str(row, "model"),
     trim: str(row, "trim"),
     location: str(row, "location_query") ?? str(row, "location"),
+    postalCode: str(row, "postal_code"),
     searchRadiusMiles: num(row, "search_radius_miles"),
     financingPreference: str(row, "financing_preference"),
     phonePolicy: str(row, "phone_policy"),
@@ -66,6 +69,17 @@ export function toSnapshot(row: ProfileRow): ProfileSnapshot {
 /** A short "Year Make Model" vehicle label (drops empties). */
 export function vehicleLabel(s: ProfileSnapshot): string {
   return [s.year, s.make, s.model, s.trim].filter((p) => p !== null && p !== "").join(" ").trim();
+}
+
+/** The search's 5-digit ZIP for the rail pinned-search title: the explicit
+ *  postal_code column when it starts with a ZIP (a +4 suffix is dropped), else a
+ *  ZIP at the END of the freeform location_query (which intake shapes as
+ *  "City, ST 92614"). Anchoring to the end avoids grabbing a leading street
+ *  number. Null when neither yields one. */
+export function zipOf(s: ProfileSnapshot): string | null {
+  const fromColumn = s.postalCode?.trim().match(/^(\d{5})(?:-\d{4})?$/)?.[1] ?? null;
+  if (fromColumn !== null) return fromColumn;
+  return s.location?.match(/(\d{5})(?:-\d{4})?\s*$/)?.[1] ?? null;
 }
 
 /** A human-friendly skill name from a snake_case skill id (e.g.

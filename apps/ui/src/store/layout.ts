@@ -1,51 +1,17 @@
 /**
- * useLayout — the rail layout state as its own store slice (canvas-vs-
- * conversation split of the workbench). Persisted to localStorage so the
- * choice survives a refresh. Deliberately separate from useChat: layout is
- * device-local VIEW state, never conversation/run state.
+ * layout — chat-rail WIDTH helpers. The workbench is ONE layout: the canvas on
+ * the left, the chat rail fixed at `--rail-width` on the right, and the
+ * RailResizer always draggable to rebalance them. (There is no canvas-vs-
+ * conversation MODE — the rail is always present; the drag seam is the single
+ * way to widen/narrow it.) Width is device-local VIEW state (px), persisted to
+ * localStorage so the split survives a refresh.
  *
- * Dependency wall: app/ui layer. zustand + localStorage only.
+ * The RailResizer writes the `--rail-width` CSS variable on the `.app-body`
+ * container directly during a drag (no React re-render per frame); these helpers
+ * own the default/clamp/persist contract both it and App share.
+ *
+ * Dependency wall: app/ui layer. localStorage only.
  */
-
-import { create } from "zustand";
-
-/** The two workbench modes: canvas-dominant (default) or conversation-dominant
- *  (the chat rail takes the space, the canvas shrinks). */
-export type WorkbenchMode = "canvas" | "conversation";
-
-const STORAGE_KEY = "autobroker:rail-layout";
-
-function loadMode(): WorkbenchMode {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) === "conversation" ? "conversation" : "canvas";
-  } catch {
-    return "canvas";
-  }
-}
-
-interface LayoutState {
-  mode: WorkbenchMode;
-  setMode(mode: WorkbenchMode): void;
-}
-
-export const useLayout = create<LayoutState>()((set) => ({
-  mode: typeof window === "undefined" ? "canvas" : loadMode(),
-  setMode(mode) {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, mode);
-    } catch {
-      /* view state only — persistence is best-effort */
-    }
-    set({ mode });
-  },
-}));
-
-// ---------------------------------------------------------------------------
-// chat-rail WIDTH — the draggable split. Device-local view state (px), persisted
-// to localStorage. The RailResizer writes the `--rail-width` CSS variable on the
-// `.app-body` container directly during a drag (no React re-render per frame);
-// these helpers own the default/clamp/persist contract both it and App share.
-// ---------------------------------------------------------------------------
 
 /** The default rail width — the long-standing fixed value, now the reset target. */
 export const RAIL_DEFAULT_PX = 400;

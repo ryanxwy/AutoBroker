@@ -370,9 +370,9 @@ describe("small-window layout integrity (S10)", () => {
       expect(await page.locator('[data-testid="app-main"]').isVisible()).toBe(true);
       expect(await page.locator('[data-testid="chat-input-textarea"]').isVisible()).toBe(true);
 
-      // The topbar settings + mode-switch controls sit fully within the 900-wide
-      // viewport (right edge not clipped past the window).
-      for (const testid of ["topbar-settings", "topbar-mode-canvas", "topbar-mode-conversation"]) {
+      // The topbar settings gear + the app-mode lamp sit fully within the
+      // 900-wide viewport (right edge not clipped past the window).
+      for (const testid of ["topbar-settings", "mode-toggle"]) {
         const loc = page.locator(`[data-testid="${testid}"]`);
         if ((await loc.count()) === 0) continue; // tolerate a renamed/absent control
         const box = await loc.first().boundingBox();

@@ -40,8 +40,10 @@ kind = "ui"
 fixture_state = "empty_home"
 purpose = "Settings → Environment panel renders the curated env vars from a live getEnvConfig(); the editable app_mode (select) + chrome_headless (toggle) rows and the read-only demo-status pill + data-dir path all mount; flipping the browser-window toggle drives a real PUT proven by the Saved badge; and the read-only status row carries no editable control."
 
-# Open Settings (DeepSeek key is seeded in fixture mode, so the SPA is not gated
-# and /settings shows normally).
+# Open Settings — the top-right gear opens the settings POP-UP overlay (a Modal
+# rendering the same Environment panel). The DeepSeek key is seeded in fixture
+# mode, so the SPA is not first-run-gated; the app stays on home and the env
+# testids below resolve inside the portal'd overlay.
 [[steps.ui_actions]]
 verb = "click"
 testid = "topbar-settings"

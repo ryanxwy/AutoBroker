@@ -35,6 +35,7 @@ function renderRail(activeAwaiting: unknown | null) {
       scopeNotice={null}
       pinnedProfileId={null}
       pinLabel={null}
+      pinZip={null}
       currentSessionId={null}
       skills={[]}
       hasActiveProfile={false}
@@ -87,6 +88,7 @@ function renderRunActive(runActive: boolean) {
       scopeNotice={null}
       pinnedProfileId={null}
       pinLabel={null}
+      pinZip={null}
       currentSessionId={null}
       skills={[]}
       hasActiveProfile={false}
@@ -102,6 +104,61 @@ function renderRunActive(runActive: boolean) {
     />,
   );
 }
+
+/** Render a PINNED rail (a search bound to the session): the header title is the
+ *  pinned search identity — vehicle + ZIP + unpin — not the launch/skill title. */
+function renderPinned(pinLabel: string | null, pinZip: string | null) {
+  return render(
+    <ChatRail
+      title="/dealer_inbox_check"
+      turns={[]}
+      activeRunId={null}
+      runActive={false}
+      browserView={EMPTY_BROWSER_VIEW}
+      decision={decision}
+      knownSkills={["search_profile_intake"]}
+      client={new ApiClient()}
+      scopeNotice={null}
+      pinnedProfileId={"profile-1"}
+      pinLabel={pinLabel}
+      pinZip={pinZip}
+      currentSessionId={null}
+      skills={[]}
+      hasActiveProfile={true}
+      deepseekReady={true}
+      onSlash={() => {}}
+      onFreeform={() => {}}
+      onUnpin={() => {}}
+      onStartIntake={() => {}}
+      onStopPick={() => {}}
+      onSelectSession={() => {}}
+      onRunSkill={() => {}}
+      onRunSuggested={() => {}}
+    />,
+  );
+}
+
+describe("ChatRail — pinned-search title (the pin IS the rail title)", () => {
+  it("shows the pinned vehicle + ZIP (not the skill title) with an unpin control", () => {
+    const r = renderPinned("2026 Honda Pilot EX-L", "10001");
+    const title = r.get("rail-pin-title");
+    // The vehicle identity + ZIP render in the title…
+    expect(r.get("pin-chip-label").textContent).toContain("2026 Honda Pilot EX-L");
+    expect(r.get("pin-chip-label").textContent).toContain("10001");
+    // …and the launch/skill title ("/dealer_inbox_check") does NOT.
+    expect(title.textContent).not.toContain("/dealer_inbox_check");
+    // The unpin affordance is folded into the title.
+    expect(r.query("pin-chip-unpin")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("falls back to the profile id and omits the ZIP separator when none resolved", () => {
+    const r = renderPinned(null, null);
+    expect(r.get("pin-chip-label").textContent).toBe("profile-1");
+    expect(r.get("pin-chip-label").textContent).not.toContain("·");
+    r.unmount();
+  });
+});
 
 describe("ChatRail — SOFT-BLOCK: composer locked while a run is in flight", () => {
   it("disables the textarea AND Send while a run is RUNNING (no gate pending)", () => {

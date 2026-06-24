@@ -1,21 +1,20 @@
 /**
- * ModeToggle — the TopBar's two-state posture switch for the single
- * AUTOBROKER_MODE: Buyer (the real product — AutoBroker can really email dealers
- * & submit web forms, each still behind the per-action approval gate) vs Test
- * (internal/safe — nothing leaves the machine). It REFLECTS the live value
- * (fetched by App from GET /api/mode) and switches it via
- * client.setEnvConfig("app_mode", …) then refetches so the toggle + the demo/
- * mode surfaces re-derive.
+ * ModeToggle — the TopBar's posture switch for the single AUTOBROKER_MODE,
+ * rendered as ONE lamp (not a two-segment group): Buyer (the real product —
+ * AutoBroker can really email dealers & submit web forms, each still behind the
+ * per-action approval gate) vs Test (internal/safe — nothing leaves the machine).
+ * The lamp REFLECTS the live value (fetched by App from GET /api/mode) and
+ * switches it via client.setEnvConfig("app_mode", …) then refetches.
+ *
+ * COLOR (owner-directed): GREEN = Buyer (live / armed to send), AMBER = Test
+ * (safe / held on the bench). The word "Buyer"/"Test" is always visible, so the
+ * posture never rides on colour alone. Clicking the lamp FLIPS the mode.
  *
  * SAFETY DIRECTION: switching TO buyer enables real external send, so it is
  * gated by a danger confirm dialog (the established Modal `danger` variant — no
  * backdrop dismiss, an explicit button is the only commit). Switching TO test is
- * the safe direction and commits immediately.
- *
- * Visual semantics (reuses the segmented `.modeswitch` idiom, role-colored):
- *   - the ACTIVE segment carries the role color — buyer = safety-orange `--gate`
- *     (live / can send), test = racing-green `--go` (calm / safe) — plus a small
- *     status dot, so the posture reads at a glance with no new vocabulary.
+ * the safe direction and commits immediately. The danger-confirm path is the
+ * load-bearing one and is preserved verbatim.
  *
  * Dependency wall: app/ui layer. react + the api client + the Modal primitive.
  */
@@ -36,8 +35,8 @@ export interface ModeToggleProps {
 
 const TITLE: Record<AppMode, string> = {
   buyer:
-    "Buyer mode — AutoBroker can really email dealers & submit forms; you still approve each one",
-  test: "Test mode — nothing leaves your computer",
+    "Buyer mode — AutoBroker can really email dealers & submit forms; you still approve each one. Click to switch to Test.",
+  test: "Test mode — nothing leaves your computer. Click to switch to Buyer.",
 };
 
 export function ModeToggle({ mode, onSwitched, client }: ModeToggleProps): JSX.Element {
@@ -48,6 +47,7 @@ export function ModeToggle({ mode, onSwitched, client }: ModeToggleProps): JSX.E
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
   const descId = useId();
+  const buyer = mode === "buyer";
 
   // Commit a switch: PUT the env value, then refetch /api/mode. Optimism is NOT
   // used — the toggle reflects the server-confirmed value only (App refetches).
@@ -66,51 +66,35 @@ export function ModeToggle({ mode, onSwitched, client }: ModeToggleProps): JSX.E
       .finally(() => setBusy(false));
   };
 
-  // A segment click. Selecting the active mode is a no-op. Selecting buyer (the
-  // sensitive direction) opens the confirm; selecting test commits immediately.
-  const select = (next: AppMode): void => {
-    if (next === mode) return;
-    if (next === "buyer") {
-      setError(null);
-      setConfirmBuyer(true);
+  // Click the lamp to FLIP. Going to buyer (the sensitive direction) opens the
+  // confirm first; going to test (the safe direction) commits immediately.
+  const toggle = (): void => {
+    if (busy) return;
+    if (buyer) {
+      commit("test");
       return;
     }
-    commit("test");
-  };
-
-  const Segment = ({ value, label }: { value: AppMode; label: string }): JSX.Element => {
-    const active = mode === value;
-    return (
-      <button
-        type="button"
-        role="switch"
-        aria-checked={active}
-        aria-label={TITLE[value]}
-        title={TITLE[value]}
-        className={active ? "on" : ""}
-        data-mode={value}
-        data-testid={`mode-toggle-${value}`}
-        disabled={busy}
-        onClick={() => select(value)}
-      >
-        <span className="mode-dot" aria-hidden="true" />
-        {label}
-      </button>
-    );
+    setError(null);
+    setConfirmBuyer(true);
   };
 
   return (
     <>
-      <div
-        className="mode-toggle"
+      <button
+        type="button"
+        role="switch"
+        aria-checked={buyer}
+        aria-label={TITLE[mode]}
+        title={TITLE[mode]}
+        className="mode-lamp"
         data-mode={mode}
         data-testid="mode-toggle"
-        role="group"
-        aria-label="App mode"
+        disabled={busy}
+        onClick={toggle}
       >
-        <Segment value="test" label="Test" />
-        <Segment value="buyer" label="Buyer" />
-      </div>
+        <span className="mode-lamp-dot" aria-hidden="true" />
+        <span className="mode-lamp-text">{buyer ? "Buyer" : "Test"}</span>
+      </button>
 
       {confirmBuyer && (
         <Modal
