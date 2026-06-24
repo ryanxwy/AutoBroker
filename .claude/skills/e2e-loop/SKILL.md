@@ -51,12 +51,15 @@ reads this spine + `references/harness-boundaries.md` + `references/skill-pipeli
 | 3 | two-pass sweep: PASS-A freeform-persona, PASS-B `/slash`; per-skill rows/audit + DOM verify | terminal `skill_runs` row + table delta + active-panel testid | `references/skill-pipeline.md` (+`references/ui-lane-personas.md`) |
 | 3.5 | dealer-brain: **deep mutual negotiation — multiple parallel threads ≥4 rounds each, ≥10 dealers, multi-titled-contact escalation + AI-auto first-touch + ghosting** (realism > cost) | active threads `buyer_FUs ≥4` (past old cap); ghosts capped at 2 unanswered → drop; re-extract → revised `dealer_quotes` | `references/dealer-brain.md` |
 | 3.7 | frontend-taste per data tab | ranked findings list | `references/ui-lane-personas.md` (→ `frontend-taste` skill by name) |
+| 3.9 | multi-profile fan-out (ONLY after the pinned pass 3/3.5 is terminal+green): seed the `multiActive` different-brand world + loop `/__e2e/inject_replies` per `profileId` with a shared `dealer_key` → cross-profile collision | `claimDealer` fires: exactly 1 profile binds the rooftop ('claimed'/'bound'); losers get 'conflict'→'excluded_conflict' with `exclusion_reason`/`heldByVehicle` voiced + ZERO web-form AND ZERO email send; engage-then-abort releases (no permanent lock); metamorphic invariants hold (`runAllInvariants`); `pnpm soak mp-replay` GREEN; `pnpm soak mp --until-dry` converges | `references/multi-profile-lane.md` |
 | 4 | backlog state machine S0–S6 (enumerate→research→fix-in-worktree→review→green→fresh live re-verify) | backlog-empty grep; green GREEN | `references/backlog-state-machine.md` |
 | 4.5 | Electron sync (only if `apps/ui/src` or a testid touched) | `desktop:smoke` 14/14 | `references/reporting.md` |
 | 5 | telemetry capture from `test_run_records` BEFORE pipeline_reset | one SQL dump | `references/harness-boundaries.md` (in-context) |
 | 6 | write HTML report (incl. Time & Cost 2 tables) → plan repo | report sections present | `references/reporting.md` |
 | 7 | integrate: review→green(`RUN_UI_FUNCTIONAL=1`)→CI→merge | `gh pr checks` exit 0 | `references/backlog-state-machine.md` (in-context) |
 | 8 | write-back lessons (fixed write-list) + `rm .e2e-loop-active` + teardown | live-status box + memory pointer ≤200c | `references/reporting.md` (in-context) |
+
+**Step 3.9 gating (rulings #4/#7):** the pinned single-brand spine (steps 3 and 3.5) runs FIRST and unchanged; step 3.9 only starts once it is terminal+green.
 
 ## Verification hierarchy
 

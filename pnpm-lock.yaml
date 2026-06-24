@@ -164,6 +164,9 @@ importers:
       '@autobroker/db':
         specifier: workspace:*
         version: link:../packages/db
+      '@autobroker/model':
+        specifier: workspace:*
+        version: link:../packages/model
       '@autobroker/server':
         specifier: workspace:*
         version: link:../apps/server

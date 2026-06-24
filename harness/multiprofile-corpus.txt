@@ -1,0 +1,16 @@
+# multiprofile-corpus.txt — the DETERMINISTIC, NO-PROVIDER multi-profile replay lane.
+#
+# One case id per line (blank lines + # comments ignored). Each id has a matching
+# case dir harness/cases/mp/<id>/ with case.json + transcript.jsonl. The freeze
+# (multiprofile/freeze.ts) appends a line here on an invariant violation; the case
+# then runs FOREVER AFTER as a fast CI gate — by vitest in green.sh (freeze.test.ts)
+# and by `pnpm soak mp-replay` — with NO provider key needed.
+#
+# This is DISTINCT from harness/regression-corpus.txt (the LIVE regression lane run
+# by scripts/regression.sh through harness/runner.ts, which refuses to start without
+# a real DEEPSEEK_API_KEY). Do NOT mix the two — a no-provider replay id here, a
+# live intake case id there.
+#
+# Sync trap: every line MUST have a case dir (assertManifestInSync goes RED on a
+# dangling line). Remove the case dir AND the line together.
+mp_clean_shared_dealer_accord_camry
