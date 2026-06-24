@@ -403,6 +403,7 @@ export {
   __resetNegotiationFollowupDepsForTests,
   requestContactFlipForRun,
   clearContactFlipForRun,
+  __negotiationFollowupCarrySizesForTests,
   type NegotiationFollowupWorkflowDeps,
   type ContactFlipRequest,
 } from "./negotiationFollowup.js";
