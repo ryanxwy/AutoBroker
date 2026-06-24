@@ -37,6 +37,9 @@ bash scripts/green.sh # THE single pass/fail gate (typecheck + harness typecheck
 pnpm ui:functional    # deterministic UI-lane gate: runs harness/cases/*.func.toml
                       #   against seeded fixtures (no provider call). Live-LLM UI
                       #   acceptance is the *.ui_*.toml cases via `pnpm harness`.
+                      #   NOTE: green.sh SKIPS this by default — run
+                      #   `RUN_UI_FUNCTIONAL=1 bash scripts/green.sh` before pushing
+                      #   UI/testid/harness changes, or CI goes red despite local green.
 pnpm lint:deps        # enforces the five-layer one-way dependency rule (below)
 pnpm check:strings    # enforces the forbidden-strings ban (no stale AutoBroker-* names)
 ```
