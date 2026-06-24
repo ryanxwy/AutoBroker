@@ -230,6 +230,22 @@ async function startSlashToCollect(s: BuiltServer): Promise<{ runId: string; dec
 // ---------------------------------------------------------------------------
 
 describe("headless intake GREEN", () => {
+  it("GET /api/approvals lists the parked gate keyed by (runId, decisionId) over the wire", async () => {
+    const s = await buildWith({
+      harnessGenerate: harnessStub(),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const { runId, decisionId } = await startSlashToCollect(s);
+
+    const approvals = await s.app.inject({ method: "GET", url: "/api/approvals" });
+    expect(approvals.statusCode).toBe(200);
+    const items = approvals.json<
+      Array<{ kind: string; runId: string; decisionId: string; skill: string }>
+    >();
+    const item = items.find((i) => i.runId === runId);
+    expect(item).toMatchObject({ kind: "gate", runId, decisionId, skill: "search_profile_intake" });
+  });
+
   it("slash start → awaiting_user@collect → submit → done → 1 profile + 1 audit; GET /profiles/:id", async () => {
     const s = await buildWith({
       harnessGenerate: harnessStub(),

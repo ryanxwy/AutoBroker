@@ -145,8 +145,10 @@ function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler
   if (process.env.AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") return undefined;
   const activationRegistry = new InMemoryActivationRegistry();
   // INTEGRATION: real impl from PROMPT-phase0-rest — the derived hot/warm/cold
-  // projection. The stub enumerates status∈{active,NULL} via the tools layer and
-  // marks lock-blocked profiles non-hot.
+  // projection. The stub enumerates status∈{active,NULL} via the tools layer; it is
+  // constructed with NO lock-blocked source here, so lock-blocked-non-hot detection
+  // is INERT in production (a blocked profile is classified hot and only conflicts
+  // out later at claimDealersStep, fail-closed) until the real profileHealth lands.
   const healthProvider = new StubProfileHealthProvider(() =>
     listProfileRows(getDb(), "active")
       .map((r) => r["search_profile_id"])

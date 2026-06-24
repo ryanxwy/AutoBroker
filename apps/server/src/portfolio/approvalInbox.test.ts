@@ -76,13 +76,11 @@ const SUCCESS_DECLINED = { status: "success", result: { outcome: "declined" } };
 
 describe("ApprovalInbox.list — aggregate + rank + tag", () => {
   it("lists every parked gate keyed (profileId, runId, decisionId), with reason + summary, action-required first", async () => {
+    // The fake Mastra is scripted per-service, so drive the read gate (link_scan) and
+    // the send gate (lead_submit) on two services and merge via a composite lister —
+    // the real server has ONE service; this only works around the scripted fake.
     const svc = new SkillRunService(fakeMastra([SUSPEND_LINK]), new RunPubSub());
-    // start a read gate (link_scan) first, then an irreversible send gate (lead_submit).
     await svc.start({ skill: "inventory_link_scan", runId: "link-1", input: { search_profile_id: "B" } });
-    const leadSvc = svc; // same service, second run on a different fake is not needed — use one service with two runs
-    // a second run on the SAME service needs its own scripted suspend; re-create the service-bound mastra per run is
-    // not possible, so drive the lead run on a second service and merge via a composite lister.
-    void leadSvc;
 
     const leadService = new SkillRunService(fakeMastra([SUSPEND_LEAD]), new RunPubSub());
     await leadService.start({ skill: "dealer_web_lead_submit", runId: "lead-1", input: { search_profile_id: "A" } });

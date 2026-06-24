@@ -1818,6 +1818,9 @@ export interface RunTerminalEvent extends RunLifecycleEvent {
 }
 export interface RunLifecycleListener {
   onRunSuspended?(event: RunLifecycleEvent): void;
+  /** A parked run was resumed (a human answered its gate) — it is executing again,
+   *  so the scheduler re-occupies its slot. */
+  onRunResumed?(event: RunLifecycleEvent): void;
   onRunTerminal?(event: RunTerminalEvent): void;
 }
 
@@ -1988,6 +1991,19 @@ export class SkillRunService {
       });
     }
     return gates;
+  }
+
+  /** Notify listeners a parked run is being resumed (it re-occupies its slot for the
+   *  duration of its resumed execution; a subsequent suspend/terminal frees it again). */
+  private fireResumed(run: RunState, runId: string): void {
+    const event: RunLifecycleEvent = { runId, profileId: run.searchProfileId, skill: run.skill };
+    for (const l of this.lifecycleListeners) {
+      try {
+        l.onRunResumed?.(event);
+      } catch {
+        // listener isolation.
+      }
+    }
   }
 
   /** Notify listeners a run parked at a gate (a slot is freed — a suspended run
@@ -2266,6 +2282,9 @@ export class SkillRunService {
     }
 
     const step = run.pending.step;
+    // The parked run is about to execute again — re-occupy its scheduler slot
+    // before the resume drives it (a re-suspend / terminal below frees it again).
+    this.fireResumed(run, runId);
     let result: unknown;
     try {
       const workflow = this.mastra.getWorkflow(descriptor.workflowId);

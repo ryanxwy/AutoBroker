@@ -132,13 +132,65 @@ describe("PortfolioScheduler", () => {
     const reg = new InMemoryActivationRegistry();
     const rec = recorder();
     const sched = new PortfolioScheduler({
-      healthProvider: new StubProfileHealthProvider(() => ["A", "B"]),
+      healthProvider: new StubProfileHealthProvider(
+        () => ["A", "B"],
+        () => new Set(["B"]),
+      ),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 4,
-      lockBlockedProfileIds: () => new Set(["B"]),
     });
     await sched.tick();
     expect(rec.starts).toEqual(["A"]); // B is lock-blocked -> warm -> never started
+  });
+
+  it("a resumed run RE-OCCUPIES its slot so the cap is not exceeded when new work arrives", async () => {
+    const health = fakeHealth();
+    const reg = new InMemoryActivationRegistry();
+    const rec = recorder();
+    const sched = new PortfolioScheduler({
+      healthProvider: health,
+      activationRegistry: reg,
+      startProfileRun: rec.startProfileRun,
+      cap: 2,
+    });
+    health.hot = ["A", "B"];
+    await sched.tick(); // A,B running (cap full)
+    const runA = reg.liveRunFor("A")!;
+
+    sched.onRunSuspended({ runId: runA, profileId: "A", skill: "quote_pipeline" }); // A frees its slot (still live)
+    sched.onRunResumed({ runId: runA, profileId: "A", skill: "quote_pipeline" }); // human resumes A -> re-occupies it
+
+    // New work arrives (C hot). A re-occupies, so running == {A,B} == cap, C must NOT be admitted.
+    health.hot = ["A", "B", "C"];
+    await sched.tick();
+    expect(rec.starts).not.toContain("C"); // cap held across the suspend/resume cycle
+  });
+
+  it("overlapping ticks do not double-start a profile (re-entrancy guard)", async () => {
+    const health = fakeHealth();
+    const reg = new InMemoryActivationRegistry();
+    const starts: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let n = 0;
+    const sched = new PortfolioScheduler({
+      healthProvider: health,
+      activationRegistry: reg,
+      startProfileRun: async (pid) => {
+        starts.push(pid);
+        await gate; // hold the first tick inside startProfileRun so a second tick can overlap
+        return { runId: `run-${pid}-${(n += 1)}` };
+      },
+      cap: 4,
+    });
+    health.hot = ["A"];
+    const t1 = sched.tick();
+    const t2 = sched.tick(); // overlaps t1 (awaiting startProfileRun, A not yet registered)
+    release();
+    await Promise.all([t1, t2]);
+    expect(starts).toEqual(["A"]); // started exactly once despite two concurrent ticks
   });
 });

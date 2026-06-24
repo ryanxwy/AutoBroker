@@ -36,6 +36,8 @@ import type { ProfileHealthProvider } from "./profileHealth.js";
 import type { RunLifecycleEvent, RunLifecycleListener, RunTerminalEvent } from "../skillRuns.js";
 
 export interface PortfolioSchedulerDeps {
+  /** Classifies the active set hot/warm/cold (lock-blocked profiles are non-hot —
+   *  the provider derives that, matching the documented profileHealth producer). */
   healthProvider: ProfileHealthProvider;
   activationRegistry: ActivationRegistry;
   /** Start one profile's ProfilePipeline run (the explicit-pin N=1 case). Returns
@@ -43,9 +45,6 @@ export interface PortfolioSchedulerDeps {
   startProfileRun: (profileId: string) => Promise<{ runId: string }>;
   /** MAX_CONCURRENT_ACTIVE_PROFILES — the hot-set slot cap. */
   cap: number;
-  /** Profiles blocked on a dealer lock held by another profile (passed to the health
-   *  provider so they classify NON-HOT). */
-  lockBlockedProfileIds?: () => ReadonlySet<string>;
 }
 
 export class PortfolioScheduler implements RunLifecycleListener {
@@ -57,6 +56,11 @@ export class PortfolioScheduler implements RunLifecycleListener {
   private readonly recency = new Map<string, number>();
   private seq = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** Re-entrancy guard: tick() awaits run starts, and the production setInterval does
+   *  NOT wait for an async callback, so two ticks could otherwise overlap and double-
+   *  pick a profile (its first tick still awaiting startProfileRun, not yet in the
+   *  registry). The guard makes overlapping ticks a no-op. */
+  private ticking = false;
 
   constructor(private readonly deps: PortfolioSchedulerDeps) {}
 
@@ -72,30 +76,41 @@ export class PortfolioScheduler implements RunLifecycleListener {
    * left WARM (deferred) and admitted on a later tick when a slot frees.
    */
   async tick(): Promise<void> {
-    const lockBlocked = this.deps.lockBlockedProfileIds?.() ?? new Set<string>();
-    const health = this.deps.healthProvider.snapshot({
-      lockBlockedProfileIds: lockBlocked,
-      liveRunProfileIds: this.deps.activationRegistry.liveProfileIds(),
-    });
-    // Candidates = HOT profiles that do not already hold a live run (key=1: a
-    // running OR suspended run already occupies the profile's single slot).
-    const candidates = health
-      .filter((h) => h.health === "hot")
-      .map((h) => h.profileId)
-      .filter((pid) => this.deps.activationRegistry.liveRunFor(pid) === undefined);
+    if (this.ticking) return; // re-entrancy guard — overlapping ticks are a no-op
+    this.ticking = true;
+    try {
+      const health = this.deps.healthProvider.snapshot(this.deps.activationRegistry.liveProfileIds());
+      // Candidates = HOT profiles that do not already hold a live run (key=1: a
+      // running OR suspended run already occupies the profile's single slot).
+      const candidates = health
+        .filter((h) => h.health === "hot")
+        .map((h) => h.profileId)
+        .filter((pid) => this.deps.activationRegistry.liveRunFor(pid) === undefined);
 
-    // LRU/recency: keep the most-recently-progressed in the limited slots; the
-    // least-recent tail stays warm. Fresh profiles (recency 0) sort oldest.
-    candidates.sort((a, b) => (this.recency.get(b) ?? 0) - (this.recency.get(a) ?? 0));
+      // LRU/recency: keep the most-recently-progressed in the limited slots; the
+      // least-recent tail stays warm. Fresh profiles (recency 0) sort oldest.
+      candidates.sort((a, b) => (this.recency.get(b) ?? 0) - (this.recency.get(a) ?? 0));
 
-    let available = Math.max(0, this.deps.cap - this.running.size);
-    for (const profileId of candidates) {
-      if (available <= 0) break; // the rest stay WARM — the cap bound (see DELETION TEST)
-      const { runId } = await this.deps.startProfileRun(profileId);
-      this.deps.activationRegistry.register(profileId, runId); // key=1 binding
-      this.running.add(profileId);
-      this.recordProgress(profileId);
-      available -= 1;
+      let available = Math.max(0, this.deps.cap - this.running.size);
+      for (const profileId of candidates) {
+        if (available <= 0) break; // the rest stay WARM — the cap bound (see DELETION TEST)
+        const { runId } = await this.deps.startProfileRun(profileId);
+        try {
+          this.deps.activationRegistry.register(profileId, runId); // key=1 binding
+        } catch {
+          // register threw (a concurrent bind raced in) AFTER startProfileRun already
+          // started a run: do NOT account it as a slot; skip to the next candidate
+          // rather than letting the throw abort the rest of the tick. The orphan run
+          // still parks its own L2 human-approval gate (fail-safe) and a later
+          // terminal releases it.
+          continue;
+        }
+        this.running.add(profileId);
+        this.recordProgress(profileId);
+        available -= 1;
+      }
+    } finally {
+      this.ticking = false;
     }
   }
 
@@ -109,10 +124,25 @@ export class PortfolioScheduler implements RunLifecycleListener {
     this.recordProgress(event.profileId);
   }
 
+  /** A human resumed a parked run: it RE-OCCUPIES its slot for the duration of its
+   *  resumed execution (it is doing Chromium/LLM work again until it re-suspends or
+   *  terminates). Without this, a resumed run would execute while accounted as zero
+   *  slots and the scheduler would admit `cap` more on top — exceeding the cap on the
+   *  resume path (the whole point of the cap, per the DELETION TEST). */
+  onRunResumed(event: RunLifecycleEvent): void {
+    if (event.profileId === null) return;
+    this.running.add(event.profileId);
+    this.recordProgress(event.profileId);
+  }
+
   /** A run reached a terminal: free its slot AND release the profile's binding so a
-   *  fresh run can be scheduled for it. */
+   *  fresh run can be scheduled for it. Drop its recency entry too (bound the map —
+   *  the same grow-only pattern this round fixes for the carry maps). */
   onRunTerminal(event: RunTerminalEvent): void {
-    if (event.profileId !== null) this.running.delete(event.profileId);
+    if (event.profileId !== null) {
+      this.running.delete(event.profileId);
+      this.recency.delete(event.profileId);
+    }
     this.deps.activationRegistry.releaseRun(event.runId);
   }
 
