@@ -133,8 +133,9 @@ touched (every prior persona already knew its one car).
 > identical. brand-picker draws the vector when it draws the persona; record it.
 
 > **Persona + metro pairing note.** P5 (confused) needs multi-mode quotes — pick a
-> CA/NY/WA metro if you also want a `DOC_FEE_CAP` flag (TX/FL metros won't flag; that
-> is correct behavior). P4 (haggler) needs ≥2 dealers with differentiated OTD — the
+> CA/NY/WA metro (cap state) if you want a `DOC_FEE_CAP` flag; a TX/FL metro with a
+> high doc fee now fires `DOC_FEE_UNCAPPED` instead (Phase 5 — uncapped states are no
+> longer silent above ~$500). P4 (haggler) needs ≥2 dealers with differentiated OTD — the
 > dealer-brain step already produces this.
 
 ---

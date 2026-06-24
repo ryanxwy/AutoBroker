@@ -38,7 +38,7 @@ import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
 import { invalidate, useDataRefetch, useRefocusRefetch } from "./api/useDataChanged.js";
 import type {
-  ApprovalInboxView,
+  ApprovalList,
   EnvConfigResponse,
   IntakeScopeNotice,
   KeyPresenceResponse,
@@ -135,11 +135,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // owned here (App never unmounts) so the header counts strip and the floating
   // widget stay in sync across pages. Both refetch on any write pulse / refocus.
   const portfolio = useAsync<PortfolioView>(() => client.getPortfolio(), []);
-  const inbox = useAsync<ApprovalInboxView>(() => client.approvalInbox(), []);
+  const inbox = useAsync<ApprovalList>(() => client.approvalInbox(), []);
   useDataRefetch(PORTFOLIO_KINDS, portfolio.refetch);
   useDataRefetch(PORTFOLIO_KINDS, inbox.refetch);
   const portfolioCards = portfolio.kind === "ok" ? portfolio.data.cards : [];
-  const inboxItems = inbox.kind === "ok" ? inbox.data.items : [];
+  const inboxItems = inbox.kind === "ok" ? inbox.data : [];
 
   // The Settings pop-up overlay (the top-right gear). The /settings ROUTE still
   // exists for the first-run gate + deep links; the gear opens the SAME settings

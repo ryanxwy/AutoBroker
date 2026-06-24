@@ -55,12 +55,19 @@ function mockFetch(): typeof fetch {
           { searchProfileId: "p-c", vehicle: "2026 Toyota Camry SE", city: "Irvine, CA", dealerCount: 2, bestOtd: 31000, lastActivityAt: null, stage: "negotiation", health: "hot", reasons: [] },
         ],
       });
-    if (url.endsWith("/api/approval-inbox"))
-      return json({
-        items: [
-          { profileId: "p-c", runId: "run-c", decisionId: "dec-c", reason: "batch_review", vehicle: "2026 Toyota Camry SE", summary: "needs approval" },
-        ],
-      });
+    if (url.endsWith("/api/approvals"))
+      return json([
+        {
+          kind: "gate",
+          profileId: "p-c",
+          runId: "run-c",
+          decisionId: "dec-c",
+          skill: "dealer_web_lead_submit",
+          reason: "lead_submit",
+          actionRequired: true,
+          summary: { heading: "2026 Toyota Camry SE", lines: [] },
+        },
+      ]);
     if (url.endsWith("/api/profiles") || url.includes("/api/profiles?")) return json([PROFILE_C, PROFILE_B]);
     const single = /\/api\/profiles\/([^/?]+)$/.exec(url);
     if (single !== null) return json(single[1] === "p-c" ? PROFILE_C : PROFILE_B);

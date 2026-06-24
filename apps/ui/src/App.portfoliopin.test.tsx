@@ -39,7 +39,7 @@ function mockFetch(): typeof fetch {
         { searchProfileId: "p-tucson", vehicle: "2026 Hyundai Tucson Hybrid SEL", city: "Tucson, AZ", dealerCount: 0, bestOtd: null, lastActivityAt: null, stage: "intake", health: "cold", reasons: [] },
         { searchProfileId: "p-rav4", vehicle: "2026 Toyota RAV4 XLE", city: "Tucson, AZ", dealerCount: 0, bestOtd: null, lastActivityAt: null, stage: "intake", health: "cold", reasons: [] },
       ] });
-    if (url.endsWith("/api/approval-inbox")) return json({ items: [] });
+    if (url.endsWith("/api/approvals")) return json([]);
     if (url.endsWith("/api/sessions") && method === "POST") {
       const body = JSON.parse(String(init?.body)) as { pinnedProfileId?: string | null };
       pin = body.pinnedProfileId ?? null;

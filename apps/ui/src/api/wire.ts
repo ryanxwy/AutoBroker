@@ -523,6 +523,24 @@ export const QuoteCompareRowSchema = z
     monthly: z.number().nullable(),
     audit_flag_summary: z.array(z.string()),
     financing_mode: z.string(),
+    // Cross-state correctness (Phase 5): tax re-computed at the buyer's home
+    // state, the normalized OTD, and the OTD-delta attribution vs the bucket
+    // best. Optional for tolerance of older payloads.
+    normalized_tax: z.number().nullable().optional(),
+    normalized_otd: z.number().nullable().optional(),
+    attribution: z
+      .object({
+        baseline_quote_id: z.string(),
+        otd_delta: z.number(),
+        sale_price_delta: z.number(),
+        doc_fee_delta: z.number(),
+        tax_delta: z.number(),
+        incentive_delta: z.number(),
+        other_delta: z.number(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 export type QuoteCompareRow = z.infer<typeof QuoteCompareRowSchema>;
@@ -536,6 +554,11 @@ export const QuoteCompareResultSchema = z
      *  otherwise). Optional for tolerance of older payloads. */
     cash: z.array(QuoteCompareRowSchema).optional(),
     totalRanked: z.number(),
+    /** The buyer's home (registration) state — the rate every quote's tax is
+     *  normalized to. Optional for tolerance of older payloads. */
+    homeState: z.string().nullable().optional(),
+    /** The home-state sales/use tax rate (fraction, e.g. 0.0725). Optional. */
+    homeStateTaxRate: z.number().nullable().optional(),
   })
   .passthrough();
 export type QuoteCompareResult = z.infer<typeof QuoteCompareResultSchema>;
@@ -808,34 +831,38 @@ export const PortfolioViewSchema = z.object({
 export type PortfolioView = z.infer<typeof PortfolioViewSchema>;
 
 // ---------------------------------------------------------------------------
-// ApprovalInbox — GET /api/approval-inbox → ApprovalInboxView. The Phase-3
-// global "Needs you" widget reads every PARKED gate (a run awaiting human
-// approval) across ALL pipelines, keyed by (profileId, runId, decisionId), so a
-// gate that parked in profile C surfaces while the user is focused on B. The
-// widget ROUTES to the run (navigate /runs/:runId) — the existing per-run
-// GateBannerHost then renders the actual card; the inbox never approves inline,
-// never batch-approves. Read-only auto-scans never park, so they never appear
-// here (the four-layer attention rule). Budget is never wired (#9).
-//
-// INTEGRATION: the real Phase-2 ApprovalInbox API (ranking, saga compensation,
-// idempotency-keyed resume, fail-closed surfacing) replaces the thin server
-// enumeration; this wire shape is the stable contract.
+// ApprovalInbox — GET /api/approvals → ApprovalItem[] (apps/server/src/portfolio/
+// approvalInbox.ts ApprovalInbox.list()). The Phase-3 global "Needs you" widget
+// reads every PARKED gate + saga retraction task across ALL pipelines, keyed by
+// (profileId, runId, decisionId), so a gate that parked in profile C surfaces
+// while the user is focused on B. The widget ROUTES to the run (navigate
+// /runs/:runId) — the existing per-run GateBannerHost then renders the actual
+// card; the inbox never approves inline, never batch-approves. Read-only
+// auto-scans never park, so they never appear. Budget is never wired (#9).
 // ---------------------------------------------------------------------------
 
-/** One parked gate awaiting the user. `profileId`/`vehicle` are null for a
- *  headless/unpinned run. `reason` is the gate kind (batch_review / approval /
- *  confirmation_gate / hygiene_review) or "fail_closed". */
-export const ApprovalInboxItemSchema = z.object({
-  profileId: z.string().nullable(),
-  runId: z.string(),
-  decisionId: z.string(),
-  reason: z.string(),
-  vehicle: z.string().nullable(),
-  summary: z.string(),
+/** A budget-free summary block (the BatchReviewCard heading + label/value lines)
+ *  carried on a parked gate. */
+export const ApprovalSummarySchema = z.object({
+  heading: z.string(),
+  lines: z.array(z.object({ label: z.string(), value: z.string() })),
 });
-export type ApprovalInboxItem = z.infer<typeof ApprovalInboxItemSchema>;
+export type ApprovalSummary = z.infer<typeof ApprovalSummarySchema>;
 
-export const ApprovalInboxViewSchema = z.object({
-  items: z.array(ApprovalInboxItemSchema),
+/** One queue entry: a parked gate (`kind:"gate"`, with a decisionId to route to)
+ *  or a saga retraction task (`kind:"retraction"`, no decisionId — acted
+ *  out-of-band). `actionRequired` ranks irreversible sends + retractions first. */
+export const ApprovalItemSchema = z.object({
+  kind: z.enum(["gate", "retraction"]),
+  profileId: z.string().nullable(),
+  runId: z.string().nullable(),
+  decisionId: z.string().nullable(),
+  skill: z.string(),
+  reason: z.string(),
+  actionRequired: z.boolean(),
+  summary: ApprovalSummarySchema.optional(),
 });
-export type ApprovalInboxView = z.infer<typeof ApprovalInboxViewSchema>;
+export type ApprovalItem = z.infer<typeof ApprovalItemSchema>;
+
+export const ApprovalListSchema = z.array(ApprovalItemSchema);
+export type ApprovalList = z.infer<typeof ApprovalListSchema>;

@@ -263,6 +263,32 @@ function contactFlipRequestsFor(runId: string): ContactFlipRequest[] {
   return contactFlipRequestsByRun.get(runId) ?? [];
 }
 
+/**
+ * The symmetric remover for the per-run contact-flip carry. requestContactFlipForRun
+ * registers an entry that no production path ever deletes (contactFlipRequestsByRun
+ * leaks one entry per run that registered a flip; pendingFlipApproveByRun leaks on a
+ * ②-abandoned run). The app's terminal projection calls this when a run reaches a
+ * terminal/declined state — including ②-abandonment, which never reaches confirmStep —
+ * so neither Map grows unbounded across the server's lifetime. Idempotent: clearing a
+ * run with no carry is a no-op. Safe re fail-closed: the carry is in-process only and a
+ * crash re-derives it on re-execute, so clearing strictly at/after terminal cannot lose
+ * an in-flight flip (the ② resume's delete at the consume site stays where it is).
+ */
+export function clearContactFlipForRun(runId: string): void {
+  contactFlipRequestsByRun.delete(runId);
+  pendingFlipApproveByRun.delete(runId);
+}
+
+/** Test-only: the live sizes of the two contact-flip carry Maps, so a test can
+ *  assert the GC actually shrinks them (the prod leak is otherwise masked by the
+ *  between-case __reset clear). */
+export function __negotiationFollowupCarrySizesForTests(): {
+  flips: number;
+  pendingApprove: number;
+} {
+  return { flips: contactFlipRequestsByRun.size, pendingApprove: pendingFlipApproveByRun.size };
+}
+
 // ---------------------------------------------------------------------------
 // ledger identity for the prose-draft LLM calls
 // ---------------------------------------------------------------------------

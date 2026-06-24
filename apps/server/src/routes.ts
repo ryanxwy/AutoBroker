@@ -48,6 +48,7 @@ import {
   listProfileMessageRows,
   buildDigestView,
   profileHealth,
+  listActiveProfileIds,
   listProfileQuoteRows,
   listProfileIncentiveRows,
   readQuoteSourceDoc,
@@ -82,6 +83,7 @@ import {
   FormDecisionError,
   UnknownRunError,
 } from "./skillRuns.js";
+import type { ApprovalInbox } from "./portfolio/approvalInbox.js";
 import type { RunPubSub } from "./runPubSub.js";
 import {
   STREAM_V2_DONE,
@@ -242,6 +244,7 @@ export interface RouteDeps {
   skillRuns: SkillRunService;
   pubsub: RunPubSub;
   sessions: SessionService;
+  approvals: ApprovalInbox;
 }
 
 /** The NL-router classifier signature the route calls. The default is the real
@@ -396,31 +399,11 @@ function cityOf(row: Record<string, unknown> | null): string {
   return str("postal_code");
 }
 
-/** "Year Make Model Trim" from a search_profiles row (drops empties). Never a
- *  budget (#9). Mirrors the UI's vehicleLabel for server-side gate summaries. */
-function vehicleOf(row: Record<string, unknown> | null): string {
-  if (row === null) return "";
-  const parts: string[] = [];
-  for (const k of ["year", "make", "model", "trim"]) {
-    const v = row[k];
-    if (typeof v === "string" && v !== "") parts.push(v);
-    else if (typeof v === "number") parts.push(String(v));
-  }
-  return parts.join(" ");
-}
-
-/** A parked gate's reason = the suspend payload's `kind` (batch_review /
- *  approval / confirmation_gate / hygiene_review / …), else the step id. */
-function gateReason(payload: Record<string, unknown>, step: string): string {
-  const kind = payload["kind"];
-  return typeof kind === "string" && kind !== "" ? kind : step;
-}
-
 /**
  * Register all routes on the Fastify instance under /api.
  */
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { skillRuns, pubsub, sessions } = deps;
+  const { skillRuns, pubsub, sessions, approvals } = deps;
 
   // ---- POST /api/skill-runs — start a skill run (headless or rail-linked) ---
   app.post("/api/skill-runs", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -744,6 +727,16 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     },
   );
 
+  // ---- GET /api/approvals — the consolidated "needs you" queue --------------
+  // Aggregates EVERY parked gate (the 3 irreversible sends + dealer_inbox_check +
+  // inventory_link_scan) across all concurrent profiles + saga retraction tasks,
+  // ranked action-required first, keyed (profileId, runId, decisionId), tagged by
+  // reason + the budget-free summary. Read-only: each decision still goes through
+  // POST /api/skill-runs/:id/form-decision (the idempotent three-phase claim).
+  app.get("/api/approvals", async (_req: FastifyRequest, _reply: FastifyReply) => {
+    return approvals.list();
+  });
+
   // ---- POST /api/skill-runs/:id/form-decision — three-phase claim ----------
   app.post(
     "/api/skill-runs/:id/form-decision",
@@ -835,10 +828,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   // computes the header counts CLIENT-SIDE; budget never appears (#9).
   app.get("/api/portfolio", async (_req: FastifyRequest, _reply: FastifyReply) => {
     const nowMs = Date.now();
-    // Per-profile last-activity + the live-run → profile map both come from the
-    // rail sessions (the session pin is the run↔profile link). One list read.
+    // Per-profile last-activity clock from the rail sessions (the pinned-profile
+    // timestamp); an unpinned active profile has no session → null clock.
     const allSessions = await sessions.list();
-    const pinBySession = new Map(allSessions.map((s) => [s.id, s.pinned_profile_id]));
     const lastActivityByProfile = new Map<string, string>();
     for (const s of allSessions) {
       if (s.pinned_profile_id === null) continue;
@@ -847,16 +839,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         lastActivityByProfile.set(s.pinned_profile_id, s.last_activity_at);
       }
     }
-    // HOT signal: profiles with a live (non-terminal) run, resolved via the pin.
-    const liveRunProfileIds = [
-      ...new Set(
-        skillRuns
-          .liveRunSessionIds()
-          .map((sid) => pinBySession.get(sid) ?? null)
-          .filter((x): x is string => x !== null),
-      ),
-    ];
     return withDb((db) => {
+      // HOT signal: the profiles with a live run, read from the activation
+      // registry (the virtual-actor ProfileId→runId map the scheduler keeps).
+      const liveRunProfileIds = listActiveProfileIds(db);
       const digest = buildDigestView(db, { profileId: null, nowMs });
       const health = new Map(profileHealth(db, liveRunProfileIds).map((h) => [h.profileId, h]));
       const cards = digest.profiles.map((p) => {
@@ -875,31 +861,6 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         };
       });
       return { empty: cards.length === 0, generatedAt: digest.generatedAt, cards };
-    });
-  });
-
-  // ---- GET /api/approval-inbox — the Phase-3 "Needs you" queue ---------------
-  // Every PARKED gate across ALL pipelines (a run awaiting a human decision),
-  // keyed by (profileId, runId, decisionId). The widget ROUTES to each item's
-  // run; it never approves inline / batch-approves. profileId + vehicle resolve
-  // from the run's session pin (null for a headless/unpinned run). Read-only
-  // auto-scans never park, so they never appear here. Budget never appears (#9).
-  // INTEGRATION: the real Phase-2 ApprovalInbox API (ranking, saga, idempotent
-  // resume, fail-closed surfacing) replaces this thin enumeration.
-  app.get("/api/approval-inbox", async (_req: FastifyRequest, _reply: FastifyReply) => {
-    const parked = skillRuns.listParkedGates();
-    const allSessions = await sessions.list();
-    const pinBySession = new Map(allSessions.map((s) => [s.id, s.pinned_profile_id]));
-    return withDb((db) => {
-      const items = parked.map((g) => {
-        const profileId = g.sessionId !== null ? (pinBySession.get(g.sessionId) ?? null) : null;
-        const row = profileId !== null ? readProfileRow(db, profileId) : null;
-        const vehicle = row !== null ? vehicleOf(row) : null;
-        const reason = gateReason(g.payload, g.step);
-        const summary = `${vehicle ?? "A search"} needs your approval`;
-        return { profileId, runId: g.runId, decisionId: g.decisionId, reason, vehicle, summary };
-      });
-      return { items };
     });
   });
 

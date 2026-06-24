@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ApprovalInboxItem, PortfolioCard } from "../api/wire.js";
+import type { ApprovalItem, PortfolioCard } from "../api/wire.js";
 import { render } from "../test/render.js";
 import { PortfolioStatusBar } from "./PortfolioStatusBar.js";
 
@@ -35,8 +35,8 @@ describe("PortfolioStatusBar", () => {
 
   it("renders counts + names red profiles with 2+ active searches", () => {
     const cards = [card({ searchProfileId: "a", vehicle: "A Camry" }), card({ searchProfileId: "b", vehicle: "B Accord" })];
-    const items: ApprovalInboxItem[] = [
-      { profileId: "a", runId: "ra", decisionId: "da", reason: "batch_review", vehicle: "A Camry", summary: "x" },
+    const items: ApprovalItem[] = [
+      { kind: "gate", profileId: "a", runId: "ra", decisionId: "da", skill: "dealer_web_lead_submit", reason: "lead_submit", actionRequired: true, summary: { heading: "A Camry", lines: [] } },
     ];
     const r = render(<PortfolioStatusBar cards={cards} items={items} />);
     expect(r.query("portfolio-status-bar")).not.toBeNull();

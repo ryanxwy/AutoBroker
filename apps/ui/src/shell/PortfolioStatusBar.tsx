@@ -10,7 +10,7 @@
  * Dependency wall: app/ui layer.
  */
 
-import type { ApprovalInboxItem, PortfolioCard } from "../api/wire.js";
+import type { ApprovalItem, PortfolioCard } from "../api/wire.js";
 import { Link } from "../router.js";
 import { summarizePortfolio } from "./portfolioSummary.js";
 
@@ -19,7 +19,7 @@ export function PortfolioStatusBar({
   items,
 }: {
   cards: readonly PortfolioCard[];
-  items: readonly ApprovalInboxItem[];
+  items: readonly ApprovalItem[];
 }): JSX.Element | null {
   // The portfolio header is a MULTI-profile affordance; with 0/1 active search
   // there is nothing to disambiguate, so the bar is absent (single-active path
@@ -41,11 +41,6 @@ export function PortfolioStatusBar({
       {s.ghosted > 0 && (
         <span className="portfolio-count" data-testid="portfolio-count-ghosted">
           {s.ghosted} ghosted
-        </span>
-      )}
-      {s.failClosed > 0 && (
-        <span className="portfolio-count-fail" data-testid="portfolio-count-failclosed">
-          {s.failClosed} fail-closed
         </span>
       )}
       <span className="portfolio-count-healthy" data-testid="portfolio-count-healthy">

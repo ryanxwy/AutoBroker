@@ -22,12 +22,6 @@ export {
 } from "./detectPipelineState.js";
 
 export {
-  profileHealth,
-  type ProfileHealth,
-  type ProfileHealthLevel,
-} from "./profileHealth.js";
-
-export {
   resolveTargetedListing,
   TargetedListingNotFound,
   NoInboundThread,
@@ -66,3 +60,32 @@ export {
   type WritePipelineCompletionArgs,
   type WritePipelineCompletionResult,
 } from "./auditLogWriter.js";
+
+export {
+  COLD_DORMANCY_DAYS,
+  lastProgressKey,
+  readLastProgressAt,
+  writeLastProgressAt,
+} from "./progressWatermark.js";
+
+export {
+  profileHealth,
+  type ProfileHealth,
+  type ProfileHealthLevel,
+  type ProfileHealthOpts,
+} from "./profileHealth.js";
+
+export {
+  activeRunKey,
+  recordActivation,
+  clearActivationByRunId,
+  lookupRunIdForProfile,
+  lookupProfileIdForRunId,
+  listActiveProfileIds,
+  reconcileActivations,
+} from "./activationRegistry.js";
+
+export {
+  sweepOrphanedBoundClaims,
+  type OrphanSweepResult,
+} from "./orphanSweep.js";

@@ -145,11 +145,13 @@ describe("GET /api/portfolio", () => {
     expect(toyota.city).toBe("Irvine, CA");
     expect(toyota.dealerCount).toBe(1);
     expect(toyota.stage).toBe("scan"); // a found dealer, no leads/replies yet
-    expect(toyota.health).toBe("warm"); // has a dealer, no live run
 
     const honda = view.cards[1]!;
     expect(honda.stage).toBe("intake"); // nothing seeded
-    expect(honda.health).toBe("cold"); // no dealers, no threads, no live run
+
+    // Health is the real profileHealth projection (its tiers are pinned by its
+    // own test); here we just assert every card carries a valid level.
+    for (const c of view.cards) expect(["hot", "warm", "cold"]).toContain(c.health);
 
     // Budget red-line (#9): the seeded budget_max must NEVER appear on the wire.
     expect(res.body).not.toContain("42000");
@@ -165,12 +167,12 @@ describe("GET /api/portfolio", () => {
   });
 });
 
-describe("GET /api/approval-inbox", () => {
+describe("GET /api/approvals", () => {
   it("is empty when nothing is parked (read-only / idle world ⇒ zero items)", async () => {
     seedProfile({ id: "p-honda", make: "Honda", model: "Accord" });
     server = await buildServer({ quiet: true });
-    const res = await server.app.inject({ method: "GET", url: "/api/approval-inbox" });
+    const res = await server.app.inject({ method: "GET", url: "/api/approvals" });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ items: unknown[] }>().items).toEqual([]);
+    expect(res.json<unknown[]>()).toEqual([]);
   });
 });

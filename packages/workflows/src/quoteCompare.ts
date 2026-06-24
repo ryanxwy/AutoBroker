@@ -124,6 +124,12 @@ const QuoteCompareStateSchema = z.object({
   lease: z.array(QuoteRankingSchema).nullable(),
   /** Cash bucket (after step 1); null until then. */
   cash: z.array(QuoteRankingSchema).nullable(),
+  /** The buyer's home (registration) state — the cross-state tax rate source
+   *  (after step 1); null until then / when the profile carries no state. */
+  homeState: z.string().nullable(),
+  /** The home-state tax rate every quote is normalized to (after step 1); null
+   *  until then / unknown state. */
+  homeStateTaxRate: z.number().nullable(),
 });
 type QuoteCompareState = z.infer<typeof QuoteCompareStateSchema>;
 
@@ -196,6 +202,8 @@ const resolveProfileStep = createStep({
       finance: null,
       lease: null,
       cash: null,
+      homeState: null,
+      homeStateTaxRate: null,
     };
   },
 });
@@ -217,6 +225,8 @@ const rankQuotesStep = createStep({
       finance: result.finance,
       lease: result.lease,
       cash: result.cash,
+      homeState: result.homeState,
+      homeStateTaxRate: result.homeStateTaxRate,
     };
   },
 });
@@ -252,6 +262,8 @@ const confirmStep = createStep({
       cash,
       totalRanked,
       summary,
+      homeState: state.homeState,
+      homeStateTaxRate: state.homeStateTaxRate,
     };
   },
 });

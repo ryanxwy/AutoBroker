@@ -32,7 +32,7 @@
 import { z } from "zod";
 
 import {
-  ApprovalInboxViewSchema,
+  ApprovalListSchema,
   DealerListSchema,
   DigestViewSchema,
   EnvConfigResponseSchema,
@@ -58,7 +58,7 @@ import {
   SkillRunSummarySchema,
   StartAckSchema,
   ThreadListSchema,
-  type ApprovalInboxView,
+  type ApprovalList,
   type CreateSessionBody,
   type DealerList,
   type DigestView,
@@ -419,12 +419,13 @@ export class ApiClient {
     return decode(res, PortfolioViewSchema);
   }
 
-  /** GET /api/approval-inbox → every PARKED gate across all pipelines (the
-   *  global "Needs you" queue, keyed by profileId/runId/decisionId). The widget
-   *  routes to each item's run; it never approves inline. */
-  async approvalInbox(): Promise<ApprovalInboxView> {
-    const res = await this.fetchImpl(this.url("/api/approval-inbox"));
-    return decode(res, ApprovalInboxViewSchema);
+  /** GET /api/approvals → every PARKED gate + retraction task across all
+   *  pipelines (the global "Needs you" queue, keyed by profileId/runId/
+   *  decisionId, ranked action-required first). The widget routes to each item's
+   *  run; it never approves inline. */
+  async approvalInbox(): Promise<ApprovalList> {
+    const res = await this.fetchImpl(this.url("/api/approvals"));
+    return decode(res, ApprovalListSchema);
   }
 
   // ---- settings / keys (the four managed API keys; presence-only reads) -----
