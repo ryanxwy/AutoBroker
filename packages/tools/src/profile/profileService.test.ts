@@ -37,6 +37,7 @@ import {
   type ResolvedCoordinates,
 } from "./profileService.js";
 import { resolveActiveProfile } from "./resolver.js";
+import { claimDealer } from "../leadSubmissions/claimDealer.js";
 import { makeFakePhone, resolveStoredPhone } from "./fakePhone.js";
 import { rowToProfile, profileToRow, type SearchProfileRow } from "./adapter.js";
 import {
@@ -52,7 +53,16 @@ const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQL = join(here, "..", "..", "..", "db", "drizzle", "0000_military_red_skull.sql");
+const DRIZZLE_DIR = join(here, "..", "..", "..", "db", "drizzle");
+// All four committed migrations: 0003 carries the partial-unique
+// `uq_profile_dealers_bound_dealer` + the profile_dealers status CHECK that the
+// dealership-exclusivity claim/release path relies on (close-releases-claims).
+const MIGRATION_SQLS = [
+  "0000_military_red_skull.sql",
+  "0001_redundant_ozymandias.sql",
+  "0002_pale_thunderball.sql",
+  "0003_salty_jocasta.sql",
+].map((f) => join(DRIZZLE_DIR, f));
 
 let tmpDir: string;
 let db: Db;
@@ -122,7 +132,7 @@ beforeAll(() => {
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
   db = openDb();
-  db.$client.exec(readFileSync(MIGRATION_SQL, "utf8"));
+  for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
 
 afterAll(() => {
@@ -136,7 +146,7 @@ afterAll(() => {
 
 beforeEach(() => {
   db.$client.exec(
-    "DELETE FROM audit_log; DELETE FROM lead_submissions; DELETE FROM skill_runs; DELETE FROM search_profiles; DELETE FROM dealers; DELETE FROM accounts;",
+    "DELETE FROM audit_log; DELETE FROM lead_submissions; DELETE FROM skill_runs; DELETE FROM profile_dealers; DELETE FROM search_profiles; DELETE FROM dealers; DELETE FROM accounts;",
   );
 });
 
@@ -335,6 +345,34 @@ describe("close — soft-delete: audited status→'closed', slot frees", () => {
     seedAccount("acc-1", "owner@example.com");
     expect(close(db, "nope")).toBe(false);
     expect(countAudit("profile_close")).toBe(0);
+  });
+
+  it("releases the profile's 'bound' dealer claims ('bound'→'closed_out') so another search can claim them", () => {
+    seedAccount("acc-1", "owner@example.com");
+    const { profile: a } = create(db, baseInput({ make: "Honda", model: "Accord" }), { coordinates: COORDS });
+    seedDealer("dealer-shared");
+    // A holds the dealer bound (the claim a lead-submit run would have made).
+    db.$client
+      .prepare("INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'candidate')")
+      .run(a.id, "dealer-shared");
+    expect(claimDealer({ searchProfileId: a.id, dealerId: "dealer-shared", db }).kind).toBe("claimed");
+
+    // A second search wants the SAME dealer — blocked while A holds it bound.
+    const { profile: b } = create(db, baseInput({ make: "Toyota", model: "Camry" }), { coordinates: COORDS });
+    db.$client
+      .prepare("INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'candidate')")
+      .run(b.id, "dealer-shared");
+    expect(claimDealer({ searchProfileId: b.id, dealerId: "dealer-shared", db }).kind).toBe("conflict");
+
+    // Closing A frees its bound dealer claims in the SAME write as the status flip.
+    expect(close(db, a.id, { actor: "dashboard" })).toBe(true);
+    const closedRow = db.$client
+      .prepare("SELECT status FROM profile_dealers WHERE search_profile_id = ? AND dealer_id = ?")
+      .get(a.id, "dealer-shared") as { status: string };
+    expect(closedRow.status).toBe("closed_out");
+
+    // The dealer is now free → B's claim succeeds (no permanent fail-closed lock).
+    expect(claimDealer({ searchProfileId: b.id, dealerId: "dealer-shared", db }).kind).toBe("claimed");
   });
 });
 

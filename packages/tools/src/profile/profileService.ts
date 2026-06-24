@@ -46,6 +46,7 @@ import {
   MissingRequiredFieldError,
 } from "./errors.js";
 import { resolveActiveProfile, type ResolveResult } from "./resolver.js";
+import { releaseDealerClaims } from "../leadSubmissions/claimDealer.js";
 
 // ---------------------------------------------------------------------------
 // pure validate (no DB) : validate_intake_payload parity
@@ -514,6 +515,12 @@ export function update(
  * slot and writes a 'profile_close' audit row in the SAME transaction as the
  * status flip. The data is kept — restore() returns it to active.
  *
+ * RELEASES this profile's 'bound' dealership claims ('bound' → 'closed_out') in
+ * the same transaction, so closing a search frees its bound dealers for every
+ * other search. Without this, a closed search would hold its dealers bound
+ * forever — a permanent fail-closed exclusivity lock (only the full closeout
+ * skill / purge / reset would otherwise free them).
+ *
  * Returns false when no such profile row exists (the route maps that to 404);
  * true on a successful close.
  */
@@ -523,6 +530,7 @@ export function close(db: Db, id: string, opts: { actor?: string; reason?: strin
 
   const txn = db.$client.transaction(() => {
     db.$client.prepare(SET_STATUS).run("closed", id);
+    releaseDealerClaims({ searchProfileId: id, db });
     writeAuditLog(db, {
       action: AUDIT_ACTIONS.profileClose,
       actor: opts.actor ?? null,

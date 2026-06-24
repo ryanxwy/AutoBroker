@@ -64,6 +64,7 @@ import {
   closeAndSuppressDealer as closeAndSuppressDealerImpl,
   getDb,
   listProfileRows as listProfileRowsImpl,
+  releaseDealerClaims as releaseDealerClaimsImpl,
   renderCloseoutSubject,
   resolveActiveProfile as resolveActiveProfileImpl,
   type Approver,
@@ -123,6 +124,10 @@ export interface DealerCloseoutEmailWorkflowDeps {
   /** Flip the profile status to 'closed' on completion (a LOCAL state-only write,
    *  not gated). */
   closeProfileStatus: (db: ReturnType<typeof getDb>, id: string) => void;
+  /** Release THIS profile's 'bound' dealership claims ('bound' → 'closed_out') so
+   *  closing the search frees its dealers for another profile (the
+   *  dealership-exclusivity release — avoids a permanent fail-closed lock). */
+  releaseDealerClaims: typeof releaseDealerClaimsImpl;
   /** The DB accessor the read/write closures run through (tools layer). */
   getDb: typeof getDb;
 }
@@ -142,6 +147,7 @@ const realDeps: DealerCloseoutEmailWorkflowDeps = {
     // close lifecycle with its audit/slot machinery.)
     db.$client.prepare("UPDATE search_profiles SET status = 'closed' WHERE search_profile_id = ?").run(id);
   },
+  releaseDealerClaims: releaseDealerClaimsImpl,
   getDb,
 };
 
@@ -516,7 +522,13 @@ const transitionStep = createStep({
     if (state.declined || state.skipAllReset || state.closedThreadIds.length === 0) {
       return state;
     }
-    withDb((db) => deps().closeProfileStatus(db, state.searchProfileId));
+    withDb((db) => {
+      deps().closeProfileStatus(db, state.searchProfileId);
+      // Free this search's dealership claims ('bound' → 'closed_out') so another
+      // profile can claim those dealers — closing a search must not leave a
+      // permanent fail-closed exclusivity lock.
+      deps().releaseDealerClaims({ searchProfileId: state.searchProfileId, db });
+    });
     return state;
   },
 });

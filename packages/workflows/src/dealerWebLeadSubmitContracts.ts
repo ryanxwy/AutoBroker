@@ -68,6 +68,14 @@ export const DealerWebLeadSubmitOutputSchema = z.discriminatedUnion("outcome", [
     captcha_manual_count: z.number().int(),
     us_gate_rejected: z.number().int(),
     skipped_duplicate: z.number().int(),
+    /** Approved dealers DROPPED because another of the buyer's searches already
+     *  holds them bound (a true exclusivity CONFLICT) — voiced as "engaged by
+     *  another of your searches"; never a budget, never a send for these. */
+    excluded_conflict_count: z.number().int(),
+    /** Approved dealers DROPPED as no-longer-claimable on THIS profile (an own
+     *  closed_out / absent row — NOT held by another search) — voiced separately
+     *  as "no longer available", never as a conflict; never a send for these. */
+    excluded_unavailable_count: z.number().int(),
     summary: z.string(),
     /** For affectedKinds profile scoping. */
     search_profile_id: z.string(),

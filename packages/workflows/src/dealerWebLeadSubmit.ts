@@ -70,6 +70,8 @@ import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
 import {
   buildLeadPayload,
   checkSubmissionPrecondition as checkSubmissionPreconditionImpl,
+  claimDealer as claimDealerImpl,
+  type ClaimResult,
   contactPathFor,
   ExternalMutationsBlockedError,
   getDb,
@@ -426,6 +428,11 @@ export interface DealerWebLeadSubmitWorkflowDeps {
   ) => void;
   /** The duplicate-skip / force-retry precondition (tools layer). */
   checkSubmissionPrecondition: typeof checkSubmissionPreconditionImpl;
+  /** The dealership-exclusivity claim (tools layer): bind a dealer to THIS
+   *  profile before any send. Only `'claimed'` permits a send — `'conflict'` /
+   *  `'unavailable'` drop the dealer. A LOCAL DB lock, acquired mode-agnostically
+   *  (whether AUTOBROKER_MODE is buyer or test) before the real-or-fake send. */
+  claimDealer: typeof claimDealerImpl;
   /** The XOR lead-submission writer (tools layer, a LOCAL write — not fuse-gated). */
   recordSubmission: typeof recordSubmissionImpl;
   /** The gated draft-then-promote send+record (tools layer; the email fallback). */
@@ -534,6 +541,7 @@ const realDeps: DealerWebLeadSubmitWorkflowDeps = {
       .run(email, dealerId);
   },
   checkSubmissionPrecondition: checkSubmissionPreconditionImpl,
+  claimDealer: claimDealerImpl,
   recordSubmission: recordSubmissionImpl,
   sendAndRecord: sendAndRecordImpl,
   submitOne: submitOneImpl,
@@ -697,6 +705,21 @@ const LeadSubmitStateSchema = z.object({
   skippedDuplicate: z.number().int(),
   /** The approved dealer ids from suspend ① (intersected with the card set). */
   approvedDealerIds: z.array(z.string()).nullable(),
+  /** Approved dealers DROPPED by the dealership-exclusivity claim BEFORE any
+   *  send (conflict = held by another search; unavailable = no live row). NEVER
+   *  budget — only a human vehicle label for a conflict (inv #9). Voiced in the
+   *  receipt; no lead_submissions row + no submit/send fires for these. */
+  excludedClaims: z
+    .array(
+      z.object({
+        dealer_id: z.string(),
+        name: z.string(),
+        kind: z.enum(["conflict", "unavailable"]),
+        /** conflict only: the vehicle label of the search already engaging it. */
+        held_by_vehicle: z.string().nullable(),
+      }),
+    )
+    .nullable(),
   /** The per-dealer routing decisions (submit → fallback → record). */
   submitDecisions: z.array(SubmitDecisionSchema).nullable(),
 });
@@ -868,6 +891,7 @@ const resolveProfileStep = createStep({
       usGateRejected: 0,
       skippedDuplicate: 0,
       approvedDealerIds: null,
+      excludedClaims: null,
       submitDecisions: null,
     };
   },
@@ -1187,6 +1211,62 @@ const batchReviewStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
+// step 3b — claimDealers (DEALERSHIP-EXCLUSIVITY acquire — after approval, before
+//           the first send). The claim is a LOCAL DB lock acquired mode-agnostically
+//           (buyer OR test) INSIDE the already-approved action: it does NOT weaken
+//           the L2 approval gate or AUTOBROKER_MODE — it only DROPS a dealer another
+//           search already holds, before the real-or-fake send seam. A dealer whose
+//           claim is NOT 'claimed' is removed from approvedDealerIds, so neither the
+//           submit step (which filters eligible by approvedDealerIds) nor the email-
+//           fallback step (which only acts on submit's decisions) ever fires for it.
+// ---------------------------------------------------------------------------
+
+const claimDealersStep = createStep({
+  id: "claimDealers",
+  inputSchema: LeadSubmitStateSchema,
+  outputSchema: LeadSubmitStateSchema,
+  execute: async ({ inputData }) => {
+    const state = asState(inputData);
+    if (state.declined) return state; // pass-through (zero claims, zero sends).
+
+    const approvedIds = state.approvedDealerIds ?? [];
+    if (approvedIds.length === 0) {
+      return { ...state, approvedDealerIds: [], excludedClaims: [] };
+    }
+
+    const nameById = new Map(
+      (state.eligible ?? []).map((d) => [d.dealer_id, d.name] as const),
+    );
+
+    const claimed: string[] = [];
+    const excluded: NonNullable<LeadSubmitState["excludedClaims"]> = [];
+    withDb((db) => {
+      for (const dealerId of approvedIds) {
+        const verdict: ClaimResult = deps().claimDealer({
+          searchProfileId: state.searchProfileId,
+          dealerId,
+          db,
+        });
+        if (verdict.kind === "claimed") {
+          claimed.push(dealerId);
+          continue;
+        }
+        // NOT 'claimed' → DROP the dealer (no submit, no email fallback). Collect
+        // it for the receipt; a conflict carries the holder's vehicle label only.
+        excluded.push({
+          dealer_id: dealerId,
+          name: nameById.get(dealerId) ?? dealerId,
+          kind: verdict.kind,
+          held_by_vehicle: verdict.kind === "conflict" ? verdict.heldByVehicle : null,
+        });
+      }
+    });
+
+    return { ...state, approvedDealerIds: claimed, excludedClaims: excluded };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // step 4 — submit (THE GATED MUTATING FACE — the keystone code)
 // ---------------------------------------------------------------------------
 
@@ -1415,13 +1495,46 @@ const recordConfirmStep = createStep({
       }
     });
 
+    // Voice the dealership-exclusivity exclusions, distinguishing the two drop
+    // kinds so the count + prose stay accurate:
+    //   - CONFLICT: another of the buyer's searches already holds the dealer
+    //     bound → "engaged by another of your searches" (names the holder's
+    //     vehicle(s); never a budget, inv #9).
+    //   - UNAVAILABLE: the buyer's OWN row is closed_out/absent (NOT held by
+    //     another search) → "no longer available". Folding these into the
+    //     conflict sentence would mis-voice a benign own-state drop as a
+    //     cross-search conflict, so they are counted + voiced separately.
+    const excluded = state.excludedClaims ?? [];
+    const conflicts = excluded.filter((e) => e.kind === "conflict");
+    const unavailable = excluded.filter((e) => e.kind === "unavailable");
+    const conflictVehicles = [
+      ...new Set(
+        conflicts
+          .filter((e) => (e.held_by_vehicle ?? "").trim() !== "")
+          .map((e) => e.held_by_vehicle!.trim()),
+      ),
+    ];
+    const conflictSentence =
+      conflicts.length > 0
+        ? ` Excluded ${conflicts.length} dealer(s) already engaged by another of your ` +
+          "searches" +
+          (conflictVehicles.length > 0 ? `: ${conflictVehicles.join(", ")}` : "") +
+          "."
+        : "";
+    const unavailableSentence =
+      unavailable.length > 0
+        ? ` Skipped ${unavailable.length} dealer(s) no longer available for this search.`
+        : "";
+
     const summary =
       `Submitted ${submissionsSuccessful} lead(s)` +
       (emailFallbackCount > 0 ? ` (${emailFallbackCount} by email fallback)` : "") +
       (captchaManualCount > 0 ? `, ${captchaManualCount} captcha-routed` : "") +
       (state.skippedDuplicate > 0 ? `; ${state.skippedDuplicate} already-submitted skipped` : "") +
       (state.usGateRejected > 0 ? `; ${state.usGateRejected} non-US dealer(s) filtered` : "") +
-      ".";
+      "." +
+      conflictSentence +
+      unavailableSentence;
 
     return {
       outcome: "scanned" as const,
@@ -1431,6 +1544,8 @@ const recordConfirmStep = createStep({
       captcha_manual_count: captchaManualCount,
       us_gate_rejected: state.usGateRejected,
       skipped_duplicate: state.skippedDuplicate,
+      excluded_conflict_count: conflicts.length,
+      excluded_unavailable_count: unavailable.length,
       summary,
       search_profile_id: state.searchProfileId,
     };
@@ -1451,6 +1566,7 @@ export const dealerWebLeadSubmitWorkflow = createWorkflow({
   .then(scoutMapCustomStep)
   .then(buildPayloadsStep)
   .then(batchReviewStep)
+  .then(claimDealersStep)
   .then(submitStep)
   .then(emailFallbackStep)
   .then(recordConfirmStep)

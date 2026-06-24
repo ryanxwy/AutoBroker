@@ -380,6 +380,16 @@ export {
   type FailReason,
 } from "./leadSubmissions/recordSubmission.js";
 
+// Dealership-exclusivity claim seam — bind a dealer to AT MOST one profile
+// (partial-unique index uq_profile_dealers_bound_dealer WHERE status='bound'),
+// returning a typed claimed|conflict verdict (NEVER budget in the holder label,
+// inv #9), plus the bound→closed_out release path (closeout/purge/reset).
+export {
+  claimDealer,
+  releaseDealerClaims,
+  type ClaimResult,
+} from "./leadSubmissions/claimDealer.js";
+
 // dealer_web_lead_submit deterministic scout — the lead-form platform
 // fingerprint + contact-path probe set, the dealer-facing payload assembler
 // (fake phone LOCKED, budget redacted, consent CHECKED, SMS opt-in OMITTED),

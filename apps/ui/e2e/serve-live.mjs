@@ -68,8 +68,17 @@ import {
 const INSERT_DEALER =
   "INSERT INTO dealers (dealer_id, name, website, country, contact_email) VALUES (?, ?, ?, 'US', ?) " +
   "ON CONFLICT(dealer_id) DO UPDATE SET contact_email = excluded.contact_email";
+// status is parameterized so the SHARED-DEALER mode can seed a 'candidate' row
+// (the production geosearch shape — upsertDealers writes 'candidate') while the
+// default per-profile-unique path keeps pre-binding 'bound' (so the live 巡检's
+// closeout/negotiation/digest, which read pd.status='bound', stay exercisable
+// without first running lead_submit). A 'bound' row from a SECOND profile sharing
+// one dealer_id would trip the partial-unique uq_profile_dealers_bound_dealer
+// index (which the composite-PK ON CONFLICT does NOT catch) → 'candidate' is the
+// only shape both profiles can hold, leaving the live claimDealer step to pick the
+// exclusivity winner — exactly the production flow the shared-dealer mode tests.
 const BIND_DEALER =
-  "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, 'bound') " +
+  "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, ?) " +
   "ON CONFLICT(search_profile_id, dealer_id) DO NOTHING";
 // gmail_thread_id must be set: dealer_closeout_email replies on the thread and
 // uses gmail_thread_id as the in_reply_to anchor — a null anchor with a non-null
@@ -145,14 +154,25 @@ function injectDealerReplies(profileId, replies) {
     const threadIds = [];
     for (const reply of replies) {
       const slug = `${profileId}-${randomUUID().slice(0, 8)}`;
-      const dealerId = `live-dealer-${slug}`;
+      // B2 SHARED-DEALER MODE: if the caller supplies an explicit `dealer_key`, that
+      // string is used as the dealer_id directly instead of the per-profile-unique
+      // slug. Calling inject_replies for a SECOND profile with the SAME dealer_key
+      // reuses the existing dealers row (ON CONFLICT DO UPDATE) and inserts a fresh
+      // profile_dealers 'candidate' row for that profile — so both profiles share one
+      // rooftop and the live claimDealer step decides the exclusivity winner (a
+      // 'bound' second row would trip uq_profile_dealers_bound_dealer). Omitting
+      // dealer_key preserves the old per-profile-unique 'bound' pre-bind.
+      const sharedDealer = typeof reply.dealer_key === "string" && reply.dealer_key.length > 0;
+      const dealerId = sharedDealer
+        ? `live-dealer-${reply.dealer_key}`
+        : `live-dealer-${slug}`;
       const threadId = `live-thread-${slug}`;
       const messageId = `live-msg-${slug}`;
       const gmailMessageId = `live-gmsg-${slug}`;
       const internalDateMs = replyBaseMs(reply) + injectSeq++;
       const receivedAt = new Date(internalDateMs).toISOString();
       if (insertDealer.run(dealerId, reply.dealerName, reply.dealerWebsite, reply.from).changes > 0) dealers++;
-      bindDealer.run(profileId, dealerId);
+      bindDealer.run(profileId, dealerId, sharedDealer ? "candidate" : "bound");
       if (insertThread.run(threadId, dealerId, reply.subject, profileId, `live-gthread-${slug}`).changes > 0)
         threads++;
       threadIds.push({ dealerName: reply.dealerName, from: reply.from, threadId });
@@ -265,7 +285,9 @@ function injectCrmThreads(profileId, dealers) {
       const crmThreadId = `crm-in-${slug}`;
       const nowIso = new Date(BASE_MS + injectSeq++).toISOString();
       insertDealer.run(dealerId, d.dealerName, "https://crm.example.com", "sales@crm.example.com");
-      bindDealer.run(profileId, dealerId);
+      // Per-profile-unique CRM dealer (never shared) → keep the 'bound' pre-bind so
+      // dealer_hygiene's bound-dealer reads find it.
+      bindDealer.run(profileId, dealerId, "bound");
       // (a) the real outbound conversation thread (satisfies the EXISTS clause).
       insertThread.run(outThreadId, dealerId, "Your inquiry", profileId, `crm-gthread-out-${slug}`);
       insertMsgDir.run(`crm-msg-out-${slug}`, outThreadId, "outbound", "buyer@example.com",
@@ -463,6 +485,9 @@ built.app.post("/__e2e/inject_replies", async (req, reply) => {
     subject: String(r.subject ?? "Re: your inquiry"),
     body: String(r.body ?? ""),
     attachment: r.attachment ?? null,
+    // B2: pass through dealer_key when present so injectDealerReplies uses a
+    // shared dealer_id across profiles instead of a per-profile-unique slug.
+    ...(typeof r.dealer_key === "string" && r.dealer_key.length > 0 ? { dealer_key: r.dealer_key } : {}),
     ...(typeof r.ageHoursAgo === "number" ? { ageHoursAgo: r.ageHoursAgo } : {}),
     ...(typeof r.delayMinutes === "number" ? { delayMinutes: r.delayMinutes } : {}),
   }));
