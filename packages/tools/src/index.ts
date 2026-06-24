@@ -85,6 +85,12 @@ export {
   type SyncFallbackSpan,
 } from "./gmail/sync.js";
 
+// Authoritative inbox sweep lane — serializes + single-flight coalesces the
+// shared mailbox-cursor advance so N concurrent per-profile inbox checks
+// advance it ONCE and each sees the full changed set (no leapfrog drop).
+// `sweepMailbox` is the lane-wrapped drop-in for the raw `syncMailbox`.
+export { authoritativeSweep, sweepMailbox, type SyncFn } from "./inbox/sweepLane.js";
+
 // MIME walk — the inbound payload-tree reader (the parsed-body shape the
 // per-message extractor reuses).
 export { walkParts, readPartHeader, type ParsedBody } from "./gmail/mime.js";
@@ -702,6 +708,17 @@ export {
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
 
+// LimiterRegistry — process-global resource arbiters (Gmail send / per-host
+// politeness / per-provider LLM) that PACE already-approved work, strictly
+// BELOW the L2 gate. The singletons (gmailLimiter / hostLimiter / llmLimiter)
+// plus the classes + pacing primitives for callers that construct their own.
+export * from "./limiter/index.js";
+
+// The serialized product-DB write lane — the single funnel for multi-step async
+// write SEQUENCES under concurrency (sync .run()/.transaction() are already
+// serialized + atomic; see writeLane.ts for the honest scope).
+export { withWriteLane } from "./writeLane.js";
+
 // Scheduler watermark — the per-job last-success store in pipeline_state (the
 // durable catch-up watermark; the only product-DB access the background
 // scheduler is permitted, funnelled down here per the SQLite invariant).
@@ -725,6 +742,7 @@ export {
   validateOfferMath,
   OFFER_MATH_TOLERANCE_USD,
   STATE_DOC_FEE_CAP,
+  DOC_FEE_HIGH_REFERENCE_USD,
   type OfferMathInput,
   type MathCheck,
   type MathStatus,
@@ -771,8 +789,22 @@ export { flagCodesFromJson } from "./quotes/flags.js";
 export {
   rankQuotesForProfile,
   type QuoteRanking,
+  type OtdAttributionRow,
   type CompareResult,
 } from "./quotes/compare.js";
+// Pure cross-state OTD math — home-state tax normalization (sales/use tax follows
+// the buyer's registration state) + OTD-delta attribution. quote_compare consumes
+// both; exported for reuse + direct unit cover.
+export {
+  STATE_SALES_TAX_RATE,
+  homeStateTaxRate,
+  normalizeQuoteTax,
+  attributeOtdDelta,
+  type TaxNormalizationInput,
+  type TaxNormalization,
+  type OtdComponents,
+  type OtdAttribution,
+} from "./quotes/crossState.js";
 
 // Pure validators (post-validation + safety rules).
 export {
@@ -916,7 +948,10 @@ export {
 // applicable-step flags each run (non-durable, no checkpoint), the read-only
 // targeted-VIN validator, the null-VIN-raising OTD ask, the idempotent
 // targeted-VIN quote writer, the deterministic LLM-free disposition, and the one
-// generic audit_log completion row. No child workflow / LLM here.
+// generic audit_log completion row. No child workflow / LLM here. Also the
+// multi-profile orchestration primitives: the ProfileId→live-runId activation
+// registry (virtual-actor at-most-one-live-run + reboot-survival reconcile) and
+// the boot orphan sweep that frees dealership claims abandoned by a dead run.
 export {
   detectPipelineState,
   resolveTargetedListing,
@@ -933,6 +968,19 @@ export {
   PIPELINE_STEPS,
   FINAL_STATES,
   PIPELINE_COMPLETE_ACTION,
+  COLD_DORMANCY_DAYS,
+  lastProgressKey,
+  readLastProgressAt,
+  writeLastProgressAt,
+  profileHealth,
+  activeRunKey,
+  recordActivation,
+  clearActivationByRunId,
+  lookupRunIdForProfile,
+  lookupProfileIdForRunId,
+  listActiveProfileIds,
+  reconcileActivations,
+  sweepOrphanedBoundClaims,
   type DetectPipelineStateArgs,
   type PipelineStateFlags,
   type ResolveTargetedListingArgs,
@@ -946,4 +994,8 @@ export {
   type FinalState,
   type WritePipelineCompletionArgs,
   type WritePipelineCompletionResult,
+  type ProfileHealth,
+  type ProfileHealthLevel,
+  type ProfileHealthOpts,
+  type OrphanSweepResult,
 } from "./pipeline/index.js";

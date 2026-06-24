@@ -67,6 +67,7 @@ export {
   cancelStaleRun,
   startRunGuarded,
   beginRunGuarded,
+  releaseRunOwnership,
   resetRuntimeGlueForTests,
   DuplicateRunIdError,
   type BegunRun,
@@ -401,6 +402,8 @@ export {
   __setNegotiationFollowupDepsForTests,
   __resetNegotiationFollowupDepsForTests,
   requestContactFlipForRun,
+  clearContactFlipForRun,
+  __negotiationFollowupCarrySizesForTests,
   type NegotiationFollowupWorkflowDeps,
   type ContactFlipRequest,
 } from "./negotiationFollowup.js";

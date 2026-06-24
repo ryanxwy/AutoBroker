@@ -116,10 +116,29 @@ export interface QuoteCompareProps {
   onOpenCompare?: (quoteId: string) => void;
 }
 
+/** The cross-state tax-normalization note. Shown when the profile has a known
+ *  home state: every quote's tax is computed at that state's rate (sales/use tax
+ *  follows the registration state), so crossing state lines wins on price / doc
+ *  fee / local incentives — NOT on tax. */
+function TaxNote({ state, rate }: { state: string; rate: number | null | undefined }): JSX.Element {
+  // "approx." because the table carries a representative state-level rate (local
+  // /county surtaxes are not modeled) — honest not to advertise a precise figure.
+  const ratePct = typeof rate === "number" ? ` (approx. ${(rate * 100).toFixed(2)}%)` : "";
+  return (
+    <p className="muted" data-testid="quote-compare-tax-note">
+      Tax normalized to your home state {state}
+      {ratePct} — you owe home-state use tax wherever you buy. Crossing state lines
+      wins on price, doc fee, and local incentives, not tax (minus any travel).
+    </p>
+  );
+}
+
 export function QuoteCompare({ quotes, onOpenCompare }: QuoteCompareProps): JSX.Element {
   const finance = quotes.kind === "ok" ? quotes.data.finance : [];
   const lease = quotes.kind === "ok" ? quotes.data.lease : [];
   const cash = quotes.kind === "ok" ? (quotes.data.cash ?? []) : [];
+  const homeState = quotes.kind === "ok" ? (quotes.data.homeState ?? null) : null;
+  const homeStateTaxRate = quotes.kind === "ok" ? quotes.data.homeStateTaxRate : null;
   const totalRanked = finance.length + lease.length + cash.length;
   // Which buckets are in scope is driven by which the payload populated: a
   // finance-only / lease-only / cash-only preference leaves the others empty AND
@@ -142,6 +161,9 @@ export function QuoteCompare({ quotes, onOpenCompare }: QuoteCompareProps): JSX.
         <p className="muted" data-testid="quote-compare-empty">
           Compared 0 quotes.
         </p>
+      )}
+      {quotes.kind === "ok" && totalRanked > 0 && homeState !== null && (
+        <TaxNote state={homeState} rate={homeStateTaxRate} />
       )}
       {quotes.kind === "ok" && totalRanked > 0 && (
         <div className="quote-compare-buckets">

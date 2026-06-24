@@ -81,6 +81,7 @@ import {
   FormDecisionError,
   UnknownRunError,
 } from "./skillRuns.js";
+import type { ApprovalInbox } from "./portfolio/approvalInbox.js";
 import type { RunPubSub } from "./runPubSub.js";
 import {
   STREAM_V2_DONE,
@@ -241,6 +242,7 @@ export interface RouteDeps {
   skillRuns: SkillRunService;
   pubsub: RunPubSub;
   sessions: SessionService;
+  approvals: ApprovalInbox;
 }
 
 /** The NL-router classifier signature the route calls. The default is the real
@@ -356,7 +358,7 @@ export function stripScreenshotField(ev: { ts: string; kind: string; payload: un
  * Register all routes on the Fastify instance under /api.
  */
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { skillRuns, pubsub, sessions } = deps;
+  const { skillRuns, pubsub, sessions, approvals } = deps;
 
   // ---- POST /api/skill-runs — start a skill run (headless or rail-linked) ---
   app.post("/api/skill-runs", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -679,6 +681,16 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       }
     },
   );
+
+  // ---- GET /api/approvals — the consolidated "needs you" queue --------------
+  // Aggregates EVERY parked gate (the 3 irreversible sends + dealer_inbox_check +
+  // inventory_link_scan) across all concurrent profiles + saga retraction tasks,
+  // ranked action-required first, keyed (profileId, runId, decisionId), tagged by
+  // reason + the budget-free summary. Read-only: each decision still goes through
+  // POST /api/skill-runs/:id/form-decision (the idempotent three-phase claim).
+  app.get("/api/approvals", async (_req: FastifyRequest, _reply: FastifyReply) => {
+    return approvals.list();
+  });
 
   // ---- POST /api/skill-runs/:id/form-decision — three-phase claim ----------
   app.post(

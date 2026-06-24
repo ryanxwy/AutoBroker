@@ -25,6 +25,8 @@ import { browserEmitterFor } from "./browserEvents.js";
 import { RunPubSub } from "./runPubSub.js";
 import { SkillRunService } from "./skillRuns.js";
 import { SessionService } from "./sessions.js";
+import { ApprovalInbox } from "./portfolio/approvalInbox.js";
+import { SagaCoordinator } from "./portfolio/sagaCoordinator.js";
 import {
   DuplicateRunIdError,
   RailSessionStore,
@@ -43,6 +45,11 @@ export interface BuiltServer {
   pubsub: RunPubSub;
   skillRuns: SkillRunService;
   sessions: SessionService;
+  /** The consolidated approval queue across all concurrent profiles. The
+   *  PortfolioScheduler (mounted in index.ts) is added as a separate lifecycle
+   *  listener; the saga coordinator is wired here so an aborted run's committed
+   *  sends surface as inbox retraction tasks. */
+  approvals: ApprovalInbox;
   recovery: BootResult["recovery"];
 }
 
@@ -90,6 +97,13 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // service own thread CRUD + the wire projection + the intake fork.
   const sessions = new SessionService(new RailSessionStore(createRailMemory()));
 
+  // The consolidated "needs you" approval queue across all concurrent profiles +
+  // the saga coordinator that turns an aborted run's committed sends into inbox
+  // retraction tasks (never a silent undo). The coordinator is a run-lifecycle
+  // listener; the PortfolioScheduler is added as a second listener in index.ts.
+  const approvals = new ApprovalInbox(skillRuns);
+  skillRuns.addLifecycleListener(new SagaCoordinator(approvals));
+
   // Crash-and-resume: re-attach every suspended run recoverOnBoot found, so a
   // form-decision can resume it in THIS fresh process. Policy for stale 'running'
   // rows is report+leave (boot logged them); only the cleanly suspended runs are
@@ -105,7 +119,7 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
     logger: false,
   });
 
-  registerRoutes(app, { skillRuns, pubsub, sessions });
+  registerRoutes(app, { skillRuns, pubsub, sessions, approvals });
 
   // Single-port prod serving: resolve apps/ui/dist serving info NOW (sync, no
   // registration) so the notFoundHandler below can close over it. The plugin
@@ -168,5 +182,5 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // Register the static plugin LAST (boots the instance — see note above).
   if (serving !== null) await registerStaticPlugin(app, serving);
 
-  return { app, pubsub, skillRuns, sessions, recovery };
+  return { app, pubsub, skillRuns, sessions, approvals, recovery };
 }

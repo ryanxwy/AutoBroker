@@ -46,6 +46,29 @@ export type QuoteCompareInput = z.infer<typeof QuoteCompareInputSchema>;
  * `audit_flag_summary` is ALWAYS a list (the decoded latest-audit codes, empty
  * when none).
  */
+/**
+ * The cross-state OTD-delta attribution carried on a ranked row — why this row's
+ * normalized OTD differs from its bucket's best. Flat, all-required: the five
+ * component deltas reconcile to `otd_delta` to the cent (2-dp; `other_delta` is
+ * the reconciling residual capturing unnamed fees + penny rounding). Negative =
+ * cheaper than the baseline on that component. Tax is the home-state-NORMALIZED
+ * tax, so a cross-state dealer's tax-collection difference never shows as a fake
+ * "win".
+ */
+export const OtdAttributionSchema = z
+  .object({
+    /** The bucket baseline's quote_id (the lowest normalized OTD). */
+    baseline_quote_id: z.string(),
+    otd_delta: z.number(),
+    sale_price_delta: z.number(),
+    doc_fee_delta: z.number(),
+    tax_delta: z.number(),
+    incentive_delta: z.number(),
+    other_delta: z.number(),
+  })
+  .strict();
+export type OtdAttribution = z.infer<typeof OtdAttributionSchema>;
+
 export const QuoteRankingSchema = z
   .object({
     rank: z.number().int(),
@@ -61,6 +84,16 @@ export const QuoteRankingSchema = z
     monthly: z.number().nullable(),
     audit_flag_summary: z.array(z.string()),
     financing_mode: z.string(),
+    /** Tax re-computed at the buyer's HOME-state rate (cross-state correctness:
+     *  sales/use tax follows the registration state, not the dealer's). null when
+     *  un-normalizable (unknown state / missing selling price). */
+    normalized_tax: z.number().nullable(),
+    /** otd_total with the dealer-stated tax swapped for the home-state tax. null
+     *  when un-normalizable. The honest cross-state drive-off cost. */
+    normalized_otd: z.number().nullable(),
+    /** Why this row's normalized OTD differs from the bucket's best; null for the
+     *  baseline row itself and for un-normalizable rows. */
+    attribution: OtdAttributionSchema.nullable(),
   })
   .strict();
 export type QuoteRankingRow = z.infer<typeof QuoteRankingSchema>;
@@ -89,9 +122,27 @@ export const QuoteCompareOutputSchema = z
     totalRanked: z.number().int(),
     /** The deterministic terminal sentence (no budget number anywhere). */
     summary: z.string(),
+    /** The buyer's home (registration) state — the source of the tax rate every
+     *  quote is normalized to. null when the profile carries no state. */
+    homeState: z.string().nullable(),
+    /** The home-state sales/use tax rate every quote's tax is normalized to
+     *  (fraction, e.g. 0.0725). null when the state is unknown / missing. */
+    homeStateTaxRate: z.number().nullable(),
   })
   .strict();
 export type QuoteCompareOutput = z.infer<typeof QuoteCompareOutputSchema>;
+
+/**
+ * The honest cross-state framing for the comparison surface. Widening the search
+ * across state lines wins on PRICE, DOC FEE, and regional INCENTIVES — NOT on tax
+ * (the buyer pays their home-state use tax regardless of where they buy), minus
+ * travel/shipping. Surfaced as UI copy so a lower out-of-state OTD is never sold
+ * as a tax saving it isn't.
+ */
+export const CROSS_STATE_FRAMING_NOTE =
+  "Tax is normalized to your home state — you owe home-state use tax wherever you " +
+  "buy. Crossing state lines wins on price, doc fee, and local incentives, not tax " +
+  "(minus any travel/shipping).";
 
 // ---------------------------------------------------------------------------
 // typed STOP codes (read-only three-branch: 0 active / 2+ active)

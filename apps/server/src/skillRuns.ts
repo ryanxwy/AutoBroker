@@ -73,6 +73,8 @@ import {
 } from "@autobroker/skills";
 import {
   beginRunGuarded,
+  releaseRunOwnership,
+  clearContactFlipForRun,
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   DAILY_DIGEST_WORKFLOW_ID,
   DEALER_GEOSEARCH_WORKFLOW_ID,
@@ -105,7 +107,13 @@ import {
   requestContactFlipForRun,
   type createMastraInstance,
 } from "@autobroker/workflows";
-import { validateResetToken } from "@autobroker/tools";
+import {
+  getDb,
+  validateResetToken,
+  recordActivation,
+  clearActivationByRunId,
+  writeLastProgressAt,
+} from "@autobroker/tools";
 import { z } from "zod";
 
 import type { RunPubSub } from "./runPubSub.js";
@@ -1771,6 +1779,12 @@ interface RunState {
    *  status/turn rendering can find it; full turn-model rendering is the UI's read
    *  (skill_runs.session_id ↔ thread metadata). */
   sessionId: string | null;
+  /** The search_profile this run acts on (extracted from the start input), or
+   *  null for a profile-less/intake run. The ApprovalInbox keys parked gates by
+   *  (profileId, runId, decisionId) and the scheduler routes lifecycle events by
+   *  it; a reattached run (recovered at boot) carries null until the durable
+   *  activation registry rebinds it. */
+  searchProfileId: string | null;
   /** The step id + decisionId + RETAINED suspend payload of the CURRENTLY
    *  pending suspend, or null when the run is running/terminal. The
    *  form-decision must reference this decisionId; the payload is what the
@@ -1779,7 +1793,52 @@ interface RunState {
   pending: { step: string; decisionId: string; payload: Record<string, unknown> } | null;
   /** Whether a terminal frame has been emitted (the run is over). */
   terminal: boolean;
+  /** Whether the once-only terminal hook (carry-map GC, ownership release,
+   *  listener fan-out) has already run — guards against a double-fire. */
+  terminalHandled: boolean;
   claims: Map<string, Claim>;
+}
+
+/** A parked gate, as surfaced cross-run by {@link SkillRunService.listPendingGates}
+ *  — the raw backbone the ApprovalInbox ranks + tags. */
+export interface PendingGate {
+  runId: string;
+  profileId: string | null;
+  skill: string;
+  sessionId: string | null;
+  step: string;
+  decisionId: string;
+  payload: Record<string, unknown>;
+}
+
+/** A run reaching a gate or a terminal — the events the PortfolioScheduler (slot
+ *  management) and the saga coordinator (compensate-on-abort) subscribe to. */
+export interface RunLifecycleEvent {
+  runId: string;
+  profileId: string | null;
+  skill: string;
+}
+export type RunTerminalKind = "declined" | "completed" | "error" | "canceled";
+export interface RunTerminalEvent extends RunLifecycleEvent {
+  terminalKind: RunTerminalKind;
+}
+export interface RunLifecycleListener {
+  onRunSuspended?(event: RunLifecycleEvent): void;
+  /** A parked run was resumed (a human answered its gate) — it is executing again,
+   *  so the scheduler re-occupies its slot. */
+  onRunResumed?(event: RunLifecycleEvent): void;
+  onRunTerminal?(event: RunTerminalEvent): void;
+}
+
+/** Extract the search_profile_id baked into a start input by the descriptor's
+ *  buildInput (every profile-scoped skill carries it). Null for intake / a
+ *  profile-less body. */
+function extractSearchProfileId(input: unknown): string | null {
+  if (input !== null && typeof input === "object" && "search_profile_id" in input) {
+    const v = (input as Record<string, unknown>)["search_profile_id"];
+    return typeof v === "string" ? v : null;
+  }
+  return null;
 }
 
 /** Map a suspended step's payload → the awaiting_user form_kind. The gate/
@@ -1905,11 +1964,92 @@ function bodyKeyOf(body: FormDecisionBody): string {
  */
 export class SkillRunService {
   private readonly runs = new Map<string, RunState>();
+  private readonly lifecycleListeners: RunLifecycleListener[] = [];
 
   constructor(
     private readonly mastra: MastraInstance,
     private readonly pubsub: RunPubSub,
   ) {}
+
+  /** Register a run-lifecycle listener (the PortfolioScheduler for slot
+   *  management; the saga coordinator for compensate-on-abort). Listeners are
+   *  fired in registration order; a throwing listener is isolated so it never
+   *  breaks the run lifecycle or a sibling listener. */
+  addLifecycleListener(listener: RunLifecycleListener): void {
+    this.lifecycleListeners.push(listener);
+  }
+
+  /** Every currently parked gate across ALL runs — the ApprovalInbox backbone.
+   *  The per-run state map is otherwise read only by single runId; this is the
+   *  one cross-run enumeration. */
+  listPendingGates(): PendingGate[] {
+    const gates: PendingGate[] = [];
+    for (const [runId, run] of this.runs) {
+      if (run.pending === null) continue;
+      gates.push({
+        runId,
+        profileId: run.searchProfileId,
+        skill: run.skill,
+        sessionId: run.sessionId,
+        step: run.pending.step,
+        decisionId: run.pending.decisionId,
+        payload: run.pending.payload,
+      });
+    }
+    return gates;
+  }
+
+  /** Notify listeners a parked run is being resumed (it re-occupies its slot for the
+   *  duration of its resumed execution; a subsequent suspend/terminal frees it again). */
+  private fireResumed(run: RunState, runId: string): void {
+    const event: RunLifecycleEvent = { runId, profileId: run.searchProfileId, skill: run.skill };
+    for (const l of this.lifecycleListeners) {
+      try {
+        l.onRunResumed?.(event);
+      } catch {
+        // listener isolation.
+      }
+    }
+  }
+
+  /** Notify listeners a run parked at a gate (a slot is freed — a suspended run
+   *  holds zero slots). Edge-triggered: fires each time the run suspends. */
+  private fireSuspended(run: RunState, runId: string): void {
+    const event: RunLifecycleEvent = { runId, profileId: run.searchProfileId, skill: run.skill };
+    for (const l of this.lifecycleListeners) {
+      try {
+        l.onRunSuspended?.(event);
+      } catch {
+        // listener isolation — a listener error never breaks the run lifecycle.
+      }
+    }
+  }
+
+  /** The once-only terminal hook: GC the negotiation contact-flip carry, release
+   *  the run-ownership reservation (bounds ownedRunIds), then fan out onRunTerminal
+   *  so the scheduler frees the slot + the activation registry / saga coordinator
+   *  react. Idempotent via terminalHandled (a run hits exactly one terminal branch,
+   *  but the guard makes a double-call safe). */
+  private fireTerminal(run: RunState, runId: string, terminalKind: RunTerminalKind): void {
+    if (run.terminalHandled) return;
+    run.terminalHandled = true;
+    // Cheap no-op for non-negotiation runs (the carry Maps are keyed by runId).
+    clearContactFlipForRun(runId);
+    releaseRunOwnership(runId);
+    const event: RunTerminalEvent = {
+      runId,
+      profileId: run.searchProfileId,
+      skill: run.skill,
+      terminalKind,
+    };
+    for (const l of this.lifecycleListeners) {
+      try {
+        l.onRunTerminal?.(event);
+      } catch {
+        // listener isolation.
+      }
+    }
+  }
 
   /** The registered descriptor for a skill id, or undefined (route → 400). */
   descriptorFor(skillId: string): RunDescriptor | undefined {
@@ -1965,8 +2105,13 @@ export class SkillRunService {
     this.runs.set(runId, {
       skill: descriptor.skillId,
       sessionId: null,
+      // A reattached run's profile binding is rebuilt by the durable activation
+      // registry (PROMPT-phase0-rest); null until then. The gate still surfaces in
+      // listPendingGates regardless.
+      searchProfileId: null,
       pending: { step, decisionId, payload },
       terminal: false,
+      terminalHandled: false,
       claims: new Map(),
     });
     this.pubsub.append(runId, {
@@ -2017,10 +2162,21 @@ export class SkillRunService {
     this.runs.set(runId, {
       skill: descriptor.skillId,
       sessionId: args.sessionId ?? null,
+      searchProfileId: extractSearchProfileId(args.input),
       pending: null,
       terminal: false,
+      terminalHandled: false,
       claims: new Map(),
     });
+
+    // Register this run in the durable activation registry IF its input carries
+    // a profile (the virtual-actor at-most-one-live-run map). A profile-less run
+    // (intake, daily-digest fan-out) records nothing.
+    const pid = (args.input as { search_profile_id?: string | null } | null | undefined)
+      ?.search_profile_id;
+    if (typeof pid === "string" && pid !== "") {
+      recordActivation({ profileId: pid, runId, db: getDb() });
+    }
 
     void started
       .then((result) => {
@@ -2030,7 +2186,9 @@ export class SkillRunService {
         const run = this.runs.get(runId);
         if (run !== undefined && !run.terminal) {
           run.terminal = true;
+          this.finalizeActivation(runId);
           this.pubsub.append(runId, { kind: "error", payload: this.errorFramePayload(err) });
+          this.fireTerminal(run, runId, "error");
         }
       });
 
@@ -2140,6 +2298,9 @@ export class SkillRunService {
     }
 
     const step = run.pending.step;
+    // The parked run is about to execute again — re-occupy its scheduler slot
+    // before the resume drives it (a re-suspend / terminal below frees it again).
+    this.fireResumed(run, runId);
     let result: unknown;
     try {
       const workflow = this.mastra.getWorkflow(descriptor.workflowId);
@@ -2169,6 +2330,15 @@ export class SkillRunService {
       ack: { body: ackBody },
     });
     return ackBody;
+  }
+
+  /**
+   * Tear down this run's durable activation entry at its terminal. Idempotent
+   * (delete-by-runId no-ops when a newer run already overwrote the profile's
+   * entry); profile-less runs that recorded nothing also no-op.
+   */
+  private finalizeActivation(runId: string): void {
+    clearActivationByRunId({ runId, db: getDb() });
   }
 
   /**
@@ -2204,6 +2374,8 @@ export class SkillRunService {
           step,
         },
       });
+      // A parked run holds ZERO scheduler slots — notify so the slot frees.
+      this.fireSuspended(run, runId);
       return;
     }
 
@@ -2213,10 +2385,12 @@ export class SkillRunService {
         // A decline is terminal: wire kind aborted → status projects declined
         // (the app metadata is the decline outcome).
         run.terminal = true;
+        this.finalizeActivation(runId);
         this.pubsub.append(runId, {
           kind: "aborted",
           payload: { reason: "user_declined" },
         });
+        this.fireTerminal(run, runId, "declined");
         return;
       }
       // Completed: the skill's plain-speak summary then done. When the
@@ -2225,6 +2399,7 @@ export class SkillRunService {
       // the terminal TEXT frame payload — skill-agnostic copy, the done frame
       // stays {}.
       run.terminal = true;
+      this.finalizeActivation(runId);
       const descriptor = this.descriptorOf(run);
       const textPayload: Record<string, unknown> = {
         text: descriptor.summaryText(r.result),
@@ -2232,6 +2407,13 @@ export class SkillRunService {
       const resolution = (r.result as { resolution?: unknown } | undefined)?.resolution;
       if (typeof resolution === "string") textPayload["resolution"] = resolution;
       this.pubsub.append(runId, { kind: "text", payload: textPayload });
+      // A successful skill run = forward progress for its profile: advance the
+      // durable progress watermark (the dormancy marker the profileHealth /
+      // orphan-sweep reconcile reads). Declined/failed/canceled runs skip this.
+      const completedProfileId = resultProfileId(r.result);
+      if (completedProfileId !== null) {
+        writeLastProgressAt(getDb(), completedProfileId, new Date().toISOString());
+      }
       // The fresh-by-default pulse: a completed skill wrote rows, so name the
       // touched data families (off the workflowId) + the profile they belong to
       // (off r.result.profileId) so the dashboard refetches exactly the stale
@@ -2242,27 +2424,32 @@ export class SkillRunService {
       this.pubsub.append(runId, {
         kind: "data.changed",
         payload: {
-          profile_id: resultProfileId(r.result),
+          profile_id: completedProfileId,
           kinds: affectedKinds(descriptor.workflowId),
         },
       });
       this.pubsub.append(runId, { kind: "done", payload: {} });
+      this.fireTerminal(run, runId, "completed");
       return;
     }
 
     // failed | tripwire | bailed → error (the #1244 hard-abort path).
     if (r.status === "failed" || r.status === "tripwire" || r.status === "bailed") {
       run.terminal = true;
+      this.finalizeActivation(runId);
       this.pubsub.append(runId, {
         kind: "error",
         payload: this.errorFramePayload(r.error),
       });
+      this.fireTerminal(run, runId, "error");
       return;
     }
 
     if (r.status === "canceled") {
       run.terminal = true;
+      this.finalizeActivation(runId);
       this.pubsub.append(runId, { kind: "aborted", payload: { reason: "canceled" } });
+      this.fireTerminal(run, runId, "canceled");
       return;
     }
 
