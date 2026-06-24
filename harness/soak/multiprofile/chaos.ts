@@ -3,8 +3,8 @@
  *
  * `chaosScheduleForRound(round, prng)` produces a ChaosDirective whose escalation
  * knobs are a DETERMINISTIC function of `round` (guaranteeing monotonic
- * non-decrease round-over-round), while `prng` adds bounded within-round jitter
- * (a small ±wobble that never breaks monotonicity). Field breakdown:
+ * non-decrease round-over-round), while `prng` adds a bounded within-round jitter
+ * (a small ONE-SIDED upward wobble that never breaks monotonicity). Field breakdown:
  *
  *   ROUND-DRIVEN (deterministic, monotonic):
  *     profileCount      — min(2 + round, MAX_PROFILE_COUNT)
@@ -15,8 +15,10 @@
  *     aggressionLevel   — min(round, MAX_AGGRESSION)
  *
  *   PRNG-JITTERED (bounded within-round, never breaks monotonicity):
- *     ghostProbability  — ±JITTER_RANGE additive wobble, clamped to [base, PROB_CAP]
- *                         so the floor (base) is never undershot, preserving monotonicity.
+ *     ghostProbability  — additive jitter clamped to [base, PROB_CAP], so the effective
+ *                         wobble is ONE-SIDED UPWARD: a draw below base is clamped back to
+ *                         base (the monotonic floor is never undershot), a draw above base
+ *                         lifts it by up to JITTER_MAX_UP (capped at PROB_CAP).
  *
  * `aggressionDirectiveText(d)` renders the dealer-actor task-prompt addendum:
  * content-realism only — how to WRITE replies — NEVER a real send / browser /
@@ -42,8 +44,12 @@ const GHOST_STEP = 0.12;
 const BAD_FAITH_STEP = 0.10;
 const BUDGET_STEP = 0.08;
 
-/** Max additive jitter the prng may apply to ghostProbability (±JITTER_RANGE). */
-const JITTER_RANGE = 0.03;
+/**
+ * Max UPWARD jitter the prng may add to ghostProbability. The raw draw is in
+ * (-JITTER_MAX_UP, +JITTER_MAX_UP), but the clamp to [base, PROB_CAP] discards the
+ * negative side, so the effective jitter is one-sided: 0..JITTER_MAX_UP above base.
+ */
+const JITTER_MAX_UP = 0.03;
 
 // ---------------------------------------------------------------------------
 // types
@@ -75,7 +81,8 @@ export interface ChaosDirective {
  *
  * All escalation knobs are deterministic in `round` — monotonicity is guaranteed
  * by construction. The `prng` adds a small bounded jitter to ghostProbability
- * (clamped to [base, PROB_CAP]) so the floor is never undershot.
+ * (clamped to [base, PROB_CAP]) so the floor is never undershot. The clamp makes
+ * the effective jitter one-sided upward (a sub-base draw snaps back to base).
  */
 export function chaosScheduleForRound(round: number, prng: Prng): ChaosDirective {
   const r = Math.max(0, Math.floor(round));
@@ -85,10 +92,12 @@ export function chaosScheduleForRound(round: number, prng: Prng): ChaosDirective
   const baseBadFaith = Math.min(r * BAD_FAITH_STEP, PROB_CAP);
   const baseBudget = Math.min(r * BUDGET_STEP, PROB_CAP);
 
-  // Prng-jittered ghost: wobble ∈ [-JITTER_RANGE, +JITTER_RANGE], clamped to [base, PROB_CAP]
-  // so the monotonic floor is never undershot. When base=0 (round 0), skip jitter entirely
-  // so the cooperative baseline is always exactly 0 (spec: round 0 fully cooperative).
-  const jitter = (prng.next() * 2 - 1) * JITTER_RANGE; // ∈ (-JITTER_RANGE, +JITTER_RANGE)
+  // Prng-jittered ghost: the raw draw ∈ (-JITTER_MAX_UP, +JITTER_MAX_UP), but the clamp
+  // to [base, PROB_CAP] discards the negative side, so the EFFECTIVE jitter is one-sided
+  // upward (0..JITTER_MAX_UP above base) — the monotonic floor is never undershot. When
+  // base=0 (round 0), skip jitter entirely so the cooperative baseline is always exactly
+  // 0 (spec: round 0 fully cooperative).
+  const jitter = (prng.next() * 2 - 1) * JITTER_MAX_UP; // raw draw ∈ (-JITTER_MAX_UP, +JITTER_MAX_UP)
   const ghostProbability =
     baseGhost === 0 ? 0 : Math.min(PROB_CAP, Math.max(baseGhost, baseGhost + jitter));
 

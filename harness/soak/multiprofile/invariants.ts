@@ -281,7 +281,6 @@ export function assertHistoryIdNoSkip(db: Db, profileIds: string[]): Determinist
  */
 export function assertFollowupCap(db: Db, profileIds: string[], ceiling = 10): DeterministicResult {
   const id = "followup_cap";
-  const known = new Set(profileIds);
   // All messages ordered by thread then rowid; we walk trailing outbound per thread.
   const rows = readAll<{ thread_id: string; direction: string }>(
     db,
@@ -303,7 +302,6 @@ export function assertFollowupCap(db: Db, profileIds: string[], ceiling = 10): D
       return fail(id, `thread ${threadId} has ${count} consecutive trailing outbound (cap ${ceiling})`);
     }
   }
-  void known; // profileIds already constrain the join; kept for signature parity.
   return ok(id, `every thread's trailing-outbound run is within the cap (${ceiling})`);
 }
 

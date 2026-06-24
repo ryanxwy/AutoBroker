@@ -50,7 +50,7 @@ After each interleaved step call `runAllInvariants` from
 |---|---|
 | dealership exclusivity | one rooftop bound to at most one profile |
 | budget-never-leaks | `_redact_budget` — budget absent from all dealer-facing sends (#9) |
-| follow-up cap | no profile exceeds `MAX_UNANSWERED_FOLLOWUPS=2` consecutive ghost FUs |
+| follow-up cap | per-thread trailing-unanswered outbound run <= ceiling (default 10, configurable via `inputs.followupCeiling`) |
 | L2-gate-before-send | every outbound send preceded by a human-approval gate event |
 | profile-ASK 1/0/2 | resolver stops at 0 or 2+ active (profile-ASK contract) |
 | monotonic best-OTD | per-profile best OTD never increases across rounds |

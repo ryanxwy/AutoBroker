@@ -18,7 +18,7 @@ import type {
   LanguageModelV3GenerateResult,
   LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   __resetHarnessModelWrapper,
@@ -119,6 +119,44 @@ describe("recordReplay — round-trip", () => {
 
     expect(replayedParts).toEqual(liveParts);
   });
+
+  it("records the COMPLETE doStream event even when the caller cancels the teed stream early", async () => {
+    // Establish the full expected part sequence by fully draining the SAME fake model
+    // once (a deterministic v3 fake with several parts: stream-start, text-*, finish).
+    const ref = makeStructuredObjectModel({ object: { quote: 30000 } }) as LanguageModelV3;
+    const fullParts = await drain((await ref.doStream(opts("cancel me"))).stream);
+    expect(fullParts.length).toBeGreaterThan(1); // more than one chunk → early cancel skips some
+
+    const real = makeStructuredObjectModel({ object: { quote: 30000 } }) as LanguageModelV3;
+    const sink = memSink();
+    const recorder = recordingModel(real, sink, { runId: "r1", alias: "deepseek.cheap" });
+
+    const live = await recorder.doStream(opts("cancel me"));
+    // Read ONLY the first chunk, then cancel the caller's branch (simulating an
+    // AbortSignal / Mastra stopWhen / maxSteps early stop) — the source is NOT drained
+    // by the caller.
+    const reader = live.stream.getReader();
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    await reader.cancel();
+    reader.releaseLock();
+
+    // Let the background record-branch drain run to completion.
+    await vi.waitFor(() => {
+      expect(sink.events).toHaveLength(1);
+    });
+
+    // Despite the early caller-cancel, the recorded doStream event holds ALL parts.
+    expect(sink.events[0]?.eventType).toBe("doStream");
+    const recorded = sink.events[0]?.result as LanguageModelV3StreamPart[];
+    expect(recorded).toEqual(fullParts);
+
+    // And the complete recording replays token-for-token.
+    const index = new TraceIndex(sink.events);
+    const replay = replayModel(index, { alias: "deepseek.cheap", modelId: real.modelId });
+    const replayed = await drain((await replay.doStream(opts("cancel me"))).stream);
+    expect(replayed).toEqual(fullParts);
+  });
 });
 
 describe("recordReplay — per-event-type cursors", () => {
@@ -132,20 +170,37 @@ describe("recordReplay — per-event-type cursors", () => {
     const oG = opts("gen");
     const oS = opts("str");
     // Record order: doGenerate, doStream, doGenerate.
-    await genRec.doGenerate(oG);
-    await drain((await strRec.doStream(oS)).stream);
-    await genRec.doGenerate(oG);
+    const rec0 = (await genRec.doGenerate(oG)) as LanguageModelV3GenerateResult;
+    const recStreamParts = await drain((await strRec.doStream(oS)).stream);
+    const rec1 = (await genRec.doGenerate(oG)) as LanguageModelV3GenerateResult;
     expect(sink.events).toHaveLength(3);
+
+    // Capture the recorded results from the sink so we can deep-equal each replay
+    // against its recorded counterpart (the recorded order is gen, stream, gen).
+    const recordedDoGenerate = sink.events
+      .filter((e) => e.eventType === "doGenerate")
+      .map((e) => e.result as LanguageModelV3GenerateResult);
+    const recordedDoStream = sink.events
+      .filter((e) => e.eventType === "doStream")
+      .map((e) => e.result as LanguageModelV3StreamPart[]);
+    expect(recordedDoGenerate).toEqual([rec0, rec1]);
+    expect(recordedDoStream).toEqual([recStreamParts]);
 
     const index = new TraceIndex(sink.events);
     const genReplay = replayModel(index, { alias: "a", modelId: gen.modelId });
     const strReplay = replayModel(index, { alias: "a", modelId: str.modelId });
 
-    // Replay in the same order; each type advances its own cursor.
-    await genReplay.doGenerate(oG); // doGenerate cursor 0 -> 1
-    await drain((await strReplay.doStream(oS)).stream); // doStream cursor 0 -> 1
-    await genReplay.doGenerate(oG); // doGenerate cursor 1 -> 2 (the SECOND recorded doGenerate)
-    expect(true).toBe(true); // no throw == cursors stayed independent
+    // Replay in the same order; each type advances its own cursor independently.
+    const rep0 = (await genReplay.doGenerate(oG)) as LanguageModelV3GenerateResult; // doGenerate 0 -> 1
+    const repStreamParts = await drain((await strReplay.doStream(oS)).stream); // doStream 0 -> 1
+    const rep1 = (await genReplay.doGenerate(oG)) as LanguageModelV3GenerateResult; // doGenerate 1 -> 2
+
+    // The 1st doGenerate replay equals the 1st recorded doGenerate, the 2nd equals
+    // the 2nd — proving the doGenerate cursor advanced INDEPENDENTLY of the doStream
+    // cursor consumed between them (else rep1 would not match the 2nd recorded gen).
+    expect(rep0).toEqual(recordedDoGenerate[0]);
+    expect(rep1).toEqual(recordedDoGenerate[1]);
+    expect(repStreamParts).toEqual(recordedDoStream[0]);
   });
 });
 

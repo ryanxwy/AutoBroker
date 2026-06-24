@@ -22,7 +22,7 @@
  * values exist only so budget_no_leak has data — we never print a figure.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -200,6 +200,23 @@ describe("assertManifestInSync — the sync trap", () => {
       const res = assertManifestInSync(manifestPath, casesRoot);
       expect(res.ok).toBe(false);
       expect(String(res.detail)).toContain("mp_does_not_exist");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("RED when a case dir has no manifest line (orphan)", () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "mp-sync-orphan-"));
+    const casesRoot = join(tmpRoot, "cases", "mp");
+    const manifestPath = join(tmpRoot, "multiprofile-corpus.txt");
+    try {
+      // An empty (header-only) manifest, but a case dir exists on disk with no
+      // matching line — the other direction of the sync trap.
+      writeFileSync(manifestPath, "# header\n", "utf8");
+      mkdirSync(join(casesRoot, "mp_orphan_dir"), { recursive: true });
+      const res = assertManifestInSync(manifestPath, casesRoot);
+      expect(res.ok).toBe(false);
+      expect(String(res.detail)).toContain("mp_orphan_dir");
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }

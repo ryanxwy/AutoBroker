@@ -143,6 +143,10 @@ export function recordingModel(
   sink: TranscriptSink,
   ctx: { runId: string; alias: string },
 ): LanguageModelV3 {
+  // A bare-string model id has no doGenerate/doStream to record (parity with
+  // registry.ts's wrapWithGenerateFault). Returning it untouched is a no-op wrap.
+  if (typeof real === "string") return real;
+
   const recordGenerate: LanguageModelV3["doGenerate"] = async (options) => {
     const r = await real.doGenerate(options);
     sink.append({
@@ -158,30 +162,41 @@ export function recordingModel(
 
   const recordStream: LanguageModelV3["doStream"] = async (options) => {
     const { stream, ...rest } = await real.doStream(options);
-    const collected: LanguageModelV3StreamPart[] = [];
-    // TEE: record each chunk while re-emitting it through a passthrough stream so
-    // the caller still consumes a live, complete stream. The sink append fires
-    // when the SOURCE closes (flush), so the recorded result is the full ordered
-    // sequence even if the caller cancels early.
-    const teed = stream.pipeThrough(
-      new TransformStream<LanguageModelV3StreamPart, LanguageModelV3StreamPart>({
-        transform(chunk, controller) {
-          collected.push(chunk);
-          controller.enqueue(chunk);
-        },
-        flush() {
-          sink.append({
-            runId: ctx.runId,
-            eventType: "doStream",
-            alias: ctx.alias,
-            modelId: real.modelId,
-            promptHash: hashPrompt(options),
-            result: collected,
-          });
-        },
-      }),
-    );
-    return { stream: teed, ...rest };
+    // TEE the source into TWO independent branches: the caller branch is returned
+    // for live consumption; the record branch is fully DRAINED in a background loop
+    // that collects every chunk and appends the doStream event once the SOURCE
+    // closes. Because tee() keeps the source alive as long as ANY branch is still
+    // reading, cancelling the caller's branch early (AbortSignal / Mastra stopWhen /
+    // maxSteps) does NOT cancel the source — the record branch keeps pulling, so the
+    // recorded transcript is the COMPLETE ordered sequence regardless of early
+    // caller-cancel. (The old pipeThrough/flush approach dropped the event on early
+    // caller-cancel because flush only fires on full caller drain.)
+    const [callerBranch, recordBranch] = stream.tee();
+    void (async () => {
+      const collected: LanguageModelV3StreamPart[] = [];
+      const reader = recordBranch.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          collected.push(value);
+        }
+      } catch {
+        // The source errored mid-stream; record whatever was collected so the
+        // transcript still reflects the partial sequence rather than dropping it.
+      } finally {
+        reader.releaseLock();
+        sink.append({
+          runId: ctx.runId,
+          eventType: "doStream",
+          alias: ctx.alias,
+          modelId: real.modelId,
+          promptHash: hashPrompt(options),
+          result: collected,
+        });
+      }
+    })();
+    return { stream: callerBranch, ...rest };
   };
 
   return new Proxy(real, {
