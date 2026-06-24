@@ -219,6 +219,37 @@ describe("App — non-intake slash starts THAT skill", () => {
     r.unmount();
   });
 
+  it("keeps prior same-session turns in the rail across a second launch (history is not wiped)", async () => {
+    // History stays in one session unless the user starts a NEW search (an intake
+    // fork). A second non-intake launch in the same session must NOT reset the
+    // rail — the first turn stays visible alongside the second.
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    // Launch #1 in the session.
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/dealer_geosearch");
+    click(r.get("chat-send"));
+    await flush();
+    expect(document.querySelectorAll('[data-testid="user-turn"]').length).toBe(1);
+
+    // Drive run #1 to a terminal state so the composer re-enables (the in-flight
+    // soft-block lifts only after the run reaches Done).
+    const s1 = MockStream.instances[0]!;
+    s1.emit({ type: "start", messageId: "run-geo" });
+    s1.emit({ type: "data-frame", id: "f1", data: { kind: "init", payload: { run_id: "run-geo", driver_kind: "deepseek_apikey" } } });
+    s1.emit({ type: "data-frame", id: "f2", data: { kind: "done", payload: {} } });
+    s1.emit({ type: "finish" });
+    await flush();
+
+    // Launch #2 in the SAME session — the rail keeps turn #1 (no reset).
+    change(r.get("chat-input-textarea") as HTMLTextAreaElement, "/dealer_geosearch");
+    click(r.get("chat-send"));
+    await flush();
+    expect(document.querySelectorAll('[data-testid="user-turn"]').length).toBe(2);
+    r.unmount();
+  });
+
   it("slash key=value args spread into the start body (parsed args reach the POST)", async () => {
     const posted: Array<Record<string, unknown>> = [];
     const client = new ApiClient({ fetchImpl: mockFetch({ posted }) });

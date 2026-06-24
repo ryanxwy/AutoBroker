@@ -96,6 +96,19 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   driven to ≥4 rounds on multiple parallel threads** with multi-titled-contact
   escalation, AI-auto first-touch, and ghosting (`references/dealer-brain.md`). Spend
   the LLM calls — saving cost is secondary to exercising the realities.
+- **Product behavior rules (owner, 2026-06-23 — also in CLAUDE.md):** (1) **Intake
+  never assumes a required vehicle field** — `model`/`trim`/`year` must be stated by
+  the buyer; if the persona's freeform omits one, the form leaves it blank and you
+  must supply it as the buyer's explicit choice (or ASK), never fabricate a default.
+  (2) **`inventory_site_scan` scans ALL in-radius dealers by default — no batch
+  approval gate** (read-only; the `batch-*` testids no longer render for it; there is
+  no site_scan decline path). The shared batch gate still guards the 3 send skills +
+  `inventory_link_scan`. (3) **Chat history stays in one session** — only a deliberate
+  new-search (intake fork) or explicit session switch resets the rail.
+- **Worktree needs `.env` (step-1 trap).** `.env` is gitignored, so a fresh sibling
+  worktree has none and `loadDotEnvKeys`' walk-up won't find the main checkout's copy
+  — serve-live then reports "Add your DeepSeek key" and the NL router 500s. Copy
+  `.env` into `$WT` after `git worktree add` (it stays gitignored, never staged).
 - Self-contained `YYYY-MM-DD` HTML report; `MEMORY.md` pointer ≤200 chars (it is over
   budget — detail goes in the topic file).
 

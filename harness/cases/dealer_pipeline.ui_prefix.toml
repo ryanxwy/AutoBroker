@@ -12,16 +12,14 @@
 #           resolver takes the PINNED branch — asserted by the resolution
 #           anchor AND the rendered provenance meta tag.
 #   step 3  "/inventory_site_scan" typed into the same rail (same pin
-#           threading). The batch_review card renders on the gate-banner
-#           track; the driver clicks the explicit Select-all button, asserts
-#           the counter complete, submits — then the run scans the approved
-#           dealers' REAL sites (isolated parallel Browsers), extracts
-#           listings (the LLM phase — cost_and_time is REQUIRED, not
-#           optional), and persists both inventory tables profile-scoped.
+#           threading). The read-only scan auto-approves every discovered
+#           dealer (no gate) — the run scans their REAL sites (isolated
+#           parallel Browsers), extracts listings (the LLM phase —
+#           cost_and_time is REQUIRED, not optional), and persists both
+#           inventory tables profile-scoped.
 #
-# Cross-step ui_check (batch_rows_from): the batch card's target-row count must
-# equal step 2's profile-scoped profile_dealers delta — the discovery feeds the
-# batch one-for-one (full-radius default, no max_targets valve).
+# The discovery feeds the scan one-for-one (full-radius default, no max_targets
+# valve).
 # max_seconds = 1800 is PER-STEP (scan only): capture+extract @ concurrency 4
 # over a full-radius SoCal batch needs more than the 900s default; the CLI
 # --max-seconds flag still overrides. RADIUS 120 (live default, 5 viewports).
@@ -143,16 +141,10 @@ expect = "absent"
 [[steps]]
 id = "scan_run"
 skill = "inventory_site_scan"
-purpose = "Batch-review ALL discovered dealers (Select all), scan their real sites, persist listings."
+purpose = "Auto-scan ALL discovered dealers' real sites (no gate), persist listings."
 gate_policy = "approve_safe"
 launch = "chat_slash"
 max_seconds = 1800          # PER-STEP budget: full-radius capture+extract @4.
-batch_rows_from = "geosearch_run"   # card rows == step 2's profile_dealers delta.
-
-[[steps.resume]]
-on = "batch_review"
-action = "accept"
-default_decision = "approve"   # no [[steps.resume.rows]] → the Select-all button.
 
 [[steps.anchors]]
 kind = "run_status"

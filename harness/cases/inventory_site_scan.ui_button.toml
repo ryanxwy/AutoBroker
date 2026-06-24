@@ -9,9 +9,9 @@
 #           button (the second user surface; the popover refetches on every
 #           open so the just-created profile enables the row). NO pin on the
 #           session → no search_profile_id on the start body → the scan's
-#           resolver also infers newest-active. The batch_review card renders
-#           on the gate-banner track; Select-all → submit → real-site scan →
-#           both inventory tables written profile-scoped.
+#           resolver also infers newest-active. The read-only scan auto-approves
+#           every in-radius dealer (no gate) → real-site scan → both inventory
+#           tables written profile-scoped.
 #
 # cost_and_time is REQUIRED on step 3 (extraction is an LLM phase — no
 # optional key). max_seconds = 1800 is PER-STEP (scan only); CLI overrides.
@@ -133,15 +133,10 @@ expect = "absent"
 [[steps]]
 id = "scan_button"
 skill = "inventory_site_scan"
-purpose = "Launch the scan from the popover Run button; Select-all the batch; scan real sites."
+purpose = "Launch the scan from the popover Run button; auto-approves every in-radius dealer; scan real sites."
 gate_policy = "approve_safe"
 launch = "skills_popover"
 max_seconds = 1800          # PER-STEP budget: full-radius capture+extract @4.
-
-[[steps.resume]]
-on = "batch_review"
-action = "accept"
-default_decision = "approve"   # no [[steps.resume.rows]] → the Select-all button.
 
 [[steps.anchors]]
 kind = "run_status"

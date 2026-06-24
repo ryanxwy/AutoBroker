@@ -1,9 +1,9 @@
 /**
- * inventory_site_scan — skill #3 (first browser skill with a human suspend).
- * ONE flat linear Mastra `createWorkflow`: 6 named steps chained with
- * `.then()`, no nested workflow. The single suspend is the batch_review card
- * BEFORE any navigation: decline = terminal, ZERO DB writes; approve names the
- * exact dealer rows the scan may touch.
+ * inventory_site_scan — skill #3 (a browser skill). ONE flat linear Mastra
+ * `createWorkflow`: 6 named steps chained with `.then()`, no nested workflow.
+ * This is a READ-ONLY scan (it browses dealer SRPs for in-stock inventory and
+ * never sends email or submits a form), so it runs with NO human gate: every
+ * eligible in-radius dealer is auto-approved and the scan proceeds.
  *
  * STEP MAP:
  *   0 resolveProfile — the SAME typed three-branch resolver every
@@ -26,14 +26,9 @@
  *                      classification call), no/denied website, malformed URL.
  *                      Zero bound dealers at all → typed STOP pointing at
  *                      /dealer_geosearch.
- *   2 batchReview    — suspend ① (the only one). Payload: {kind:
- *                      "batch_review", question, targets:[{dealer_id, name,
- *                      website}], skipped:[{dealer_id, name, reason}] (no
- *                      website on skipped rows), total_targets,
- *                      total_in_radius}. Resume vocabulary: approve{
- *                      approved_dealer_ids min 1} | decline. The wire is
- *                      always an explicit id list — approve-all does not exist
- *                      as a resume verb. decline → terminal, zero writes.
+ *   2 batchReview    — auto-approve (no suspend). A read-only scan needs no
+ *                      human approval, so every in-radius target from
+ *                      buildTargets is approved and the scan proceeds.
  *   3 scanDealers    — PURE CAPTURE, performs NO SQLite writes. One ISOLATED
  *                      throwaway browser per dealer-host bucket
  *                      (withBrowserContext per task), SCAN_CONCURRENCY=4
@@ -1713,64 +1708,23 @@ const buildTargetsStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 2 — batchReview (suspend ①: the human gate before ANY navigation)
+// step 2 — batchReview (auto-approve every in-radius target; NO human gate)
 // ---------------------------------------------------------------------------
 
 const batchReviewStep = createStep({
   id: "batchReview",
   inputSchema: InventoryScanStateSchema,
   outputSchema: InventoryScanStateSchema,
-  resumeSchema: BatchReviewResumeSchema,
-  suspendSchema: BatchReviewSuspendSchema,
-  execute: async ({ inputData, resumeData, suspend }) => {
+  execute: async ({ inputData }) => {
     const state = asState(inputData);
     const targets = state.targets ?? [];
-    const skipped = state.skipped ?? [];
 
-    // First pass: render the review card (gate before prose). Targets carry
-    // id + short label + website; skipped rows carry NO website (payload
-    // size discipline). Nothing has been written and no page has been opened.
-    if (resumeData === undefined) {
-      return (await suspend({
-        kind: "batch_review",
-        question: BATCH_REVIEW_QUESTION,
-        targets: targets.map((t) => ({
-          dealer_id: t.dealer_id,
-          name: t.name,
-          website: t.website,
-        })),
-        skipped: skipped.map((s) => ({
-          dealer_id: s.dealer_id,
-          name: s.name,
-          reason: s.reason,
-        })),
-        total_targets: targets.length,
-        total_in_radius: state.totalInRadius,
-      })) as never;
-    }
-
-    // Explicitly re-parse the resume (inference across the Mastra resumeData
-    // generic boundary is fragile; the schema is the authority anyway).
-    const resume = BatchReviewResumeSchema.parse(resumeData);
-
-    // decline → terminal, ZERO writes (every later step passes through).
-    if (resume.action === "decline") {
-      return { ...state, declined: true };
-    }
-
-    // approve → the explicit id list IS the scan set. The server seam already
-    // rejected ids outside the reviewed targets; the intersection here is
-    // defense-in-depth (an id that slipped through scans nothing).
-    const targetIds = new Set(targets.map((t) => t.dealer_id));
-    const approved = [...new Set(resume.approved_dealer_ids)].filter((id) =>
-      targetIds.has(id),
-    );
-    if (approved.length === 0) {
-      throw new Error(
-        "batchReview: approved_dealer_ids resolved to zero reviewed targets — refusing to scan",
-      );
-    }
-    return { ...state, approvedDealerIds: approved };
+    // This is a READ-ONLY scan: it browses dealer SRPs for in-stock inventory
+    // and never sends email or submits a form, so no human approval is
+    // required. Every eligible in-radius target (the full set already computed
+    // by buildTargets via computeScanTargets) is auto-approved and the scan
+    // proceeds with no suspend.
+    return { ...state, approvedDealerIds: targets.map((t) => t.dealer_id) };
   },
 });
 
@@ -2079,7 +2033,7 @@ const persistConfirmStep = createStep({
         `Scanned ${persist.sourcesScanned} of ${approvedCount} approved dealer(s)` +
         (persist.sourcesBlocked > 0 ? `, ${persist.sourcesBlocked} blocked` : "") +
         (persist.sourcesFailed > 0 ? `, ${persist.sourcesFailed} failed` : "") +
-        (skippedCount > 0 ? `; ${skippedCount} dealer(s) skipped before review` : "") +
+        (skippedCount > 0 ? `; ${skippedCount} dealer(s) skipped` : "") +
         `. Found ${state.listingsFound} listing(s), ${persist.listingsWritten} written/refreshed` +
         (persist.vinPromoted > 0 ? `, ${persist.vinPromoted} VIN-promoted` : "") +
         (persist.staleSuperseded > 0 ? `, ${persist.staleSuperseded} stale retired` : "") +

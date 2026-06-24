@@ -21,7 +21,7 @@ come from each slice's `.length`. Pager: `canvas-pager` / `-prev` / `-next` /
 |---|---|
 | intake form | `intake-submit` (slash opens an empty 18-field form — hand-type, never auto-extract email) |
 | single-send approval | `approval-prompt` · `approval-approve` · `approval-deny` · `approval-approve-all`; host banner `gate-banner` |
-| batch review (scans, inbox) | `batch-review-card` · `batch-select-all` · `batch-submit` · `batch-decline` |
+| batch review (`inventory_link_scan`, inbox) | `batch-review-card` · `batch-select-all` · `batch-submit` · `batch-decline` (NOT `inventory_site_scan` — it auto-scans all in-radius dealers, no gate; owner 2026-06-23) |
 | hygiene 3-stage | `hygiene-review-card` · `hygiene-stage` · `hygiene-select-all` · `hygiene-submit` · `hygiene-decline` |
 | pipeline_reset typed-YES | `reset-confirm-token` (type `YES`) → `reset-confirm`; card `confirmation-gate-card` |
 | profile-ASK picker (0/2-active) | `stop-pick-list` · `stop-pick-option` |
@@ -29,15 +29,19 @@ come from each slice's `.length`. Pager: `canvas-pager` / `-prev` / `-next` /
 | inventory | `inventory-candidate-row` · `inventory-listing-link` (`<a target=_blank>`) |
 | chat | `chat-input-textarea` |
 
-**SELECT ALL in `inventory_site_scan` + `dealer_web_lead_submit` batch gates** —
-press `batch-select-all`, never a subset. Real users research many dealerships
-(often 100+, across same-car / different-address profiles), so cutting dealers
-destroys the market-research breadth that is the point. Per-site depth and cost
-are bounded by the product itself — `inventory_site_scan` records at most the
-top-20 best-match in-stock cars per website (`PER_DEALER_RECORD_CAP`), and each
-site scans via its built-in make/model/year filter — never by approving fewer
-dealers. (Reverses the 2026-06-18 "scan ~5 nearest" note; see that report's
-corrected Reducibles.)
+**`inventory_site_scan` auto-scans ALL in-radius dealers — no batch gate** (owner
+2026-06-23). It is read-only (browses dealer SRPs; never sends/submits), so there is
+no human-approval suspend and no decline path; the run goes straight to scanning the
+full in-radius target set. Per-site depth and cost are bounded by the product itself —
+it records at most the top-20 best-match in-stock cars per website
+(`PER_DEALER_RECORD_CAP`), and each site scans via its built-in make/model/year
+filter. (Reverses the 2026-06-18 "scan ~5 nearest" note AND the older "select-all the
+site_scan gate" note — the gate is gone.)
+
+**SELECT ALL in `dealer_web_lead_submit`'s batch gate** — press `batch-select-all`,
+never a subset. Real users research many dealerships (often 100+), so cutting dealers
+destroys the market-research breadth that is the point. (The SHARED `batch-*` gate
+still guards the 3 send skills + `inventory_link_scan` — only site_scan lost it.)
 
 **KEYSTONE — email_fallback / contact-flip second-suspends have NO dedicated
 testid.** The lead_submit `email_fallback` scope switch (browser.submit→gmail.send)
@@ -71,7 +75,7 @@ negotiation_followup(fake) → quote_pipeline → daily_digest →`
 
 1. **search_profile_intake** · `/search_profile_intake` · topbar ProfileCard · `intake-submit` — never-guess-email (slash form hand-typed, NL must not auto-extract); decline=Δ0; ambiguous-city `gate-location-pick` (no func case).
 2. **dealer_geosearch** · `/dealer_geosearch` · dealers tab · STOP `stop-pick-option` — metro∈allowlist or `resolveMetro` falls to Irvine; 0-active→intake CTA, 2-active→picker; radius 125mi.
-3. **inventory_site_scan** · `/inventory_site_scan` · inventory tab · `batch-*` — scanned-0 vs never-scanned empty-state (A2); platform-specificity (Toyota/Dallas 0, Honda DealerOn ~12) is NOT a bug; decline=Δ0. **DATA-QUALITY (not count):** after the scan writes ≥1 listing, `GET /__e2e/dataquality?skill=inventory_site_scan` — **hard FAIL iff `priced==0 AND msrp_present==0 AND gated==0`** (TOTAL price loss; 2026-06-22: 10 rows all `listed_price`/`msrp` NULL because the SRP gated price behind "Get Instant Price"). The VDP-price harvest now captures it off the already-loaded detail page; `coverage≥0.5` is the healthy target, below-but->0 a soft note (per-dealer VDP budget bounds gated-car coverage).
+3. **inventory_site_scan** · `/inventory_site_scan` · inventory tab · (no gate — auto-scans all in-radius dealers, owner 2026-06-23) — scanned-0 vs never-scanned empty-state (A2); platform-specificity (Toyota/Dallas 0, Honda DealerOn ~12) is NOT a bug; **no batch gate / no decline path** (read-only). **DATA-QUALITY (not count):** after the scan writes ≥1 listing, `GET /__e2e/dataquality?skill=inventory_site_scan` — **hard FAIL iff `priced==0 AND msrp_present==0 AND gated==0`** (TOTAL price loss; 2026-06-22: 10 rows all `listed_price`/`msrp` NULL because the SRP gated price behind "Get Instant Price"). The VDP-price harvest now captures it off the already-loaded detail page; `coverage≥0.5` is the healthy target, below-but->0 a soft note (per-dealer VDP budget bounds gated-car coverage).
 4. **inventory_link_scan** · `/inventory_link_scan` · inventory tab · `batch-*` — no-pending-links empty path; listing-link click-through; decline=Δ0.
 5. **incentive_scrape** · `/incentive_scrape` · incentives tab · `approval-approve`/`-deny` — first-encounter approve AND decline (Δ0); a brand outside Hyundai/Toyota/Honda/Chevrolet → graceful `no_oem_source`, not a crash; 403→graceful-blocked, fast.
 6. **inventory_compare** · `/inventory_compare` · inventory tab · (none) — bare-0 must give an actionable "scan first" message (FINDING J); Recommended/All split; NL "what's in stock" routes here (read existing), not site_scan — a routing artifact, not a bug.

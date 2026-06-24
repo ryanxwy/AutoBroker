@@ -54,6 +54,30 @@ describe("SchemaForm — field rendering", () => {
     expect((r.get("intake-field-model") as HTMLInputElement).value).toBe("Tucson Hybrid");
     r.unmount();
   });
+
+  it("never fabricates an unstated required vehicle field: a make+model-only seed leaves trim+year blank and blocks submit", () => {
+    // The buyer named only make+model ("a new honda cr-v"); the prefill must NOT
+    // guess a trim or year. Those required fields stay empty, and the form refuses
+    // to submit until the buyer enters them explicitly (ask-and-wait, never assume).
+    const r = render(
+      <SchemaForm
+        runId="r2b"
+        seedFields={{ make: "Honda", model: "CR-V" }}
+        submitting={false}
+        onSubmit={() => {}}
+        onDecline={() => {}}
+      />,
+    );
+    expect((r.get("intake-field-make") as HTMLInputElement).value).toBe("Honda");
+    expect((r.get("intake-field-model") as HTMLInputElement).value).toBe("CR-V");
+    // Unstated required fields are blank — no fabricated default.
+    expect((r.get("intake-field-trim") as HTMLInputElement).value).toBe("");
+    const yearRadios = r.get("intake-field-year").querySelectorAll("input[type=radio]");
+    expect([...yearRadios].some((el) => (el as HTMLInputElement).checked)).toBe(false);
+    // Submit stays disabled until trim+year (and the other required fields) are filled.
+    expect((r.get("intake-submit") as HTMLButtonElement).disabled).toBe(true);
+    r.unmount();
+  });
 });
 
 describe("SchemaForm — draft autosave + restore", () => {
