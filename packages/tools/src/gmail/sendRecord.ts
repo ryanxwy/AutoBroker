@@ -45,6 +45,7 @@ import {
   type OutboundEmail,
   type SendMode,
 } from "../gmail.js";
+import { gmailLimiter } from "../limiter/index.js";
 import { isBuyerMode } from "../realSend.js";
 import { assertFakeMailboxSendOnly } from "./sendPreflight.js";
 import type { GmailAdapter } from "./types.js";
@@ -191,7 +192,12 @@ export async function sendAndRecord(
         // approval above. AUTOBROKER_MODE is the sole send-control var.
         if (!isBuyerMode()) assertFakeMailboxSendOnly({ adapter });
         draftRowId = insertOutboundDraft(db, target); // durable checkpoint, gmail id NULL.
-        const { messageId } = await adapter.send(raw); // irreversible boundary (fake).
+        // The Gmail send limiter paces ONLY real sends (combined ≤ 60/min, daily
+        // budget, 429 backoff, 403 circuit) — strictly BELOW this already-approved
+        // L2 commit. Test-mode fake sends bypass it (no real quota to protect).
+        const { messageId } = isBuyerMode()
+          ? await gmailLimiter.runGmailSend(() => adapter.send(raw)) // irreversible boundary.
+          : await adapter.send(raw); // fake mailbox row.
         promoteOutbound(db, draftRowId, messageId); // backfill gmail id, exactly once.
         return { messageRowId: draftRowId, gmailMessageId: messageId, mode: adapter.kind };
       },

@@ -816,7 +816,7 @@ const resolveOemSourceStep = createStep({
         targets.push(probe);
         continue;
       }
-      deps().writeRegistryEntry(target.brand, {
+      await deps().writeRegistryEntry(target.brand, {
         url_template: seed.urlTemplate,
         added_at: new Date().toISOString(),
         added_for_profile: target.search_profile_id,

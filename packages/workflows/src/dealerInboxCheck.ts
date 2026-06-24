@@ -65,6 +65,7 @@ import {
   readLastInboxCheckAt as readLastInboxCheckAtImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   routeThread as routeThreadImpl,
+  sweepMailbox as sweepMailboxImpl,
   syncMailbox as syncMailboxImpl,
   writeLastInboxCheckAt as writeLastInboxCheckAtImpl,
   type GmailAdapter,
@@ -155,7 +156,10 @@ const realDeps: DealerInboxCheckWorkflowDeps = {
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
   createAdapter: () => createGmailAdapter(),
-  syncMailbox: syncMailboxImpl,
+  // Route the mailbox-cursor advance through the authoritative sweep lane so N
+  // concurrent per-profile inbox checks coalesce to ONE advance (no leapfrog
+  // drop). Drop-in for the raw syncMailbox; identical for the N=1 single profile.
+  syncMailbox: sweepMailboxImpl,
   computeWindow: computeWindowImpl,
   listProfileDealers: listProfileDealerRowsImpl,
   listProfileContactEmails: listProfileContactEmailsImpl,

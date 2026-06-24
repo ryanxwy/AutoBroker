@@ -65,35 +65,35 @@ describe("read / write round-trip", () => {
     expect(readIncentiveRegistry(path)).toEqual({});
   });
 
-  it("writes an entry and reads it back (first-encounter approval memory)", () => {
-    writeIncentiveRegistryEntry("hyundai", entry(), path);
+  it("writes an entry and reads it back (first-encounter approval memory)", async () => {
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
     expect(readIncentiveRegistry(path)).toEqual({ hyundai: entry() });
     // The default-path face resolves the same file through the env.
     expect(readIncentiveRegistry()).toEqual({ hyundai: entry() });
   });
 
-  it("a second brand's write keeps the first (read-modify-write)", () => {
-    writeIncentiveRegistryEntry("hyundai", entry(), path);
-    writeIncentiveRegistryEntry("mazda", entry({ added_for_profile: "sp_test_2" }), path);
+  it("a second brand's write keeps the first (read-modify-write)", async () => {
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
+    await writeIncentiveRegistryEntry("mazda", entry({ added_for_profile: "sp_test_2" }), path);
     const registry = readIncentiveRegistry(path);
     expect(Object.keys(registry).sort()).toEqual(["hyundai", "mazda"]);
     expect(registry["hyundai"]).toEqual(entry());
   });
 
-  it("re-approving a brand replaces its entry", () => {
-    writeIncentiveRegistryEntry("hyundai", entry(), path);
-    writeIncentiveRegistryEntry("hyundai", entry({ url_template: "https://x.com/o" }), path);
+  it("re-approving a brand replaces its entry", async () => {
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
+    await writeIncentiveRegistryEntry("hyundai", entry({ url_template: "https://x.com/o" }), path);
     expect(readIncentiveRegistry(path)["hyundai"]!.url_template).toBe("https://x.com/o");
   });
 
-  it("escapes and round-trips quotes/backslashes in values", () => {
+  it("escapes and round-trips quotes/backslashes in values", async () => {
     const tricky = entry({ url_template: 'https://x.com/o?q="a\\b"' });
-    writeIncentiveRegistryEntry("hyundai", tricky, path);
+    await writeIncentiveRegistryEntry("hyundai", tricky, path);
     expect(readIncentiveRegistry(path)["hyundai"]).toEqual(tricky);
   });
 
-  it("leaves no temp file behind (atomic rename)", () => {
-    writeIncentiveRegistryEntry("hyundai", entry(), path);
+  it("leaves no temp file behind (atomic rename)", async () => {
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
     const body = readFileSync(path, "utf8");
     expect(body).toContain("[hyundai]");
     expect(body).not.toContain(".tmp.");
@@ -127,28 +127,45 @@ describe("parse failures are LOUD (an unreadable registry must surface)", () => 
 });
 
 describe("the sibling lock", () => {
-  it("a FRESH foreign lock blocks the write loudly (bounded retries)", () => {
+  it("a FRESH foreign lock blocks the write loudly (bounded retries)", async () => {
     writeFileSync(`${path}.lock`, "", "utf8");
     // Keep the lock's mtime fresh against the stale bound; the bounded retry
     // budget (50 × 100ms) is far below the 10s staleness window.
-    expect(() => writeIncentiveRegistryEntry("hyundai", entry(), path)).toThrow(
+    await expect(writeIncentiveRegistryEntry("hyundai", entry(), path)).rejects.toThrow(
       /could not acquire/,
     );
   }, 15_000);
 
-  it("a STALE lock is evicted and the write proceeds", () => {
+  it("a STALE lock is evicted and the write proceeds", async () => {
     const lockPath = `${path}.lock`;
     writeFileSync(lockPath, "", "utf8");
     const past = new Date(Date.now() - 60_000);
     utimesSync(lockPath, past, past);
-    writeIncentiveRegistryEntry("hyundai", entry(), path);
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
     expect(readIncentiveRegistry(path)["hyundai"]).toEqual(entry());
   });
 
-  it("the lock is released after a successful write", () => {
-    writeIncentiveRegistryEntry("hyundai", entry(), path);
+  it("the lock is released after a successful write", async () => {
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
     // A second write must not see a held lock.
-    writeIncentiveRegistryEntry("mazda", entry(), path);
+    await writeIncentiveRegistryEntry("mazda", entry(), path);
     expect(Object.keys(readIncentiveRegistry(path))).toHaveLength(2);
   });
+
+  it("does NOT freeze the event loop while waiting for a contended lock", async () => {
+    const lockPath = `${path}.lock`;
+    writeFileSync(lockPath, "", "utf8"); // a fresh foreign lock — held, not stale
+    let timerFired = false;
+    // Concurrent event-loop work that also frees the lock shortly. With the OLD
+    // synchronous Atomics.wait this timer could NOT fire until the whole 5s retry
+    // budget elapsed (the loop was frozen) and the write threw. Async-yielding
+    // lets the timer run mid-wait, so the write acquires and succeeds quickly.
+    setTimeout(() => {
+      timerFired = true;
+      rmSync(lockPath, { force: true });
+    }, 20);
+    await writeIncentiveRegistryEntry("hyundai", entry(), path);
+    expect(timerFired).toBe(true);
+    expect(readIncentiveRegistry(path)["hyundai"]).toEqual(entry());
+  }, 10_000);
 });
