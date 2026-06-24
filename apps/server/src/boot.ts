@@ -50,6 +50,10 @@ import {
   isHarnessContext,
   forceTestMode,
   assertTestModeSafe,
+  reconcileActivations,
+  listActiveProfileIds,
+  sweepOrphanedBoundClaims,
+  type Db,
 } from "@autobroker/tools";
 
 /** The Mastra instance type, inferred from createMastraInstance (no @mastra
@@ -71,6 +75,31 @@ export function staleDisposition(
 ): "restart" | "cancel" {
   if (updatedAtMs === undefined) return "cancel";
   return nowMs - updatedAtMs <= STALE_RESTART_MAX_AGE_MS ? "restart" : "cancel";
+}
+
+/**
+ * One-shot reboot reconcile + orphan sweep, delegated to the tools layer.
+ * Extracted from boot() so it is unit-testable with a fabricated recovery shape
+ * and an isolated Db handle (boot itself stays thin).
+ *
+ * 1. Build the genuinely-live runId set from recovery (every suspended/stale/
+ *    other run survives this reboot) and reconcile the activation registry
+ *    against it — registry entries for runs no longer live are pruned.
+ * 2. Derive the live profileIds from the reconciled registry and run the
+ *    conservative orphan sweep (releases ONLY non-live + dormant bound claims;
+ *    the conservatism lives inside sweepOrphanedBoundClaims).
+ * Returns the sweep result so the caller can LOG it — there is no silent sweep.
+ */
+export function sweepOrphansOnBoot(
+  recovery: BootRecoveryReport,
+  db: Db,
+): { releasedProfileIds: string[]; releasedRows: number } {
+  const liveRunIds = new Set<string>(
+    [...recovery.suspended, ...recovery.stale, ...recovery.other].map((r) => r.runId),
+  );
+  reconcileActivations(liveRunIds, db);
+  const liveProfileIds = new Set(listActiveProfileIds(db));
+  return sweepOrphanedBoundClaims({ liveProfileIds, db });
 }
 
 /** What boot() returns: the live instance + the recovery report. */
@@ -202,6 +231,22 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
         restarted,
         canceled,
         other: recovery.other.length,
+      }),
+    );
+  }
+
+  // (6) Reboot reconcile + orphan sweep — prune activation entries for dead runs
+  // and release dealership claims orphaned by a crashed/aborted pipeline (the
+  // exclusivity invariant must not pin a dealer to a dead profile forever). The
+  // sweep is conservative (live + recent profiles are never released) and the
+  // log line is its audit trail — no silent release.
+  const sweep = sweepOrphansOnBoot(recovery, getDb());
+  if (!opts.quiet) {
+    console.info(
+      JSON.stringify({
+        boot: "orphan_sweep",
+        releasedProfiles: sweep.releasedProfileIds.length,
+        releasedRows: sweep.releasedRows,
       }),
     );
   }
