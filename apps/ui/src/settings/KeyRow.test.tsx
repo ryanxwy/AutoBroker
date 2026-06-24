@@ -50,8 +50,16 @@ function mockFetch(opts: {
   }) as typeof fetch;
 }
 
-function flush(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 0));
+async function flush(): Promise<void> {
+  // Drain several microtask + macrotask cycles. The test-connection path is
+  // click → setState('testing') → await client.testKey() (async fetch) →
+  // setState('pass'/'fail'); a single setTimeout(0) can fire before that chain
+  // settles under full-suite concurrency, leaving data-state='testing' (the
+  // load-flake). Looping micro+macro drains covers the await + React re-render.
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  }
 }
 
 beforeEach(() => vi.restoreAllMocks());
