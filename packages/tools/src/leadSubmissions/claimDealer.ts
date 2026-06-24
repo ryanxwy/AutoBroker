@@ -31,7 +31,11 @@
  *                        'claimed'.
  *   releaseDealerClaims — flip THIS profile's 'bound' rows back to 'closed_out',
  *                        freeing those dealers for another profile. Returns the
- *                        row count. (Closeout / purge / reset call this.)
+ *                        row count. Called by the closeout skill AND profile
+ *                        close() — both keep the row, flipping it to 'closed_out'.
+ *                        (purge frees the dealers by ROW-DELETING the profile's
+ *                        profile_dealers rows; pipeline_reset frees them by wiping
+ *                        the whole DB — neither goes through this function.)
  *
  * SQLITE INVARIANT: raw better-sqlite3 handle only — no drizzle-orm operators.
  *

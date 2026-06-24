@@ -378,6 +378,71 @@ describe("dealership exclusivity — a dealer engaged by another search is dropp
 });
 
 // ---------------------------------------------------------------------------
+// case 1b — a 'closed_out' (the buyer's OWN, not held by another search) dealer is
+//           DROPPED as UNAVAILABLE, NOT mis-voiced/counted as an exclusivity conflict
+// ---------------------------------------------------------------------------
+
+describe("dealership exclusivity — an unavailable (own closed_out) dealer is dropped, not a conflict", () => {
+  it("a 'closed_out' dealer on THIS profile is dropped (no send) and NOT counted/voiced as a conflict", async () => {
+    seedProfile({ id: PROFILE_A, make: "Hyundai", model: "Tucson" });
+    seedDealer({ dealerId: DEALER_D, name: "Closed Motors", website: "https://closed.example.com" });
+    seedDealer({ dealerId: DEALER_OTHER, name: "A-Only Auto", website: "https://aonly.example.com" });
+
+    // D is the buyer's OWN closed_out row (NOT held by another search). OTHER is
+    // a fresh candidate A wants to submit to.
+    bindDealer({ profileId: PROFILE_A, dealerId: DEALER_D, status: "candidate" });
+    db.$client
+      .prepare("UPDATE profile_dealers SET status = 'closed_out' WHERE search_profile_id = ? AND dealer_id = ?")
+      .run(PROFILE_A, DEALER_D);
+    bindDealer({ profileId: PROFILE_A, dealerId: DEALER_OTHER, status: "candidate" });
+
+    const spy: SubmitSpy = { dealerIds: [] };
+    __setDealerWebLeadSubmitDepsForTests({
+      scoutForms: webFormScout(),
+      submitOne: submitSpy(spy),
+      sendAndRecord: sendNeverCalled,
+      harnessGenerate: harnessNeverCalled,
+    });
+
+    const wf = leadWorkflow();
+    const run = await wf.createRun({ runId: "excl-A-unavail-1" });
+    const result = await run.start({
+      inputData: { search_profile_id: PROFILE_A, target_listing_id: null, force_retry: false },
+    });
+    expect(result.status).toBe("suspended");
+
+    const final = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [DEALER_D, DEALER_OTHER] },
+    });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as {
+      submissions_successful: number;
+      excluded_conflict_count: number;
+      excluded_unavailable_count: number;
+      summary: string;
+    };
+
+    // Only OTHER submitted; D was dropped (closed_out is not a bind target).
+    expect(spy.dealerIds).toEqual([DEALER_OTHER]);
+    expect(out.submissions_successful).toBe(1);
+
+    // D is UNAVAILABLE, NOT a conflict: the conflict count/sentence excludes it.
+    expect(out.excluded_conflict_count).toBe(0);
+    expect(out.excluded_unavailable_count).toBe(1);
+    expect(out.summary).not.toContain("already engaged by another of your searches");
+    expect(out.summary).toContain("no longer available");
+    expect(out.summary).not.toMatch(/\$|budget/i);
+
+    // No lead row for D; D's own row stays closed_out.
+    const aRows = leadRowsFor(PROFILE_A);
+    expect(aRows.some((r) => r["dealer_id"] === DEALER_D)).toBe(false);
+    expect(dealerStatus(PROFILE_A, DEALER_D)).toBe("closed_out");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // case 2 — closeout releases B's claims so A can then claim D
 // ---------------------------------------------------------------------------
 

@@ -1495,23 +1495,35 @@ const recordConfirmStep = createStep({
       }
     });
 
-    // Voice the dealership-exclusivity exclusions: dealers approved on the card
-    // but DROPPED before any send because another of the buyer's searches already
-    // engages them. Conflicts name the holding vehicle(s); never a budget (inv #9).
+    // Voice the dealership-exclusivity exclusions, distinguishing the two drop
+    // kinds so the count + prose stay accurate:
+    //   - CONFLICT: another of the buyer's searches already holds the dealer
+    //     bound → "engaged by another of your searches" (names the holder's
+    //     vehicle(s); never a budget, inv #9).
+    //   - UNAVAILABLE: the buyer's OWN row is closed_out/absent (NOT held by
+    //     another search) → "no longer available". Folding these into the
+    //     conflict sentence would mis-voice a benign own-state drop as a
+    //     cross-search conflict, so they are counted + voiced separately.
     const excluded = state.excludedClaims ?? [];
+    const conflicts = excluded.filter((e) => e.kind === "conflict");
+    const unavailable = excluded.filter((e) => e.kind === "unavailable");
     const conflictVehicles = [
       ...new Set(
-        excluded
-          .filter((e) => e.kind === "conflict" && (e.held_by_vehicle ?? "").trim() !== "")
+        conflicts
+          .filter((e) => (e.held_by_vehicle ?? "").trim() !== "")
           .map((e) => e.held_by_vehicle!.trim()),
       ),
     ];
-    const excludedSentence =
-      excluded.length > 0
-        ? ` Excluded ${excluded.length} dealer(s) already engaged by another of your ` +
+    const conflictSentence =
+      conflicts.length > 0
+        ? ` Excluded ${conflicts.length} dealer(s) already engaged by another of your ` +
           "searches" +
           (conflictVehicles.length > 0 ? `: ${conflictVehicles.join(", ")}` : "") +
           "."
+        : "";
+    const unavailableSentence =
+      unavailable.length > 0
+        ? ` Skipped ${unavailable.length} dealer(s) no longer available for this search.`
         : "";
 
     const summary =
@@ -1521,7 +1533,8 @@ const recordConfirmStep = createStep({
       (state.skippedDuplicate > 0 ? `; ${state.skippedDuplicate} already-submitted skipped` : "") +
       (state.usGateRejected > 0 ? `; ${state.usGateRejected} non-US dealer(s) filtered` : "") +
       "." +
-      excludedSentence;
+      conflictSentence +
+      unavailableSentence;
 
     return {
       outcome: "scanned" as const,
@@ -1531,7 +1544,8 @@ const recordConfirmStep = createStep({
       captcha_manual_count: captchaManualCount,
       us_gate_rejected: state.usGateRejected,
       skipped_duplicate: state.skippedDuplicate,
-      excluded_conflict_count: excluded.length,
+      excluded_conflict_count: conflicts.length,
+      excluded_unavailable_count: unavailable.length,
       summary,
       search_profile_id: state.searchProfileId,
     };
