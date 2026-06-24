@@ -104,4 +104,12 @@ describe("TopBar — open Searches popover auto-refreshes on data.changed", () =
     expect(r.get("searches-row-active-1").textContent).toContain("Hyundai");
     r.unmount();
   });
+
+  it("exposes a persistent Portfolio nav link to /portfolio", () => {
+    const client = new ApiClient({ fetchImpl: mockFetch({ hasRow: false }) });
+    const r = render(<TopBar client={client} {...baseProps} />);
+    const link = r.get("topbar-portfolio");
+    expect(link.getAttribute("href")).toBe("/portfolio");
+    r.unmount();
+  });
 });

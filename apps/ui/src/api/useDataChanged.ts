@@ -97,8 +97,13 @@ export function invalidate(kinds: readonly string[], profileId: string | null = 
     if (set === undefined) continue;
     for (const entry of set) {
       if (seen.has(entry.refetch)) continue;
-      seen.add(entry.refetch);
-      if (scopeMatches(entry.scope, profileId)) entry.refetch();
+      // Only claim the dedup slot when this entry ACTUALLY fires: a refetcher
+      // registered under two kinds with DIFFERENT scopes must still fire via its
+      // matching entry even if a non-matching entry is encountered first.
+      if (scopeMatches(entry.scope, profileId)) {
+        seen.add(entry.refetch);
+        entry.refetch();
+      }
     }
   }
 }

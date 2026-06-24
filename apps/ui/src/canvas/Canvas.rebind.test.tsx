@@ -35,6 +35,8 @@ function mockFetch(): typeof fetch {
     const single = /\/api\/profiles\/([^/?]+)$/.exec(url);
     if (single !== null) {
       const id = single[1]!;
+      if (id === "p-gone") return json({ error: { code: "not_found", message: "gone" } }, 404);
+      if (id === "p-closed") return json({ ...P2, search_profile_id: "p-closed", status: "closed" });
       return json(id === "p2" ? P2 : P1);
     }
     if (url.includes("/api/profiles")) return json([P1, P2]); // list (newest-first)
@@ -83,6 +85,26 @@ describe("Canvas rebind to the explicit focused profile", () => {
     await flush();
     expect(r.get("canvas-vehicle").textContent).toContain("Camry"); // explicit P2
     expect(r.get("canvas-vehicle").textContent).not.toContain("Accord");
+    r.unmount();
+  });
+
+  it("falls back to data[0] when the pinned profile is CLOSED (stale pin must not strand)", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(
+      <Canvas client={client} onStartIntake={NOOP} profileId="p-closed" onEditProfile={NOOP} onDeleteProfile={NOOP} />,
+    );
+    await flush();
+    expect(r.get("canvas-vehicle").textContent).toContain("Accord"); // data[0] fallback
+    r.unmount();
+  });
+
+  it("falls back to data[0] when the pinned profile was DELETED (404)", async () => {
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(
+      <Canvas client={client} onStartIntake={NOOP} profileId="p-gone" onEditProfile={NOOP} onDeleteProfile={NOOP} />,
+    );
+    await flush();
+    expect(r.get("canvas-vehicle").textContent).toContain("Accord"); // data[0] fallback
     r.unmount();
   });
 });

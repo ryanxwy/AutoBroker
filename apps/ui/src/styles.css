@@ -2178,3 +2178,9 @@ p.muted, span.muted { font-size: 0.95em; }
 .needsyou-item-vehicle { font-weight: 600; color: var(--ink); }
 .needsyou-item-reason { color: var(--ink-soft); }
 .needsyou-item-go { margin-left: auto; color: var(--gate); font-weight: 700; }
+
+.topbar-portfolio-link {
+  margin-left: 12px; font-family: var(--chrome); font-size: 13px; font-weight: 600;
+  color: var(--ink-soft); padding: 4px 2px;
+}
+.topbar-portfolio-link:hover { color: var(--run); }

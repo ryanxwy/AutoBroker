@@ -19,7 +19,7 @@
 
 import { ApiClient } from "../api/client.js";
 import type { AppMode } from "../api/wire.js";
-import { navigate } from "../router.js";
+import { Link, navigate } from "../router.js";
 import { BrandMark, GearIcon } from "./icons.js";
 import { ModeToggle } from "./ModeToggle.js";
 import { Popover } from "./Popover.js";
@@ -78,6 +78,12 @@ export function TopBar({
               />
             )}
           </Popover>
+          {/* Persistent entry to the multi-profile portfolio board (the header
+              counts strip only appears with 2+ active searches; this link is
+              always reachable). */}
+          <Link to="/portfolio" className="topbar-portfolio-link" data-testid="topbar-portfolio">
+            Portfolio
+          </Link>
         </nav>
         {runActive && (
           <span className="running-pill" data-testid="running-pill">

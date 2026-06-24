@@ -361,11 +361,21 @@ export function Canvas({
     [profileId],
     profileId !== null,
   );
+  // Bind to the EXPLICIT focused profile only while it resolves AND is still
+  // active; a stale pin (the search was closed or hard-deleted out from under the
+  // session) must NOT strand the workbench on a gone/closed search — fall back to
+  // the newest-active data[0] (exactly the byte-identical single-active path).
+  const explicitStatus =
+    explicit.kind === "ok" ? (explicit.data["status"] as unknown) : undefined;
+  const explicitActive =
+    profileId !== null &&
+    explicit.kind === "ok" &&
+    (explicitStatus === "active" || explicitStatus === null || explicitStatus === undefined)
+      ? explicit.data
+      : null;
   const active: ProfileSnapshot | null =
-    profileId !== null
-      ? explicit.kind === "ok"
-        ? toSnapshot(explicit.data)
-        : null
+    explicitActive !== null
+      ? toSnapshot(explicitActive)
       : profiles.kind === "ok" && profiles.data.length > 0
         ? toSnapshot(profiles.data[0]!)
         : null;
