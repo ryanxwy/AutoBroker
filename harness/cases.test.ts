@@ -347,7 +347,7 @@ describe("case loader", () => {
 });
 
 describe("B2 batch grammar (max_seconds / pin_label / batch rows / suspend.targets)", () => {
-  it("loads the H3 narrative-prefix journey (pin verb + per-step budget + batch select-all + cross-check)", () => {
+  it("loads the H3 narrative-prefix journey (pin verb + per-step budget + auto-scan + cross-check)", () => {
     const c = loadCase(join(CASES, "dealer_pipeline.ui_prefix.toml"));
     expect(c.sessionOrigin).toBe("reuse_pinned");
     expect(c.steps.map((s) => s.id)).toEqual(["intake_create", "geosearch_run", "scan_run"]);
@@ -360,37 +360,24 @@ describe("B2 batch grammar (max_seconds / pin_label / batch rows / suspend.targe
     // PER-STEP budget: only the scan step carries 1800.
     expect(c.steps[0]!.maxSeconds).toBeNull();
     expect(scan.maxSeconds).toBe(1800);
-    // The batch resume: select-all shape (no rows; default approve).
-    const batch = scan.resume.find((r) => r.on === "batch_review")!;
-    expect(batch.action).toBe("accept");
-    expect(batch.rows).toBeNull();
-    expect(batch.defaultDecision).toBe("approve");
-    // The cross-step row-count check names the geosearch step.
-    expect(scan.batchRowsFrom).toBe("geosearch_run");
+    // The read-only scan auto-approves: NO batch_review resume, no cross-step check.
+    expect(scan.resume.find((r) => r.on === "batch_review")).toBeUndefined();
+    expect(scan.batchRowsFrom).toBeNull();
     // Both inventory tables anchored; cost_and_time REQUIRED (no optional key).
     const tables = scan.anchors.filter((a) => a.kind === "table_min_rows").map((a) => (a as { table: string }).table);
     expect(tables).toEqual(expect.arrayContaining(["inventory_listings", "dealer_inventory_sources"]));
     expect(scan.anchors.find((a) => a.kind === "cost_and_time")).toEqual({ kind: "cost_and_time" });
   });
 
-  it("loads the ui_button case (skills_popover launch; inferred_newest both ways)", () => {
+  it("loads the ui_button case (skills_popover launch; inferred_newest; no batch_review resume)", () => {
     const c = loadCase(join(CASES, "inventory_site_scan.ui_button.toml"));
     expect(c.sessionOrigin).toBe("fresh_unpinned");
     const scan = c.steps[2]!;
     expect(scan.launch).toBe("skills_popover");
     expect(scan.maxSeconds).toBe(1800);
     expect(scan.anchors.find((a) => a.kind === "resolution")).toMatchObject({ expect: "inferred_newest" });
-  });
-
-  it("loads the decline twin (declined terminal; both tables exact-0; browser absent)", () => {
-    const c = loadCase(join(CASES, "inventory_site_scan.ui_decline.toml"));
-    const scan = c.steps[2]!;
-    expect(scan.resume[0]).toMatchObject({ on: "batch_review", action: "decline", content: null });
-    expect(scan.anchors.find((a) => a.kind === "run_status")).toMatchObject({ expect: ["declined"] });
-    const tables = scan.anchors.filter((a) => a.kind === "table_min_rows");
-    expect(tables).toHaveLength(2);
-    for (const t of tables) expect(t).toMatchObject({ deltaMin: 0, exact: true, scope: "profile" });
-    expect(scan.anchors.find((a) => a.kind === "browser_activity")).toMatchObject({ expect: "absent" });
+    // The read-only scan auto-approves: no batch_review gate to resume.
+    expect(scan.resume.find((r) => r.on === "batch_review")).toBeUndefined();
   });
 
   it("parses [[steps.resume.rows]] entries + default_decision into the typed resume", () => {

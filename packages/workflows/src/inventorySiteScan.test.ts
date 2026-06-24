@@ -14,12 +14,9 @@
  *                            distance (the stored dealers.distance_miles is
  *                            deliberately wrong), every skip reason,
  *                            max_targets truncation, dealer_ids bypass.
- *   - batch_review payload → exact spec_inline shape (skipped rows carry NO
- *                            website), <8KB at 40 realistic dealers.
- *   - approve subset       → only the approved dealers reach the capture
- *                            boundary and the DB.
- *   - decline              → terminal declined, BOTH inventory tables Δ=0,
- *                            capture boundary never invoked.
+ *   - auto-approve         → read-only scan runs with NO suspend; every
+ *                            in-radius target reaches the capture boundary and
+ *                            the DB; the run reaches its normal terminal.
  *   - approved_by          → audit metadata only; never branches control flow.
  *   - resolver STOPs       → 0 / 2+ / pinned / inferred-newest branches.
  *   - filter ladder        → template-hit / DOM-hit / fallback / blocked
@@ -311,15 +308,6 @@ async function startRun(runId: string, over: StartOverrides = {}) {
   return { run, result };
 }
 
-/** The batchReview suspend payload off a suspended WorkflowResult. */
-function suspendPayloadOf(result: unknown): Record<string, unknown> {
-  const steps = (result as { steps?: Record<string, { suspendPayload?: Record<string, unknown> }> })
-    .steps;
-  const payload = steps?.["batchReview"]?.suspendPayload;
-  expect(payload).toBeDefined();
-  return payload!;
-}
-
 function errorMessageOf(result: unknown): string {
   const err = (result as { error?: unknown }).error;
   if (err instanceof Error) return err.message;
@@ -471,68 +459,10 @@ describe("inventory_site_scan — typed STOPs", () => {
 });
 
 // ---------------------------------------------------------------------------
-// the batch_review suspend payload (the spec_inline contract)
+// auto-approve — read-only scan runs with NO suspend
 // ---------------------------------------------------------------------------
 
-describe("inventory_site_scan — batch_review suspend payload", () => {
-  it("suspends with the exact payload shape; skipped rows carry NO website", async () => {
-    seedProfile();
-    seedDealer({ id: "d-a", name: "Tustin Hyundai", lat: 33.7, lng: -117.8 });
-    seedDealer({ id: "d-skip", name: "No Site Motors", website: null });
-    __setInventoryScanDepsForTests({
-      harnessGenerate: harnessNeverCalled,
-      scanDealers: scanNeverCalled,
-    });
-
-    const { result } = await startRun("scan-payload-1");
-    expect(result.status).toBe("suspended");
-    const payload = suspendPayloadOf(result);
-
-    expect(payload["kind"]).toBe("batch_review");
-    expect(payload["question"]).toBe("Scan these dealers' inventory now?");
-    expect(payload["total_targets"]).toBe(1);
-    expect(payload["total_in_radius"]).toBe(1);
-    expect(payload["targets"]).toEqual([
-      { dealer_id: "d-a", name: "Tustin Hyundai", website: "https://www.d-a.com" },
-    ]);
-    expect(payload["skipped"]).toEqual([
-      { dealer_id: "d-skip", name: "No Site Motors", reason: "no_website" },
-    ]);
-    // the skipped row deliberately has no website key at all
-    const skippedRow = (payload["skipped"] as Record<string, unknown>[])[0]!;
-    expect("website" in skippedRow).toBe(false);
-  });
-
-  it("stays under 8KB serialized at 40 realistic dealers", async () => {
-    seedProfile();
-    for (let i = 0; i < 40; i += 1) {
-      const n = String(i).padStart(2, "0");
-      seedDealer({
-        id: `dlr_${"a1b2c3d4e5f6".slice(0, 12)}${n}`,
-        name: `Capistrano Valley Hyundai of Mission Viejo ${n}`,
-        website: `https://www.capistranovalleyhyundai-missionviejo-${n}.com/new-inventory/index.htm`,
-        lat: 33.5 + i * 0.01,
-        lng: -117.7 - i * 0.01,
-      });
-    }
-    __setInventoryScanDepsForTests({
-      harnessGenerate: harnessNeverCalled,
-      scanDealers: scanNeverCalled,
-    });
-
-    const { result } = await startRun("scan-payload-8kb");
-    expect(result.status).toBe("suspended");
-    const payload = suspendPayloadOf(result);
-    expect((payload["targets"] as unknown[]).length).toBe(40);
-    expect(JSON.stringify(payload).length).toBeLessThan(8 * 1024);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// approve subset / decline / approved_by
-// ---------------------------------------------------------------------------
-
-describe("inventory_site_scan — approve subset and decline", () => {
+describe("inventory_site_scan — auto-approve (no suspend)", () => {
   function seedThree(): void {
     seedProfile();
     seedDealer({ id: "d-a", name: "Dealer A", lat: 33.7, lng: -117.8 });
@@ -540,7 +470,7 @@ describe("inventory_site_scan — approve subset and decline", () => {
     seedDealer({ id: "d-c", name: "Dealer C", lat: 34.05, lng: -118.25 });
   }
 
-  it("approve a subset → ONLY the approved dealers reach the capture boundary and the DB", async () => {
+  it("NO suspend fires → ALL in-radius dealers reach the capture boundary and the DB", async () => {
     seedThree();
     const record = { calls: [] as ScanDealersArgs[] };
     __setInventoryScanDepsForTests({
@@ -548,52 +478,27 @@ describe("inventory_site_scan — approve subset and decline", () => {
       scanDealers: scanStub(record, (args) => args.targets.map((t) => scannedOutcome(t))),
     });
 
-    const { run, result } = await startRun("scan-approve-1");
-    expect(result.status).toBe("suspended");
-    const final = await run.resume({
-      step: "batchReview",
-      resumeData: { action: "approve", approved_dealer_ids: ["d-a", "d-b"] },
-    });
-    expect(final.status).toBe("success");
-    if (final.status !== "success") return;
+    const { result } = await startRun("scan-autoapprove-1");
+    // The read-only scan never gates: start drives straight to the terminal.
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
 
     expect(record.calls).toHaveLength(1);
-    expect(record.calls[0]!.targets.map((t) => t.dealer_id)).toEqual(["d-a", "d-b"]);
+    expect(record.calls[0]!.targets.map((t) => t.dealer_id).sort()).toEqual(["d-a", "d-b", "d-c"]);
 
-    const out = final.result as Record<string, unknown>;
+    const out = result.result as Record<string, unknown>;
     expect(out["outcome"]).toBe("scanned");
     expect(out["resolution"]).toBe("inferred_newest");
-    expect(out["targetsApproved"]).toBe(2);
-    expect(out["dealersScanned"]).toBe(2);
-    expect(out["listingsWritten"]).toBe(2); // one listing per scanned dealer
+    expect(out["targetsApproved"]).toBe(3);
+    expect(out["dealersScanned"]).toBe(3);
+    expect(out["listingsWritten"]).toBe(3); // one listing per scanned dealer
 
-    expect(rowCount("dealer_inventory_sources")).toBe(2); // d-c never touched
-    expect(rowCount("inventory_listings")).toBe(2);
+    expect(rowCount("dealer_inventory_sources")).toBe(3);
+    expect(rowCount("inventory_listings")).toBe(3);
     const dealerIds = db.$client
       .prepare("SELECT DISTINCT dealer_id FROM dealer_inventory_sources ORDER BY dealer_id")
       .all() as Array<{ dealer_id: string }>;
-    expect(dealerIds.map((r) => r.dealer_id)).toEqual(["d-a", "d-b"]);
-  });
-
-  it("decline → terminal declined, BOTH inventory tables Δ=0, capture never invoked", async () => {
-    seedThree();
-    __setInventoryScanDepsForTests({
-      harnessGenerate: harnessNeverCalled,
-      scanDealers: scanNeverCalled,
-    });
-
-    const { run, result } = await startRun("scan-decline-1");
-    expect(result.status).toBe("suspended");
-    const final = await run.resume({
-      step: "batchReview",
-      resumeData: { action: "decline" },
-    });
-    expect(final.status).toBe("success");
-    if (final.status !== "success") return;
-    expect((final.result as { outcome: string }).outcome).toBe("declined");
-
-    expect(rowCount("dealer_inventory_sources")).toBe(0);
-    expect(rowCount("inventory_listings")).toBe(0);
+    expect(dealerIds.map((r) => r.dealer_id)).toEqual(["d-a", "d-b", "d-c"]);
   });
 
   it("approved_by is audit metadata only — control flow and writes are identical with and without it", async () => {
@@ -606,18 +511,13 @@ describe("inventory_site_scan — approve subset and decline", () => {
         harnessGenerate: harnessStub([listing()]),
         scanDealers: scanStub(record, (args) => args.targets.map((t) => scannedOutcome(t))),
       });
-      const { run, result } = await startRun(`scan-ab-${i}`, {
+      const { result } = await startRun(`scan-ab-${i}`, {
         search_profile_id: `prof-ab-${i}`,
         approved_by: approvedBy,
       });
-      expect(result.status).toBe("suspended");
-      const final = await run.resume({
-        step: "batchReview",
-        resumeData: { action: "approve", approved_dealer_ids: [`d-ab-${i}`] },
-      });
-      expect(final.status).toBe("success");
-      if (final.status !== "success") continue;
-      const { searchProfileId, summary, ...counts } = final.result as Record<string, unknown>;
+      expect(result.status).toBe("success");
+      if (result.status !== "success") continue;
+      const { searchProfileId, summary, ...counts } = result.result as Record<string, unknown>;
       void searchProfileId;
       void summary;
       outcomes.push(counts);
@@ -641,15 +541,10 @@ describe("inventory_site_scan — resolution provenance", () => {
       scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
     });
 
-    const { run, result } = await startRun("scan-pinned-1", { search_profile_id: "prof-1" });
-    expect(result.status).toBe("suspended");
-    const final = await run.resume({
-      step: "batchReview",
-      resumeData: { action: "approve", approved_dealer_ids: ["d-a"] },
-    });
-    expect(final.status).toBe("success");
-    if (final.status !== "success") return;
-    expect((final.result as { resolution: string }).resolution).toBe("pinned");
+    const { result } = await startRun("scan-pinned-1", { search_profile_id: "prof-1" });
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect((result.result as { resolution: string }).resolution).toBe("pinned");
   });
 });
 
@@ -1005,12 +900,10 @@ describe("inventory_site_scan — extract phase", () => {
   }
 
   async function runApproved(runId: string) {
-    const { run, result } = await startRun(runId);
-    expect(result.status).toBe("suspended");
-    return run.resume({
-      step: "batchReview",
-      resumeData: { action: "approve", approved_dealer_ids: ["d-a"] },
-    });
+    // The read-only scan auto-approves every in-radius target and never
+    // suspends, so start drives straight to the terminal result.
+    const { result } = await startRun(runId);
+    return result;
   }
 
   it("per-row Zod rejection: invalid rows dropped + counted, valid rows persist", async () => {
@@ -1217,18 +1110,13 @@ describe("inventory_site_scan — persist discipline", () => {
       persistScan: persistSpy,
     });
 
-    const { run, result } = await startRun("scan-persist-1");
-    expect(result.status).toBe("suspended");
-    const final = await run.resume({
-      step: "batchReview",
-      resumeData: { action: "approve", approved_dealer_ids: ["d-a", "d-b"] },
-    });
-    expect(final.status).toBe("success");
-    if (final.status !== "success") return;
+    const { result } = await startRun("scan-persist-1");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
 
     expect(persistCalls).toBe(1);
     expect(order).toEqual(["capture", "persist"]);
-    const out = final.result as Record<string, unknown>;
+    const out = result.result as Record<string, unknown>;
     expect(out["dealersScanned"]).toBe(1);
     expect(out["dealersBlocked"]).toBe(1);
     // the blocked dealer got a source row (status mark) but zero listings

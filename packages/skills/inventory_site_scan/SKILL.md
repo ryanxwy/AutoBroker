@@ -3,9 +3,10 @@
 Scan the profile's approved dealer rooftops for matching new-car inventory.
 Skill #3 (second browser skill), phase 2, risk class `local_write` (writes are
 local product rows only — `dealer_inventory_sources` + `inventory_listings`;
-no external mutation). One flat linear Mastra workflow, 6 named steps, **one
-suspend** — the `batch_review` approval card that gates every dealer-site
-contact behind an explicit per-rooftop human decision.
+no external mutation). One flat linear Mastra workflow, 6 named steps, **no
+human gate** — the scan is read-only (it browses dealer SRPs; it never sends or
+submits), so it auto-scans every in-radius rooftop with no per-dealer approval
+(owner directive 2026-06-23).
 
 ## Phases
 
@@ -22,11 +23,11 @@ The runtime flow, grounded in the 6-step workflow
    malformed-URL and distance-unknown rows are skipped *and counted*;
    `max_targets` is an optional emergency valve, not a default truncation. No
    targets → typed STOP.
-3. **Batch review (suspend)** — the only gate: an approval card listing every
-   target rooftop with per-row Approve / Skip, Select-all as an affordance over
-   explicit ids, and Decline as the stop verb. Approved ids must be a subset of
-   the shown targets (enforced server-side). **Decline = zero navigation, zero
-   writes, terminal Cancelled.**
+3. **Auto-approve targets (no gate)** — the scan is read-only, so there is no
+   human-approval suspend: every in-radius target from step 2 is auto-approved
+   and the run proceeds straight to scanning. (The shared `batch_review` gate
+   still guards the irreversible send skills + `inventory_link_scan`; only this
+   read-only scan skips it.)
 4. **Scan dealers (pure capture, zero writes)** — one isolated browser per
    rooftop, up to 4 concurrent, launch-staggered; per-host nav queue keeps the
    politeness interval even across same-host rooftops. Per dealer: SRP
@@ -51,10 +52,9 @@ The runtime flow, grounded in the 6-step workflow
 
 ## Guardrails
 
-- **Gate before any site contact** — the batch_review suspend renders before
-  the first navigation; decline produces exactly zero navigations and zero
-  writes (the harness decline case asserts both tables Δ=0 and
-  browser-activity absent).
+- **No external mutation, gate or not** — the scan is read-only, so it ships
+  with no human-approval gate; safety comes from structure, not a confirm: the
+  scan path can reach no mutation face at all (next bullet).
 - **Pure-capture core** — steps 4–5 hold no DB handle and no gate Approver;
   the L2 gate wraps only mutation faces (`submitForm` et al.), so a mutation is
   structurally uncallable from the scan path. A scan run must produce zero
@@ -100,6 +100,5 @@ In-repo paths only:
 - Three-branch profile resolver: `packages/tools/src/profile/resolver.ts`
 - Listing schema (11-field flat, explicit-null): `packages/core/src/schema/inventoryListing.ts`
 - Registry entry: `packages/skills/src/registry.ts`
-- Harness cases: `harness/cases/inventory_site_scan.ui_decline.toml`,
-  `harness/cases/inventory_site_scan.ui_button.toml`,
+- Harness cases: `harness/cases/inventory_site_scan.ui_button.toml`,
   `harness/cases/dealer_pipeline.ui_prefix.toml`

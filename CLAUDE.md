@@ -192,6 +192,30 @@ the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
     backup, JS → snapshot, native-vision → OCR) → auto-allow but record a trace
     span. Every fallback must be voiced; the gate renders before the prose.
 
+## Product behavior rules (owner-directed, 2026-06-23)
+
+These are durable product rules, distinct from the safety invariants above:
+
+1. **Intake never assumes a required vehicle field.** `model`, `trim`, and `year`
+   (all required) must come from the buyer explicitly. Freeform prefill seeds only
+   fields the buyer actually stated (nulls are dropped, never a fabricated default —
+   `intakeContracts.ts` `IntakePrefillSchema`); the form blocks submit until every
+   required field is filled (`SchemaForm`/`formModel`). When a field is missing,
+   ASK and WAIT — do not guess a trim/year/model to be helpful. (PII fields
+   email/phone/budget stay excluded from prefill — inv #9.)
+2. **`inventory_site_scan` scans all in-radius dealers by default — no per-dealer
+   approval gate.** It is read-only (browses dealer SRPs; never sends/submits), so
+   it has no human-approval floor: it auto-scans the full in-radius target set. The
+   `batch_review` suspend/gate is removed for site_scan ONLY — the SHARED
+   `BatchReviewCard` / `batchReviewResume` seam still gates the three irreversible
+   send skills (`dealer_web_lead_submit`, `negotiation_followup`,
+   `dealer_closeout_email`) and `inventory_link_scan`; never weaken those.
+3. **Chat history stays in one session unless the user changes it on purpose.** The
+   chat rail keeps every turn of a session (`streamedSessionRef`, `App.tsx`); only a
+   deliberate user action — starting a NEW search (intake forks a new session) or
+   explicitly switching sessions — resets it. A non-intake skill run, profile
+   hard-delete, and `pipeline_reset` all KEEP the rail history.
+
 ## One skill, one commit
 
 Build skills one at a time in dependency × risk order, revised 2026-06-03 to
