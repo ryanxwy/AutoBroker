@@ -180,6 +180,107 @@ describe("claimDealer: idempotent re-claim", () => {
 });
 
 // ===========================================================================
+// claimDealer — RETRY a previously-excluded dealer once the holder released it
+// ===========================================================================
+
+describe("claimDealer: re-claim an excluded_conflict row after the holder releases", () => {
+  it("a row that lost (excluded_conflict) becomes claimable once the holder closes out", () => {
+    seedProfile({ id: "prof-A" });
+    seedProfile({ id: "prof-B" });
+    seedProfileDealer("prof-A", DEALER, "candidate");
+    seedProfileDealer("prof-B", DEALER, "candidate");
+
+    // A wins, B loses (B's row → excluded_conflict).
+    expect(claimDealer({ searchProfileId: "prof-A", dealerId: DEALER, db }).kind).toBe("claimed");
+    expect(claimDealer({ searchProfileId: "prof-B", dealerId: DEALER, db }).kind).toBe("conflict");
+    expect(readStatus("prof-B", DEALER).status).toBe("excluded_conflict");
+
+    // The holder releases the dealer.
+    expect(releaseDealerClaims({ searchProfileId: "prof-A", db })).toBe(1);
+    expect(readStatus("prof-A", DEALER).status).toBe("closed_out");
+
+    // B retries: the dealer is now free, so the excluded_conflict row re-binds.
+    const retry = claimDealer({ searchProfileId: "prof-B", dealerId: DEALER, db });
+    expect(retry.kind).toBe("claimed");
+    expect(readStatus("prof-B", DEALER).status).toBe("bound");
+  });
+});
+
+describe("claimDealer: re-claim an excluded_conflict row while the holder STILL holds it", () => {
+  it("returns conflict again (NOT claimed); the loser row stays excluded_conflict", () => {
+    seedProfile({ id: "prof-A", make: "Honda", model: "Accord", trim: "EX-L", year: 2026 });
+    seedProfile({ id: "prof-B" });
+    seedProfileDealer("prof-A", DEALER, "candidate");
+    seedProfileDealer("prof-B", DEALER, "candidate");
+
+    expect(claimDealer({ searchProfileId: "prof-A", dealerId: DEALER, db }).kind).toBe("claimed");
+    expect(claimDealer({ searchProfileId: "prof-B", dealerId: DEALER, db }).kind).toBe("conflict");
+    expect(readStatus("prof-B", DEALER).status).toBe("excluded_conflict");
+
+    // B retries while A still holds the dealer bound → conflict again, never claimed.
+    const retry = claimDealer({ searchProfileId: "prof-B", dealerId: DEALER, db });
+    expect(retry.kind).toBe("conflict");
+    if (retry.kind !== "conflict") throw new Error("expected conflict");
+    expect(retry.heldByProfileId).toBe("prof-A");
+    expect(retry.heldByVehicle).toContain("Accord");
+    // Row stays excluded_conflict; A still bound.
+    expect(readStatus("prof-B", DEALER).status).toBe("excluded_conflict");
+    expect(readStatus("prof-A", DEALER).status).toBe("bound");
+  });
+});
+
+// ===========================================================================
+// claimDealer — the fail-open guard: 0-rows-affected must NEVER be 'claimed'
+// ===========================================================================
+
+describe("claimDealer: a 'closed_out' row is NOT silently re-claimed", () => {
+  it("returns unavailable (closed_out), never claimed; the row is untouched", () => {
+    seedProfile({ id: "prof-A" });
+    seedProfileDealer("prof-A", DEALER, "closed_out");
+
+    const res = claimDealer({ searchProfileId: "prof-A", dealerId: DEALER, db });
+    expect(res.kind).not.toBe("claimed");
+    expect(res.kind).toBe("unavailable");
+    if (res.kind !== "unavailable") throw new Error("expected unavailable");
+    expect(res.reason).toBe("closed_out");
+    // The row is left as-is — no false bind.
+    expect(readStatus("prof-A", DEALER).status).toBe("closed_out");
+  });
+
+  it("a (profile,dealer) with NO profile_dealers row returns unavailable (no_row), never claimed", () => {
+    seedProfile({ id: "prof-A" });
+    // No seedProfileDealer — there is no row for (prof-A, DEALER).
+
+    const res = claimDealer({ searchProfileId: "prof-A", dealerId: DEALER, db });
+    expect(res.kind).not.toBe("claimed");
+    expect(res.kind).toBe("unavailable");
+    if (res.kind !== "unavailable") throw new Error("expected unavailable");
+    expect(res.reason).toBe("no_row");
+    // No row was created.
+    expect(readStatus("prof-A", DEALER)).toBeUndefined();
+  });
+
+  it("a 'closed_out' row whose dealer is held by ANOTHER profile returns conflict, never claimed", () => {
+    // Even when this profile's own row is closed_out, if the dealer is held by
+    // someone else the safe answer is conflict (the dealer is not free).
+    seedProfile({ id: "prof-A", make: "Honda", model: "Accord", trim: "EX-L", year: 2026 });
+    seedProfile({ id: "prof-B" });
+    seedProfileDealer("prof-A", DEALER, "candidate");
+    seedProfileDealer("prof-B", DEALER, "closed_out");
+
+    expect(claimDealer({ searchProfileId: "prof-A", dealerId: DEALER, db }).kind).toBe("claimed");
+
+    const res = claimDealer({ searchProfileId: "prof-B", dealerId: DEALER, db });
+    expect(res.kind).not.toBe("claimed");
+    expect(res.kind).toBe("conflict");
+    if (res.kind !== "conflict") throw new Error("expected conflict");
+    expect(res.heldByProfileId).toBe("prof-A");
+    // B's row is marked excluded_conflict to record the loss.
+    expect(readStatus("prof-B", DEALER).status).toBe("excluded_conflict");
+  });
+});
+
+// ===========================================================================
 // releaseDealerClaims — bound → closed_out, frees the dealer
 // ===========================================================================
 
