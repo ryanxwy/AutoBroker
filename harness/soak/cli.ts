@@ -318,12 +318,14 @@ function cmdFreeze(args: SoakArgs): number {
 // mp — the LIVE escalating-chaos multi-profile drive (integration, structural)
 // ---------------------------------------------------------------------------
 
-/** The fixed two different-brand profiles + ONE shared dealer the mp lane drives
- *  (the headline same-segment different-brand collision). Budgets feed
- *  budget_no_leak only — never printed (inv #9). */
+/** The fixed three different-brand profiles + ONE shared dealer the mp lane drives
+ *  (the headline same-segment different-brand collision — a 3-way race for one
+ *  rooftop, so exactly one binds and TWO take the voiced-exclusion path). Budgets
+ *  feed budget_no_leak only — never printed (inv #9). */
 const MP_PROFILES = [
   { id: "mp-accord", year: 2026, make: "Honda", model: "Accord", trim: "EX-L", budgetMax: 40000 },
   { id: "mp-camry", year: 2026, make: "Toyota", model: "Camry", trim: "XSE", budgetMax: 42000 },
+  { id: "mp-mazda6", year: 2026, make: "Mazda", model: "Mazda6", trim: "Signature", budgetMax: 38000 },
 ];
 const MP_DEALER = {
   dealerKey: "mp-collision-rooftop",

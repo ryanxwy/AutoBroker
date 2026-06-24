@@ -151,7 +151,7 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
  * PROMPT-phase0-rest closes this; a multi-process move needs a storage-level
  * run-ownership lock first.
  */
-function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler | undefined {
+export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler | undefined {
   if (process.env.AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") return undefined;
   // The DURABLE ProfileId->runId registry (phase0-rest), adapted to the scheduler's
   // ActivationRegistry seam. SkillRunService already records/clears these entries on

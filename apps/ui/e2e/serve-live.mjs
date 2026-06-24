@@ -41,7 +41,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildServer } from "@autobroker/server";
+import { buildServer, startPortfolioScheduler } from "@autobroker/server";
 import { openDb, seedFakeMailbox } from "@autobroker/tools";
 import {
   __setHarnessModelWrapper,
@@ -497,6 +497,15 @@ resetRuntimeGlueForTests();
 __setIntakeDepsForTests({ resolveLocation: faultingResolveLocationStub });
 
 const built = await buildServer({ quiet: true });
+
+// Multi-profile fan-out (e2e-loop step 3.9): the REAL bounded hot-set
+// PortfolioScheduler. buildServer does NOT mount it (only the production main()
+// does), so the live host opts in here. Internally gated on
+// AUTOBROKER_PORTFOLIO_SCHEDULER === "1" — a no-op (single-profile path
+// byte-identical) unless the multi-profile lane sets it. Set
+// MAX_CONCURRENT_ACTIVE_PROFILES < the active count to PROVE the cap (some
+// profiles deferred; a suspended run frees its slot).
+startPortfolioScheduler(built.skillRuns);
 
 built.app.post("/__e2e/inject_replies", async (req, reply) => {
   const body = req.body ?? {};
