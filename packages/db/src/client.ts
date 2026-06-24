@@ -52,11 +52,7 @@ export function openDb(dbPath: string = resolveDbPath()) {
 
   // Mandated PRAGMAs.
   sqlite.pragma("journal_mode = WAL");
-  // NOT 0 — legacy's value caused SQLITE_BUSY. Generous (15s) so a brief write
-  // contention window — e.g. the live server holding a write while a concurrent
-  // multi-profile pipeline writes — backs off and retries rather than failing.
-  // (WAL already lets readers run concurrently with the single writer.)
-  sqlite.pragma("busy_timeout = 15000");
+  sqlite.pragma("busy_timeout = 5000"); // NOT 0 — legacy's value caused SQLITE_BUSY.
   // Matches the legacy oracle, which enforces FKs on every connection. SQLite
   // FK enforcement is write-time only: the cold-copied parity DB carries a few
   // pre-existing orphan message_analysis rows (foreign_key_check, 2026-06-10)
