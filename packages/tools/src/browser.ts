@@ -42,7 +42,18 @@ import {
   type Approver,
   type GateRequest,
 } from "./gate/index.js";
+import { hostLimiter } from "./limiter/index.js";
 import { isBuyerMode } from "./realSend.js";
+
+// The per-host politeness math + robots parsing now live in the Playwright-free
+// limiter package (so the Gmail/LLM paths can share the LimiterRegistry without
+// pulling in Playwright). Re-exported here so this module's public surface and
+// its tests are unchanged.
+export {
+  POLITENESS_JITTER_MS,
+  politenessDelayMs,
+  parseRobotsDisallow,
+} from "./limiter/robots.js";
 
 // ---------------------------------------------------------------------------
 // Emitter — the voiced-trace surface. The app layer adapts this onto the
@@ -149,64 +160,9 @@ export function computeBackoffMs(
   return rand() * Math.min(capMs, baseMs * 2 ** attempt);
 }
 
-/** Jitter amplitude for the per-host throttle (±0.5 s around the min interval). */
-export const POLITENESS_JITTER_MS = 500;
-
-/**
- * How long to wait before hitting the same host again: the min interval plus
- * ±0.5 s jitter, minus the time already elapsed; never negative.
- */
-export function politenessDelayMs(
-  lastRequestAtMs: number,
-  nowMs: number,
-  minIntervalMs: number,
-  rand: () => number = Math.random,
-): number {
-  const jitterMs = (rand() * 2 - 1) * POLITENESS_JITTER_MS;
-  const waitMs = minIntervalMs + jitterMs - (nowMs - lastRequestAtMs);
-  return Math.max(0, waitMs);
-}
-
-/**
- * Minimal robots.txt Disallow check: only the `User-agent: *` group(s) are
- * considered (specific-agent groups are ignored), only `Disallow` lines count,
- * the longest matching prefix decides, and an empty `Disallow:` value means
- * allow. Rule paths are matched literally (no `*`/`$` wildcard expansion) —
- * this is an advisory, RECORDED-ONLY signal, never a navigation blocker.
- * Fetch failures are the caller's concern (no robots reachable = no signal).
- */
-export function parseRobotsDisallow(robotsTxt: string, path: string): boolean {
-  let inAgentLines = false; // currently reading a group's User-agent header lines
-  let starGroup = false; // the group being read applies to '*'
-  const disallows: string[] = [];
-
-  for (const rawLine of robotsTxt.split(/\r?\n/)) {
-    const line = rawLine.replace(/#.*$/, "").trim();
-    if (line === "") continue;
-    const sep = line.indexOf(":");
-    if (sep === -1) continue;
-    const field = line.slice(0, sep).trim().toLowerCase();
-    const value = line.slice(sep + 1).trim();
-    if (field === "user-agent") {
-      // A User-agent line after rule lines starts a NEW group; consecutive
-      // User-agent lines extend the same group.
-      if (!inAgentLines) starGroup = false;
-      inAgentLines = true;
-      if (value === "*") starGroup = true;
-    } else {
-      inAgentLines = false;
-      if (field === "disallow" && starGroup && value !== "") {
-        disallows.push(value);
-      }
-    }
-  }
-
-  let longest = "";
-  for (const rule of disallows) {
-    if (path.startsWith(rule) && rule.length > longest.length) longest = rule;
-  }
-  return longest.length > 0;
-}
+// (POLITENESS_JITTER_MS, politenessDelayMs, parseRobotsDisallow now live in
+// ./limiter/robots.ts and are re-exported above; the per-host throttle itself is
+// the process-global hostLimiter — see navigate().)
 
 // ---------------------------------------------------------------------------
 // Pure read helpers (unit-tested).
@@ -308,13 +264,13 @@ export interface BrowserSession {
 // Tunables.
 // ---------------------------------------------------------------------------
 
-const MIN_HOST_INTERVAL_MS = 2_000;
+// Per-host min-interval throttling moved to the process-global hostLimiter
+// (shared across profiles); its default per-host interval is 2_000ms.
 const BACKOFF_BASE_MS = 1_000;
 const BACKOFF_CAP_MS = 8_000;
 const MAX_BLOCK_RETRIES = 2; // retries AFTER the first 429/403 response
 const NAV_TIMEOUT_MS = 15_000;
 const NETWORK_IDLE_TIMEOUT_MS = 4_000;
-const ROBOTS_FETCH_TIMEOUT_MS = 5_000;
 const MAX_LAZY_SCROLL_PASSES = 8;
 const LAZY_SCROLL_PAUSE_MS = 250;
 
@@ -609,12 +565,8 @@ interface SessionDeps {
 function makeSession(deps: SessionDeps): BrowserSession {
   const { runId, context, emitter, open, tracesDir } = deps;
 
-  // Both maps live exactly as long as one session (= one run over a handful of
-  // dealer hosts), so they are never evicted.
-  /** Last navigation timestamp per host — drives the min-interval throttle. */
-  const lastRequestByHost = new Map<string, number>();
-  /** robots.txt body per origin (null = fetch failed/non-OK → no signal). */
-  const robotsByOrigin = new Map<string, string | null>();
+  // Per-host throttle state + robots cache are now PROCESS-GLOBAL (the
+  // hostLimiter), shared across every session/profile, not per-session maps.
   /** Latched by the async page guard on a denylist hit; every later session
    *  call rethrows it — the session is dead, it never proceeds. */
   let breach: BrowserIsolationError | null = null;
@@ -653,27 +605,6 @@ function makeSession(deps: SessionDeps): BrowserSession {
     guard(page.url()); // creation check
     assertNotBreached();
     return page;
-  }
-
-  /** Fetch + cache robots.txt once per origin per session, then answer the
-   *  Disallow question for this path. Any fetch problem = no signal (false) —
-   *  the robots check NEVER blocks or delays navigation beyond its own fetch. */
-  async function robotsDisallowedFor(url: URL): Promise<boolean> {
-    const origin = url.origin;
-    if (!robotsByOrigin.has(origin)) {
-      let body: string | null = null;
-      try {
-        const resp = await fetch(`${origin}/robots.txt`, {
-          signal: AbortSignal.timeout(ROBOTS_FETCH_TIMEOUT_MS),
-        });
-        body = resp.ok ? await resp.text() : null;
-      } catch {
-        body = null;
-      }
-      robotsByOrigin.set(origin, body);
-    }
-    const robots = robotsByOrigin.get(origin) ?? null;
-    return robots === null ? false : parseRobotsDisallow(robots, url.pathname + url.search);
   }
 
   /** Best-effort dismissal of consent banners by clicking ACCEPT-style buttons.
@@ -724,28 +655,34 @@ function makeSession(deps: SessionDeps): BrowserSession {
 
     let robotsDisallowed = false;
     if (httpUrl !== null) {
-      const last = lastRequestByHost.get(httpUrl.hostname);
-      if (last !== undefined) {
-        const waitMs = politenessDelayMs(last, Date.now(), MIN_HOST_INTERVAL_MS);
-        if (waitMs > 0) await sleep(waitMs);
-      }
-      lastRequestByHost.set(httpUrl.hostname, Date.now());
-      robotsDisallowed = await robotsDisallowedFor(httpUrl);
+      // robots (recorded-only Disallow) + crawl-delay come from the
+      // process-global hostLimiter; this also warms the per-host spacing/cache.
+      robotsDisallowed = await hostLimiter.robotsDisallowed(httpUrl);
     }
 
-    let resp: Response | null = null;
-    for (let attempt = 0; ; attempt++) {
-      resp = await page.goto(url, {
-        timeout: NAV_TIMEOUT_MS,
-        waitUntil: "domcontentloaded",
-      });
-      const status = resp?.status();
-      if ((status === 429 || status === 403) && attempt < MAX_BLOCK_RETRIES) {
-        await sleep(computeBackoffMs(attempt, BACKOFF_BASE_MS, BACKOFF_CAP_MS));
-        continue;
+    // The navigation runs UNDER the process-global per-host politeness:
+    // min-interval (or robots crawl-delay) spacing + concurrency ≤ 2, SHARED
+    // across every profile/session. The 429/403 backoff-retry is unchanged.
+    // runGoto RETURNS the response (rather than closing over an outer `let`) so
+    // the type stays Response|null through the host-limiter wrapper.
+    const runGoto = async (): Promise<Response | null> => {
+      let r: Response | null = null;
+      for (let attempt = 0; ; attempt++) {
+        r = await page.goto(url, {
+          timeout: NAV_TIMEOUT_MS,
+          waitUntil: "domcontentloaded",
+        });
+        const status = r?.status();
+        if ((status === 429 || status === 403) && attempt < MAX_BLOCK_RETRIES) {
+          await sleep(computeBackoffMs(attempt, BACKOFF_BASE_MS, BACKOFF_CAP_MS));
+          continue;
+        }
+        break;
       }
-      break;
-    }
+      return r;
+    };
+    const resp: Response | null =
+      httpUrl !== null ? await hostLimiter.runHostRequest(httpUrl, runGoto) : await runGoto();
 
     // Best-effort settle; lazy pages keep sockets open, so a timeout is normal.
     await page

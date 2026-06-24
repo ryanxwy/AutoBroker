@@ -149,15 +149,19 @@ export function readIncentiveRegistry(
   return parseIncentiveRegistry(readFileSync(path, "utf8"));
 }
 
-/** Bounded synchronous sleep (the lock retry pause; Atomics.wait never spins). */
-function sleepSync(ms: number): void {
-  const shared = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(shared, 0, 0, ms);
+/** Bounded async-yielding sleep (the lock retry pause). Unlike the old
+ *  synchronous Atomics.wait, this YIELDS the event loop, so a contended write
+ *  never freezes every other concurrent pipeline (the prerequisite for running
+ *  incentive_scrape across profiles at once). */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Acquire the sibling lock (O_EXCL). Evicts a stale lock; throws after the
- *  bounded retries — an approval write must fail LOUD, never block forever. */
-function acquireLock(lockPath: string): void {
+ *  bounded retries — an approval write must fail LOUD, never block forever. The
+ *  retry wait yields the loop (see `sleep`); the O_EXCL create is still the
+ *  atomic mutual-exclusion primitive, so only one writer holds the lock. */
+async function acquireLock(lockPath: string): Promise<void> {
   for (let attempt = 0; attempt < LOCK_RETRIES; attempt += 1) {
     try {
       closeSync(openSync(lockPath, "wx"));
@@ -171,7 +175,7 @@ function acquireLock(lockPath: string): void {
       } catch {
         continue; // lock vanished between attempts — retry
       }
-      sleepSync(LOCK_RETRY_SLEEP_MS);
+      await sleep(LOCK_RETRY_SLEEP_MS);
     }
   }
   throw new Error(`incentive registry: could not acquire ${lockPath} (still held)`);
@@ -181,18 +185,21 @@ function acquireLock(lockPath: string): void {
  * Write/replace ONE brand's entry. The whole read-modify-write window holds
  * the sibling lock; the body lands via temp-file + atomic rename. The entry
  * is validated against the core row contract before anything touches disk.
+ * Async because lock acquisition yields the loop on contention (never the old
+ * Atomics.wait freeze); the critical section itself is still one synchronous
+ * read-modify-write tick while the lock is held.
  */
-export function writeIncentiveRegistryEntry(
+export async function writeIncentiveRegistryEntry(
   brand: string,
   entry: IncentiveSourceRegistryEntry,
   path: string = incentiveRegistryPath(),
-): void {
+): Promise<void> {
   const validated = IncentiveSourceRegistryEntrySchema.parse(entry);
   if (brand.trim() === "") throw new Error("incentive registry: empty brand key");
 
   mkdirSync(dirname(path), { recursive: true });
   const lockPath = `${path}.lock`;
-  acquireLock(lockPath);
+  await acquireLock(lockPath);
   try {
     const registry = readIncentiveRegistry(path);
     registry[brand] = validated;

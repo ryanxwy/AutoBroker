@@ -87,7 +87,7 @@ import {
   type PolicyResolution,
   type UseCase,
 } from "@autobroker/model";
-import { writeTestRunRecord, type Db } from "@autobroker/tools";
+import { llmLimiter, writeTestRunRecord, type Db } from "@autobroker/tools";
 
 import {
   malformedToolCallProcessor,
@@ -246,6 +246,14 @@ async function generate<TSchema extends z.ZodTypeAny>(
   const route = policy(input.useCase);
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
+
+  // Per-provider LLM pacing (LimiterRegistry, below the L2 gate): bound the
+  // combined call rate to `route.provider` so N concurrent pipelines don't burst
+  // one provider. Covers BOTH downstream strategy paths (this entry runs before
+  // the output_object branch and the emit_result branch). Skipped when a test
+  // injects a model (no real provider call to pace) so the unit suite is never
+  // delayed.
+  if (_testOverrides?.model === undefined) await llmLimiter.acquireLlm(route.provider);
 
   // Stage 2 — strategy gate. supportsOutputObjectWithTools:true (Anthropic /
   // OpenAI) routes to the NATIVE structured-output path; DeepSeek's false routes

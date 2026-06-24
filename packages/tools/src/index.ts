@@ -85,6 +85,12 @@ export {
   type SyncFallbackSpan,
 } from "./gmail/sync.js";
 
+// Authoritative inbox sweep lane — serializes + single-flight coalesces the
+// shared mailbox-cursor advance so N concurrent per-profile inbox checks
+// advance it ONCE and each sees the full changed set (no leapfrog drop).
+// `sweepMailbox` is the lane-wrapped drop-in for the raw `syncMailbox`.
+export { authoritativeSweep, sweepMailbox, type SyncFn } from "./inbox/sweepLane.js";
+
 // MIME walk — the inbound payload-tree reader (the parsed-body shape the
 // per-message extractor reuses).
 export { walkParts, readPartHeader, type ParsedBody } from "./gmail/mime.js";
@@ -701,6 +707,17 @@ export {
 // DB (single connection factory + shared-connection accessor, re-exported
 // from @autobroker/db).
 export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
+
+// LimiterRegistry — process-global resource arbiters (Gmail send / per-host
+// politeness / per-provider LLM) that PACE already-approved work, strictly
+// BELOW the L2 gate. The singletons (gmailLimiter / hostLimiter / llmLimiter)
+// plus the classes + pacing primitives for callers that construct their own.
+export * from "./limiter/index.js";
+
+// The serialized product-DB write lane — the single funnel for multi-step async
+// write SEQUENCES under concurrency (sync .run()/.transaction() are already
+// serialized + atomic; see writeLane.ts for the honest scope).
+export { withWriteLane } from "./writeLane.js";
 
 // Scheduler watermark — the per-job last-success store in pipeline_state (the
 // durable catch-up watermark; the only product-DB access the background
