@@ -916,7 +916,10 @@ export {
 // applicable-step flags each run (non-durable, no checkpoint), the read-only
 // targeted-VIN validator, the null-VIN-raising OTD ask, the idempotent
 // targeted-VIN quote writer, the deterministic LLM-free disposition, and the one
-// generic audit_log completion row. No child workflow / LLM here.
+// generic audit_log completion row. No child workflow / LLM here. Also the
+// multi-profile orchestration primitives: the ProfileId→live-runId activation
+// registry (virtual-actor at-most-one-live-run + reboot-survival reconcile) and
+// the boot orphan sweep that frees dealership claims abandoned by a dead run.
 export {
   detectPipelineState,
   resolveTargetedListing,
@@ -938,6 +941,14 @@ export {
   readLastProgressAt,
   writeLastProgressAt,
   profileHealth,
+  activeRunKey,
+  recordActivation,
+  clearActivationByRunId,
+  lookupRunIdForProfile,
+  lookupProfileIdForRunId,
+  listActiveProfileIds,
+  reconcileActivations,
+  sweepOrphanedBoundClaims,
   type DetectPipelineStateArgs,
   type PipelineStateFlags,
   type ResolveTargetedListingArgs,
@@ -954,4 +965,5 @@ export {
   type ProfileHealth,
   type ProfileHealthLevel,
   type ProfileHealthOpts,
+  type OrphanSweepResult,
 } from "./pipeline/index.js";

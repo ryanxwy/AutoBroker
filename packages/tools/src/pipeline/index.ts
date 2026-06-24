@@ -74,3 +74,18 @@ export {
   type ProfileHealthLevel,
   type ProfileHealthOpts,
 } from "./profileHealth.js";
+
+export {
+  activeRunKey,
+  recordActivation,
+  clearActivationByRunId,
+  lookupRunIdForProfile,
+  lookupProfileIdForRunId,
+  listActiveProfileIds,
+  reconcileActivations,
+} from "./activationRegistry.js";
+
+export {
+  sweepOrphanedBoundClaims,
+  type OrphanSweepResult,
+} from "./orphanSweep.js";
