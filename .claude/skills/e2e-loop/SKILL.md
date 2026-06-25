@@ -51,7 +51,7 @@ reads this spine + `references/harness-boundaries.md` + `references/skill-pipeli
 | 3 | two-pass sweep: PASS-A freeform-persona, PASS-B `/slash`; per-skill rows/audit + DOM verify | terminal `skill_runs` row + table delta + active-panel testid | `references/skill-pipeline.md` (+`references/ui-lane-personas.md`) |
 | 3.5 | dealer-brain: **deep mutual negotiation — multiple parallel threads ≥4 rounds each, ≥10 dealers, multi-titled-contact escalation + AI-auto first-touch + ghosting** (realism > cost) | active threads `buyer_FUs ≥4` (past old cap); ghosts capped at 2 unanswered → drop; re-extract → revised `dealer_quotes` | `references/dealer-brain.md` |
 | 3.7 | frontend-taste per data tab | ranked findings list | `references/ui-lane-personas.md` (→ `frontend-taste` skill by name) |
-| 3.9 | multi-profile live-LLM fan-out (ONLY after pinned 3/3.5 is terminal+green): seed the **3 different-brand** world (Accord+Camry+Mazda6) via REAL intake; arm the real scheduler (`AUTOBROKER_PORTFOLIO_SCHEDULER=1` + `MAX_CONCURRENT_ACTIVE_PROFILES` < active); run **concurrent per-profile 3.5-grade negotiation** + a shared-`dealer_key` rooftop collision + interleaved human approvals through the unified `ApprovalInbox` | scheduler cap holds + every profile reaches terminal (no starve/wedge); `claimDealer`: exactly 1 binds the rooftop, losers `excluded_conflict` + `exclusion_reason`/`heldByVehicle` voiced + ZERO web-form AND ZERO email (claim precedes send; engage-then-abort releases); decline isolated to its profile (Δ0 there, no-op for others); `runAllInvariants` all-ok per-step (per-profile + portfolio aggregate); keystone `no_external_mutation==0`; `pnpm soak mp-replay` GREEN + `pnpm soak mp --until-dry` converges | `references/multi-profile-lane.md` |
+| 3.9 | multi-profile live-LLM fan-out (ONLY after pinned 3/3.5 is terminal+green): seed the **3 different-brand** world (Accord+Camry+Mazda6) via REAL intake; arm the real scheduler (`AUTOBROKER_PORTFOLIO_SCHEDULER=1` + `MAX_CONCURRENT_ACTIVE_PROFILES` < active); run **concurrent per-profile 3.5-grade negotiation** + a shared-`dealer_key` rooftop collision + interleaved human approvals through the unified `ApprovalInbox` | scheduler cap holds + every profile reaches terminal (no starve/wedge); `claimDealer`: exactly 1 binds the rooftop, losers `excluded_conflict` + `exclusion_reason`/`heldByVehicle` voiced + ZERO web-form AND ZERO email (claim precedes send; engage-then-abort releases); decline isolated to its profile (Δ0 there, no-op for others); `runAllInvariants` all-ok per-step (per-profile + portfolio aggregate); keystone `no_external_mutation==0`; portfolio UI: `/portfolio` board lists all N profiles (segment-grouped, health dots) + `portfolio-status-bar` counts + `needs-you-widget` surfaces every parked gate (routes to its run); `pnpm soak mp-replay` GREEN + `pnpm soak mp --until-dry` converges | `references/multi-profile-lane.md` |
 | 4 | backlog state machine S0–S6 (enumerate→research→fix-in-worktree→review→green→fresh live re-verify) | backlog-empty grep; green GREEN | `references/backlog-state-machine.md` |
 | 4.5 | Electron sync (only if `apps/ui/src` or a testid touched) | `desktop:smoke` 14/14 | `references/reporting.md` |
 | 5 | telemetry capture from `test_run_records` BEFORE pipeline_reset | one SQL dump | `references/harness-boundaries.md` (in-context) |
@@ -105,7 +105,12 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   a hard cap, each negotiating its own dealers, overlapping on shared rooftops, every
   approval funnelling into ONE inbox — surfacing the concurrency bugs the single-
   profile spine can't (cross-profile bleed, shared-rooftop double-send, mis-routed
-  approval, a starved/wedged profile). `references/multi-profile-lane.md`.
+  approval, a starved/wedged profile). The operator drives/observes it through the
+  **Phase-3 portfolio UI**: the `/portfolio` board (`portfolio-board`, segment-grouped
+  `portfolio-card-<id>` + health dots + `portfolio-status-bar` counts header), the
+  per-session pin toggle (`session-pin`), and the floating `needs-you-widget` (the DOM
+  face of `GET /api/approvals` — routes to the run's gate, never approves inline).
+  `references/multi-profile-lane.md`.
 - **Dealers RESIST — model it, don't over-cooperate (owner, 2026-06-24).** Most
   dealers won't email an out-the-door number: model the realistic mix — come-onsite-only
   (never a number, even at "ready to buy today"), mid-thread ghosting, reverse-inducement;

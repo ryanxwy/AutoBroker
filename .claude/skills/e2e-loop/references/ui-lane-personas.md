@@ -255,12 +255,27 @@ Six tabs → six small reads, not one giant DOM.
 - Rail header pinned title: when a search is pinned the title IS the search identity
   (`rail-pin-title` → vehicle + ZIP, with `pin-chip-label`/`pin-chip-unpin`), not the
   skill name. It is a profile-data surface, so the budget-never-leaks check applies
-  here too.
+  here too. When UNPINNED, the session shows a **per-session pin toggle** (`session-pin`,
+  Phase 3) that opens the SAME Searches picker (`session-pin-popover` → the shared
+  `SearchPicker`); picking focuses THIS session, clearing reverts.
 - Budget never leaks: only the "internal-only" lock chip is permitted; any budget
   number is a BLOCKER (CLAUDE.md inv #9).
-- Two-active-profile switcher: if ≥2 active profiles exist, verify both are
-  reachable from the Canvas surface (`Canvas.tsx:435` currently shows only `[0]`
-  — this is an open MED backlog item; flag if it traps the buyer).
+- **Portfolio board — the multi-active surface (Phase 3, supersedes the old
+  "Canvas shows only `[0]`" trap).** With ≥2 active profiles, EVERY search is reachable
+  and observable: the `/portfolio` route (`portfolio-board`) renders one
+  `portfolio-card-<id>` per active search, GROUPED BY SEGMENT
+  (`portfolio-segment-<slug>`), each with a `portfolio-health-<id>` dot
+  (hot/warm/cold) + `portfolio-stage-<id>` + best-OTD + dealer count + city — budget
+  never shown. The `portfolio-status-bar` (renders only ≥2 active — single-active is
+  byte-identical) reports COUNTS ("N searches · X NEED APPROVAL · Y ghosted · W
+  healthy") and NAMES the red profiles. Drilling a card pins + opens the workbench
+  (the LEAF). The Canvas itself now BINDS to the focused/pinned profile, NOT `data[0]`
+  (`Canvas` `profileId` prop, falls back to `data[0]` only when no pin / the pin is
+  stale). taste-check the board grouping + the counts header for the multi-active world.
+- **"Needs you" approval inbox (Phase 3).** The floating `needs-you-widget` follows the
+  user across pages and aggregates every parked gate across ALL pipelines (from
+  `GET /api/approvals`); each `needs-you-item-<runId>` ROUTES to that run's gate (never
+  approves inline). It is absent when nothing is parked (read-only/idle world).
 
 **frontend-taste emits a ranked `[SEVERITY] <testid> — <experience> (file:line).
 Suggested direction:` list per tab.** The loop folds these into the S0 enumeration
