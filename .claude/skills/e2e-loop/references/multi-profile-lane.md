@@ -86,7 +86,9 @@ unit tests + `soak mp`; this is the end-to-end LIVE corroboration.
 ## CONCURRENT PER-PROFILE NEGOTIATION (the realism core)
 
 Run **3.5 ×N, interleaved**. For ≥2 profiles concurrently: live threads driven to
-`buyer_FUs ≥ 4` (past the old flat cap), the Sonnet dealer (`references/dealer-brain.md`)
+`buyer_FUs ≥ 4` (past the old flat cap), the Sonnet dealer (`references/dealer-brain.md`
+— per-dealer concurrent subagents, **≤3 in-flight across the WHOLE portfolio** per the
+OAuth ceiling, rounds sequential, ghosts/laggards dropped to cut email volume)
 writing per-thread replies via `/__e2e/inject_reply_to_thread`, with ghosting
 (unanswered → capped at the consecutive-unanswered ceiling → dropped) and
 multi-titled-contact escalation. Re-extract after each round → revised

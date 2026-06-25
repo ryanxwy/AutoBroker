@@ -11,13 +11,45 @@ new car. It is NOT a 2-3 round cooperative haggle — see the reality model belo
 
 ## What it is
 
-Dispatch a **local Opus subagent** as the dealer-brain. Same api-key lane —
-no charge to the SUT, no outbound email. All writes flow through
-`inject_replies` / `inject_reply_to_thread` / `inject_contact`; external SQLite
-writes are invisible to the running server (see `harness-boundaries.md`). The
-Opus subagent only GENERATES the email corpus (round-0 replies + the multi-round
-counter script); the main agent injects it through the control routes and drives
-the SUT skills through the chat rail / `/slash`.
+Dispatch a **local Sonnet subagent** as the dealer actor (`dealer.md`). It runs on
+YOUR Claude — the operator's subscription (subagents) or a `claude -p` child — entirely
+SEPARATE from the SUT's DeepSeek api-key lane: it never charges the SUT's provider
+budget and never sends real email. All writes flow through `inject_replies` /
+`inject_reply_to_thread` / `inject_contact`; external SQLite writes are invisible to
+the running server (see `harness-boundaries.md`). The subagent only GENERATES the email
+text; the main agent injects it through the control routes and drives the SUT skills
+through the chat rail / `/slash`.
+
+## Dealer-actor mechanism & OAuth concurrency (how to run N live dealers)
+
+Two ways to drive the actor — pick by lane:
+
+- **Per-dealer concurrent subagents (recommended for multi-profile + deep realism).**
+  Dispatch ONE Sonnet subagent PER dealer — each gets `dealer.md` + its assigned
+  archetype + the buyer's latest email + the thread transcript — and run them in
+  **batches of ≤3 concurrent**. Each dealer is an independent agent (no cross-context
+  bleed), so sustained-resistance archetypes (quoter / come-onsite-only / ghost) stay
+  distinct. The operator injects each returned reply via `inject_reply_to_thread`.
+- **Batch corpus (one subagent for a whole field).** For a fast single-profile round-0,
+  one subagent can emit all ~12 replies at once — cheaper, but the dealers share one
+  context (less independent).
+
+**OAUTH CONCURRENCY REALITY (researched + live-probed 2026-06-24).** On ONE Claude
+subscription the honest ceiling is **~2-3 in-flight calls**; beyond ~3-7 you hit a
+server-side 429 ("Server is temporarily limiting requests — *not your usage limit*")
+that hard-fails the extra children, or a multi-minute hang. So **PACE**: ≤3 concurrent,
+rounds sequential, drop ghosts/laggards (fewer emails over more wall-clock — the
+deliberate trade). "Concurrent" buys orchestration shape (interleaved threads, the
+shared-rooftop race, one approval inbox) + ~2-3× overlap, NOT N× parallelism.
+`claude -p` and Claude Code subagents on the subscription are fine for local owner-run
+use; the **Claude Agent SDK requires an api key** (OAuth is blocked there) — do NOT
+route the dealer actor through the SDK on OAuth.
+
+**NON-DETERMINISM (load-bearing).** Every dealer AND buyer MESSAGE is a live LLM
+generation. The ONLY seeded part is the SKELETON — which dealers, archetype assignment,
+reply ordering, the ghost/chaos schedule. NEVER replace a dealer reply with a canned /
+replay body in a live run; the `mp-replay` corpus is a SEPARATE deterministic regression
+gate recorded FROM a live run, never a substitute within it.
 
 ---
 
@@ -78,7 +110,7 @@ thread runs deep; a silent dealer is dropped after 2 nudges.
 
 ## Corpus study (once per run, before generating)
 
-Feed the Opus subagent: (1) the **register** of
+Feed the Sonnet dealer subagent(s): (1) the **register** of
 `harness/cases/dealer_reply_extract.live_extract.toml` (OTD line-item layout, APR
 phrasing, scarcity language) — learn the register, don't copy text; (2) this run's
 **brand + metro** (match prose to brand tier); (3) the **live dealer names +
@@ -140,7 +172,7 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
    REQUIRED (it STOPs `pin_required` even with 1 active — pick the vehicle once).
    `/slash` it for rounds 2+ (faster + deterministic than NL). Confirm
    `threads.state='negotiating'`.
-2. **Generate ≤N dealer counters** (Opus) with a realistic floor (keep ≥$150-400
+2. **Generate ≤N dealer counters** (per-dealer Sonnet subagents, ≤3 concurrent) with a realistic floor (keep ≥$150-400
    gross), grinding the OTD DOWN with diminishing concessions. For the front-runners,
    have a **higher-title MANAGER take over at round 2** (escalation) from a NEW
    email. Match the corpus register. **But do NOT make every thread converge to a

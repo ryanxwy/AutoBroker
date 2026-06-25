@@ -2,7 +2,7 @@
 name: e2e-loop
 description: Run a manually-triggered live-e2e 全技能巡检 of the 17 AutoBroker skills against
   the real DeepSeek lane via serve-live + a browser — full two-sided live-negotiation
-  loop (brand-picker → two-pass sweep → Opus dealer-brain haggle → frontend-taste →
+  loop (brand-picker → two-pass sweep → Sonnet dealer-brain haggle → frontend-taste →
   auto-close backlog → report → merge), or a `--light` manual two-pass sweep. Use to
   run the e2e sweep / 全技能巡检 on demand; pass --light for a read-only manual inspection.
 disable-model-invocation: true
@@ -106,6 +106,15 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   approval funnelling into ONE inbox — surfacing the concurrency bugs the single-
   profile spine can't (cross-profile bleed, shared-rooftop double-send, mis-routed
   approval, a starved/wedged profile). `references/multi-profile-lane.md`.
+- **Dealers RESIST — model it, don't over-cooperate (owner, 2026-06-24).** Most
+  dealers won't email an out-the-door number: model the realistic mix — come-onsite-only
+  (never a number, even at "ready to buy today"), mid-thread ghosting, reverse-inducement;
+  only a minority quote, late + grudgingly. A profile can finish with **few or 0 email
+  OTDs → a valid `ghosted`/`cold` outcome** (never a fabricated quote; verdict PASSES a
+  low quote-rate, FAIL only for a dropped-but-present OTD). The dealer actor runs as
+  **per-dealer Sonnet subagents, ≤3 concurrent on the OAuth subscription** (paced; rounds
+  sequential); **every reply is a live LLM generation — never canned/replayed in a live
+  run** (`references/dealer-brain.md`).
 - **Product behavior rules (owner, 2026-06-23 — also in CLAUDE.md):** (1) **Intake
   never assumes a required vehicle field** — `model`/`trim`/`year` must be stated by
   the buyer; if the persona's freeform omits one, the form leaves it blank and you

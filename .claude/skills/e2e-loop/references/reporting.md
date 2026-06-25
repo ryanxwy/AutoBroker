@@ -65,8 +65,8 @@ Agent records start/end per TodoWrite phase. Exact columns:
 
 `阶段 / Phase` · `墙钟 / Wall-clock (min)` · `$ LLM` · `备注 / Notes`
 
-Rows: phases 0, 1, 2, 2.5, 3-A, 3.5, 3-cleanup/3-B, 4, 4.5, 5, 6, 7, 8 + TOTAL wall-clock + TOTAL $.
-Dealer-brain Opus = local subscription, $0 API-key. Mark fix-loop phases that fired.
+Rows: phases 0, 1, 2, 2.5, 3-A, 3.5, 3-cleanup/3-B, 3.9 (multi-profile, when run), 4, 4.5, 5, 6, 7, 8 + TOTAL wall-clock + TOTAL $.
+Dealer-brain Sonnet subagents = local subscription, $0 API-key. Mark fix-loop phases that fired.
 
 #### 1b — per-skill telemetry (from `test_run_records`)
 
