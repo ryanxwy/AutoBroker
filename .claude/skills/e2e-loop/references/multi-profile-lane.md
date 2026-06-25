@@ -61,7 +61,7 @@ the live `claimDealer` step decides the exclusivity winner.
 `buildServer` does NOT mount the scheduler; the live host opts in. Launch
 serve-live with the fan-out armed and the cap STRICTLY BELOW the active count so the
 bound actually bites (`=2` here because the seed world is **3** active — Accord +
-Camry + Mazda6; if you seed a different active count, set the cap to `active − 1`):
+Camry + Mazda6; for a different active count set the cap to `active − 1`):
 
 ```
 AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 \
@@ -188,6 +188,39 @@ Drive it like a real user clearing a shared inbox:
 
 ---
 
+## DRIVE & OBSERVE — the portfolio UI (Phase 3)
+
+The concurrent world is not just API + DB — the operator drives and observes it
+through the **portfolio UI** (Phase 3, `b5ba048`). A live 3.9 run must verify the
+operator-facing surfaces, not only `/api/approvals`:
+
+- **`/portfolio` board** (`portfolio-board`): one `portfolio-card-<profileId>` per
+  active search, GROUPED BY SEGMENT (`portfolio-segment-<slug>` — the 3 different-brand
+  cards sit together), each carrying a `portfolio-health-<id>` dot (hot/warm/cold from
+  the real `profileHealth`), `portfolio-stage-<id>`, dealer count, best-OTD, city.
+  **Budget never shown** (#9). A profile whose dealers all ghosted reads
+  health=cold/`all_threads_capped` here — the valid resistance outcome, not a failure.
+- **`portfolio-status-bar`** (header by COUNTS): "N searches · X NEED APPROVAL · Y
+  ghosted · W healthy", red NAMING the action-required profiles. Renders only with ≥2
+  active (single-active is byte-identical — DO NOT expect it in the pinned 3/3.5 lane).
+- **per-session pin toggle** (`session-pin`): focuses ONE pipeline into pinned mode
+  (`rail-pin-title`); the board stays portfolio-wide. The Canvas binds to the FOCUSED
+  profile (not `data[0]`), so two sessions can sit in different modes at once.
+- **"Needs you" widget** (`needs-you-widget`): the floating inbox is the DOM face of
+  `GET /api/approvals` — assert every concurrent profile's parked gate appears as a
+  `needs-you-item-<runId>`, action-required first, budget-free; clicking one ROUTES to
+  that run's `GateBannerHost` gate (never approves inline). Drive the real decision
+  there (the API assertions above stay the verdict; the widget is the corroborating DOM).
+
+**Deterministic UI proof:** `harness/cases/multi_profile_portfolio.func.toml` (run by
+`RUN_UI_FUNCTIONAL=1 green.sh`, seeded `multi_active` fixture, NO provider) freezes the
+board (2 segment-grouped cards + status bar) + pin-focus-while-portfolio-stays-wide. The
+cross-pipeline gate routing (a gate parked in C surfaces while focused on B → routes to
+C) is an App-level vitest (`App.needsyou.test`) — the func runner drives every skill step
+to terminal, so a gate cannot be left parked across steps in the func lane.
+
+---
+
 ## CHAOS — escalating, until-dry
 
 `pnpm soak mp --until-dry` is the deterministic structural engine that escalates
@@ -199,10 +232,11 @@ so the chaos + replay corpus stays reproducible — the LIVE scheduler proof is 
 serve-live cap step above; the soak lane's job is breadth + a frozen replay corpus.
 
 On the first `runAllInvariants` violation the soak runner FREEZES: it writes the
-seed, the JSONL transcript, and the chaos config into a new case under
-`harness/multiprofile-corpus.txt` as a deterministic, no-provider replay case.
-Converges when `dry-rounds` consecutive rounds surface no NOVEL violation
-signature.
+seed, the JSONL transcript, and the chaos config into a new case DIRECTORY
+`harness/cases/mp/<id>/` (case.json + transcript.jsonl) and appends that case id
+to the `harness/multiprofile-corpus.txt` MANIFEST — a deterministic, no-provider
+replay case. Converges when `dry-rounds` consecutive rounds surface no NOVEL
+violation signature.
 
 > SYNC TRAP: a corpus case directory and its `harness/multiprofile-corpus.txt`
 > manifest line live and die together — never delete one without the other (a

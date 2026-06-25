@@ -27,7 +27,8 @@ See **"Register in the ledger"** below.
 6. **Frontend-taste 可用性发现** — BLOCKER→POLISH ranked list (→ `frontend-taste` skill by name).
 7. **本轮新 backlog** — must be empty **or** every entry tagged `live-verified, no-code-change` + one-line rationale. Untagged → back to step 4.
 8. **桌面同步状态** — "desktop bundle refreshed @ commit `<hash>` — 可手测" OR "no apps/ui/src/testid change — skip 4.5".
-9. **工件** — branch, commit hashes, PR URL.
+9. **多档案 3.9 摘要** *(only when step 3.9 ran)* — cap held (assert `MAX_CONCURRENT_ACTIVE_PROFILES` value); each profile's terminal status (no starve/wedge); shared-rooftop winner + voiced losers (zero send confirmed); `runAllInvariants` all-ok or violations frozen to corpus; `soak mp --until-dry` convergence result.
+10. **工件** — branch, commit hashes, PR URL.
 
 Copy `xunjian/` → `<report-dir>/shots/`; remove at teardown.
 

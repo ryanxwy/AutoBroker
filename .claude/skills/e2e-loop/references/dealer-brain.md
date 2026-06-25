@@ -27,7 +27,7 @@ Two ways to drive the actor — pick by lane:
 - **Per-dealer concurrent subagents (recommended for multi-profile + deep realism).**
   Dispatch ONE Sonnet subagent PER dealer — each gets `harness/prompts/dealer.md` + its assigned
   archetype + the buyer's latest email + the thread transcript — and run them in
-  **batches of ≤3 concurrent**. Each dealer is an independent agent (no cross-context
+  **batches of ≤3 concurrent in-flight across the WHOLE portfolio**. Each dealer is an independent agent (no cross-context
   bleed), so sustained-resistance archetypes (quoter / come-onsite-only / ghost) stay
   distinct. The operator injects each returned reply via `inject_reply_to_thread`.
 - **Batch corpus (one subagent for a whole field).** For a fast single-profile round-0,
@@ -37,14 +37,10 @@ Two ways to drive the actor — pick by lane:
 **OAUTH CONCURRENCY REALITY (researched + live-probed 2026-06-24).** On ONE Claude
 subscription the honest ceiling is **~2-3 in-flight calls**; beyond ~3-7 you hit a
 server-side 429 ("Server is temporarily limiting requests — *not your usage limit*")
-that hard-fails the extra children, or a multi-minute hang. So **PACE**: **≤3 concurrent
-in-flight is a SUBSCRIPTION-WIDE ceiling, NOT per-field** — it bounds the total dealer-
-actor children alive at once across the whole run, INCLUDING all profiles in a
-multi-profile 3.9 run (so 3 profiles share the same ≤3 budget, not ≤3 each — see
-`references/multi-profile-lane.md`). Rounds sequential, drop ghosts/laggards (fewer
-emails over more wall-clock — the deliberate trade). "Concurrent" buys orchestration
-shape (interleaved threads, the shared-rooftop race, one approval inbox) + ~2-3×
-overlap, NOT N× parallelism.
+that hard-fails the extra children, or a multi-minute hang. So **PACE**: ≤3 concurrent,
+rounds sequential, drop ghosts/laggards (fewer emails over more wall-clock — the
+deliberate trade). "Concurrent" buys orchestration shape (interleaved threads, the
+shared-rooftop race, one approval inbox) + ~2-3× overlap, NOT N× parallelism.
 `claude -p` and Claude Code subagents on the subscription are fine for local owner-run
 use; the **Claude Agent SDK requires an api key** (OAuth is blocked there) — do NOT
 route the dealer actor through the SDK on OAuth.
@@ -136,9 +132,11 @@ distribution — most are no-price first touches:
 - **~35% ITEMIZED OTD** — draw from the audit-firing archetypes so the audit
   codes wake up:
   - clean + compliant (doc fee at the state cap) — the honest control.
-  - **fee-loaded** — ADM + 2 add-ons + doc fee OVER the state cap (in a CA/NY/WA
-    metro) → fires `DOC_FEE_CAP` + `DEALER_FEE_OUTLIER` + (if the stack doesn't
-    reconcile) `MATH_SANITY`.
+  - **fee-loaded** — ADM + 2 add-ons + a high doc fee → fires `DEALER_FEE_OUTLIER`
+    + (if the stack doesn't reconcile) `MATH_SANITY`, plus a doc-fee flag whose code
+    depends on the metro: `DOC_FEE_CAP` over the cap in a capped state (CA/NY/WA +
+    MN/MI/OH/MD), or `DOC_FEE_UNCAPPED` for a >~$500 fee in an uncapped state (TX/FL/OR,
+    Phase 5 — no longer silent).
   - **math-inconsistent** — itemized, **non-null** sales_tax, line items miss the
     stated total by ~$200-500 → fires `MATH_SANITY` (null-tax would hit the
     null-skip guard — NOT a firing).
@@ -149,8 +147,8 @@ distribution — most are no-price first touches:
   run) — the structurally-untested mainstream experience.
 
 These audit firings are **correct behavior**, not bugs (see the don't-re-propose
-ledger in `backlog-state-machine.md`). DON'T re-flag DOC_FEE_CAP/MATH_SANITY/
-MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
+ledger in `backlog-state-machine.md`). DON'T re-flag DOC_FEE_CAP/DOC_FEE_UNCAPPED/
+MATH_SANITY/MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
 
 POST `/__e2e/inject_replies` `{ profileId, replies:[…] }`. **Record the full
 `applied.threadIds[]`** (`[{dealerName, from, threadId}]`) — the only source of
@@ -176,7 +174,7 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
    REQUIRED (it STOPs `pin_required` even with 1 active — pick the vehicle once).
    `/slash` it for rounds 2+ (faster + deterministic than NL). Confirm
    `threads.state='negotiating'`.
-2. **Generate ≤N dealer counters** (per-dealer Sonnet subagents, ≤3 concurrent) with a realistic floor (keep ≥$150-400
+2. **Generate ≤N dealer counters** (per-dealer Sonnet subagents, ≤3 concurrent in-flight across the WHOLE portfolio) with a realistic floor (keep ≥$150-400
    gross), grinding the OTD DOWN with diminishing concessions. For the front-runners,
    have a **higher-title MANAGER take over at round 2** (escalation) from a NEW
    email. Match the corpus register. **But do NOT make every thread converge to a

@@ -7,6 +7,8 @@ press, the order, and the live-only edges. The FULL matrix lives in the design d
 no-coverage edges. Testids are harvested from `apps/ui/src` — if one drifts,
 re-harvest live (`grep data-testid`), don't trust a stale string.
 
+> **Scope note:** This sweep IS the pinned single-brand spine; step **3.9 multi-profile fan-out** does not begin until this sweep (and 3.5) reaches terminal+green (rulings #4/#7 — see `references/multi-profile-lane.md`).
+
 ## A. Canvas-region + gate-testid cheat sheet
 
 **Tabbed Canvas — only the ACTIVE panel renders.** Click `canvas-tab-<key>` THEN
@@ -83,7 +85,7 @@ negotiation_followup(fake) → quote_pipeline → daily_digest →`
 8. **dealer_inbox_check** · `/dealer_inbox_check` · replies tab / InboxReviewCard · `stop-pick-option`+`batch-*` — needs the lead anchor (else `no_lead`); pin STOP `no_pin`; decline=Δ0 + watermark does not advance; reading writes no outbound row.
 9. **dealer_reply_extract** · `/dealer_reply_extract` · quotes tab · (autonomous) — **#1244 fail-closed on the largest extraction** (highest-value live check): finish_reason≠tool_calls / empty / tool-shaped blob → fail CLOSED, surface disclosed retry, never silent-fallback; no_quote→0 rows; bundled-tax `sales_tax`=null is VALID. **DATA-QUALITY (not count):** `GET /__e2e/dataquality?skill=dealer_reply_extract` must show `otd_present/n ≥ 0.5` — a `dealer_quotes` row with NULL `otd_total` on a visibly-priced reply is a FAIL, distinct from the legit `no_quote`→0-rows and bundled-tax `sales_tax`=null.
 10. **quote_audit** · `/quote_audit` · quotes-tab audit pills · (none) — DOC_FEE_CAP fires over the cap in capped states (CA/NY/WA + MN/MI/OH/MD); an uncapped state (TX/FL/OR) now fires DOC_FEE_UNCAPPED for a doc fee >~$500 (Phase 5 — no longer silent at $899); MATH_SANITY null-skip when tax bundled (FINDING I); MISSING_BREAKDOWN covers it; idempotent re-run = same rows.
-11. **quote_compare** · `/quote_compare` · quotes tab · (none) — cash bucket ("cash:N", not "Compared 0", A5); off-mode/unspecified OTD folded into finance OTD-only (FINDING J); Best-OTD = min over digest+compare (FINDING G).
+11. **quote_compare** · `/quote_compare` · quotes tab · (none) — cash bucket ("cash:N", not "Compared 0", A5); off-mode/unspecified OTD folded into finance OTD-only (FINDING J); Best-OTD = min over digest+compare (FINDING G). **Cross-state (Phase 5):** when the profile has a home state the panel shows a `quote-compare-tax-note` (tax normalized to the home state, "wins on price/doc-fee/incentives, not tax"); each row carries home-state `normalized_tax`/`normalized_otd` + an OTD-delta `attribution` (sale-price/doc-fee/tax/incentive/other) vs the lowest-normalized-OTD baseline. Raw-OTD rank order is UNCHANGED (additive) — two different-state dealers on the same vehicle show IDENTICAL normalized tax.
 12. **negotiation_followup** · `/negotiation_followup` · draft + `gate-banner` · `approval-approve` — code picks the tone; **budget NEVER in the draft** (`_redact_budget`, BLOCKER if it leaks); no competing dealer names; decline=Δ0; **contact-flip 2nd `sensitive` suspend** on recipient change (no func case); drives the dealer-brain multi-round loop. [fake-send]
 13. **quote_pipeline** · `/quote_pipeline` · chat report + quotes/incentives · pin STOP + nested child suspends — **child-suspend RESUME** (the O1 hard part, only decline has a func case); `dry_run` previews without writing; targeted-VIN decline=Δ0.
 14. **daily_digest** · `/daily_digest` · `/digest` / overview headline · (none) — budget NEVER in the digest (text AND headline); Best-OTD agrees with compare; zero-active → graceful SKIP, never an ASK (it is `infer_ok`, all-profile by design); `digest.last_at` advances.
@@ -96,7 +98,9 @@ negotiation_followup(fake) → quote_pipeline → daily_digest →`
 The deterministic `*.func.toml` corpus does NOT pin these (the per-skill lines in
 C flag each in place); ranked by value, the top live-only checks are: (1) **#1244
 fail-closed on reply_extract's largest extraction** — the single highest-value
-check; (2) **DOC_FEE_CAP fires** in a CA/NY/WA metro on an over-cap doc fee; (3)
+check; (2) **a doc-fee flag fires** — `DOC_FEE_CAP` in a capped metro (CA/NY/WA +
+MN/MI/OH/MD) on an over-cap fee, OR `DOC_FEE_UNCAPPED` in an uncapped metro (TX/FL/OR)
+on a >~$500 fee (Phase 5); (3)
 **MATH_SANITY null-skip** on a bundled-tax quote (FINDING I); (4) **email_fallback
 + contact-flip 2nd suspends** (both `sensitive`, no `approval-approve-all`;
 contact-flip has no func case at all); (5) **decline = Δ0 via `/__e2e/rows`** for
