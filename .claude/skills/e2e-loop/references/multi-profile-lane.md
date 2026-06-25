@@ -59,8 +59,9 @@ the live `claimDealer` step decides the exclusivity winner.
 ## THE REAL SCHEDULER — bounded hot-set + LIVE cap proof
 
 `buildServer` does NOT mount the scheduler; the live host opts in. Launch
-serve-live with the fan-out armed and the cap BELOW the active count so the bound
-actually bites:
+serve-live with the fan-out armed and the cap STRICTLY BELOW the active count so the
+bound actually bites (`=2` here because the seed world is **3** active — Accord +
+Camry + Mazda6; if you seed a different active count, set the cap to `active − 1`):
 
 ```
 AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 \

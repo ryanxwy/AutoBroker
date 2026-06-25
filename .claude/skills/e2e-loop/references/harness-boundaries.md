@@ -40,11 +40,15 @@ seed account inserted.
 
 ---
 
-## The 5 control routes
+## The 7 control routes
 
 All registered by the test host on `built.app` **outside `/api`** (the product
 wall is untouched). Each opens its own short-lived `openDb()` handle and closes
-it in `finally`. Seed ONLY through these — see "External-SQLite invisible" below.
+it in `finally`. The **4 `inject_*` seed routes** (`inject_replies`,
+`inject_reply_to_thread`, `inject_contact`, `inject_crm_threads`) are the ONLY
+sanctioned way to write fixture state — see "External-SQLite invisible" below; the
+**3 read routes** (`audit`, `rows`, `dataquality`) verify it. (The separate
+`/__e2e/fault` generate-fault seam is documented under the #1244 watch, not here.)
 
 ### `POST /__e2e/inject_replies` — seed the dealer-reply corpus
 
@@ -73,6 +77,18 @@ where **`applied.threadIds[] = [{ dealerName, from, threadId }]`** — echo the 
 **Response:** `{ ok:true, threadId, messageId, messages }`
 
 **When:** a dealer's round-2+ counter in multi-round negotiation. `threadId` MUST come from a prior `inject_replies` response — you cannot mint one. Re-running `dealer_reply_extract` after injection re-extracts the new pending message → a fresh `dealer_quotes` row with the revised OTD; latest quote wins downstream.
+
+---
+
+### `POST /__e2e/inject_contact` — flip the reply target (manager escalation / contact-flip)
+
+**Payload:** `{ threadId, email, displayName, role, isPrimary }`
+
+**Side effects:** resolves the thread's dealer, inserts a new `dealer_contacts` row for `email` (normalized), and — when `isPrimary:true` — flips it to the dealer's `is_primary_reply_target=1` (demoting the prior primary). This models a **higher-title person taking over a thread from a NEW `From:` address** (BDC rep → Sales Manager), so the next `negotiation_followup` addresses the manager. The contact-flip is the sensitive ② re-confirm the send gate raises (`dealer_web_lead_submit`/`negotiation_followup`); voicing it is load-bearing.
+
+**Response:** `{ ok:true, contactId, dealerId, isPrimary }`
+
+**When:** BEFORE injecting an escalation counter via `inject_reply_to_thread{from: managerEmail}`, so the reply-target ladder's rung-1 is the manager. See `references/dealer-brain.md` (escalation/turnover) + `references/multi-profile-lane.md` (the contact-flip surfaces in the ApprovalInbox).
 
 ---
 
@@ -244,7 +260,9 @@ Time & Cost tables in the HTML report (see `references/reporting.md`).
 
 1. Start: `pnpm e2e:serve-live`; wait for `{"liveE2e":"listening",…}`; record `dataDir`.
 2. Confirm floor automatically set by the host: tmp data-dir (not `~/.autobroker*`), `BLOCK=1`, gmail fake, `AUTO_APPROVE` deleted.
-3. **Seed ONLY via the 5 control routes** — never write the DB underneath the server.
+3. **Seed ONLY via the 4 `inject_*` control routes** (`inject_replies`,
+   `inject_reply_to_thread`, `inject_contact`, `inject_crm_threads`) — never write
+   the DB underneath the server; verify via `rows`/`audit`/`dataquality`.
 4. `location_query` MUST contain a whitelisted city name or ZIP (else silent Irvine fallback).
 5. After `inject_replies`, **save `applied.threadIds[]`**; dealer counters go to `inject_reply_to_thread` using those `threadId` values.
 6. Call `inject_crm_threads` BEFORE `dealer_hygiene`.

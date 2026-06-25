@@ -88,10 +88,11 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   Δ0, proven via `/__e2e/rows` (inv #8, #10).
 - #1244 fail-closed watch on the largest live extractions (inv #4, by name — never
   re-paste).
-- Seed ONLY via the **5** control routes (`inject_replies`, `inject_reply_to_thread`,
-  `inject_crm_threads`, `audit`, `rows`) — external SQLite writes are invisible to the
-  running server; `inject_crm_threads` before hygiene; closeout 2nd-last,
-  pipeline_reset last.
+- Seed ONLY via the **4 `inject_*`** control routes (`inject_replies`,
+  `inject_reply_to_thread`, `inject_contact`, `inject_crm_threads`) — external SQLite
+  writes are invisible to the running server; read/verify via `rows`/`audit`/`dataquality`
+  (`references/harness-boundaries.md`). `inject_crm_threads` before hygiene; closeout
+  2nd-last, pipeline_reset last.
 - Budget never renders as a number (inv #9). Fresh-context auditors stay separate from
   the fixer; "needs live verify" ≠ defer — run a fresh serve-live.
 - **Realism > cost (owner, 2026-06-22).** A full run mimics the REAL email quote

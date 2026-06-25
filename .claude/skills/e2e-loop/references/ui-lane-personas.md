@@ -60,7 +60,7 @@ to the main agent, which does the `browser_evaluate` verification.
 
 ---
 
-## Persona library (P1–P6) — brand-picker picks ONE per run; record it
+## Persona library (P1–P9) — brand-picker picks ONE per run; record it
 
 ### P1 — Impatient price-shopper
 **Voice:** clipped, results-only, no pleasantries. Pushes for OTD/bottom-line.
@@ -124,7 +124,7 @@ degradation. Realism anchor: 52% find car-buying more stressful than home-buying
 **Sample:** `rav4 or cr-v which is better` · `should i get the camry or the accord`
 **Router stress:** **product-boundary probe** — AutoBroker is a QUOTE tool, not a
 recommendation engine. Expected: clarify / redirect to "pin one vehicle to quote",
-and it must **NOT fabricate a pick**. Exposes a boundary the P1–P6 rotation never
+and it must **NOT fabricate a pick**. Exposes a boundary the earlier personas never
 touched (every prior persona already knew its one car).
 
 > **Behavior-axis vector (stochasticity knob).** A persona may also carry a drawn
@@ -166,7 +166,7 @@ Every message the subagent emits must carry this block (feeds `browser_evaluate`
 verification):
 
 ```
-- persona: <P1..P6>
+- persona: <P1..P9>
 - message: "<exact freeform text, typos intact>"
 - routes_to: <skillId | intake | clarify>
 - expected_outcome:
@@ -185,10 +185,14 @@ verification):
 
 ---
 
-## E1-E10 NL-router edge behaviors — every run must hit all
+## E1-E13 NL-router edge behaviors
 
-The 2-3 journey variations must be chosen so the 17 messages cover all of these.
-If the chosen persona doesn't naturally trigger one, add a targeted message.
+**E1–E10 are MANDATORY — every run must hit all ten** (the under-exercised
+NL-router edges); **E11–E13 are out-of-scope boundary probes** — hit them when the
+chosen persona naturally raises them (financing advice / ranking rationale /
+trade-in), not required every run. The 2-3 journey variations must be chosen so the
+17 messages cover all of E1–E10; if the chosen persona doesn't naturally trigger
+one, add a targeted message.
 
 | # | Edge behavior | Concrete trigger | Expected (source) |
 |---|---|---|---|

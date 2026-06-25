@@ -11,7 +11,7 @@ new car. It is NOT a 2-3 round cooperative haggle — see the reality model belo
 
 ## What it is
 
-Dispatch a **local Sonnet subagent** as the dealer actor (`dealer.md`). It runs on
+Dispatch a **local Sonnet subagent** as the dealer actor (`harness/prompts/dealer.md`). It runs on
 YOUR Claude — the operator's subscription (subagents) or a `claude -p` child — entirely
 SEPARATE from the SUT's DeepSeek api-key lane: it never charges the SUT's provider
 budget and never sends real email. All writes flow through `inject_replies` /
@@ -25,7 +25,7 @@ through the chat rail / `/slash`.
 Two ways to drive the actor — pick by lane:
 
 - **Per-dealer concurrent subagents (recommended for multi-profile + deep realism).**
-  Dispatch ONE Sonnet subagent PER dealer — each gets `dealer.md` + its assigned
+  Dispatch ONE Sonnet subagent PER dealer — each gets `harness/prompts/dealer.md` + its assigned
   archetype + the buyer's latest email + the thread transcript — and run them in
   **batches of ≤3 concurrent**. Each dealer is an independent agent (no cross-context
   bleed), so sustained-resistance archetypes (quoter / come-onsite-only / ghost) stay
@@ -37,10 +37,14 @@ Two ways to drive the actor — pick by lane:
 **OAUTH CONCURRENCY REALITY (researched + live-probed 2026-06-24).** On ONE Claude
 subscription the honest ceiling is **~2-3 in-flight calls**; beyond ~3-7 you hit a
 server-side 429 ("Server is temporarily limiting requests — *not your usage limit*")
-that hard-fails the extra children, or a multi-minute hang. So **PACE**: ≤3 concurrent,
-rounds sequential, drop ghosts/laggards (fewer emails over more wall-clock — the
-deliberate trade). "Concurrent" buys orchestration shape (interleaved threads, the
-shared-rooftop race, one approval inbox) + ~2-3× overlap, NOT N× parallelism.
+that hard-fails the extra children, or a multi-minute hang. So **PACE**: **≤3 concurrent
+in-flight is a SUBSCRIPTION-WIDE ceiling, NOT per-field** — it bounds the total dealer-
+actor children alive at once across the whole run, INCLUDING all profiles in a
+multi-profile 3.9 run (so 3 profiles share the same ≤3 budget, not ≤3 each — see
+`references/multi-profile-lane.md`). Rounds sequential, drop ghosts/laggards (fewer
+emails over more wall-clock — the deliberate trade). "Concurrent" buys orchestration
+shape (interleaved threads, the shared-rooftop race, one approval inbox) + ~2-3×
+overlap, NOT N× parallelism.
 `claude -p` and Claude Code subagents on the subscription are fine for local owner-run
 use; the **Claude Agent SDK requires an api key** (OAuth is blocked there) — do NOT
 route the dealer actor through the SDK on OAuth.
@@ -176,7 +180,7 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
    gross), grinding the OTD DOWN with diminishing concessions. For the front-runners,
    have a **higher-title MANAGER take over at round 2** (escalation) from a NEW
    email. Match the corpus register. **But do NOT make every thread converge to a
-   number — sustained resistance is mainstream (`dealer.md` "Sustained resistance"):
+   number — sustained resistance is mainstream (`harness/prompts/dealer.md` "Sustained resistance"):
    keep ~1-2 dealers per field as COME-ONSITE-ONLY that never email an OTD even at
    round 4 (every counter pushes the appointment / reverse-induces "tell me your
    timeline + financing first"), and let ~1-2 GHOST mid-thread (replied once, then

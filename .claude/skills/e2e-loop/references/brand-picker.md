@@ -69,6 +69,13 @@ Full definitions, voice, stress, and the E1–E13 edge-behavior table live in
 `references/ui-lane-personas.md` — do not redefine here. Record the persona ID
 (and, if drawn, the behavior-axis vector) in the report.
 
+**In `--light`:** pick a persona ID for the bootstrap intake from this list alone —
+do NOT load `references/ui-lane-personas.md` (it is full-run only; `--light` needs
+just the one-line persona label for the intake's freeform tone, not the library
+detail). P1=impatient price-shopper, P2=cautious first-timer, P3=spreadsheet
+power-user, P4=trade-in haggler, P5=lease-vs-finance-confused, P6=ESL/terse texter,
+P7=payment-buyer, P8=anxious/can't-afford, P9=undecided cross-shopper.
+
 | Persona | Stress exercised |
 |---|---|
 | P1 impatient price-shopper | terse → 0.6 floor; 0.85 destructive downgrade |
@@ -102,7 +109,7 @@ Log in the report's "本轮随机选择" section and TodoWrite:
 metro:    <city>, <state> <ZIP>
 vehicle:  <year> <brand> <model> <trim>
 finance:  <finance | lease | cash>
-persona:  <P1–P6>
+persona:  <P1–P9>
 email:    <buyer email>
 2nd profile (opt): <year brand model>
 ```
