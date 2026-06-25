@@ -231,10 +231,11 @@ so the chaos + replay corpus stays reproducible — the LIVE scheduler proof is 
 serve-live cap step above; the soak lane's job is breadth + a frozen replay corpus.
 
 On the first `runAllInvariants` violation the soak runner FREEZES: it writes the
-seed, the JSONL transcript, and the chaos config into a new case under
-`harness/multiprofile-corpus.txt` as a deterministic, no-provider replay case.
-Converges when `dry-rounds` consecutive rounds surface no NOVEL violation
-signature.
+seed, the JSONL transcript, and the chaos config into a new case DIRECTORY
+`harness/cases/mp/<id>/` (case.json + transcript.jsonl) and appends that case id
+to the `harness/multiprofile-corpus.txt` MANIFEST — a deterministic, no-provider
+replay case. Converges when `dry-rounds` consecutive rounds surface no NOVEL
+violation signature.
 
 > SYNC TRAP: a corpus case directory and its `harness/multiprofile-corpus.txt`
 > manifest line live and die together — never delete one without the other (a

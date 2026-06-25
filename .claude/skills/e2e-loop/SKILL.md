@@ -2,8 +2,9 @@
 name: e2e-loop
 description: Run a manually-triggered live-e2e 全技能巡检 of the 17 AutoBroker skills against
   the real DeepSeek lane via serve-live + a browser — full two-sided live-negotiation
-  loop (brand-picker → two-pass sweep → Sonnet dealer-brain haggle → frontend-taste →
-  auto-close backlog → report → merge), or a `--light` manual two-pass sweep. Use to
+  loop (brand-picker → two-pass sweep → Sonnet dealer-brain negotiation with sustained
+  dealer resistance → multi-profile concurrent fan-out → frontend-taste → auto-close
+  backlog → report → merge), or a `--light` manual two-pass sweep. Use to
   run the e2e sweep / 全技能巡检 on demand; pass --light for a read-only manual inspection.
 disable-model-invocation: true
 ---
@@ -88,9 +89,10 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   Δ0, proven via `/__e2e/rows` (inv #8, #10).
 - #1244 fail-closed watch on the largest live extractions (inv #4, by name — never
   re-paste).
-- Seed ONLY via the **5** control routes (`inject_replies`, `inject_reply_to_thread`,
-  `inject_crm_threads`, `audit`, `rows`) — external SQLite writes are invisible to the
-  running server; `inject_crm_threads` before hygiene; closeout 2nd-last,
+- Seed ONLY via the **6** control routes (`inject_replies`, `inject_reply_to_thread`,
+  `inject_crm_threads`, `inject_contact`, `audit`, `rows`) — external SQLite writes are
+  invisible to the running server; `inject_crm_threads` before hygiene;
+  `inject_contact` for a manager-escalation contact flip; closeout 2nd-last,
   pipeline_reset last.
 - Budget never renders as a number (inv #9). Fresh-context auditors stay separate from
   the fixer; "needs live verify" ≠ defer — run a fresh serve-live.

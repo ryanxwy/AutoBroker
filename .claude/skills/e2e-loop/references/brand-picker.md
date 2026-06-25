@@ -102,7 +102,7 @@ Log in the report's "本轮随机选择" section and TodoWrite:
 metro:    <city>, <state> <ZIP>
 vehicle:  <year> <brand> <model> <trim>
 finance:  <finance | lease | cash>
-persona:  <P1–P6>
+persona:  <P1–P9>
 email:    <buyer email>
 2nd profile (opt): <year brand model>
 ```

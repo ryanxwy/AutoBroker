@@ -26,6 +26,9 @@ Wait for this line; **record `dataDir`**.
 | `AUTOBROKER_TEST_AUTO_APPROVE` | **deleted — NEVER set** (CLAUDE.md inv #11; keeps decline path live) |
 | `AUTOBROKER_MODE` | `"test"` — the sole send-control variable; every send resolves fake/local |
 | `DEEPSEEK_API_KEY` | **not pinned** — boot's `loadDotEnvKeys` reads the real key from `.env` (no-clobber); **LLM lane is live** |
+| `AUTOBROKER_RECORD_TRANSCRIPT` | optional; when set, records the SUT's LLM traffic to a JSONL file (the step-3.9 record/replay seam) |
+| `AUTOBROKER_REPLAY_TRANSCRIPT` | optional; when set, replays a prior transcript with ZERO provider cost (deterministic; dealer replies are frozen as seeds) |
+| `AUTOBROKER_PORTFOLIO_SCHEDULER` | `"1"` arms the real PortfolioScheduler for step 3.9; pair with `MAX_CONCURRENT_ACTIVE_PROFILES` (set below the active count to prove the cap) and `AUTOBROKER_PORTFOLIO_TICK_MS` (e.g. 2000) |
 
 Result: real server + real built UI + isolated throwaway DB (never touches
 `~/.autobroker*`) + real DeepSeek + fake-send floor armed + never auto-approve.
@@ -40,7 +43,7 @@ seed account inserted.
 
 ---
 
-## The 5 control routes
+## The control routes
 
 All registered by the test host on `built.app` **outside `/api`** (the product
 wall is untouched). Each opens its own short-lived `openDb()` handle and closes
@@ -88,6 +91,18 @@ where **`applied.threadIds[] = [{ dealerName, from, threadId }]`** — echo the 
 
 ---
 
+### `POST /__e2e/inject_contact` — add a new dealer-contact on a thread (manager escalation)
+
+**Payload:** `{ threadId, email, displayName?, role?, isPrimary? }`
+
+**Side effects (via `injectContact`):** looks up the thread's dealer + `search_profile_id`; inserts a new `dealer_contacts` row (then links it), so a round-2+ reply can arrive from a *different, higher-titled* sender (sales manager / GM) than the first salesperson — the escalation `negotiation_followup` must re-target. Returns `400` on an unknown `threadId`.
+
+**Response:** `{ ok:true, contactId, … }`
+
+**When:** the manager-escalation beat in step 3.5 / 3.9 — pair it with an `inject_reply_to_thread` from the new `email` so the thread shows a higher-authority counter. Verify via `/__e2e/rows?table=dealer_contacts`.
+
+---
+
 ### `GET /__e2e/audit?action=` — verify audit_log writes
 
 Counts `audit_log` rows, optionally filtered by `?action=` → `{ action, count }`.
@@ -100,7 +115,7 @@ Counts `audit_log` rows, optionally filtered by `?action=` → `{ action, count 
 
 Counts rows in one allow-listed table → `{ table, count }`. Returns `400 { ok:false, error:"unknown table" }` for any table not in the whitelist.
 
-**Allow-list (~13 tables):** `dealer_quotes`, `quote_audits`, `messages`, `dealers`, `profile_dealers`, `threads`, `search_profiles`, `lead_submissions`, `manufacturer_incentives`, `inventory_listings`, `audit_log`, `fake_mailbox_messages`, `message_analysis`.
+**Allow-list (14 tables):** `dealer_quotes`, `quote_audits`, `messages`, `dealers`, `dealer_contacts`, `profile_dealers`, `threads`, `search_profiles`, `lead_submissions`, `manufacturer_incentives`, `inventory_listings`, `audit_log`, `fake_mailbox_messages`, `message_analysis`.
 
 **When:** verify writes / assert decline = Δ0 after any skill; assert `search_profiles = 0` after per-PASS cleanup.
 
@@ -244,10 +259,11 @@ Time & Cost tables in the HTML report (see `references/reporting.md`).
 
 1. Start: `pnpm e2e:serve-live`; wait for `{"liveE2e":"listening",…}`; record `dataDir`.
 2. Confirm floor automatically set by the host: tmp data-dir (not `~/.autobroker*`), `BLOCK=1`, gmail fake, `AUTO_APPROVE` deleted.
-3. **Seed ONLY via the 5 control routes** — never write the DB underneath the server.
+3. **Seed ONLY via the control routes** (`inject_replies`, `inject_reply_to_thread`, `inject_crm_threads`, `inject_contact`) — never write the DB underneath the server.
 4. `location_query` MUST contain a whitelisted city name or ZIP (else silent Irvine fallback).
 5. After `inject_replies`, **save `applied.threadIds[]`**; dealer counters go to `inject_reply_to_thread` using those `threadId` values.
 6. Call `inject_crm_threads` BEFORE `dealer_hygiene`.
 7. Dump `test_run_records` BEFORE `pipeline_reset`; use backup fallback if missed.
-8. Verify writes and decline-Δ0 via `/__e2e/rows?table=` (whitelist ~13 tables) and `/__e2e/audit?action=`.
+8. Verify writes and decline-Δ0 via `/__e2e/rows?table=` (whitelist 14 tables) and `/__e2e/audit?action=`.
 9. Per-PASS cleanup: assert `/__e2e/rows?table=search_profiles` returns `0`.
+10. **(Step 3.9 only)** Before launching: set `AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 AUTOBROKER_PORTFOLIO_TICK_MS=2000`; optionally `AUTOBROKER_RECORD_TRANSCRIPT=<path>` to capture a replay corpus.

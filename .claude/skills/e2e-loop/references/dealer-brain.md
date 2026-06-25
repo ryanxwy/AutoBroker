@@ -27,7 +27,7 @@ Two ways to drive the actor — pick by lane:
 - **Per-dealer concurrent subagents (recommended for multi-profile + deep realism).**
   Dispatch ONE Sonnet subagent PER dealer — each gets `dealer.md` + its assigned
   archetype + the buyer's latest email + the thread transcript — and run them in
-  **batches of ≤3 concurrent**. Each dealer is an independent agent (no cross-context
+  **batches of ≤3 concurrent in-flight across the WHOLE portfolio**. Each dealer is an independent agent (no cross-context
   bleed), so sustained-resistance archetypes (quoter / come-onsite-only / ghost) stay
   distinct. The operator injects each returned reply via `inject_reply_to_thread`.
 - **Batch corpus (one subagent for a whole field).** For a fast single-profile round-0,
@@ -174,7 +174,7 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
    REQUIRED (it STOPs `pin_required` even with 1 active — pick the vehicle once).
    `/slash` it for rounds 2+ (faster + deterministic than NL). Confirm
    `threads.state='negotiating'`.
-2. **Generate ≤N dealer counters** (per-dealer Sonnet subagents, ≤3 concurrent) with a realistic floor (keep ≥$150-400
+2. **Generate ≤N dealer counters** (per-dealer Sonnet subagents, ≤3 concurrent in-flight across the WHOLE portfolio) with a realistic floor (keep ≥$150-400
    gross), grinding the OTD DOWN with diminishing concessions. For the front-runners,
    have a **higher-title MANAGER take over at round 2** (escalation) from a NEW
    email. Match the corpus register. **But do NOT make every thread converge to a

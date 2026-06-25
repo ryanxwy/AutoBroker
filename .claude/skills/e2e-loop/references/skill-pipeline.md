@@ -7,6 +7,8 @@ press, the order, and the live-only edges. The FULL matrix lives in the design d
 no-coverage edges. Testids are harvested from `apps/ui/src` — if one drifts,
 re-harvest live (`grep data-testid`), don't trust a stale string.
 
+> **Scope note:** This sweep IS the pinned single-brand spine; step **3.9 multi-profile fan-out** does not begin until this sweep (and 3.5) reaches terminal+green (rulings #4/#7 — see `references/multi-profile-lane.md`).
+
 ## A. Canvas-region + gate-testid cheat sheet
 
 **Tabbed Canvas — only the ACTIVE panel renders.** Click `canvas-tab-<key>` THEN
