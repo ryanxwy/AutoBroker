@@ -65,6 +65,26 @@ anti-scrape **403** is not a defect — but the fix this round is to make it
 **transparent to the buyer** (a surfaced "blocked" count), not ignore it. Every
 such item ends fixed or tagged `live-verified, no-code-change` — never dropped.
 
+## Layer-B harvest is NOT this machine
+
+S0–S6 is for **Layer-A breaches + external not-a-bugs ONLY**. Layer-B PICs
+(correct-but-sub-optimal outcomes — see SKILL.md "Verdict model") go to the
+**harvest ledger** (`references/reporting.md` §7.5 + the cross-run
+`harvest-register.md`) with default `lands=backlog` and **NO same-round fix
+obligation**. They do not enter S0–S6 by default; the Layer-A empty-backlog rule is
+untouched by them.
+
+**The ONE bridge — elective promotion.** A PIC may be ELECTIVELY promoted to
+`fix-this-round`; it then enters S0–S6 as a normal item (full fresh-context
+APPROVE/SAFE + `RUN_UI_FUNCTIONAL=1` green + fresh live re-verify). Betterment never
+bypasses review. Promotion is **one-directional**: a Layer-A breach can never be
+downgraded into a PIC.
+
+**THE WALL is route-backed, not prose.** The Layer-B classification of any "low
+quote-rate / ghosted" item REQUIRES `/__e2e/dataquality` to return `nullEscape:true`
+or `gated==n` FIRST (the route data must PROVE no number was dropped). A
+`0<coverage<0.5` `dealer_reply_extract` result is rung-2 latent-A, never B1/B2.
+
 ## T7 — a missing or unreliable CHECK is itself a fix item this round
 
 If a skill "completed but couldn't be verified" because no row / route / audit
@@ -81,7 +101,12 @@ pre-authoring it. A new check must generalize to the next random brand
    report**. A mismatch fixes the **CHECK**, not the narrative — e.g. the run-d
    `fake_mailbox` 4→8 "red herring" was a mis-attribution (a routing call, not a
    send), so the calibrated fix tightens what the check reads.
-2. Confirm every waiver is **visible** in the report — never silently absorbed.
+2. **Diff this run's Layer-A-vs-Layer-B splits** against the prior report's owner
+   judgment. A borderline regression that drifted into Layer-B is a **calibration
+   bug** — fix the **CHECK** (the floor's machine test) + log a **T7 missing-CHECK**,
+   NOT the narrative. (The drift is the thing the inversion guards against: a
+   held-then-lost result that got filed as a benign PIC.)
+3. Confirm every waiver is **visible** in the report — never silently absorbed.
 
 ## Integrate — step 7 (full mode only)
 

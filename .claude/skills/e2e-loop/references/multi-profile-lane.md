@@ -188,6 +188,76 @@ Drive it like a real user clearing a shared inbox:
 
 ---
 
+## ATTRIBUTION — the routing ladder is exercised LIVE; the real gaps
+
+`routeThread` runs **live over the fake mailbox** (`inject_replies` calls
+`seedFakeMailbox`). Three structural facts to hold:
+
+- **`profile` is the workflow LOOP DRIVER** (`state.searchProfileId`), NOT
+  message-derived — attribution maps a thread to a DEALER, the profile comes from who
+  is sweeping.
+- **`thread_routing.thread_id` is a PRIMARY KEY** — one thread → one profile,
+  last-writer-wins (the structural one-thread→one-profile limit; no thread-split/join
+  table this round).
+- The ladder: rung-2 unique sender → `known_contact`; rung-2.5 host-stem match; else
+  fall through to `unknown_sender` (zero-write).
+
+**The two real gaps:**
+
+- **G1 same-source / diff-dealer** — a shared CRM relay (`leads@dealergroup.com`) bound
+  to ≥2 dealers under one profile hits the **rung-2 `LIMIT 1` (no `ORDER BY`)** in
+  `lookupDealerBySender` (and the rung-2.5 `ORDER BY d.rowid` first-match in
+  `lookupDealerByHost`) → an **arbitrary silent pick**. Owner decision:
+  **SURFACE-AS-AMBIGUOUS** — leave the thread `unrouted` for human binding, zero-write,
+  **never** an arbitrary pick.
+- **G2 cross-profile thread conflation** — two profiles' threads must never cross-bind.
+
+**CLASSIFICATION (D2 Finding 2):** an **OBSERVED live silent mis-attribution** is a hard
+**Layer-A FAIL** (`no_cross_profile_bleed`-class, this file's line-142 floor) that
+**FREEZES the run** — NOT "Layer-A-adjacent" harvest. Only the **LATENT/unexercised** G1
+gap (the `LIMIT-1` path exists but no live mis-route triggered this run) is a **Layer-B
+harvest candidate**. **G2a** (separate threads must each route to their own profile) =
+Layer-A floor; **G2b** (silent re-stamp post-fix) = Layer-A FAIL.
+
+### G1/G2 probes — `inject_raw_inbound` (the planned harness probe this loop adds)
+
+The current `inject_replies` PRE-STAMPS `threads.dealer_id` + `search_profile_id` +
+`profile_dealers` bind + `messages.search_profile_id` — so the ladder is bypassed and
+G1/G2 cannot be tested. The loop's **planned T7 test-host addition** is a new
+**`POST /__e2e/inject_raw_inbound`** (derive-not-prestamp; lands NOW, before the
+routing fix) that seeds ONLY the INPUT side — `dealers` (`id=raw-dealer-<dealer_key>`) +
+real `profile_dealers` binds + real `dealer_contacts` (`normalized_email`) + a
+`seedFakeMailbox` row per inbound (`direction:inbound`, **un-ingested**) — and writes NO
+product `threads` / `thread_routing` / `messages.search_profile_id` / `dealer_id`. The
+live `dealer_inbox_check` sweep must then **DERIVE** attribution.
+
+**PROBE KEYING (load-bearing).** The sweep rewrites the thread id via
+`productThreadId()` → `inbox-thread-fake-<threadKey>`, NOT the raw `fake-<threadKey>`.
+So the planned **`GET /__e2e/routing?threadKey=`** must resolve the PRODUCT thread id
+(apply the `productThreadId` transform) and be **PROFILE-KEYED** (filter
+`thread_routing` by `search_profile_id`/`dealer_id`) so case (b) cross-leak cannot read
+green. For the AMBIGUITY cases (a)(c) **NO apply runs** (the batch is never approved), so
+no routing row is ever minted — the assertion there reads the **GATE SUSPEND PAYLOAD**
+(`state.unrouted[].reason` + `candidate_dealer_ids`), NOT the DB (a no-row read is
+vacuously true and proves nothing). The route also asserts the seeded
+`fake_mailbox_messages` row is `direction:inbound` + un-ingested so the ladder was
+actually consulted.
+
+**THREE LIVE CASES** (the routing.ts/applyBatch.ts fix is the **harvested ACTION** this
+motivates — see SKILL.md "Verdict model"; the route + probe are the minimal landable unit):
+
+| case | seed | EXPECT | layer |
+|---|---|---|---|
+| (a) G1 same-source two-dealer | alpha+beta both bound P1, both contact `leads@dealergroup.com`; one inbound swept by P1 | SUSPEND payload `reason='ambiguous_sender'`, `candidate_dealer_ids` ⊇ `{raw-dealer-alpha, raw-dealer-beta}`, **zero-write** (pre-fix a silent arbitrary pick = the Layer-B harvest signal) | B-until-fix / A-once-observed-silent |
+| (b) G2a one-rooftop two-profiles separate threads | alpha bound P1+P2, contact `sara@alpha-honda.com`; `t-p1` swept P1 + `t-p2` swept P2 (both approved) | profile-keyed `/__e2e/routing` reads `t-p1→(alpha,P1)`, `t-p2→(alpha,P2)`, **no cross-leak** | **Layer-A floor (must pass today)** |
+| (c) cold / unknown | `randomguy@nowhere.com` swept P1 | SUSPEND payload `reason='unknown_sender'`, `candidate_dealer_ids=[]`, **zero-write** | Layer-A backstop |
+
+(Optional (d) G2b: same `threadKey` swept P1 then P2 → post-fix EXPECT
+`cross_profile_conflict` + `thread_routing` still reads P1.) Cases (b)(c) must pass
+IMMEDIATELY; case (a) FAILS pre-fix and that failing assertion IS the harvest signal.
+
+---
+
 ## DRIVE & OBSERVE — the portfolio UI (Phase 3)
 
 The concurrent world is not just API + DB — the operator drives and observes it
@@ -223,13 +293,23 @@ to terminal, so a gate cannot be left parked across steps in the func lane.
 
 ## CHAOS — escalating, until-dry
 
-`pnpm soak mp --until-dry` is the deterministic structural engine that escalates
-per round: more ghosting, bad-faith concessions/raises, "send me your budget"
-probes (`harness/soak/multiprofile/chaos.ts` `aggressionDirectiveText`), more
-concurrent profiles, and more profiles pitted against the same rooftop. It uses
-the deterministic stub scheduler (a side-effect-free first-N hot/deferred split)
-so the chaos + replay corpus stays reproducible — the LIVE scheduler proof is the
-serve-live cap step above; the soak lane's job is breadth + a frozen replay corpus.
+**`pnpm soak mp --until-dry` is STRUCTURALLY LIVE-DEFERRED, not a live verdict.**
+`serverHost.ts`/`startSoakHost` installs **neither** the record/replay seam **nor**
+`/__e2e/inject_replies`, so `injectDealerReplies` 404s and `AUTOBROKER_RECORD_TRANSCRIPT`
+is a dead var on that host — the until-dry live loop cannot actually drive a dealer
+reply. **THE live multi-profile e2e is serve-live 3.9** (which HAS `inject_replies` +
+record/replay + the real `PortfolioScheduler`), driven by Playwright MCP + Sonnet-OAuth
+dealer subagents (~2-3 in-flight). The runnable **deterministic** mp gate is
+`pnpm soak mp-replay` — a regression BACKSTOP, never the headline. Record any replay
+corpus from a serve-live 3.9 run.
+
+`soak mp --until-dry` remains the deterministic structural escalator on its OWN stub
+scheduler (no live dealer): per round it cranks ghosting, bad-faith concessions/raises,
+"send me your budget" probes (`harness/soak/multiprofile/chaos.ts`
+`aggressionDirectiveText`), more concurrent profiles, more profiles pitted against the
+same rooftop — a side-effect-free first-N hot/deferred split for breadth + a frozen
+replay corpus. The LIVE scheduler proof is the serve-live cap step above; this lane's
+job is breadth + the corpus, NOT a live verdict.
 
 On the first `runAllInvariants` violation the soak runner FREEZES: it writes the
 seed, the JSONL transcript, and the chaos config into a new case DIRECTORY
@@ -249,9 +329,12 @@ violation signature.
 One seeded PRNG drives the SKELETON (which profiles run, reply ordering, the
 ghost/chaos schedule). The Sonnet dealer writes reply bodies at temperature > 0 —
 prose is non-deterministic. The SUT's own LLM calls are captured through the
-record/replay seam so any live failure replays with ZERO provider cost:
+record/replay seam so any live failure replays with ZERO provider cost — **but the
+seam + `inject_replies` live only on the serve-live 3.9 host, NOT on `serverHost.ts`'s
+soak host** (so the replay corpus is recorded FROM a serve-live 3.9 run, not from
+`soak mp --until-dry`):
 
-- `AUTOBROKER_RECORD_TRANSCRIPT=<path>` — record a live run's SUT LLM traffic.
+- `AUTOBROKER_RECORD_TRANSCRIPT=<path>` — record a serve-live 3.9 run's SUT LLM traffic.
 - `AUTOBROKER_REPLAY_TRANSCRIPT=<path>` — replay it, no provider call, fully
   deterministic (the dealer replies are frozen as seeds; the SUT calls replay).
 
@@ -279,6 +362,10 @@ is how a one-off live concurrency bug becomes a permanent deterministic guard.
 - Verification hierarchy unchanged: deterministic `/__e2e/rows` + `/__e2e/audit` +
   `runAllInvariants` (the verdict) **>** DOM **>** screenshot **>** taste. A pretty
   portfolio board never outranks a `no_cross_profile_bleed` violation.
+- **Immutable mode here too.** Both the pinned spine and 3.9 launch
+  `AUTOBROKER_MODE=test` and treat it immutable; **never** PUT `app_mode=buyer` on the
+  running portfolio host (boot-only `assertTestModeSafe`). Cross-ref
+  `harness-boundaries.md` "Mode model".
 
 ---
 
@@ -287,5 +374,7 @@ is how a one-off live concurrency bug becomes a permanent deterministic guard.
 All of: cap holds + every profile reaches terminal (no starve/wedge) · exactly one
 binds each shared rooftop, losers voiced + ZERO send · `runAllInvariants` all-ok
 per-step (per-profile + aggregate) · decline isolated to its profile · keystone
-`no_external_mutation == 0` · `soak mp --until-dry` converges with every frozen
-case green on `mp-replay`.
+`no_external_mutation == 0`. The headline IS the serve-live 3.9 live drive above;
+`pnpm soak mp-replay` GREEN (every frozen case clean) is the **deterministic backstop
+sub-line**, not the verdict (`soak mp --until-dry` is structurally live-deferred — see
+CHAOS).

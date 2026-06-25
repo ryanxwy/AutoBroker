@@ -33,6 +33,29 @@ Wait for this line; **record `dataDir`**.
 Result: real server + real built UI + isolated throwaway DB (never touches
 `~/.autobroker*`) + real DeepSeek + fake-send floor armed + never auto-approve.
 
+### Mode model (test vs buyer)
+
+1. **`AUTOBROKER_MODE` is the SOLE send-control var.** Only the literal string `"test"`
+   = test; **anything else** (including a typo/garbage value) resolves buyer-capable.
+2. **The L2 human-approval gate is MODE-BLIND** — always-on in BOTH modes. `test` only
+   makes the FAKE adapter the target; it never removes the per-action approval floor.
+3. **The irreversible boundary is exactly 2 network lines** (`adapter.send`;
+   `page.click(submitSelector)`) behind **3 fresh-reading `!isBuyerMode` brakes**
+   re-asserted at each network boundary.
+4. **Browser nav + SRP scraping are mode-INDEPENDENT** — already REAL in test mode
+   (only `submitForm` is gated). serve-live already mimics buyer maximally up to the
+   safe line; **"buyer-read / fake-write" is NOT expressible** (you cannot half-arm a
+   real submit).
+5. **The serve-live tmp dir is under `os.tmpdir()`, NOT `~/.autobroker-ts`** — so the
+   data-dir denylist does NOT protect it. The rings that hold here are the **test-mode
+   floor** + the **missing OAuth token** (no real Gmail credential to send through),
+   not the denylist.
+
+**IMMUTABLE-MODE GUARDRAIL.** `assertTestModeSafe` fires **ONLY at boot**. **Never**
+PUT/POST `app_mode=buyer` (or flip the TopBar) on a running serve-live host — a live
+flip arms a real adapter on the NEXT send with **no second env ring** to catch it. Mode
+is launch-time, immutable for the run's lifetime.
+
 **The geocoder is the only stubbed collaborator** (`__setIntakeDepsForTests`).
 `harnessGenerate` stays real — trim-verify, `dealer_reply_extract`, negotiation
 drafts all hit the real provider.
@@ -267,3 +290,4 @@ Time & Cost tables in the HTML report (see `references/reporting.md`).
 8. Verify writes and decline-Δ0 via `/__e2e/rows?table=` (whitelist 14 tables) and `/__e2e/audit?action=`.
 9. Per-PASS cleanup: assert `/__e2e/rows?table=search_profiles` returns `0`.
 10. **(Step 3.9 only)** Before launching: set `AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 AUTOBROKER_PORTFOLIO_TICK_MS=2000`; optionally `AUTOBROKER_RECORD_TRANSCRIPT=<path>` to capture a replay corpus.
+11. **Mode is launch-time, immutable.** `AUTOBROKER_MODE=test` is chosen at boot (`assertTestModeSafe` fires only there); **never** PUT/POST `app_mode=buyer` or flip the TopBar on the running host — a live flip arms a real adapter on the next send with no second env ring (see "Mode model").

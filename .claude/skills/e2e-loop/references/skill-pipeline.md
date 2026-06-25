@@ -8,6 +8,8 @@ no-coverage edges. Testids are harvested from `apps/ui/src` — if one drifts,
 re-harvest live (`grep data-testid`), don't trust a stale string.
 
 > **Scope note:** This sweep IS the pinned single-brand spine; step **3.9 multi-profile fan-out** does not begin until this sweep (and 3.5) reaches terminal+green (rulings #4/#7 — see `references/multi-profile-lane.md`).
+>
+> **Two-layer read:** per-skill outcomes are read through the two-layer verdict (SKILL.md "Verdict model"). A correct-but-sub-optimal result — a thin comparison, a low-coverage-but-`≥0.5` scan, a graceful `no_oem_source` — is **Layer-B harvest**, NOT a skill FAIL; only the named Layer-A floors fail a skill.
 
 ## A. Canvas-region + gate-testid cheat sheet
 

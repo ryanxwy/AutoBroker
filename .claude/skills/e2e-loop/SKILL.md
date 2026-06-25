@@ -52,11 +52,12 @@ reads this spine + `references/harness-boundaries.md` + `references/skill-pipeli
 | 3 | two-pass sweep: PASS-A freeform-persona, PASS-B `/slash`; per-skill rows/audit + DOM verify | terminal `skill_runs` row + table delta + active-panel testid | `references/skill-pipeline.md` (+`references/ui-lane-personas.md`) |
 | 3.5 | dealer-brain: **deep mutual negotiation — multiple parallel threads ≥4 rounds each, ≥10 dealers, multi-titled-contact escalation + AI-auto first-touch + ghosting** (realism > cost) | active threads `buyer_FUs ≥4` (past old cap); ghosts capped at 2 unanswered → drop; re-extract → revised `dealer_quotes` | `references/dealer-brain.md` |
 | 3.7 | frontend-taste per data tab | ranked findings list | `references/ui-lane-personas.md` (→ `frontend-taste` skill by name) |
-| 3.9 | multi-profile live-LLM fan-out (ONLY after pinned 3/3.5 is terminal+green): seed the **3 different-brand** world (Accord+Camry+Mazda6) via REAL intake; arm the real scheduler (`AUTOBROKER_PORTFOLIO_SCHEDULER=1` + `MAX_CONCURRENT_ACTIVE_PROFILES` < active); run **concurrent per-profile 3.5-grade negotiation** + a shared-`dealer_key` rooftop collision + interleaved human approvals through the unified `ApprovalInbox` | scheduler cap holds + every profile reaches terminal (no starve/wedge); `claimDealer`: exactly 1 binds the rooftop, losers `excluded_conflict` + `exclusion_reason`/`heldByVehicle` voiced + ZERO web-form AND ZERO email (claim precedes send; engage-then-abort releases); decline isolated to its profile (Δ0 there, no-op for others); `runAllInvariants` all-ok per-step (per-profile + portfolio aggregate); keystone `no_external_mutation==0`; portfolio UI: `/portfolio` board lists all N profiles (segment-grouped, health dots) + `portfolio-status-bar` counts + `needs-you-widget` surfaces every parked gate (routes to its run); `pnpm soak mp-replay` GREEN + `pnpm soak mp --until-dry` converges | `references/multi-profile-lane.md` |
+| 3.9 | multi-profile live-LLM fan-out (ONLY after pinned 3/3.5 is terminal+green): seed the **3 different-brand** world (Accord+Camry+Mazda6) via REAL intake; arm the real scheduler (`AUTOBROKER_PORTFOLIO_SCHEDULER=1` + `MAX_CONCURRENT_ACTIVE_PROFILES` < active); run **concurrent per-profile 3.5-grade negotiation** + a shared-`dealer_key` rooftop collision + interleaved human approvals through the unified `ApprovalInbox` | scheduler cap holds + every profile reaches terminal (no starve/wedge); `claimDealer`: exactly 1 binds the rooftop, losers `excluded_conflict` + `exclusion_reason`/`heldByVehicle` voiced + ZERO web-form AND ZERO email (claim precedes send; engage-then-abort releases); decline isolated to its profile (Δ0 there, no-op for others); `runAllInvariants` all-ok per-step (per-profile + portfolio aggregate); keystone `no_external_mutation==0`; portfolio UI: `/portfolio` board lists all N profiles (segment-grouped, health dots) + `portfolio-status-bar` counts + `needs-you-widget` surfaces every parked gate (routes to its run); `pnpm soak mp-replay` GREEN (`soak mp --until-dry` is structurally LIVE-DEFERRED — `serverHost.ts` lacks `inject_replies` + record/replay; see `references/multi-profile-lane.md`) | `references/multi-profile-lane.md` |
 | 4 | backlog state machine S0–S6 (enumerate→research→fix-in-worktree→review→green→fresh live re-verify) | backlog-empty grep; green GREEN | `references/backlog-state-machine.md` |
 | 4.5 | Electron sync (only if `apps/ui/src` or a testid touched) | `desktop:smoke` 14/14 | `references/reporting.md` |
 | 5 | telemetry capture from `test_run_records` BEFORE pipeline_reset | one SQL dump | `references/harness-boundaries.md` (in-context) |
 | 6 | write HTML report (incl. Time & Cost 2 tables) → plan repo | report sections present | `references/reporting.md` |
+| 6.5 | product-improvement harvest (read-only): enumerate every Layer-B imperfection from steps 1–3.9, emit one PIC each `{observed, suboptimality, hypothesis, evidence_ref, lands}`; file to plan-repo `architecture/BACKLOG.md` + cross-run `harvest-register.md` + report §7.5. Files **NOTHING** in this repo; relaxes **NO** Layer-A floor | harvest list present (may be empty on `--light`; **0 on a FULL LLM-dominant run is suspect**) | `references/reporting.md` |
 | 7 | integrate: review→green(`RUN_UI_FUNCTIONAL=1`)→CI→merge | `gh pr checks` exit 0 | `references/backlog-state-machine.md` (in-context) |
 | 8 | write-back lessons (fixed write-list) + `rm .e2e-loop-active` + teardown | live-status box + memory pointer ≤200c | `references/reporting.md` (in-context) |
 
@@ -80,6 +81,96 @@ verdict is the `GET /__e2e/dataquality?skill=&profileId=` COVERAGE ratio, not th
 `/__e2e/rows` count. Coverage is rung 1; the `price_missing` / `0 rec` chips a DOM
 read shows (rung 2) only corroborate — a count-green / coverage-empty result is
 itself the FAIL and the lower rungs cannot rescue it upward.
+
+## Verdict model — floors vs harvest
+
+The run is no longer a scalar green/red. Its verdict is a **tuple**:
+
+> **FLOORS held|breached · HARVEST n**
+
+A Layer-A breach ⇒ `FLOORS=breached`, the run cannot end clean, the breach goes
+through the step-4 S0–S6 machine. A `FLOORS=held` run with N Layer-B PICs **is a
+clean run**. `pass+fix` is reserved for "a Layer-A breach fixed + re-verified this
+round". green.sh GREEN + `soak mp-replay` GREEN are a **sub-line under A9** (below),
+never the headline; green.sh stays the hard LANDING gate for any code change.
+
+**CLASSIFY (the anti-masking boundary — first matching rung wins, decidable):**
+
+1. **rung-1** — breaches any Layer-A floor A1–A9 by THAT FLOOR'S OWN machine/auditor
+   check (a `/__e2e/dataquality` ratio, a `runAllInvariants` result, an auditor SAFE,
+   a string scan) ⇒ **Layer-A FAIL**, NOT harvest-eligible, S0–S6, run cannot end clean.
+2. **rung-2** — pipeline **LOST/dropped/corrupted/failed-to-surface info it provably
+   HELD**, OR took a floor-forbidden action ⇒ **latent Layer-A FAIL + a T7 add-the-CHECK
+   item** (add the missing verification surface this round).
+3. **rung-3** — otherwise (correct given real inputs/budgets/dealer behavior; nothing
+   held-then-lost) ⇒ **Layer-B HARVEST**.
+
+DISCRIMINATOR: **HAD-and-lost ⇒ always A; never-had-or-correctly-declined ⇒ B.** You
+reach B ONLY by PASSING the floor check that would catch the lost-info case (the
+inversion is the anti-masking guard).
+
+### Layer-A floors (strict pass/fail — cite each floor's OWN route verbatim, do NOT paraphrase)
+
+- **A1** — the 12 CLAUDE.md safety invariants (safety-auditor SAFE + per-step
+  `runAllInvariants` all-ok).
+- **A2** — `no_external_mutation==0` in test mode (`/__e2e/audit` aggregate).
+- **A2b** — POSITIVE fake-send assertion: after each of the 3 irreversible sends the
+  FAKE adapter fired (`mode='fake'` on the `sendRecord`/`fake_mailbox` row), catching a
+  silent real-adapter swap — NOT collapsible into A2's negative counter. A real-mode
+  send recorded in a test run is a hard Layer-A FAIL.
+- **A3** — decline = Δ0, profile-isolated (`/__e2e/rows` before/after).
+- **A4** — gate renders BEFORE prose (DOM order).
+- **A5** — #1244 fail-closed on the largest extraction (`dealer_reply_extract`), never
+  regex-execute a tool name (`MalformedToolCallAbort`).
+- **A6** — budget NEVER rendered as a number incl. the `batch-summary` (string scan).
+- **A7** — `dealer_reply_extract` data quality (cite `/__e2e/dataquality` verbatim):
+  **PASS iff `otd_present/n ≥ 0.5`**; any `0 < coverage < 0.5` is a **FAIL** (NO
+  VDP-budget escape — reply_extract has no budget excuse); `nullEscape:true` (n==0) =
+  SKIP. Do NOT use the looser `otd_present==0`.
+- **A8** — `inventory_site_scan` data quality (cite the route verbatim): hard-FAIL on
+  `n>0 AND priced==0 AND msrp_present==0 AND gated==0` (TOTAL price loss); `coverage≥0.5`
+  healthy; `0<coverage<0.5` a soft note **ONLY** because the per-dealer VDP budget bounds
+  it — this budget escape is **site_scan-ONLY**, never reply_extract.
+- **A9** — deterministic backstop GREEN, **SPLIT**: `RUN_UI_FUNCTIONAL=1 bash
+  scripts/green.sh` literal `GREEN` is a floor whenever code is edited (both modes);
+  `pnpm soak mp-replay` GREEN is a floor **ONLY when 3.9 ran**. `RUN_UI_FUNCTIONAL=1` is
+  pinned everywhere A9 is named (never bare `green.sh`).
+- **G2a** (cross-leak: separate threads landing on the wrong profile) is Layer-A
+  (`no_cross_profile_bleed`-class). An **OBSERVED live silent mis-attribution** (an
+  arbitrary pick where >1 dealer/profile matches) is a hard Layer-A FAIL that **FREEZES
+  the run** — NOT "Layer-A-adjacent" harvest; there is no such tier. **G2b** silent
+  re-stamp post-fix is Layer-A. (`references/multi-profile-lane.md`.)
+
+### Layer-B harvest (clean-run-compatible PICs, default `lands=backlog`)
+
+- **B1** dealer resistance/ghosting (a low quote-rate PASSES).
+- **B2** ghosted/cold profile (0 OTDs ⇒ terminal ghosted/cold, never fabricated).
+- **B3** sub-optimal-but-correct outcome — B3's "legit subset under VDP budget" is
+  **scoped to `inventory_site_scan` ONLY**.
+- **B4** G1 attribution ambiguity — Layer-B **ONLY IF** the running build surfaces the
+  thread as `unrouted`/zero-write; until that surfacing ships, B4 is an **EMPTY class**
+  and G1 is rung-2 latent-A + T7.
+- **B5** UX friction.
+- **B6** no-best-deal profile.
+
+### THE WALL — mechanically enforced (route-backed, not prose)
+
+A Layer-B note can NEVER waive a Layer-A floor. Classification is **tied to the
+`/__e2e/dataquality` route response**: a "low quote-rate / ghosted" item may be filed
+Layer-B **ONLY** when the route returns `nullEscape:true` (n==0) OR `gated==n` (the data
+PROVES no number was dropped). `0<coverage<0.5` on `dealer_reply_extract` can NEVER be
+filed B1/B2 — it is rung-2 latent-A. Promotion is **one-directional**: a Layer-A breach
+can never be downgraded into a PIC; only a Layer-B PIC may be electively promoted into
+the normal S0–S6 machine (full fresh-context APPROVE/SAFE + `RUN_UI_FUNCTIONAL=1` green
++ fresh live re-verify).
+
+### PIC shape
+
+`{ id PIC-YYYYMMDD-n; class B1..B6; observed (grounded: skill/profile/route evidence);
+suboptimality (the BUYER value gap, not "a bug"); hypothesis (a falsifiable product
+change); evidence_ref (run-id + skill + dataquality/rows snapshot, replayable); lands
+fix-this-round|backlog (DEFAULT backlog); recurrence (cross-run count, semantic dedup by
+`class+suboptimality`, `≥3` graduates to a plan-repo round); status open|promoted|shipped|rejected }`.
 
 ## Guardrails
 
@@ -139,17 +230,34 @@ itself the FAIL and the lower rungs cannot rescue it upward.
   worktree has none and `loadDotEnvKeys`' walk-up won't find the main checkout's copy
   — serve-live then reports "Add your DeepSeek key" and the NL router 500s. Copy
   `.env` into `$WT` after `git worktree add` (it stays gitignored, never staged).
+- **Immutable mode (load-bearing).** serve-live runs `AUTOBROKER_MODE=test`, chosen at
+  LAUNCH and immutable for the run; **never** flip mode on the running host (boot-only
+  `assertTestModeSafe` — a live flip arms a real adapter on the next send with no second
+  env ring). Cross-ref `references/harness-boundaries.md` "Mode model".
 - Self-contained `YYYY-MM-DD` HTML report; `MEMORY.md` pointer ≤200 chars (it is over
   budget — detail goes in the topic file).
 
 ## Self-check (every round, before declaring done)
 
-- **The run does not end with unresolved findings** (this holds in `--light` too):
-  every finding/backlog item this round is RESOLVED — fixed through the step-4 S0–S6
-  machine (research → fix-in-worktree → fresh-context review APPROVE + safety SAFE →
-  `RUN_UI_FUNCTIONAL=1` green → fresh live re-verify → merge) OR given a written
-  `live-verified, no-code-change` ruling. The report's "本轮新 backlog" section is then
-  **empty** — verify with a grep, not a rhetorical question.
+- **The run does not end with unresolved Layer-A leftovers** (this holds in `--light`
+  too): every **Layer-A** finding/backlog item this round is RESOLVED — fixed through the
+  step-4 S0–S6 machine (research → fix-in-worktree → fresh-context review APPROVE +
+  safety SAFE → `RUN_UI_FUNCTIONAL=1` green → fresh live re-verify → merge) OR given a
+  written `live-verified, no-code-change` ruling. The no-defer rule is unchanged. The
+  report's "本轮新 backlog" (§7) section is then **empty** — verify with a grep, not a
+  rhetorical question. **The inversion (Layer-B):** the Layer-A backlog MUST be empty,
+  but the Layer-B harvest (§7.5) should **NOT** be empty on a FULL LLM-dominant run (a
+  0-PIC FULL run is suspect — re-examine for under-exercised reality or silent dismissal);
+  a `--light` read-only run may legitimately emit **0**. Per-skill rows carry
+  `floor(held|breached)` + `harvest(PIC ids)`; only `floor=breached` blocks the run from
+  ending (`floor=held · harvest=PIC-…` is a fully successful skill run).
+- **Positive fake-send assertion (A2b).** After each of the 3 irreversible sends in a
+  test-mode run, assert the FAKE adapter fired (`mode='fake'` on the
+  `sendRecord`/`fake_mailbox` row) via a POST-RUN isolated-DB read (the isolated
+  serve-live DB is readable after the fact; this is NOT a banned mid-run seeding write)
+  OR a new `/__e2e` route that echoes the last send's adapter mode — do **NOT** collapse
+  it back into the A2 negative counter. A real-mode send recorded in a test run is a hard
+  Layer-A FAIL.
 - **Data-quality floor (count-green is NOT quality-green).** For every
   data-bearing skill that wrote ≥1 row, hit `GET /__e2e/dataquality?skill=&profileId=`
   and apply the per-skill threshold — never accept a `/__e2e/rows` count as the PASS.

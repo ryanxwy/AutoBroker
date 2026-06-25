@@ -25,9 +25,10 @@ See **"Register in the ledger"** below.
 4. **时间与成本** — standing 3-sub-block section (detail below).
 5. **问题与修复表** — S0–S6 findings + fixes (→ `references/backlog-state-machine.md`).
 6. **Frontend-taste 可用性发现** — BLOCKER→POLISH ranked list (→ `frontend-taste` skill by name).
-7. **本轮新 backlog** — must be empty **or** every entry tagged `live-verified, no-code-change` + one-line rationale. Untagged → back to step 4.
+7. **本轮新 backlog (Layer-A leftovers ONLY)** — must be empty **or** every entry tagged `live-verified, no-code-change` + one-line rationale. Untagged → back to step 4. (Layer-B imperfections do NOT go here — they go to §7.5.)
+7.5. **产品改进收割 (Product-Improvement Harvest)** — the PIC table (`class · observed · suboptimality · hypothesis · lands · recurrence · status`), grounded by a replayable `evidence_ref`. **Expected non-empty on a healthy FULL run** (0 is suspect); `--light` may emit 0. DISTINCT from §7 — a PIC is **never a blocker** and **never waives a Layer-A floor** (THE WALL). Defaults `lands=backlog`; mirrors to plan-repo `architecture/BACKLOG.md` + `harvest-register.md`.
 8. **桌面同步状态** — "desktop bundle refreshed @ commit `<hash>` — 可手测" OR "no apps/ui/src/testid change — skip 4.5".
-9. **多档案 3.9 摘要** *(only when step 3.9 ran)* — cap held (assert `MAX_CONCURRENT_ACTIVE_PROFILES` value); each profile's terminal status (no starve/wedge); shared-rooftop winner + voiced losers (zero send confirmed); `runAllInvariants` all-ok or violations frozen to corpus; `soak mp --until-dry` convergence result.
+9. **多档案 3.9 摘要** *(only when step 3.9 ran)* — cap held (assert `MAX_CONCURRENT_ACTIVE_PROFILES` value); each profile's terminal status (no starve/wedge); shared-rooftop winner + voiced losers (zero send confirmed); `runAllInvariants` all-ok or violations frozen to corpus; the serve-live 3.9 live verdict + `pnpm soak mp-replay` GREEN as the deterministic backstop (`soak mp --until-dry` is structurally live-deferred, not a verdict).
 10. **工件** — branch, commit hashes, PR URL.
 
 Copy `xunjian/` → `<report-dir>/shots/`; remove at teardown.
@@ -43,12 +44,39 @@ its rows. To file this run:
    `run | date | vehicle | metro | mode | persona | skills | nego | findings | cost | wall | commit | pr | verdict | summary`
    - `run` = the dir's run-id · `skills` = `17/17` (or `N/N` for a negotiation
      sub-arc, e.g. `7/7`) · `nego` = e.g. `2r → $33,400` or `—` · `findings` =
-     e.g. `0` / `1 fixed` · `verdict` = `pass` (all green, no code change) /
-     `pass+fix` (passed + fixed findings) / `partial` (not all skills passed).
+     e.g. `0` / `1 fixed` · `verdict` = the **tuple** `floors=held|breached · harvest=<n>`
+     (the headline). `pass+fix` is reserved for "a Layer-A breach fixed + re-verified
+     this round". green.sh GREEN + `soak mp-replay` GREEN is a **sub-line under A9**,
+     never the headline verdict.
 2. **Rebuild** — from `ts-rebuild/`, run `bash tools/build-e2e-index.sh`. It
    rescans every `live-e2e/<run-id>/index.html` E2E-META line and regenerates
    the reverse-chron ledger table. (Pure bash + python3, no node; read-only on
    the code repo — same sanctioned exception as `daily/`'s machine sections.)
+
+---
+
+## Step 6.5 — Product-improvement harvest (read-only on this repo)
+
+The harvest ledger runs between the report (§6) and integrate (§7); it is the
+Layer-B half of the two-layer verdict (SKILL.md "Verdict model"). It is **read-only
+on this code repo** — it files candidates, it does **not** fix/merge (that is the
+S0–S6 machine, scoped to Layer-A) and it does **not** relax the Layer-A empty-backlog
+rule.
+
+1. **Enumerate** every Layer-B imperfection surfaced across steps 1–3.9 (correct-but-
+   sub-optimal outcomes that PASSED their floor check — a thin comparison, a low-but-
+   `≥0.5` scan, a ghosted/cold profile, rough UI, latent attribution ambiguity). Each
+   must clear THE WALL: a "low quote-rate/ghosted" item is Layer-B **only** when
+   `/__e2e/dataquality` returns `nullEscape:true` or `gated==n`.
+2. **Emit one PIC each** `{observed, hypothesis, file/area, backlog dest}` (full PIC
+   shape in SKILL.md "Verdict model"; default `lands=backlog`).
+3. **APPEND** to `~/vscode/AutoBroker/AutoBroker-dev-plan/architecture/BACKLOG.md` AND
+   the cross-run `ts-rebuild/live-e2e/harvest-register.md` (bump `recurrence` on a
+   semantic rediscovery; `recurrence≥3` graduates a PIC into a real plan-repo round).
+   **Explicit-path `git add` only** — never `git add .`/`-A`.
+4. Files the PICs into report **§7.5**. Empty harvest is valid on `--light`; **0 on a
+   FULL LLM-dominant run is suspect**. The run ends by **LEARNING**, not just by closing
+   a backlog.
 
 ---
 

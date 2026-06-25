@@ -88,6 +88,14 @@ Reports buyer guides, Conversica/Impel AI-BDC docs, r/askcarsales). Live-validat
    "recon", presented as pre-installed), ADM on hot trims (~$4k), payment-pivot,
    F&I back-end *post*-agreement, and a **lump OTD that hides add-ons** until itemized.
 
+**Imperfection is SIGNAL across the WHOLE pipeline.** A low quote-rate / a ghosted
+profile is a **VALID outcome to learn from**, never a fail and never a reason to
+fabricate a quote. This applies to every surface — a sub-optimal comparison, a rough UI,
+attribution ambiguity — and feeds the **harvest** (SKILL.md "Verdict model" Layer-B →
+`references/reporting.md` §6.5), not the failure ledger. The ONLY dealer-side FAIL stays
+the Layer-A line: a dealer that DID email a number whose OTD the extractor dropped
+(`otd_present/n < 0.5`).
+
 ---
 
 ## Owner directives (2026-06-22, load-bearing)
