@@ -132,9 +132,11 @@ distribution — most are no-price first touches:
 - **~35% ITEMIZED OTD** — draw from the audit-firing archetypes so the audit
   codes wake up:
   - clean + compliant (doc fee at the state cap) — the honest control.
-  - **fee-loaded** — ADM + 2 add-ons + doc fee OVER the state cap (in a CA/NY/WA
-    metro) → fires `DOC_FEE_CAP` + `DEALER_FEE_OUTLIER` + (if the stack doesn't
-    reconcile) `MATH_SANITY`.
+  - **fee-loaded** — ADM + 2 add-ons + a high doc fee → fires `DEALER_FEE_OUTLIER`
+    + (if the stack doesn't reconcile) `MATH_SANITY`, plus a doc-fee flag whose code
+    depends on the metro: `DOC_FEE_CAP` over the cap in a capped state (CA/NY/WA +
+    MN/MI/OH/MD), or `DOC_FEE_UNCAPPED` for a >~$500 fee in an uncapped state (TX/FL/OR,
+    Phase 5 — no longer silent).
   - **math-inconsistent** — itemized, **non-null** sales_tax, line items miss the
     stated total by ~$200-500 → fires `MATH_SANITY` (null-tax would hit the
     null-skip guard — NOT a firing).
@@ -145,8 +147,8 @@ distribution — most are no-price first touches:
   run) — the structurally-untested mainstream experience.
 
 These audit firings are **correct behavior**, not bugs (see the don't-re-propose
-ledger in `backlog-state-machine.md`). DON'T re-flag DOC_FEE_CAP/MATH_SANITY/
-MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
+ledger in `backlog-state-machine.md`). DON'T re-flag DOC_FEE_CAP/DOC_FEE_UNCAPPED/
+MATH_SANITY/MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
 
 POST `/__e2e/inject_replies` `{ profileId, replies:[…] }`. **Record the full
 `applied.threadIds[]`** (`[{dealerName, from, threadId}]`) — the only source of
