@@ -547,6 +547,20 @@ export const BatchReviewSuspendSchema = z.object({
   // default ("Scan approved dealers") in the card. OPTIONAL, backward-compatible
   // (like allow_skip_all above — no other emitter changes).
   submit_label: z.string().optional(),
+  // Opt-in submission-preview block (lead_submit, owner rule #5): the MINIMAL info
+  // shown above the dealer list so the buyer sees what is sent before approving
+  // (vehicle, buyer email, placeholder-phone note). Budget is NEVER included (inv #9).
+  // MUST be declared here: the step's suspend-schema validation (Mastra
+  // validateStepSuspendData, validateInputs default true) re-parses the payload and
+  // a plain z.object STRIPS undeclared keys — an undeclared `summary` silently
+  // disappears before the card/approval-inbox read it. OPTIONAL → absent on every
+  // read-only/scan emitter, backward-compatible (like allow_skip_all/submit_label).
+  summary: z
+    .object({
+      heading: z.string(),
+      lines: z.array(z.object({ label: z.string(), value: z.string() })),
+    })
+    .optional(),
 });
 export type BatchReviewSuspend = z.infer<typeof BatchReviewSuspendSchema>;
 

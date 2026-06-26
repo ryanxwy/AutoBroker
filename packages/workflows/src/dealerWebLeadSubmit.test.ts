@@ -459,6 +459,88 @@ describe("dealer_web_lead_submit — approve a web-form dealer (the fake submit)
 });
 
 // ---------------------------------------------------------------------------
+// case 3b — per-dealer isolation: one throwing/hung dealer must NOT kill the batch
+// (the serve-live batch-hang blocker, run 4c3107f8: a slow site awaited forever and
+//  any throw aborted the whole batch → 0 anchors). The per-dealer deadline turns a
+//  hung site into a throw; this proves the throw is isolated and the rest still anchor.
+// ---------------------------------------------------------------------------
+
+describe("dealer_web_lead_submit — one failing dealer is isolated, the batch still anchors", () => {
+  it("approve 3 web-form dealers, the middle one throws → 2 web_form anchors + 1 failed row, run still succeeds", async () => {
+    seedProfile();
+    seedBoundDealer({ dealerId: DEALER_FORM, name: "Jim Click Hyundai", website: "https://jimclickhyundai.com" });
+    seedBoundDealer({ dealerId: "dealer-mid", name: "Midtown Hyundai", website: "https://midtown.example.com" });
+    seedBoundDealer({ dealerId: "dealer-last", name: "Lastdealer Hyundai", website: "https://lastdealer.example.com" });
+    const submitOneThrowsForMid: DealerWebLeadSubmitWorkflowDeps["submitOne"] = async (
+      args: SubmitOneArgs,
+    ): Promise<SubmitVerdict> => {
+      if (args.dealerId === "dealer-mid") throw new Error("nav hung — Target closed");
+      return { kind: "submitted" };
+    };
+    __setDealerWebLeadSubmitDepsForTests({
+      scoutForms: scoutStub({}), // every dealer gets the default usable web form
+      submitOne: submitOneThrowsForMid,
+      sendAndRecord: sendNeverCalled,
+      harnessGenerate: harnessNeverCalled,
+    });
+    const { run, result } = await startRun("ls-isolation-1", { search_profile_id: PROFILE_ID });
+    expect(result.status).toBe("suspended");
+
+    const final = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [DEALER_FORM, "dealer-mid", "dealer-last"] },
+    });
+    // The batch completes (it is NOT aborted by the one throw) ...
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as { outcome: string; submissions_successful: number; summary: string };
+    expect(out.outcome).toBe("scanned");
+    expect(out.submissions_successful).toBe(2); // the two reachable dealers
+
+    // ... and writes an anchor per reviewed dealer: 2 web_form + 1 failed (NOT 0).
+    const rows = leadRows();
+    expect(rows.length).toBe(3);
+    const failed = rows.filter((r) => r["outcome"] === "failed");
+    expect(failed.length).toBe(1);
+    expect(failed[0]!["fail_reason"]).toBe("site_unreachable");
+    expect(rows.filter((r) => r["submission_channel"] === "web_form").length).toBe(2);
+    // The failure is VOICED in the summary (inv #12).
+    expect(out.summary).toContain("unreachable/failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case 3c — the batch_review card carries the submission-preview summary (owner
+// rule #5 / inv #5). Regression: the summary was STRIPPED by the suspend-schema
+// validation because the shared BatchReviewSuspendSchema did not declare it.
+// ---------------------------------------------------------------------------
+
+describe("dealer_web_lead_submit — batch card carries the submission summary", () => {
+  it("the batch_review suspend payload includes summary (vehicle/email/phone), budget NEVER shown", async () => {
+    seedProfile();
+    seedBoundDealer({ dealerId: DEALER_FORM, name: "Jim Click Hyundai", website: "https://jimclickhyundai.com" });
+    __setDealerWebLeadSubmitDepsForTests({
+      scoutForms: scoutStub({ [DEALER_FORM]: WEB_FORM_SHAPE }),
+      submitOne: submitNeverCalled, // we only inspect the gate payload, never submit
+      sendAndRecord: sendNeverCalled,
+      harnessGenerate: harnessNeverCalled,
+    });
+    const { result } = await startRun("ls-summary-1", { search_profile_id: PROFILE_ID });
+    expect(result.status).toBe("suspended");
+    const payload = suspendPayloadOf(result, "batchReview");
+    expect(payload["kind"]).toBe("batch_review");
+    // summary survives the suspend-schema validation (the bug deleted it).
+    const summary = payload["summary"] as
+      | { heading: string; lines: Array<{ label: string; value: string }> }
+      | undefined;
+    expect(summary).toBeDefined();
+    expect(summary!.lines.map((l) => l.label)).toEqual(["Vehicle", "Your email", "Phone"]);
+    // Budget is NEVER in the preview (inv #9).
+    expect(JSON.stringify(summary).toLowerCase()).not.toContain("budget");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // case 4 — the email_fallback path: the INDEPENDENT second suspend
 // ---------------------------------------------------------------------------
 
