@@ -10,6 +10,7 @@
  */
 
 import { classifyMatchStatus } from "./pure.js";
+import { trimSubsetMatch } from "./trimMatch.js";
 
 // ---------------------------------------------------------------------------
 // Weights — sum is exactly 1.0 (frozen by a unit test).
@@ -95,9 +96,34 @@ function median(values: number[]): number {
 // Axis scoring
 // ---------------------------------------------------------------------------
 
-/** Trim axis: exact → 1.0/trim_exact; acceptable → 0.7/trim_acceptable; else
- *  → 0.0/trim_off. Case-insensitive on all three sides; always exactly one
- *  chip. */
+/** Trim axis (four tiers, first match wins; always exactly one chip):
+ *    exact      1.0 / trim_exact      — listing trim equals the profile trim
+ *    acceptable 0.7 / trim_acceptable — listing trim is one of the buyer's
+ *                                       explicit acceptable_trims
+ *    compatible 0.7 / trim_compatible — the requested trim is a token-SUBSET of a
+ *                                       richer listing variant ("XLE" ⊆ "XLE
+ *                                       Premium", and noise-variants like "XLE
+ *                                       CVT"): a real near-match, never "exact"
+ *    off        0.0 / trim_off        — none of the above
+ *  The exact and acceptable tiers stay RAW case-insensitive equality, in lockstep
+ *  with classifyMatchStatus, so a compatible (incl. noise-variant) listing keeps
+ *  match_status "near", below a true exact — the chip and the match tier stay
+ *  consistent. The compatible tier is DIRECTIONAL (requested ⊆ listing) and
+ *  token-based: a bare "XLE" never satisfies an "XLE Premium" request, and
+ *  genuinely distinct trims ("EX" vs "EX-L") stay apart. (Caveat: a single-token
+ *  request like a bare "S" is a subset of richer trims "GT S" / "S Line"; rare for
+ *  new-car trims, but such a request will mark those as compatible/near.) Without
+ *  it, an exact-only axis scored every "XLE Premium" / "XLE CVT" as trim_off (0.0),
+ *  capping the composite at 0.55 < the 0.6 recommend floor — so a buyer asking for
+ *  "XLE" saw zero recommendations on a lot full of XLE-family cars.
+ *
+ *  BLAST RADIUS: scoreListing/this axis is shared — besides the read-only
+ *  inventory_compare rail it also feeds selectTopListingsForDealer's per-dealer
+ *  record cap (inventory_site_scan / inventory_link_scan). There the compatible
+ *  0.7 raises a richer-variant listing's score (the tertiary sort key within its
+ *  match tier), so when a dealer exceeds the cap a compatible row now displaces a
+ *  pure-off-trim row in the KEPT-AND-PERSISTED set — strictly toward the buyer's
+ *  requested trim, never across the frozen match tiers. */
 function trimAxis(
   listingTrim: string | null,
   profileTrim: string | null,
@@ -115,6 +141,13 @@ function trimAxis(
   );
   if (listingLc !== "" && acceptableLc.has(listingLc)) {
     return [0.7, "trim_acceptable"];
+  }
+
+  // The requested trim is a token-subset of a richer listing variant
+  // (noise-tolerant, directional). trimSubsetMatch lowercases + strips
+  // powertrain/body noise internally, so pass the raw strings.
+  if (profileLc !== "" && listingLc !== "" && trimSubsetMatch(profileTrim ?? "", listingTrim ?? "")) {
+    return [0.7, "trim_compatible"];
   }
 
   return [0.0, "trim_off"];

@@ -222,6 +222,37 @@ describe("rankInventoryForProfile", () => {
     expect(candidates.filter((c) => c.recommended).length).toBe(recommendedCount);
   });
 
+  it("recommends a compatible richer-variant trim (buyer 'XLE', lot has 'XLE Premium') — the 0/142 fix", () => {
+    // The buyer asked for "XLE"; the lot carries only "XLE Premium" (a richer
+    // XLE-family trim). Under exact-only matching this scored trim_off (0.0) and
+    // capped below the 0.6 recommend floor → 0 recommended. The compatible tier
+    // lifts it to a near-match so it is recommendable.
+    seedProfile({
+      trim: "XLE",
+      budgetMax: null,
+      preferredExteriorColorsJson: JSON.stringify(["Shimmering Silver"]),
+    });
+    insertDealer(DEALER_NEAR, "Near Toyota", 0.0);
+    insertListing({
+      listingId: "lst_premium",
+      vin: FULL_VIN,
+      trim: "XLE Premium",
+      exteriorColor: "Shimmering Silver",
+      msrp: 46500,
+      listedPrice: 44175,
+      inventoryStatus: "in_stock",
+    });
+
+    const { candidates, recommendedCount } = rankInventoryForProfile(db, PROFILE_ID);
+    const premium = candidates.find((c) => c.listing_id === "lst_premium")!;
+    expect(premium.reasons).toContain("trim_compatible");
+    // A compatible variant is a near-match (NOT exact), but still recommendable.
+    expect(premium.match_status).toBe("near");
+    expect(premium.score).toBeGreaterThanOrEqual(0.6);
+    expect(premium.recommended).toBe(true);
+    expect(recommendedCount).toBe(1);
+  });
+
   it("does not recommend an in_transit-only / out-of-stock listing below the inventory-status set", () => {
     seedProfile({ budgetMax: null });
     insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);

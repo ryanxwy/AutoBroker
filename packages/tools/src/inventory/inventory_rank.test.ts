@@ -94,10 +94,110 @@ describe("trim axis", () => {
     expect(r.reasons).toContain("trim_exact");
   });
 
-  it("always emits exactly one of the three trim chips", () => {
+  it("compatible: requested trim is a subset of a richer listing variant → trim_compatible, score clears the recommend floor", () => {
+    // Buyer asked for "XLE"; the lot only has "XLE Premium" (a richer XLE-family
+    // trim). It must score as a near-match, not trim_off — the 0/142 fix. With a
+    // good price/color/distance it clears the 0.6 recommend floor and stays "near".
+    const r = scoreListing(
+      ctx({ profile_trim: "XLE", acceptable_trims: [] }),
+      listing({ trim: "XLE Premium" }),
+      0.0,
+    );
+    expect(r.reasons).toContain("trim_compatible");
+    expect(r.reasons).not.toContain("trim_off");
+    expect(r.score).toBeGreaterThanOrEqual(0.6);
+    expect(r.match_status).toBe("near");
+  });
+
+  it("noise-variant of the requested trim → trim_compatible (near), NOT trim_exact", () => {
+    // "XLE CVT" IS an XLE, but the EXACT tier stays raw-equality (lockstep with
+    // classifyMatchStatus), so a noise-variant rides the 0.7/compatible/near path
+    // — its chip and its match tier agree (never a trim_exact chip in the near tier).
+    const r = scoreListing(
+      ctx({ profile_trim: "XLE", acceptable_trims: [] }),
+      listing({ trim: "XLE CVT" }),
+      0.0,
+    );
+    expect(r.reasons).toContain("trim_compatible");
+    expect(r.reasons).not.toContain("trim_exact");
+    expect(r.match_status).toBe("near");
+  });
+
+  it("EX-L (with powertrain noise) is compatible with an EX-L request", () => {
+    const r = scoreListing(
+      ctx({ profile_trim: "EX-L", acceptable_trims: [] }),
+      listing({ trim: "EX-L Hybrid" }),
+      0.0,
+    );
+    expect(r.reasons).toContain("trim_compatible");
+  });
+
+  it("compatible is DIRECTIONAL: a bare trim does not satisfy a richer request → trim_off", () => {
+    // Buyer asked for "XLE Premium"; a plain "XLE" is NOT the Premium.
+    const r = scoreListing(
+      ctx({ profile_trim: "XLE Premium", acceptable_trims: [] }),
+      listing({ trim: "XLE" }),
+      0.0,
+    );
+    expect(r.reasons).toContain("trim_off");
+  });
+
+  it("keeps genuinely distinct trims apart (EX vs EX-L) → trim_off", () => {
+    const r = scoreListing(
+      ctx({ profile_trim: "EX", acceptable_trims: [] }),
+      listing({ trim: "EX-L" }),
+      0.0,
+    );
+    expect(r.reasons).toContain("trim_off");
+  });
+
+  it("no substring confusion in BOTH directions (XLE vs LE; SEL vs Limited) → trim_off", () => {
+    // Forward: buyer "XLE", listing "LE" — LE is not an XLE.
+    const le = scoreListing(
+      ctx({ profile_trim: "XLE", acceptable_trims: [] }),
+      listing({ trim: "LE" }),
+      0.0,
+    );
+    expect(le.reasons).toContain("trim_off");
+    // Reverse (the riskier direction): buyer "LE", listing "XLE" — token equality
+    // (not substring) keeps them apart, so "le" ⊄ {"xle"}.
+    const xle = scoreListing(
+      ctx({ profile_trim: "LE", acceptable_trims: [] }),
+      listing({ trim: "XLE" }),
+      0.0,
+    );
+    expect(xle.reasons).toContain("trim_off");
+    // SEL ⊄ Limited — locks the inventory_compare.func.toml "1 of 3" tally.
+    const sel = scoreListing(ctx(), listing({ trim: "SEL" }), 0.0);
+    expect(sel.reasons).toContain("trim_off");
+  });
+
+  it("compatible trim with mediocre price/color/distance stays BELOW the 0.6 recommend floor", () => {
+    // trim_compatible contributes 0.45*0.7 = 0.315; a compatible variant is
+    // recommendable only WITH decent supporting axes, never on trim alone. Over
+    // MSRP + non-preferred color + at-radius distance keeps the composite < 0.6.
+    const r = scoreListing(
+      ctx({ profile_trim: "XLE", acceptable_trims: [], preferred_exterior_colors: ["Black"] }),
+      listing({ trim: "XLE Premium", exterior_color: "Beige", msrp: 40000, listed_price: 48000 }),
+      25.0, // at the radius → distance score 0
+    );
+    expect(r.reasons).toContain("trim_compatible");
+    expect(r.score).toBeLessThan(0.6);
+  });
+
+  it("bare-model listing (empty trim) → trim_off, never compatible", () => {
+    const r = scoreListing(
+      ctx({ profile_trim: "XLE", acceptable_trims: [] }),
+      listing({ trim: "" }),
+      0.0,
+    );
+    expect(r.reasons).toContain("trim_off");
+  });
+
+  it("always emits exactly one of the four trim chips", () => {
     const r = scoreListing(ctx(), listing({ trim: "SE" }), 0.0);
     const trimChips = r.reasons.filter((c) =>
-      ["trim_exact", "trim_acceptable", "trim_off"].includes(c),
+      ["trim_exact", "trim_acceptable", "trim_compatible", "trim_off"].includes(c),
     );
     expect(trimChips).toHaveLength(1);
   });
@@ -334,6 +434,35 @@ describe("rankListings", () => {
     expect(result[1]!.score).toBeGreaterThan(result[0]!.score);
   });
 
+  it("a true exact outranks a compatible (richer-variant) listing regardless of price", () => {
+    // Buyer asked for "XLE". A bare "XLE" (exact, tier 0) at MSRP must still rank
+    // above a cheaper "XLE Premium" (compatible → near, tier 1): the match tier is
+    // the primary sort, so a compatible near-match never displaces a true exact.
+    const compatibleCheaper = listing({
+      listing_id: "lst_premium",
+      dealer_id: "d1",
+      trim: "XLE Premium",
+      msrp: 40000.0,
+      listed_price: 35000.0, // cheap → strong price axis
+    });
+    const exactAtMsrp = listing({
+      listing_id: "lst_xle",
+      dealer_id: "d1",
+      trim: "XLE",
+      msrp: 40000.0,
+      listed_price: 40000.0, // at MSRP → weaker price axis
+    });
+    const result = rankListings(
+      ctx({ profile_trim: "XLE", acceptable_trims: [] }),
+      [compatibleCheaper, exactAtMsrp],
+      { d1: 0.0 },
+    );
+    expect(result[0]!.listing_id).toBe("lst_xle");
+    expect(result[0]!.match_status).toBe("exact");
+    expect(result[1]!.listing_id).toBe("lst_premium");
+    expect(result[1]!.match_status).toBe("near");
+  });
+
   it("breaks ties by listing_id ASC (stable)", () => {
     const rows = [
       listing({ listing_id: "lst_zzz", dealer_id: "d1" }),
@@ -464,6 +593,26 @@ describe("selectTopListingsForDealer", () => {
     const { kept } = selectTopListingsForDealer(ctx(), rows, 2);
     expect(kept[0]!.listing["listing_id"]).toBe("aaa");
     expect(kept[1]!.listing["listing_id"]).toBe("mmm");
+  });
+
+  it("compatible (richer-variant) trim outranks a pure-off trim through the record cap", () => {
+    // The site_scan/link_scan blast radius of the new compatible tier: within the
+    // same near match-tier, a compatible near-match (requested ⊆ richer variant)
+    // beats a pure-off near row for the single kept (persisted) slot. The off row
+    // carries an alphabetically-SMALLER id, so if score were ignored the ASC
+    // tiebreak would pick it — asserting the compatible row wins proves the 0.7
+    // trim score (not the tiebreak) decides.
+    const compatible = capRow("zzz_cmp", "near", "in_stock");
+    compatible.listing["trim"] = "XLE Premium";
+    const off = capRow("aaa_off", "near", "in_stock");
+    off.listing["trim"] = "LE";
+    const { kept } = selectTopListingsForDealer(
+      ctx({ profile_trim: "XLE", acceptable_trims: [] }),
+      [off, compatible],
+      1,
+    );
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.listing["listing_id"]).toBe("zzz_cmp");
   });
 
   it("higher score ranks before lower score within same tier", () => {
