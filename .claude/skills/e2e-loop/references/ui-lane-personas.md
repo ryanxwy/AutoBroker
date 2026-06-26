@@ -92,7 +92,7 @@ surface; CLAUDE.md inv #9).
 ### P5 — Lease-vs-finance-confused
 **Voice:** genuinely uncertain about modes, conflates terms, mid-message self-corrects.
 **Sample:** `is leasing or financing cheaper out the door` · `actually I think I want to lease, redo the compare`
-**Router stress:** **off-mode quote surfacing** (FINDING J / A5) — cash & unspecified
+**Router stress:** **off-mode quote surfacing** — cash & unspecified
 folded into the right bucket; `quote_compare` cash bucket. Use a metro with multi-mode
 quotes so "Compared 0" is impossible.
 
@@ -203,7 +203,7 @@ one, add a targeted message.
 | E5 | `pin_required` (1 profile, unpinned) | New session + `compare my quotes` | StopCard `pin_required`, `stop-pick-option` picker; pick once → session pin persists |
 | E6 | `no_active_profile` (0 profiles) | Clean DB + `audit my quotes` | StopCard `no_active_profile` → points to intake |
 | E7 | `multiple_active_profiles` (2-active) | After J3 mid-flow correction + `run the pipeline` | StopCard `multiple_active_profiles`, picker asks by vehicle name |
-| E8 | Off-mode quote surfacing | P5: `show me cash too` / `compare finance vs lease vs cash` | Cash/unspecified folded into right bucket, no "Compared 0" (FINDING J/A5) |
+| E8 | Off-mode quote surfacing | P5: `show me cash too` / `compare finance vs lease vs cash` | Cash/unspecified folded into right bucket, no "Compared 0" |
 | E9 | `no_lead_submitted` anchor | Ask `check my inbox` before any lead_submit | StopCard `no_lead_submitted` "submit a lead first" (`messageModel.ts:266`) |
 | E10 | Re-ask recovery | After any clarify, rephrase directly | Second message launches — clarify is not a wall |
 | E11 | Out-of-scope: financing advice | `can you finance this?` / `should i put more down` | `none`→clarify; assistant does NOT give loan advice or fabricate terms (product boundary) |
@@ -234,10 +234,10 @@ Six tabs → six small reads, not one giant DOM.
 
 | Tab | Activate | Read (key testids) | Tab-specific watch |
 |---|---|---|---|
-| overview | `canvas-tab-overview` | `canvas-feed`, `canvas-next-actions`, `canvas-summary-best-otd`, `canvas-summary-headline` | Plain-language copy; one-number-one-home vs digest line (FINDING G precedent) |
+| overview | `canvas-tab-overview` | `canvas-feed`, `canvas-next-actions`, `canvas-summary-best-otd`, `canvas-summary-headline` | Plain-language copy; one-number-one-home vs digest line |
 | dealers | `canvas-tab-dealers` | `canvas-dealer-tile`, `canvas-pager`, `canvas-dealers-empty`, `dealer-lead-submitted` | Pagination past 12; empty-state actionable; rank/distance legible |
-| inventory | `canvas-tab-inventory` | `inventory-candidate-row`, `inventory-listing-link`, `canvas-pager`, `inventory-empty-hint` | **#1 load-bearing:** `inventory-listing-link` `<a target=_blank rel=noopener>` present; scanned-0 vs never-scanned copy (A2) |
-| quotes | `canvas-tab-quotes` | `canvas-quotes-foldout` (`<details>`), `quote-audit-pill-<code>` | Audit pills on off-mode quotes in foldout (FINDING C); no budget number |
+| inventory | `canvas-tab-inventory` | `inventory-candidate-row`, `inventory-listing-link`, `canvas-pager`, `inventory-empty-hint` | **#1 load-bearing:** `inventory-listing-link` `<a target=_blank rel=noopener>` present; scanned-0 vs never-scanned copy |
+| quotes | `canvas-tab-quotes` | `canvas-quotes-foldout` (`<details>`), `quote-audit-pill-<code>` | Audit pills on off-mode quotes in foldout; no budget number |
 | replies | `canvas-tab-replies` | `canvas-thread-row`, `thread-class-chip`, `message-extract-failed-badge`, `canvas-pager`, `canvas-threads-empty` | Pagination at 10/page; relative-date copy; failed-extract badge legible |
 | incentives | `canvas-tab-incentives` | `canvas-incentive-row`, `-type`, `-amount`, `-eligibility`, `-expiry`, `-source`, `canvas-incentives-empty` | Provenance readable; empty-state actionable; **no Pager today — watch for unbounded list** (`Incentives.tsx:92`; pending backlog item) |
 
@@ -282,6 +282,6 @@ Six tabs → six small reads, not one giant DOM.
   approves inline). It is absent when nothing is parked (read-only/idle world).
 
 **frontend-taste emits a ranked `[SEVERITY] <testid> — <experience> (file:line).
-Suggested direction:` list per tab.** The loop folds these into the S0 enumeration
-(backlog state machine step 4) and the report's "frontend-taste 可用性发现" table.
+Suggested direction:` list per tab.** The loop folds these into the e2e-evolve fix
+machine's recording step and the report's "frontend-taste 可用性发现" table.
 BLOCKER/HIGH → fix this round; MED/POLISH → "本轮新 backlog".
