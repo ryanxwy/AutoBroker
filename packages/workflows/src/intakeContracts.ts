@@ -108,7 +108,17 @@ export function buildPrefillPrompt(freeformText: string): string {
   );
 }
 
-/** Build the trim-verify prompt from the vehicle identity. */
+/** Build the trim-verify prompt from the vehicle identity.
+ *
+ *  This is a best-effort PRE-FILTER, not the authority — the real trim check is
+ *  the dealer-inventory cross-check that runs AFTER the search (inventory_compare
+ *  grounds the requested trim against trims dealers actually stock). So the prompt
+ *  is deliberately CONSERVATIVE: default valid:true and only flag a trim invalid
+ *  when highly confident it does not exist for that vehicle. An LLM second-guessing
+ *  a current/recent model year from stale training knowledge used to false-reject
+ *  real trims (LX, SE, EX-L, XLE…), forcing a needless force-override gate; deferring
+ *  to the post-scan ground truth avoids that while still catching an obviously wrong
+ *  trim (one from a different make, or one the model never offered). */
 export function buildTrimVerifyPrompt(args: {
   year: number;
   make: string;
@@ -116,11 +126,15 @@ export function buildTrimVerifyPrompt(args: {
   trim: string;
 }): string {
   return (
-    `Verify whether the ${args.year} ${args.make} ${args.model} truly offers the ` +
-    `"${args.trim}" trim. ` +
-    "If it does -> valid:true, suggested_trims:[]. " +
-    "If it does not -> valid:false, attestation explains why, suggested_trims gives " +
-    "1-3 real nearby trims. Return via the emit_result tool."
+    `A buyer is searching for the "${args.trim}" trim of the ${args.year} ${args.make} ` +
+    `${args.model}. The authority on which trims exist is the dealer inventory, ` +
+    "cross-checked AFTER this search — your job is only to catch an OBVIOUSLY wrong trim " +
+    "(e.g. one from a different make, or one this model never offered). " +
+    "Default to valid:true, suggested_trims:[]. Return valid:false ONLY if you are highly " +
+    "confident the trim does not exist for this vehicle; when unsure (a current or recent " +
+    "model year you may not fully know), return valid:true and defer to the post-search " +
+    "inventory check. When invalid: attestation explains why, suggested_trims gives 1-3 " +
+    "real nearby trims. Return via the emit_result tool."
   );
 }
 
