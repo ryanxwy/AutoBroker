@@ -26,6 +26,16 @@ how to **record** each one so `e2e-evolve` can act on it later:
 
 A backlog/polish note can never excuse a blocker (the anti-masking rule in `SKILL.md`).
 
+**Diagnosing a "hang" — server-hang vs. slowness (generalizable).** When a browser-heavy
+skill (`inventory_site_scan`, `dealer_web_lead_submit`) appears stuck, distinguish a
+**server-hang** (a BLOCKER — the Node event loop / listener is blocked, e.g. an
+un-deadlined per-dealer browser nav) from legitimate slowness: while the skill runs, poll an
+UNRELATED control endpoint (`GET /__e2e/rows?table=…`). Staying HTTP 200 at low latency ⇒
+the server is healthy and the skill is merely slow; HTTP 000 / a connection timeout ⇒ the
+listener has stopped accepting connections ⇒ record a **server-hang blocker** (not "slow").
+This is the probe that pinpoints an event-loop hang — the class behind the 2026-06-26
+`dealer_web_lead_submit` batch-submit hang.
+
 ### Known-correct behaviors — do NOT re-flag these
 
 These have been investigated in prior runs and are **correct product behavior**. Filter
@@ -47,6 +57,21 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   `location_query` resolving to Irvine (a buyer-input trap, not a product bug).
 - A natural-language "what's in stock" routing to `inventory_compare` (read existing),
   not `inventory_site_scan` — a router choice, not a misroute.
+- `search_profile_intake` freeform prefill leaving `trim` NULL when the buyer states only a
+  price/superlative intent ("cheapest"/"best") or when the LLM emits a placeholder string
+  (`null`/`none`) — `sanitizePrefillTrim` drops it so the web-grounded trimSuggestion picker
+  fires. (A junk trim the buyer never stated, seeded into the collect form and suppressing
+  the picker, WOULD still be a backlog item — the correct behavior is the picker firing.)
+  Shipped 2026-06-26 (`phase0/search_profile_intake`).
+- `dealer_web_lead_submit`'s batch_review card carrying the `summary` preview block
+  (vehicle / buyer email / placeholder-phone note, NEVER budget) — it survives the
+  suspend-schema validation because `summary` is declared on the shared
+  `BatchReviewSuspendSchema`. Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
+- `dealer_web_lead_submit` batch submit staying responsive + bounded under a multi-dealer
+  batch (per-dealer timeout + isolation): a slow/failed dealer becomes a voiced
+  `site_unreachable` row and the batch continues so the reachable dealers still anchor — a
+  partial-failure batch is correct; only a whole-server hang / zero-anchor batch is a bug.
+  Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
