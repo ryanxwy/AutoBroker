@@ -50,8 +50,12 @@ Hyundai Elantra · Kia Sportage · Subaru Outback · Mazda CX-5 · Ford Escape �
 Chevrolet Equinox · Nissan Rogue · Volkswagen Tiguan · Tesla Model 3 ·
 Toyota Corolla.
 
-Year: current or current+1. A trim mismatch surfaces as a trim-verify HITL
-gate — that is a pass, not a bug.
+Year: current or current+1. The intake trim-verify is now CONSERVATIVE (defaults
+valid, defers to the post-scan dealer-inventory cross-check), so a real
+current-year trim should NOT fire a HITL — if it does on a clearly-valid trim,
+that is a regression to file, not a pass. An obviously-wrong trim (a different
+make's trim, or one the model never offered) may still surface the trim-verify
+HITL gate — that is a pass, not a bug.
 
 ---
 
