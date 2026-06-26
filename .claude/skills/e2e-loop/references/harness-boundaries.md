@@ -1,6 +1,6 @@
 # harness-boundaries.md
 
-Contract for `pnpm e2e:serve-live` (the live 巡检 host). The functional/dry-run
+Contract for `pnpm e2e:serve-live` (the live e2e-loop sweep host). The functional/dry-run
 host (`harness/serverHost.ts`) shares the isolation philosophy but stubs
 differently — this file covers the **live** host only.
 
@@ -77,7 +77,7 @@ it in `finally`. Seed ONLY through these — see "External-SQLite invisible" bel
 **Payload:** `{ profileId: string, replies: [{ dealerName, dealerWebsite, from, subject, body, attachment? }] }`
 
 **Side effects per reply (via `injectDealerReplies`):**
-- a bound `dealers` row with `contact_email = reply.from` (rung-4 fallback — without it `negotiation_followup`/`dealer_closeout_email` resolve null targets)
+- a bound `dealers` row with `contact_email = reply.from` (the last-resort fallback in the reply-target ladder — without it `negotiation_followup`/`dealer_closeout_email` resolve null targets)
 - a `profile_dealers` bind
 - a `threads` row `state='replied'` with a non-null `gmail_thread_id` (`live-gthread-…`) — required; a null anchor on a non-null thread trips `thread_flag_mismatch` and closeout fails closed
 - an inbound `messages` row `quote_extraction_status='pending'`
@@ -155,7 +155,7 @@ Returns the COVERAGE of the load-bearing fields the downstream pipeline consumes
 (not a count), plus the structural escapes that distinguish a legitimately-empty
 result from silent data-loss. `profileId` optional (omit = whole DB). A `skill`
 not in the supported set → `400 { ok:false, error:"unknown dataquality skill" }`.
-Test-host only; product wall untouched; verdict-rung-1.
+Test-host only; product wall untouched; a primary verdict signal.
 
 - `skill=inventory_site_scan` → `{ skill, n, metric:"price_coverage", covered,
   coverage, priced, msrp_present, gated, vdp_linked, nullEscape }` over
@@ -174,7 +174,7 @@ Test-host only; product wall untouched; verdict-rung-1.
 Ratios name no brand/metro/row-count, so the check generalizes to the next random
 pick. Extend by adding a case to the route's skill switch (geosearch website
 coverage, quote_audit expected-finding-code, inventory_compare real-price-axis are
-filed T7 backlog items).
+recorded backlog items — add the missing verification surface).
 
 **When:** the data-quality floor in the spine self-check — for every data-bearing
 skill that wrote ≥1 row, BEFORE declaring it PASS.
@@ -274,14 +274,14 @@ DB="<dataDir>/autobroker.db"
 `BK=$(ls -t <dataDir>/backups/autobroker-*.db | head -1)` then query `$BK`.
 
 Record: total API cost, total LLM latency, sweep wall-clock. These feed the
-Time & Cost tables in the HTML report (see `references/reporting.md`).
+Time & Cost tables in the HTML report (see `references/recording.md`).
 
 ---
 
 ## Quick-reference checklist
 
 1. Start: `pnpm e2e:serve-live`; wait for `{"liveE2e":"listening",…}`; record `dataDir`.
-2. Confirm floor automatically set by the host: tmp data-dir (not `~/.autobroker*`), `BLOCK=1`, gmail fake, `AUTO_APPROVE` deleted.
+2. Confirm floor automatically set by the host: tmp data-dir (not `~/.autobroker*`), `AUTOBROKER_MODE=test` (fake-send), gmail fake, `AUTO_APPROVE` deleted.
 3. **Seed ONLY via the control routes** (`inject_replies`, `inject_reply_to_thread`, `inject_crm_threads`, `inject_contact`) — never write the DB underneath the server.
 4. `location_query` MUST contain a whitelisted city name or ZIP (else silent Irvine fallback).
 5. After `inject_replies`, **save `applied.threadIds[]`**; dealer counters go to `inject_reply_to_thread` using those `threadId` values.

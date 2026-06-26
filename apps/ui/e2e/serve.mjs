@@ -177,11 +177,18 @@ const harnessGenerateStub = async (input) => {
 // boot the REAL server with the stubs injected, then add the control route.
 // ---------------------------------------------------------------------------
 
+/** fetchTrimSources stub: NEVER hit the real web in the deterministic func lane.
+ *  Returning {kind:'none'} makes the trimSuggestion step pass straight through to
+ *  the data_collection form (no trim_suggestion suspend), so the existing freeform
+ *  func cases (whose prefill seeds trim:null) stay byte-identical. */
+const fetchTrimSourcesStub = async () => ({ kind: "none" });
+
 resetMastraForTests();
 resetRuntimeGlueForTests();
 __setIntakeDepsForTests({
   harnessGenerate: harnessGenerateStub,
   resolveLocation: resolveLocationStub,
+  fetchTrimSources: fetchTrimSourcesStub,
 });
 
 const built = await buildServer({ quiet: true });

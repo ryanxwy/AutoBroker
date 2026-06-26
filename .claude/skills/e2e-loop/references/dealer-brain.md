@@ -91,10 +91,10 @@ Reports buyer guides, Conversica/Impel AI-BDC docs, r/askcarsales). Live-validat
 **Imperfection is SIGNAL across the WHOLE pipeline.** A low quote-rate / a ghosted
 profile is a **VALID outcome to learn from**, never a fail and never a reason to
 fabricate a quote. This applies to every surface — a sub-optimal comparison, a rough UI,
-attribution ambiguity — and feeds the **harvest** (SKILL.md "Verdict model" Layer-B →
-`references/reporting.md` §6.5), not the failure ledger. The ONLY dealer-side FAIL stays
-the Layer-A line: a dealer that DID email a number whose OTD the extractor dropped
-(`otd_present/n < 0.5`).
+attribution ambiguity — and feeds the **backlog** (SKILL.md "How to classify what
+you find" backlog tier → `references/recording.md`), not the failure ledger. The ONLY
+dealer-side FAIL stays a blocker (a safety or data-loss breach): a dealer that DID email
+a number whose OTD the extractor dropped (`otd_present/n < 0.5`).
 
 ---
 
@@ -154,8 +154,8 @@ distribution — most are no-price first touches:
 - **Ghosts:** leave **≥2 dealers with no round-0 reply at all** (silent the whole
   run) — the structurally-untested mainstream experience.
 
-These audit firings are **correct behavior**, not bugs (see the don't-re-propose
-ledger in `backlog-state-machine.md`). DON'T re-flag DOC_FEE_CAP/DOC_FEE_UNCAPPED/
+These audit firings are **correct behavior**, not bugs (see the "known-correct
+behaviors" list in `references/recording.md`). DON'T re-flag DOC_FEE_CAP/DOC_FEE_UNCAPPED/
 MATH_SANITY/MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
 
 POST `/__e2e/inject_replies` `{ profileId, replies:[…] }`. **Record the full
@@ -178,7 +178,7 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
 `unansweredFollowups` resets to 0), so the thread never trips the cap.
 
 **Per-round sequence (repeat to ≥4 rounds):**
-1. **`negotiation_followup`** (pin → batch gate → fake-send, BLOCK floor). Pin is
+1. **`negotiation_followup`** (pin → batch gate → fake-send, AUTOBROKER_MODE=test). Pin is
    REQUIRED (it STOPs `pin_required` even with 1 active — pick the vehicle once).
    `/slash` it for rounds 2+ (faster + deterministic than NL). Confirm
    `threads.state='negotiating'`.
@@ -196,7 +196,7 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
 3. **Inject each counter** via `/__e2e/inject_reply_to_thread {threadId, from,
    subject, body, dealerName}` (threadId from round-0). For an **escalation**,
    FIRST `/__e2e/inject_contact {threadId, email:managerEmail, displayName, role,
-   isPrimary:true}` so the reply-target ladder rung-1 flips to the manager.
+   isPrimary:true}` so the top of the reply-target ladder flips to the manager.
 4. (Optional, for the final-OTD payoff) re-run `dealer_reply_extract` to land the
    revised (lower) `dealer_quotes` rows. NOT required between every round — the cap
    keys off message rowid, not the extracted quote — so re-extract ONCE at the end

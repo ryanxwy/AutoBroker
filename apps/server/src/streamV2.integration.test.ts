@@ -168,7 +168,7 @@ afterEach(async () => {
 });
 
 async function buildWith(): Promise<BuiltServer> {
-  __setIntakeDepsForTests({ harnessGenerate: harnessStub(), resolveLocation: locationStub() });
+  __setIntakeDepsForTests({ harnessGenerate: harnessStub(), resolveLocation: locationStub(), fetchTrimSources: async () => ({ kind: "none" }) });
   server = await buildServer({ quiet: true });
   return server;
 }

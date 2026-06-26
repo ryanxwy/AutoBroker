@@ -199,7 +199,9 @@ afterEach(async () => {
 
 /** Build a server with the intake deps wired (must set deps BEFORE start). */
 async function buildWith(over: Partial<IntakeWorkflowDeps>): Promise<BuiltServer> {
-  __setIntakeDepsForTests(over);
+  // default the web trim lookup to {none} so no freeform unit test reaches the
+  // real web (a case may still override it explicitly).
+  __setIntakeDepsForTests({ fetchTrimSources: async () => ({ kind: "none" }), ...over });
   server = await buildServer({ quiet: true });
   return server;
 }

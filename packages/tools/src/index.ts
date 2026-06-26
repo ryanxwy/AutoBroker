@@ -870,6 +870,15 @@ export {
   type FetchLike,
 } from "./profile/goplaces.js";
 
+// trimSources — read-only web lookup of a make/model/year's trim lineup, the
+// grounding source for the intake trim-suggestion step (allowlisted hosts only).
+export {
+  fetchTrimSources,
+  type TrimSourcesInput,
+  type TrimSourcesOptions,
+  type TrimSourcesResult,
+} from "./trim/trimSources.js";
+
 // Profile service — the ONLY write path for search_profiles + audit_log,
 // the typed three-branch resolver, fake-phone, and the core↔db adapter.
 export {

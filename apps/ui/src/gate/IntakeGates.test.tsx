@@ -12,6 +12,7 @@ import {
   AmbiguousLocationPicker,
   ForceOverrideBar,
   LocationFailureBanner,
+  TrimSuggestionPicker,
 } from "./IntakeGates.js";
 import { change, click, clickRadio, render } from "../test/render.js";
 
@@ -37,6 +38,63 @@ describe("AmbiguousLocationPicker", () => {
     clickRadio(r.get("gate-location-candidate-1") as HTMLInputElement);
     click(r.get("gate-location-pick"));
     expect(onResume).toHaveBeenCalledWith({ action: "pick", picked_index: 1 });
+    r.unmount();
+  });
+});
+
+describe("TrimSuggestionPicker", () => {
+  const gate = {
+    kind: "trim_suggestion" as const,
+    make: "Honda",
+    model: "Civic",
+    year: 2026,
+    candidates: [
+      { index: 0, name: "LX", summary: "base 2.0L" },
+      { index: 1, name: "Sport", summary: "sport styling + leather" },
+    ],
+  };
+
+  it("starts UNSELECTED (no auto-pick); pick enables after a deliberate selection and dispatches {action:'pick'}", () => {
+    const onResume = vi.fn();
+    const r = render(
+      <TrimSuggestionPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
+    );
+    expect(r.query("gate-trim-option-0")).not.toBeNull();
+    expect(r.query("gate-trim-option-1")).not.toBeNull();
+    // Product-rule #1: Pick is DISABLED until the buyer deliberately selects a trim.
+    expect((r.get("gate-trim-pick") as HTMLButtonElement).disabled).toBe(true);
+    clickRadio(r.get("gate-trim-option-1") as HTMLInputElement);
+    expect((r.get("gate-trim-pick") as HTMLButtonElement).disabled).toBe(false);
+    click(r.get("gate-trim-pick"));
+    expect(onResume).toHaveBeenCalledWith({ action: "pick", picked_index: 1 });
+    r.unmount();
+  });
+
+  it("'enter it myself' is an ACCEPT-style skip (NOT decline) → {action:'skip'}", () => {
+    const onResume = vi.fn();
+    const onDecline = vi.fn();
+    const r = render(
+      <TrimSuggestionPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={onDecline} />,
+    );
+    click(r.get("gate-trim-skip"));
+    expect(onResume).toHaveBeenCalledWith({ action: "skip" });
+    expect(onDecline).not.toHaveBeenCalled();
+    r.unmount();
+  });
+
+  it("cancel → onDecline (terminal); retry dispatches the refine query (null when empty)", () => {
+    const onResume = vi.fn();
+    const onDecline = vi.fn();
+    const r = render(
+      <TrimSuggestionPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={onDecline} />,
+    );
+    click(r.get("gate-trim-retry"));
+    expect(onResume).toHaveBeenCalledWith({ action: "retry", refine_query: null });
+    change(r.get("gate-trim-retry-input") as HTMLInputElement, "hatchback");
+    click(r.get("gate-trim-retry"));
+    expect(onResume).toHaveBeenCalledWith({ action: "retry", refine_query: "hatchback" });
+    click(r.get("gate-trim-decline"));
+    expect(onDecline).toHaveBeenCalled();
     r.unmount();
   });
 });

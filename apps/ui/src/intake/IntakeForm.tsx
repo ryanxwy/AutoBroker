@@ -19,6 +19,7 @@ import {
   ForceOverrideBar,
   LocationFailureBanner,
   MalformedRetryGate,
+  TrimSuggestionPicker,
 } from "../gate/IntakeGates.js";
 import { FormBoundary } from "./FormBoundary.js";
 import type { AwaitingUserPayload } from "../chat/messageModel.js";
@@ -56,6 +57,16 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "force_override":
       return (
         <ForceOverrideBar
+          gate={gate}
+          decisionId={decisionId}
+          submitting={submitting}
+          onResume={resume}
+          onDecline={decline}
+        />
+      );
+    case "trim_suggestion":
+      return (
+        <TrimSuggestionPicker
           gate={gate}
           decisionId={decisionId}
           submitting={submitting}

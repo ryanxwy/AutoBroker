@@ -33,9 +33,24 @@ export interface LocationCandidate {
   label: string;
 }
 
+export interface TrimCandidate {
+  index: number;
+  name: string;
+  summary: string;
+}
+
 export type GateModel =
   | { kind: "data_collection"; seedFields: Record<string, unknown> | null }
   | { kind: "force_override"; question: string; trim: string; reason: string }
+  // web-grounded trim picker (pre-collect): the buyer gave make+model+year but no
+  // trim; pick one, enter it manually (skip), refine the search (retry), or cancel.
+  | {
+      kind: "trim_suggestion";
+      make: string;
+      model: string;
+      year: number | null;
+      candidates: TrimCandidate[];
+    }
   | {
       kind: "ambiguous_location";
       candidates: LocationCandidate[];
@@ -50,6 +65,10 @@ export type GateModel =
 
 function str(v: unknown): string | null {
   return typeof v === "string" ? v : null;
+}
+
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 /** Classify a spec_inline payload into a typed gate model. */
@@ -95,6 +114,27 @@ export function classifyGate(specInline: Record<string, unknown> | null): GateMo
       return { kind: "location_failure", failureReason, effectiveQuery };
     }
     return { kind: "ambiguous_location", candidates, effectiveQuery };
+  }
+
+  if (kind === "trim_suggestion") {
+    const rawCandidates = specInline["candidates"];
+    const candidates: TrimCandidate[] = Array.isArray(rawCandidates)
+      ? rawCandidates.flatMap((c) => {
+          if (c === null || typeof c !== "object") return [];
+          const rec = c as Record<string, unknown>;
+          const index = rec["index"];
+          const name = str(rec["name"]);
+          if (typeof index !== "number" || name === null) return [];
+          return [{ index, name, summary: str(rec["summary"]) ?? "" }];
+        })
+      : [];
+    return {
+      kind: "trim_suggestion",
+      make: str(specInline["make"]) ?? "",
+      model: str(specInline["model"]) ?? "",
+      year: num(specInline["year"]),
+      candidates,
+    };
   }
 
   if (kind === "malformed_tool_call") {

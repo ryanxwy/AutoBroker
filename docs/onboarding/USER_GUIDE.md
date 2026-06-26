@@ -17,6 +17,15 @@ You need two things before you can run your first search:
 
 That's it. Everything else is optional.
 
+**Want to look around first, with no keys?** Run the built-in demo
+(`AUTOBROKER_DEMO_SEED=1`, or `pnpm demo`) to explore a populated dashboard with
+sample data — nothing real, no keys needed. See the
+[README Quickstart](../../README.md#quickstart).
+
+**Need the exact click-by-click steps for any key (including Gmail)?** Every
+credential has a full manual walk-through in
+**[CREDENTIALS_SETUP.md](CREDENTIALS_SETUP.md)**.
+
 ---
 
 ## A note on privacy before you begin
@@ -52,6 +61,10 @@ provider. You manage all your keys here — no config file to edit.
 5. Click **Test connection**. You should see a green "Connected" message appear.
    If it fails, double-check that you copied the full key and try again.
 6. Click **Save**.
+
+> **Remember to top up your DeepSeek balance.** DeepSeek is pay-as-you-go and
+> prepaid: a brand-new key will pass the connection test but real searches will
+> fail until you add a small balance in your DeepSeek account.
 
 **How do you know it worked?** After saving, the setup notice at the top of the
 Settings page disappears and all skills become available. Opening the Skills
@@ -124,8 +137,19 @@ dialog appears:
 
 ---
 
-## What's coming
+## Connecting Gmail
 
-- **Gmail integration** — AutoBroker will read and send dealer emails on your
-  behalf, each send waiting for your approval. The Gmail card in Settings shows
-  "Coming soon" until this lands.
+AutoBroker can read your dealer email replies and (when you switch to live mode)
+send on your behalf — each send still waiting for your approval. The Gmail
+**backend is ready today**; the one-click **Connect Gmail** button in Settings is
+still a placeholder ("Coming soon"), so for now you connect with a short one-time
+command-line step.
+
+Because Google requires you to set up your own access, this is the most involved
+credential. The full click-by-click walk-through (create a Google Cloud project,
+turn on the Gmail API, make a Desktop OAuth client, and run the one-line consent
+command) is in **[CREDENTIALS_SETUP.md §5](CREDENTIALS_SETUP.md#gmail-oauth)**.
+
+> One quirk to expect: while your Google project stays in "Testing" mode, Google
+> expires the connection every **7 days**. When email actions stop working, just
+> re-run the same consent command to reconnect — the guide explains how.

@@ -94,6 +94,25 @@ export const TrimVerifyResultSchema = z
 
 export type TrimVerifyResult = z.infer<typeof TrimVerifyResultSchema>;
 
+/**
+ * intake_trim_lookup emit contract. The trim-SUGGESTION extraction over
+ * web-fetched trim pages: two PARALLEL string arrays (the i-th name pairs with the
+ * i-th summary). Two flat string arrays — not an array of objects — keeps the
+ * schema at the DeepSeek-safe lowest common JSON subset (same shape class as
+ * suggested_trims), avoiding the nested-object #1244 surface. The summary carries
+ * the option-difference one-liner shown in the picker. A length mismatch is
+ * tolerated by the caller (zipped to the shorter length).
+ */
+export const TrimSuggestionSchema = z
+  .object({
+    trim_names: z.array(z.string()),
+    trim_summaries: z.array(z.string()),
+  })
+  .strict()
+  .describe("Web-grounded trim suggestions (parallel name/summary arrays).");
+
+export type TrimSuggestion = z.infer<typeof TrimSuggestionSchema>;
+
 // ---------------------------------------------------------------------------
 // prompt builders (flat strings; routed via toModelMessages in harness)
 // ---------------------------------------------------------------------------
@@ -135,6 +154,40 @@ export function buildTrimVerifyPrompt(args: {
     "model year you may not fully know), return valid:true and defer to the post-search " +
     "inventory check. When invalid: attestation explains why, suggested_trims gives 1-3 " +
     "real nearby trims. Return via the emit_result tool."
+  );
+}
+
+/**
+ * Build the trim-suggestion EXTRACTION prompt. GROUNDING is load-bearing (the
+ * owner ruling behind the conservative trim-verify): the model must extract ONLY
+ * trims that literally appear in the supplied SOURCE TEXT, never invent trims from
+ * its own training knowledge — an empty list is the correct answer when the text
+ * has none (the step then falls back to manual entry). Multi-body-style models
+ * (e.g. Civic sedan vs hatchback) get the body style folded into the trim name so
+ * the buyer's pick is unambiguous downstream.
+ */
+export function buildTrimSuggestionPrompt(args: {
+  year: number;
+  make: string;
+  model: string;
+  sourceText: string;
+}): string {
+  return (
+    `Below is SOURCE TEXT gathered from automotive web pages about the ${args.year} ` +
+    `${args.make} ${args.model}. Extract the list of TRIM levels it offers.\n` +
+    "RULES:\n" +
+    "- Extract ONLY trim names that literally appear in the SOURCE TEXT. Do NOT add " +
+    "trims from your own knowledge. If the text lists none, return empty arrays.\n" +
+    "- Prefer the trims for the requested model year. If the SOURCE TEXT spans " +
+    "multiple generations/years (e.g. an encyclopedia history), use the CURRENT " +
+    "generation's lineup and ignore discontinued older-generation trims.\n" +
+    "- trim_names[i] pairs with trim_summaries[i] (same length, same order).\n" +
+    "- Each summary is ONE short line of what distinguishes that trim (engine, key " +
+    "features, what you get over the trim below it).\n" +
+    "- If the model spans multiple body styles (e.g. Sedan and Hatchback), qualify " +
+    'each trim name with its body style (e.g. "Sport (Hatchback)").\n' +
+    "- Return at most 8 trims. Return via the emit_result tool.\n\n" +
+    `SOURCE TEXT:\n${args.sourceText}`
   );
 }
 
@@ -189,6 +242,23 @@ export const AmbiguousLocationResumeSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("decline") }),
 ]);
 export type AmbiguousLocationResume = z.infer<typeof AmbiguousLocationResumeSchema>;
+
+/**
+ * trimSuggestion (the new pre-collect step, suspend) resume contract.
+ *   - pick: the chosen trim index → seeds the form's trim field (web-grounded).
+ *   - skip: "enter it myself" → proceed to the form with trim still blank (the
+ *     existing manual-entry path; an ACCEPT-style action, NOT decline — decline is
+ *     reserved as the terminal-cancel that every suspend step honors zero-write).
+ *   - retry: re-run the web lookup, optionally with a refined query.
+ *   - decline: terminal-declined, zero write (cancel the whole search).
+ */
+export const TrimSuggestionResumeSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("pick"), picked_index: z.number().int() }),
+  z.object({ action: z.literal("skip") }),
+  z.object({ action: z.literal("retry"), refine_query: z.string().nullable() }),
+  z.object({ action: z.literal("decline") }),
+]);
+export type TrimSuggestionResume = z.infer<typeof TrimSuggestionResumeSchema>;
 
 /**
  * malformed_tool_call (any LLM step, suspend from #1244) resume contract.

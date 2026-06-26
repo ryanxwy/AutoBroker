@@ -312,6 +312,162 @@ describe("persistScanResults — sources and staleness", () => {
     expect(retired.superseded_reason).toBe("not_observed");
   });
 
+  it("re-observing a not_observed-superseded row REACTIVATES it (no zombie, first_seen preserved)", () => {
+    const keepUrl = "https://alpha-hyundai.example/vdp/kept";
+    const comebackUrl = "https://alpha-hyundai.example/vdp/comeback";
+    const T4 = "2026-06-12T03:00:00.000Z"; // run 3 start
+    const T5 = "2026-06-12T03:05:00.000Z"; // run 3 write
+
+    // run 1: both cars on the lot.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl }), row({ listing_url: comebackUrl })])],
+      db,
+      now: T1,
+    });
+    // run 2: comeback car missing → retired not_observed.
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl })])],
+      db,
+      now: T3,
+    });
+    expect(r2.staleSuperseded).toBe(1);
+    expect(liveListings()).toHaveLength(1);
+
+    // run 3: the comeback car is RE-LISTED. It must REACTIVATE, not linger as a
+    // "superseded_at set yet observed today" zombie, and must not mint a duplicate.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T4,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl }), row({ listing_url: comebackUrl })])],
+      db,
+      now: T5,
+    });
+
+    const all = allListings();
+    expect(all).toHaveLength(2); // no duplicate row for the comeback car
+    expect(liveListings()).toHaveLength(2); // BOTH live again
+    const gone = all.find((r) => String(r.normalized_listing_url).includes("/comeback"))!;
+    expect(gone.superseded_at).toBeNull(); // reactivated, not a zombie
+    expect(gone.superseded_reason).toBeNull();
+    expect(gone.first_seen_at).toBe(T1); // original listing-age anchor preserved
+    expect(gone.observed_at).toBe(T5); // freshly observed
+  });
+
+  it("a scanned but TRUNCATED re-scan does NOT mass-supersede (coverage-collapse guard)", () => {
+    // run 1: a healthy lot of 8 cars.
+    const urls = Array.from({ length: 8 }, (_, i) => `https://alpha-hyundai.example/vdp/car-${i}`);
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, urls.map((u) => row({ listing_url: u })))],
+      db,
+      now: T1,
+    });
+    expect(liveListings()).toHaveLength(8);
+
+    // run 2: pagination / JS-render returned only 1 of 8 — still status="scanned",
+    // so the all-or-nothing scanned gate cannot tell partial success from real.
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: urls[0]! })])],
+      db,
+      now: T3,
+    });
+    // The 7 unseen cars must NOT be retired as sold; the sweep is quarantined.
+    expect(r2.staleSuperseded).toBe(0);
+    expect(r2.sourcesQuarantined).toBe(1);
+    expect(liveListings()).toHaveLength(8);
+  });
+
+  it("a scanned re-scan that observes most of the lot still retires genuinely-gone cars", () => {
+    const urls = Array.from({ length: 8 }, (_, i) => `https://alpha-hyundai.example/vdp/car-${i}`);
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, urls.map((u) => row({ listing_url: u })))],
+      db,
+      now: T1,
+    });
+    // run 2: 6 of 8 re-observed (75% — well above the collapse fraction), 2 truly gone.
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, urls.slice(0, 6).map((u) => row({ listing_url: u })))],
+      db,
+      now: T3,
+    });
+    expect(r2.sourcesQuarantined).toBe(0);
+    expect(r2.staleSuperseded).toBe(2); // genuine turnover still retires
+    expect(liveListings()).toHaveLength(6);
+  });
+
+  it("re-observing a vin_promoted-superseded row does NOT reactivate it (structural supersession preserved)", () => {
+    const url = "https://alpha-hyundai.example/vdp/promoted-ghost";
+    // Seed a live URL row, then mark it as a vin_promoted supersession (what a
+    // VIN twin would do) — the row a VIN-keyed listing now structurally owns.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: url })])],
+      db,
+      now: T1,
+    });
+    db.$client
+      .prepare(
+        "UPDATE inventory_listings SET superseded_at = ?, superseded_reason = 'vin_promoted' WHERE normalized_listing_url LIKE ?",
+      )
+      .run(T1, "%/promoted-ghost%");
+
+    // Re-scan the same URL with no VIN: selectLiveUrlRow misses (the row is
+    // superseded), so the URL-arm INSERT…ON CONFLICT lands on the ghost. The
+    // conflict body must REFRESH it (proving the conflict fired) but must NOT
+    // reactivate it — only not_observed supersessions un-retire.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: url })])],
+      db,
+      now: T3,
+    });
+
+    const all = allListings();
+    expect(all).toHaveLength(1); // no duplicate row minted
+    expect(all[0]!.observed_at).toBe(T3); // it WAS re-observed (the conflict fired)
+    expect(all[0]!.superseded_at).not.toBeNull(); // …yet stays superseded
+    expect(all[0]!.superseded_reason).toBe("vin_promoted"); // structural reason preserved
+    expect(liveListings()).toHaveLength(0);
+  });
+
+  it("a scanned source returning ZERO rows is quarantined, not emptied (>= FLOOR live)", () => {
+    const urls = Array.from({ length: 7 }, (_, i) => `https://alpha-hyundai.example/vdp/z-${i}`);
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, urls.map((u) => row({ listing_url: u })))],
+      db,
+      now: T1,
+    });
+    expect(liveListings()).toHaveLength(7);
+
+    // run 2: scanned but captured 0 rows (total truncation / soft block that
+    // still reported status=scanned). The 7 live cars must not be emptied.
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [])],
+      db,
+      now: T3,
+    });
+    expect(r2.sourcesQuarantined).toBe(1);
+    expect(r2.staleSuperseded).toBe(0);
+    expect(liveListings()).toHaveLength(7);
+  });
+
   it("a BLOCKED scan supersedes nothing and persists no rows", () => {
     persistScanResults({
       searchProfileId: PROFILE_ID,

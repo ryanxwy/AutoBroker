@@ -1,6 +1,6 @@
 /**
  * search_profile_intake — the first skill workflow. ONE flat linear Mastra
- * `createWorkflow`: 8 named steps chained with
+ * `createWorkflow`: 9 named steps chained with
  * `.then()`, no nested workflow (flatness is the design convention — the old
  * nested-resume defect cluster #4630/#5650/#6065 is fixed in 1.x, but flatness
  * stays the rule; a structural test asserts no nested step here).
@@ -9,11 +9,18 @@
  *   0 prefill           — conditional (freeform launch only): harness.generate
  *                         (intake_freeform_prefill) seeds the form. Slash launch
  *                         passes through. Prefill OUTPUT NEVER PERSISTS.
+ *   0.5 trimSuggestion  — conditional (freeform + make/model/year present + trim
+ *                         null): fetchTrimSources (tools, web) → intake_trim_lookup
+ *                         extraction → suspend a trim_suggestion picker. resume
+ *                         pick (seeds trim, marks trimGrounded) | skip (manual) |
+ *                         retry (re-lookup) | decline (terminal). Web/LLM failure
+ *                         or 0 trims passes through → blank-trim form (never blocks).
  *   1 collect           — suspend ① (data_collection). resume submit|decline|cancel.
  *                         decline/cancel → terminal {outcome:'declined'}, and every
  *                         later step short-circuits → ZERO writes.
  *   2 validate          — pure: SearchProfileIntakeInputSchema.strict().parse.
- *   3 trimVerify        — skip when trim null; else harness.generate
+ *   3 trimVerify        — skip when trim null OR trimGrounded (a web-grounded
+ *                         pick from step 0.5); else harness.generate
  *                         (intake_trim_verify).
  *   4 forceOverrideGate — suspend ② only when trimVerify said invalid. resume
  *                         force_override (audited) | revise (re-verify) | decline.
@@ -83,6 +90,7 @@ import {
   AUDIT_ACTIONS,
   create as createProfileImpl,
   resolveLocation as resolveLocationImpl,
+  fetchTrimSources as fetchTrimSourcesImpl,
   writeAuditLog,
   getDb,
   type CreateResult,
@@ -93,13 +101,17 @@ import { harness, type HarnessLedgerContext } from "./harness.js";
 import {
   AmbiguousLocationResumeSchema,
   buildPrefillPrompt,
+  buildTrimSuggestionPrompt,
   buildTrimVerifyPrompt,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
   IntakePrefillSchema,
   MalformedRetryResumeSchema,
+  TrimSuggestionResumeSchema,
+  TrimSuggestionSchema,
   TrimVerifyResultSchema,
   type IntakePrefill,
+  type TrimSuggestion,
   type TrimVerifyResult,
 } from "./intakeContracts.js";
 
@@ -123,6 +135,10 @@ import {
 export interface IntakeWorkflowDeps {
   harnessGenerate: typeof harness.generate;
   resolveLocation: typeof resolveLocationImpl;
+  /** Read-only web lookup of a make/model/year's trim lineup (tools layer). The
+   *  trimSuggestion step calls this for grounding text; the LLM extraction stays
+   *  in the workflow (external-API wall). */
+  fetchTrimSources: typeof fetchTrimSourcesImpl;
   createProfile: typeof createProfileImpl;
   /** The DB accessor the persist/audit steps write through (tools layer). */
   getDb: typeof getDb;
@@ -131,6 +147,7 @@ export interface IntakeWorkflowDeps {
 const realDeps: IntakeWorkflowDeps = {
   harnessGenerate: harness.generate,
   resolveLocation: resolveLocationImpl,
+  fetchTrimSources: fetchTrimSourcesImpl,
   createProfile: createProfileImpl,
   getDb,
 };
@@ -213,6 +230,11 @@ const IntakeStateSchema = z.object({
   freeformText: z.string().nullable(),
   /** Form seed (prefill output or caller seed); NEVER persisted directly. */
   seed: z.record(z.string(), z.unknown()).nullable(),
+  /** True once the buyer PICKED a web-grounded trim suggestion. trimVerify skips
+   *  when set — re-verifying a freshly web-grounded trim with the conservative
+   *  ungrounded LLM only risks a needless force-override on a real trim. Defaulted
+   *  so a run snapshot taken before this field existed still parses on resume. */
+  trimGrounded: z.boolean().default(false),
   /** Terminal-declined flag: once true, every later step passes through. */
   declined: z.boolean(),
   /** Validated form fields (after step 2); null until then. */
@@ -290,6 +312,7 @@ const prefillStep = createStep({
       inputMode: inputData.input_mode,
       freeformText: inputData.freeform_text,
       seed: inputData.seed_fields,
+      trimGrounded: false,
       declined: false,
       fields: null,
       coordinates: null,
@@ -334,6 +357,141 @@ const prefillStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
+// step 0.5 — trimSuggestion (web-grounded): when freeform gave make+model+year
+// but NO trim, look up the real trim lineup on the web and let the buyer pick.
+// ---------------------------------------------------------------------------
+
+/** Read a string seed field (prefill output), or null when absent/blank/non-string. */
+function seedStr(seed: Record<string, unknown> | null, key: string): string | null {
+  const v = seed?.[key];
+  return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+/** Read a numeric seed field, or null when absent/non-number. */
+function seedNum(seed: Record<string, unknown> | null, key: string): number | null {
+  const v = seed?.[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** The trim_suggestion suspend payload. candidates carry everything a `pick`
+ *  needs (the trim name), read back off suspendData — no re-fetch on pick. */
+const TrimSuggestionSuspendSchema = z.object({
+  kind: z.literal("trim_suggestion"),
+  make: z.string(),
+  model: z.string(),
+  year: z.number().int(),
+  candidates: z.array(
+    z.object({ index: z.number().int(), name: z.string(), summary: z.string() }),
+  ),
+});
+
+const MAX_TRIM_CANDIDATES = 8;
+
+const trimSuggestionStep = createStep({
+  id: "trimSuggestion",
+  inputSchema: IntakeStateSchema,
+  outputSchema: IntakeStateSchema,
+  resumeSchema: TrimSuggestionResumeSchema,
+  suspendSchema: TrimSuggestionSuspendSchema,
+  execute: async ({ inputData, runId, resumeData, suspendData, suspend }) => {
+    const state = asState(inputData);
+    if (state.declined) return state;
+
+    // Applicability guard: freeform launch only, with make+model+year present and
+    // NO trim. (Slash collects everything in the form; a present trim needs no
+    // suggestion.) Any non-fire branch passes state through UNCHANGED.
+    const make = seedStr(state.seed, "make");
+    const model = seedStr(state.seed, "model");
+    const year = seedNum(state.seed, "year");
+    const hasTrim = seedStr(state.seed, "trim") !== null;
+    const applicable =
+      state.inputMode === "freeform" && make !== null && model !== null && year !== null && !hasTrim;
+    if (!applicable) return state;
+
+    // Resume actions (the picker came back).
+    if (resumeData !== undefined) {
+      if (resumeData.action === "decline") {
+        return { ...state, declined: true }; // terminal cancel, zero write.
+      }
+      if (resumeData.action === "skip") {
+        return state; // "enter it myself" → proceed to the form, trim blank.
+      }
+      if (resumeData.action === "pick") {
+        const chosen = suspendData?.candidates[resumeData.picked_index];
+        if (chosen === undefined) {
+          // Out-of-range pick → re-render the SAME shown list (fail-closed).
+          return (await suspend({
+            kind: "trim_suggestion",
+            make,
+            model,
+            year,
+            candidates: suspendData?.candidates ?? [],
+          })) as never;
+        }
+        // Seed the form's trim field with the web-grounded pick; mark grounded so
+        // trimVerify (step 3) does not re-distrust it.
+        return {
+          ...state,
+          seed: { ...(state.seed ?? {}), trim: chosen.name },
+          trimGrounded: true,
+        };
+      }
+      // retry falls through to a fresh lookup (optionally refined).
+    }
+
+    const refine =
+      resumeData !== undefined && resumeData.action === "retry" && resumeData.refine_query !== null
+        ? resumeData.refine_query
+        : undefined;
+
+    // GROUNDING FETCH (tools layer). A non-resolved result (web unreachable /
+    // nothing usable) degrades gracefully to the blank-trim form — the suggestion
+    // is a non-authoritative helper and must NEVER block intake.
+    const sources = await deps().fetchTrimSources(
+      refine !== undefined ? { make, model, year, refine } : { make, model, year },
+    );
+    if (sources.kind !== "resolved") return state;
+
+    // STRUCTURED EXTRACTION (workflow layer; #1244-safe single emit_result tool).
+    const result = await deps().harnessGenerate(
+      {
+        useCase: "intake_trim_lookup",
+        schema: TrimSuggestionSchema,
+        prompt: buildTrimSuggestionPrompt({ year, make, model, sourceText: sources.text }),
+        hitlAvailable: true,
+      },
+      intakeLedger(runId),
+    );
+    // #1244 on a non-authoritative helper → degrade to the blank-trim form (do not
+    // hard-fail intake, do not surface a malformed gate for an optional suggestion).
+    if (isHarnessSuspend(result)) return state;
+
+    // Zip parallel arrays (tolerate length mismatch), dedup by normalized name, cap.
+    const sug: TrimSuggestion = result.object;
+    const n = Math.min(sug.trim_names.length, sug.trim_summaries.length);
+    const seen = new Set<string>();
+    const candidates: { index: number; name: string; summary: string }[] = [];
+    for (let i = 0; i < n && candidates.length < MAX_TRIM_CANDIDATES; i++) {
+      const name = (sug.trim_names[i] ?? "").trim();
+      if (name === "") continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ index: candidates.length, name, summary: (sug.trim_summaries[i] ?? "").trim() });
+    }
+    // 0 usable trims → proceed to the blank-trim form (graceful).
+    if (candidates.length === 0) return state;
+
+    return (await suspend({
+      kind: "trim_suggestion",
+      make,
+      model,
+      year,
+      candidates,
+    })) as never;
+  },
+});
+
+// ---------------------------------------------------------------------------
 // step 1 — collect (suspend ①): render the form, await submit/decline/cancel
 // ---------------------------------------------------------------------------
 
@@ -350,6 +508,11 @@ const collectStep = createStep({
   }),
   execute: async ({ inputData, resumeData, suspend }) => {
     const state = asState(inputData);
+
+    // Already declined UPSTREAM (the trimSuggestion picker's terminal cancel) →
+    // pass straight through, never render the form. (A decline AT collect is the
+    // resume path below; this guards a decline that happened before collect.)
+    if (state.declined) return state;
 
     // First pass: render the form (gate before prose — the suspend payload is the
     // form spec). No resume yet → suspend.
@@ -450,6 +613,13 @@ const trimVerifyStep = createStep({
     const fields = state.fields as SearchProfileIntakeInput;
     // No trim to verify → skip straight to resolveLocation (verdict null).
     if (fields.trim === null) return { ...state, trimVerdict: null };
+    // A web-grounded picked trim is already grounded against current web data —
+    // re-verifying with the conservative ungrounded LLM only risks a needless
+    // force-override on a real trim. Skip (the post-scan inventory check still
+    // grounds it). The form is the source of truth: if the user EDITED the trim
+    // away from the pick, trimGrounded still holds — acceptable, the edited value
+    // is still a buyer-typed string the inventory cross-check grounds downstream.
+    if (state.trimGrounded) return { ...state, trimVerdict: null };
 
     if (resumeData !== undefined && resumeData.action === "decline") {
       return { ...state, declined: true, trimVerdict: null };
@@ -805,6 +975,7 @@ export const searchProfileIntakeWorkflow = createWorkflow({
   outputSchema: IntakeOutputSchema,
 })
   .then(prefillStep)
+  .then(trimSuggestionStep)
   .then(collectStep)
   .then(validateStep)
   .then(trimVerifyStep)

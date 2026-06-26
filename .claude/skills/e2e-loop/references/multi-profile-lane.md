@@ -50,7 +50,7 @@ live lane uses the product path). Then drive each profile's pipeline (site_scan 
 lead_submit → inbox_check → reply_extract → negotiation).
 
 For the **shared rooftop**, call `POST /__e2e/inject_replies` for ≥2 profiles with
-the SAME `dealer_key` (B2 shared-dealer mode → one `dealer_id =
+the SAME `dealer_key` (`inventory_site_scan`'s shared-dealer mode → one `dealer_id =
 live-dealer-<key>`, each profile holding a `'candidate'` `profile_dealers` row) so
 the live `claimDealer` step decides the exclusivity winner.
 
@@ -212,18 +212,19 @@ Drive it like a real user clearing a shared inbox:
   **never** an arbitrary pick.
 - **G2 cross-profile thread conflation** — two profiles' threads must never cross-bind.
 
-**CLASSIFICATION (D2 Finding 2):** an **OBSERVED live silent mis-attribution** is a hard
-**Layer-A FAIL** (`no_cross_profile_bleed`-class, this file's line-142 floor) that
-**FREEZES the run** — NOT "Layer-A-adjacent" harvest. Only the **LATENT/unexercised** G1
-gap (the `LIMIT-1` path exists but no live mis-route triggered this run) is a **Layer-B
-harvest candidate**. **G2a** (separate threads must each route to their own profile) =
-Layer-A floor; **G2b** (silent re-stamp post-fix) = Layer-A FAIL.
+**CLASSIFICATION (observed-vs-latent ruling):** an **OBSERVED live silent mis-attribution** is a hard
+**blocker** (a safety-or-data-loss breach; `no_cross_profile_bleed`-class, this file's line-142 floor) that
+**FREEZES the run** — NOT a backlog item. Only the **LATENT/unexercised** G1
+gap (the `LIMIT-1` path exists but no live mis-route triggered this run) is a **backlog
+candidate**. **G2a** (separate threads must each route to their own profile) =
+a blocker; **G2b** (silent re-stamp post-fix) = a blocker.
 
 ### G1/G2 probes — `inject_raw_inbound` (the planned harness probe this loop adds)
 
 The current `inject_replies` PRE-STAMPS `threads.dealer_id` + `search_profile_id` +
 `profile_dealers` bind + `messages.search_profile_id` — so the ladder is bypassed and
-G1/G2 cannot be tested. The loop's **planned T7 test-host addition** is a new
+G1/G2 cannot be tested. The loop's **planned test-host addition** (a recorded backlog
+item — adds the missing verification surface) is a new
 **`POST /__e2e/inject_raw_inbound`** (derive-not-prestamp; lands NOW, before the
 routing fix) that seeds ONLY the INPUT side — `dealers` (`id=raw-dealer-<dealer_key>`) +
 real `profile_dealers` binds + real `dealer_contacts` (`normalized_email`) + a
@@ -243,18 +244,20 @@ vacuously true and proves nothing). The route also asserts the seeded
 `fake_mailbox_messages` row is `direction:inbound` + un-ingested so the ladder was
 actually consulted.
 
-**THREE LIVE CASES** (the routing.ts/applyBatch.ts fix is the **harvested ACTION** this
-motivates — see SKILL.md "Verdict model"; the route + probe are the minimal landable unit):
+**THREE LIVE CASES** (the routing.ts/applyBatch.ts fix is the **backlog ACTION** this
+motivates — see SKILL.md "How to classify what you find"; the route + probe are the minimal
+landable unit). In this table **P1/P2 = the two cross-shop profiles** (profile-1 / profile-2),
+NOT the P1–P9 persona library from `references/ui-lane-personas.md`:
 
-| case | seed | EXPECT | layer |
+| case | seed | EXPECT | bucket |
 |---|---|---|---|
-| (a) G1 same-source two-dealer | alpha+beta both bound P1, both contact `leads@dealergroup.com`; one inbound swept by P1 | SUSPEND payload `reason='ambiguous_sender'`, `candidate_dealer_ids` ⊇ `{raw-dealer-alpha, raw-dealer-beta}`, **zero-write** (pre-fix a silent arbitrary pick = the Layer-B harvest signal) | B-until-fix / A-once-observed-silent |
-| (b) G2a one-rooftop two-profiles separate threads | alpha bound P1+P2, contact `sara@alpha-honda.com`; `t-p1` swept P1 + `t-p2` swept P2 (both approved) | profile-keyed `/__e2e/routing` reads `t-p1→(alpha,P1)`, `t-p2→(alpha,P2)`, **no cross-leak** | **Layer-A floor (must pass today)** |
-| (c) cold / unknown | `randomguy@nowhere.com` swept P1 | SUSPEND payload `reason='unknown_sender'`, `candidate_dealer_ids=[]`, **zero-write** | Layer-A backstop |
+| (a) G1 same-source two-dealer | alpha+beta both bound P1, both contact `leads@dealergroup.com`; one inbound swept by P1 | SUSPEND payload `reason='ambiguous_sender'`, `candidate_dealer_ids` ⊇ `{raw-dealer-alpha, raw-dealer-beta}`, **zero-write** (pre-fix a silent arbitrary pick = the backlog signal) | backlog-until-fix / blocker-once-observed-silent |
+| (b) G2a one-rooftop two-profiles separate threads | alpha bound P1+P2, contact `sara@alpha-honda.com`; `t-p1` swept P1 + `t-p2` swept P2 (both approved) | profile-keyed `/__e2e/routing` reads `t-p1→(alpha,P1)`, `t-p2→(alpha,P2)`, **no cross-leak** | **blocker (must pass today)** |
+| (c) cold / unknown | `randomguy@nowhere.com` swept P1 | SUSPEND payload `reason='unknown_sender'`, `candidate_dealer_ids=[]`, **zero-write** | blocker backstop |
 
 (Optional (d) G2b: same `threadKey` swept P1 then P2 → post-fix EXPECT
 `cross_profile_conflict` + `thread_routing` still reads P1.) Cases (b)(c) must pass
-IMMEDIATELY; case (a) FAILS pre-fix and that failing assertion IS the harvest signal.
+IMMEDIATELY; case (a) FAILS pre-fix and that failing assertion IS the backlog signal.
 
 ---
 

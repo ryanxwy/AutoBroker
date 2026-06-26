@@ -82,6 +82,10 @@ export interface PersistRunResult {
   droppedNoKey: number;
   /** Rows retired by supersedeStale across the run's scanned sources. */
   staleSuperseded: number;
+  /** Scanned sources whose stale sweep was skipped by the coverage-collapse
+   *  guard (a truncated capture re-observed too little of the live lot to
+   *  trust its absences). Their unseen rows stay live, not mass-retired. */
+  sourcesQuarantined: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +170,13 @@ const LISTING_ON_CONFLICT_BODY = `
   match_status           = excluded.match_status,
   raw_listing_json       = excluded.raw_listing_json,
   last_seen_at           = excluded.last_seen_at,
-  observed_at            = excluded.observed_at
+  observed_at            = excluded.observed_at,
+  -- Re-observing a row a prior run retired as not_observed REACTIVATES it (the
+  -- car came back, or a transient scrape-miss is corrected) — it must never
+  -- linger as a zombie (superseded_at set yet observed today). vin_promoted and
+  -- manual supersessions are structural, so ONLY not_observed is undone here.
+  superseded_at          = CASE WHEN inventory_listings.superseded_reason = 'not_observed' THEN NULL ELSE inventory_listings.superseded_at END,
+  superseded_reason      = CASE WHEN inventory_listings.superseded_reason = 'not_observed' THEN NULL ELSE inventory_listings.superseded_reason END
 `;
 
 const UPSERT_VIN_ARM = `
@@ -212,6 +222,35 @@ const SUPERSEDE_STALE = `
 UPDATE inventory_listings SET superseded_at = ?, superseded_reason = ?
 WHERE search_profile_id = ? AND source_id = ?
   AND observed_at < ? AND superseded_at IS NULL
+`;
+
+// Coverage-collapse guard (truncated-scan protection). A scanned source whose
+// live population is at least COVERAGE_COLLAPSE_FLOOR rows is quarantined — its
+// stale sweep skipped — when this run re-observed fewer than
+// COVERAGE_COLLAPSE_FRACTION of that population. A paginated / JS-render miss
+// that returns a sliver of the lot is still status='scanned', so the all-or-
+// nothing supersede gate cannot see the partial success; without this brake it
+// would mass-retire every unseen car as sold. Small lots (< FLOOR) are exempt
+// so genuine turnover on a tiny inventory still retires normally. NOTE: this
+// lives in the shared persistScanResults writer, so inventory_link_scan gets
+// the same protection — benign there (link-scan sources usually hold < FLOOR
+// listings, so the guard rarely trips).
+const COVERAGE_COLLAPSE_FLOOR = 6;
+const COVERAGE_COLLAPSE_FRACTION = 0.34;
+
+const COUNT_LIVE_FOR_SOURCE = `
+SELECT count(*) AS n FROM inventory_listings
+WHERE search_profile_id = ? AND source_id = ? AND superseded_at IS NULL
+`;
+
+// Rows of this source observed at/after the run watermark — the re-observed and
+// newly-added cars (observed_at comparisons are lexicographic == chronological
+// for ISO timestamps). The complement of these among the live set is what the
+// stale sweep would retire.
+const COUNT_FRESH_OBSERVED_FOR_SOURCE = `
+SELECT count(*) AS n FROM inventory_listings
+WHERE search_profile_id = ? AND source_id = ?
+  AND superseded_at IS NULL AND observed_at >= ?
 `;
 
 // ---------------------------------------------------------------------------
@@ -286,6 +325,8 @@ export function persistScanResults(opts: {
   const selectLiveUrlRow = db.$client.prepare(SELECT_LIVE_URL_ROW);
   const updateLiveRow = db.$client.prepare(UPDATE_LIVE_ROW);
   const upsertUrlArm = db.$client.prepare(UPSERT_URL_ARM);
+  const countLive = db.$client.prepare(COUNT_LIVE_FOR_SOURCE);
+  const countFreshObserved = db.$client.prepare(COUNT_FRESH_OBSERVED_FOR_SOURCE);
 
   const txn = db.$client.transaction((): PersistRunResult => {
     const result: PersistRunResult = {
@@ -295,6 +336,7 @@ export function persistScanResults(opts: {
       sourcesFailed: 0,
       listingsWritten: 0,
       vinPromoted: 0,
+      sourcesQuarantined: 0,
       droppedNoKey: 0,
       staleSuperseded: 0,
     };
@@ -424,16 +466,36 @@ export function persistScanResults(opts: {
         }
       }
 
-      // Fresh full scan: retire this source's rows not observed by THIS run.
-      // The verb re-checks last_status='scanned' itself (we just marked it),
-      // so a blocked/skipped source above never reaches a supersede.
-      result.staleSuperseded += supersedeStale({
-        searchProfileId: profileId,
-        sourceId,
-        runStartedAt: opts.runStartedAt,
-        db,
-        now,
-      });
+      // Fresh full scan: retire this source's rows not observed by THIS run —
+      // UNLESS the coverage-collapse guard trips. A scanned-but-truncated
+      // capture (pagination / JS render returned a fraction of the lot) would
+      // otherwise mass-retire every unseen car as sold; quarantine the sweep
+      // instead so the unseen rows stay live (and age into the stale freshness
+      // bucket). RECOVERY IS CONDITIONAL: a transient truncation self-heals —
+      // the next full scan re-observes the lot and the genuinely-gone cars
+      // retire normally. But a GENUINE sustained loss of more than
+      // (1 - COVERAGE_COLLAPSE_FRACTION) of the lot keeps tripping the guard, so
+      // those rows stay live until a healthy scan — a deliberate conservative
+      // tradeoff (keep stale-but-present data over mass-false-sold). The
+      // quarantine is surfaced via result.sourcesQuarantined for visibility; an
+      // auto-resolving age / consecutive-quarantine backstop is a follow-up.
+      const liveNow = (countLive.get(profileId, sourceId) as { n: number }).n;
+      const freshObserved = (
+        countFreshObserved.get(profileId, sourceId, opts.runStartedAt) as { n: number }
+      ).n;
+      if (liveNow >= COVERAGE_COLLAPSE_FLOOR && freshObserved < COVERAGE_COLLAPSE_FRACTION * liveNow) {
+        result.sourcesQuarantined += 1;
+      } else {
+        // The verb re-checks last_status='scanned' itself (we just marked it),
+        // so a blocked/skipped source above never reaches a supersede.
+        result.staleSuperseded += supersedeStale({
+          searchProfileId: profileId,
+          sourceId,
+          runStartedAt: opts.runStartedAt,
+          db,
+          now,
+        });
+      }
     }
 
     return result;

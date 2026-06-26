@@ -148,6 +148,8 @@ async function buildWith(decision: RouteDecision): Promise<BuiltServer> {
   __setIntakeDepsForTests({
     harnessGenerate: harnessStub(),
     resolveLocation: locationStub([RESOLVED]),
+    // never let a freeform intake unit test reach the real web trim lookup.
+    fetchTrimSources: async () => ({ kind: "none" }),
   });
   __setRouteClassifierForTests(async () => decision);
   server = await buildServer({ quiet: true });

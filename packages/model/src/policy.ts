@@ -55,6 +55,13 @@ export const USE_CASES = [
    */
   "intake_freeform_prefill",
   /**
+   * Intake trim-suggestion: a STRUCTURED EXTRACTION over web-fetched trim pages
+   * (the fetch lives in packages/tools; this useCase only structures the gathered
+   * text into a grounded trim list the buyer picks from). Single emit_result tool,
+   * never mixed with other tools (#1244). Routes to deepseek.chat.
+   */
+  "intake_trim_lookup",
+  /**
    * Geosearch snapshot-fallback parsing ONLY — the dealer_geosearch happy
    * path is zero-LLM (the in-page evaluate extractor returns typed rows
    * directly). This useCase fires only when extraction degrades to the
@@ -139,6 +146,7 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // alias — no Output.object + tools mix.
   intake_trim_verify: "deepseek.chat",
   intake_freeform_prefill: "deepseek.chat",
+  intake_trim_lookup: "deepseek.chat",
   // Snapshot-fallback parsing only; single emit_result tool; never
   // Output.object + tools on DeepSeek (supportsOutputObjectWithTools false).
   geosearch_extract: "deepseek.chat",

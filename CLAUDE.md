@@ -205,7 +205,16 @@ These are durable product rules, distinct from the safety invariants above:
    `intakeContracts.ts` `IntakePrefillSchema`); the form blocks submit until every
    required field is filled (`SchemaForm`/`formModel`). When a field is missing,
    ASK and WAIT — do not guess a trim/year/model to be helpful. (PII fields
-   email/phone/budget stay excluded from prefill — inv #9.)
+   email/phone/budget stay excluded from prefill — inv #9.) **Trim-suggestion
+   helper (freeform only):** when a freeform launch gives make+model+year but no
+   trim, the intake `trimSuggestion` step WEB-LOOKS-UP the real trim lineup
+   (`tools` `fetchTrimSources` — allowlisted hosts, SSRF-gated) and the LLM extracts
+   it (`intake_trim_lookup`, grounded "only trims in the source text"), then SUSPENDS
+   a `gate-trim-suggestion` picker. The buyer PICKS one (seeds the form, marks
+   `trimGrounded` → trimVerify skips it), or `skip`s to type it manually, or
+   `decline`s (terminal). This ASSISTS the buyer's explicit choice with real data —
+   it never auto-fills (picker starts unselected) and never fabricates; web/LLM
+   failure degrades gracefully to the blank-trim form (never blocks intake).
 2. **`inventory_site_scan` scans all in-radius dealers by default — no per-dealer
    approval gate.** It is read-only (browses dealer SRPs; never sends/submits), so
    it has no human-approval floor: it auto-scans the full in-radius target set. The

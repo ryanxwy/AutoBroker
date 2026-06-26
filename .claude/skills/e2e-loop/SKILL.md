@@ -1,278 +1,203 @@
 ---
 name: e2e-loop
-description: Run a manually-triggered live-e2e 全技能巡检 of the 17 AutoBroker skills against
-  the real DeepSeek lane via serve-live + a browser — full two-sided live-negotiation
-  loop (brand-picker → two-pass sweep → Sonnet dealer-brain negotiation with sustained
-  dealer resistance → multi-profile concurrent fan-out → frontend-taste → auto-close
-  backlog → report → merge), or a `--light` manual two-pass sweep. Use to
-  run the e2e sweep / 全技能巡检 on demand; pass --light for a read-only manual inspection.
+description: Run one manually-triggered, live end-to-end pass of the AutoBroker product
+  as a real car buyer — drive all 17 skills against the real DeepSeek lane through
+  serve-live + a Playwright browser, negotiate for real against resistant LLM dealers,
+  cross-shop several cars at once, and RECORD every blocker / backlog gap / rough edge
+  into an HTML report. The job is to reproduce the real buyer experience and expose its
+  imperfections honestly — NOT to ship a perfect run. Fixing the recorded issues is the
+  companion `e2e-evolve` skill's job (run it in a fresh session). Pass `--light` for a
+  quick read-only sweep. Use to run the live e2e / 全技能巡检 on demand.
 disable-model-invocation: true
 ---
 
-You drive one **live e2e 全技能巡检** of the 17 AutoBroker skills (manually triggered —
-run it on demand, every time). This is a
-heavyweight live ritual: it starts a real server, drives a real browser via Playwright
-MCP, calls the paid DeepSeek provider, dispatches subagents, and (full mode) merges to
-`main`. Track progress with TodoWrite. cwd = `~/vscode/AutoBroker/AutoBroker`.
+You drive **one live end-to-end pass** of AutoBroker, manually triggered, every time.
+You play a **real, non-technical car buyer** going through the whole new-car quote
+pipeline. It is heavyweight: it starts a real server, drives a real browser via
+Playwright MCP, calls the paid DeepSeek provider, and dispatches subagents (the LLM
+dealers). Track progress with TodoWrite. cwd = `~/vscode/AutoBroker/AutoBroker`.
 
-## Mode
+## What this skill is for (read this first)
 
-If invoked `--light` / "light sweep" / "manual inspection": run a BOUNDED inspection —
-steps **{0, 2, 2.5 pin-or-bootstrap, 3 two-pass, 4 resolve-findings, 6 report}** — SKIP
-the live dealer-brain negotiation (3.5) and Electron sync (4.5), and don't require the
-full random brand-pick / deep 17-skill build. Light needs **no fresh worktree/build
-(step 1)** — run step 2 against your existing checkout's (or an already-running)
-serve-live; **if its DB is empty (nothing to pin), do a minimal intake first to
-bootstrap one profile** (this also exercises intake live), or point --light at an
-already-populated server. **Light still closes the loop:** any finding it surfaces is
-RESOLVED via the step-4 S0–S6 machine (fix→review→green→fresh live re-verify→merge)
-before it finishes — a --light run, like a full run, ends with an **empty backlog**. It
-reads this spine + `references/harness-boundaries.md` + `references/skill-pipeline.md` +
-`references/backlog-state-machine.md` (+ `references/reporting.md`). Otherwise (bare
-`/e2e-loop`): run the FULL path 0→8.
+**The deliverable is an honest report, not a green checkmark.** You reproduce the real
+buyer journey and **record everything imperfect you hit** — things that blocked the
+buyer, real gaps worth fixing, and rough edges. You do **not** try to make the run
+perfect, and you do **not** fix most of what you find. A companion skill, **`e2e-evolve`**,
+runs later in a fresh session, reads your reports, researches the issues, fixes them,
+and improves this very skill so the next run is better on a better product.
 
-## Feasibility gate (fail-closed, FIRST — do this before anything)
+The one exception: if a blocker is a **localized safety violation** or an **obvious
+one-line fix**, you may fix it in-loop through the small gated path in
+`references/recording.md`. Everything else — anything research-heavy, multi-file, or
+design-level, **including a multi-file safety stop** — you **record and hand off**. The run
+ends with a full report; it does **not** need an empty backlog.
+
+```
+ /e2e-loop  (this skill — the RUNNER)        e2e-evolve  (the companion — fresh session)
+ ─────────────────────────────────────       ──────────────────────────────────────────
+ live the real buyer journey            ──►   read these reports + harvest-register
+ record blockers / backlog / polish           research → fix (gated) → merge to main
+ fix only safety + one-line blockers           improve THIS skill for the next run
+ write the HTML report                  ◄──   write-back lessons
+```
+
+## Modes
+
+- **Full** (bare `/e2e-loop`): the whole journey, steps 0→7 below.
+- **Light** (`--light` / "light sweep" / "manual inspection"): a bounded read-only
+  inspection — steps **{0, 1 pin-or-bootstrap, 2 two-pass sweep, 5 frontend-taste,
+  6 record, 7 teardown}**. Skip the live negotiation (step 3) and cross-shop (step 4).
+  Light needs **no fresh worktree/build** — run against the existing checkout's (or an
+  already-running) serve-live. If its DB is empty, do a minimal intake first to seed one
+  profile (this also exercises intake live). Light still writes a report; it just
+  expects fewer findings (a clean read-only sweep may legitimately record zero).
+
+## Safety gate (do this first, fail closed)
 
 1. Keys present (`DEEPSEEK_API_KEY`, `GOOGLE_PLACES_API_KEY`) and Playwright MCP
    reachable — else **STOP and report**, do not run.
-2. After serve-live launch: assert the `{"liveE2e":"listening",…,"dataDir":…}` stdout
-   line appears within a bounded wait and record `dataDir` — else fail closed.
-3. After brand-pick: assert geosearch returns **≥1 dealer** for the metro — else fail
-   closed. An empty metro = a misconfigured `location_query`; do not drive a vacuous
-   sweep.
+2. After serve-live launches: confirm the `{"liveE2e":"listening",…,"dataDir":…}` line
+   appears within a bounded wait and **record `dataDir`** — else fail closed.
+3. After picking the buyer: confirm geosearch returns **≥1 dealer** for the metro (**≥10
+   for a full run** — pick a big metro + high-volume car) — else fail closed. An empty
+   metro means a misconfigured `location_query` (see the Irvine fallback trap in
+   `references/harness-boundaries.md`); do not drive a vacuous sweep.
 
-## The spine
+## The journey
 
-| step | action | machine-verify | load (read once) |
+| step | what you do | how you know it worked | load when you reach it |
 |---|---|---|---|
-| 0 | read lessons (fixed read-list) + feasibility gate + `touch .claude/.e2e-loop-active` | keys/MCP present; stdout listening line | spine only |
-| 1 | new worktree off `origin/main` + better-sqlite3 rebuild + `pnpm -r build` | build OK | `references/harness-boundaries.md` |
-| 2 | start `pnpm e2e:serve-live` | `listening` line seen, `dataDir` recorded, floor armed | (in-context) |
-| 2.5 | brand-picker (random metro+brand+persona) | geosearch ≥1 dealer (**≥10 for a full run** — big metro + high-volume vehicle) | `references/brand-picker.md` |
-| 3 | two-pass sweep: PASS-A freeform-persona, PASS-B `/slash`; per-skill rows/audit + DOM verify | terminal `skill_runs` row + table delta + active-panel testid | `references/skill-pipeline.md` (+`references/ui-lane-personas.md`) |
-| 3.5 | dealer-brain: **deep mutual negotiation — multiple parallel threads ≥4 rounds each, ≥10 dealers, multi-titled-contact escalation + AI-auto first-touch + ghosting** (realism > cost) | active threads `buyer_FUs ≥4` (past old cap); ghosts capped at 2 unanswered → drop; re-extract → revised `dealer_quotes` | `references/dealer-brain.md` |
-| 3.7 | frontend-taste per data tab | ranked findings list | `references/ui-lane-personas.md` (→ `frontend-taste` skill by name) |
-| 3.9 | multi-profile live-LLM fan-out (ONLY after pinned 3/3.5 is terminal+green): seed the **3 different-brand** world (Accord+Camry+Mazda6) via REAL intake; arm the real scheduler (`AUTOBROKER_PORTFOLIO_SCHEDULER=1` + `MAX_CONCURRENT_ACTIVE_PROFILES` < active); run **concurrent per-profile 3.5-grade negotiation** + a shared-`dealer_key` rooftop collision + interleaved human approvals through the unified `ApprovalInbox` | scheduler cap holds + every profile reaches terminal (no starve/wedge); `claimDealer`: exactly 1 binds the rooftop, losers `excluded_conflict` + `exclusion_reason`/`heldByVehicle` voiced + ZERO web-form AND ZERO email (claim precedes send; engage-then-abort releases); decline isolated to its profile (Δ0 there, no-op for others); `runAllInvariants` all-ok per-step (per-profile + portfolio aggregate); keystone `no_external_mutation==0`; portfolio UI: `/portfolio` board lists all N profiles (segment-grouped, health dots) + `portfolio-status-bar` counts + `needs-you-widget` surfaces every parked gate (routes to its run); `pnpm soak mp-replay` GREEN (`soak mp --until-dry` is structurally LIVE-DEFERRED — `serverHost.ts` lacks `inject_replies` + record/replay; see `references/multi-profile-lane.md`) | `references/multi-profile-lane.md` |
-| 4 | backlog state machine S0–S6 (enumerate→research→fix-in-worktree→review→green→fresh live re-verify) | backlog-empty grep; green GREEN | `references/backlog-state-machine.md` |
-| 4.5 | Electron sync (only if `apps/ui/src` or a testid touched) | `desktop:smoke` 14/14 | `references/reporting.md` |
-| 5 | telemetry capture from `test_run_records` BEFORE pipeline_reset | one SQL dump | `references/harness-boundaries.md` (in-context) |
-| 6 | write HTML report (incl. Time & Cost 2 tables) → plan repo | report sections present | `references/reporting.md` |
-| 6.5 | product-improvement harvest (read-only): enumerate every Layer-B imperfection from steps 1–3.9, emit one PIC each `{observed, suboptimality, hypothesis, evidence_ref, lands}`; file to plan-repo `architecture/BACKLOG.md` + cross-run `harvest-register.md` + report §7.5. Files **NOTHING** in this repo; relaxes **NO** Layer-A floor | harvest list present (may be empty on `--light`; **0 on a FULL LLM-dominant run is suspect**) | `references/reporting.md` |
-| 7 | integrate: review→green(`RUN_UI_FUNCTIONAL=1`)→CI→merge | `gh pr checks` exit 0 | `references/backlog-state-machine.md` (in-context) |
-| 8 | write-back lessons (fixed write-list) + `rm .e2e-loop-active` + teardown | live-status box + memory pointer ≤200c | `references/reporting.md` (in-context) |
+| 0 | read the last 1–2 reports, run the safety gate, `touch .claude/.e2e-loop-active` | keys/MCP present; listening line seen | this spine |
+| 1 | (full) fresh worktree off `origin/main` + better-sqlite3 rebuild + `pnpm -r build`, then start `pnpm e2e:serve-live`; pick a realistic buyer (metro, car, finance mode, persona) | build OK; `dataDir` recorded; geosearch ≥1 dealer (≥10 full) | `references/harness-boundaries.md`, `references/brand-picker.md` |
+| 2 | live the journey: drive all 17 skills as the buyer — PASS-A in natural language, PASS-B by `/slash` — verifying each skill lands its data AND its UI | terminal skill row + table delta + the right Canvas panel; data-quality coverage (not just a row count) | `references/skill-pipeline.md` (+ `references/ui-lane-personas.md`) |
+| 3 | (full) negotiate for real: deep, multi-thread email negotiation against resistant LLM dealers — ≥10 dealers, front-runners driven to ≥4 rounds, with ghosting and manager escalation | front-runner threads reach ≥4 buyer rounds; ghosts drop after 2 unanswered; revised OTDs extracted | `references/dealer-brain.md` |
+| 4 | (full) cross-shop: run several searches at once (3 different-brand profiles) on the real scheduler — concurrent negotiation, a shared dealer both want, one shared approval inbox | scheduler cap holds; every profile reaches a terminal state; exactly one profile binds each shared dealer, losers voiced + zero send; no budget leak; nothing sent for real | `references/multi-profile-lane.md` |
+| 5 | judge the experience: run `frontend-taste` per data tab | a ranked usability findings list | `references/ui-lane-personas.md` (→ the `frontend-taste` skill by name) |
+| 6 | record everything: classify each imperfection (blocker / backlog / polish), capture telemetry, fix only safety + one-line blockers, write the HTML report + harvest-register | report sections present; ledger rebuilt | `references/recording.md` |
+| 7 | teardown: kill serve-live, remove the worktree, write the memory pointer, `rm .claude/.e2e-loop-active` | marker gone; memory pointer ≤200c | `references/recording.md` |
 
-**Step 3.9 gating (rulings #4/#7):** the pinned single-brand spine (steps 3 and 3.5) runs FIRST and unchanged; step 3.9 only starts once it is terminal+green.
+**Step 4 ordering:** the single pinned-brand journey (steps 2 and 3) runs FIRST and
+reaches a terminal, healthy state before cross-shop (step 4) begins. Never run them
+concurrently — cross-shop is layered on top of a known-good single-brand pass.
 
-## Verification hierarchy
+## How to read what you see (the verification ladder)
 
-deterministic `/__e2e/rows` + `/__e2e/audit` counts (the verdict) **>** DOM
-`browser_evaluate` on the active panel (corroboration) **>** screenshot (report
-artifact) **>** `frontend-taste` LLM-judge (advisory). A lower rung NEVER overrides a
-higher one: a pretty screenshot never beats a missing row; a taste finding alone never
-blocks a merge.
+Trust the surfaces in this order, highest first. A lower rung never overrides a higher
+one — a pretty screenshot never beats a missing row; a taste opinion never blocks
+anything.
 
-**A row COUNT alone is NEVER a skill PASS for a data-bearing skill.** A route
-that returns only `{table,count}` cannot see a null-price listing or a null-OTD
-quote — so a scan that writes N rows whose load-bearing payload (`listed_price`/
-`msrp`, `otd_total`) is empty reads identical to N good rows and passes GREEN
-(the 2026-06-22 miss: 10 listings, every price NULL, marked PASS while the buyer
-saw `0 rec / 10`). For `inventory_site_scan` and `dealer_reply_extract` the
-verdict is the `GET /__e2e/dataquality?skill=&profileId=` COVERAGE ratio, not the
-`/__e2e/rows` count. Coverage is rung 1; the `price_missing` / `0 rec` chips a DOM
-read shows (rung 2) only corroborate — a count-green / coverage-empty result is
-itself the FAIL and the lower rungs cannot rescue it upward.
+1. **Deterministic counts** — `/__e2e/rows` and `/__e2e/audit` (did the write land? did a
+   decline change nothing?), and **data-quality coverage** `/__e2e/dataquality` (is the
+   data actually usable?). This is the verdict.
+2. **The live DOM** — `browser_evaluate` on the active Canvas panel. Corroboration.
+3. **A screenshot** — a report artifact, never a verdict.
+4. **`frontend-taste`** — an advisory usability opinion.
 
-## Verdict model — floors vs harvest
+**A row count alone never means a data-bearing skill passed.** A scan can write 10
+listings whose price is every-one null and still read `count: 10`, identical to 10 good
+rows — and a buyer then sees "0 recommendations". For `inventory_site_scan` and
+`dealer_reply_extract` the verdict is the **coverage** from `/__e2e/dataquality`, not the
+row count. (`references/harness-boundaries.md` has the exact thresholds.)
 
-The run is no longer a scalar green/red. Its verdict is a **tuple**:
+## How to classify what you find (three buckets)
 
-> **FLOORS held|breached · HARVEST n**
+Decide each imperfection by two questions, in order:
 
-A Layer-A breach ⇒ `FLOORS=breached`, the run cannot end clean, the breach goes
-through the step-4 S0–S6 machine. A `FLOORS=held` run with N Layer-B PICs **is a
-clean run**. `pass+fix` is reserved for "a Layer-A breach fixed + re-verified this
-round". green.sh GREEN + `soak mp-replay` GREEN are a **sub-line under A9** (below),
-never the headline; green.sh stays the hard LANDING gate for any code change.
+1. **Did it block the buyer, or break a safety/correctness rule?** → **BLOCKER.**
+   The buyer could not get through this step, OR a load-bearing rule was violated:
+   - a real send happened in test mode, or the fake adapter did NOT fire on a send;
+   - a budget number rendered on any surface;
+   - a gate appeared *after* the prose instead of before it;
+   - the largest extraction did not fail closed on a malformed tool call (it silently
+     skipped the tool, or a tool name was regex-executed from text);
+   - **data the pipeline provably held was silently dropped** — a scan wrote rows but the
+     price/MSRP coverage is zero, or a dealer emailed an out-the-door number the extractor
+     lost (coverage below the healthy bar with no legitimate empty/withheld escape);
+   - a decline changed state when it should have changed nothing;
+   - a skill dead-ended with no path forward for the buyer.
 
-**CLASSIFY (the anti-masking boundary — first matching rung wins, decidable):**
+   Record it with full evidence (skill, route response, screenshot). **Fix it in-loop ONLY
+   if it is a localized safety stop or a genuine one-line fix** (`references/recording.md`);
+   a multi-file or research-heavy blocker — even a safety one — is recorded and handed to
+   `e2e-evolve`.
 
-1. **rung-1** — breaches any Layer-A floor A1–A9 by THAT FLOOR'S OWN machine/auditor
-   check (a `/__e2e/dataquality` ratio, a `runAllInvariants` result, an auditor SAFE,
-   a string scan) ⇒ **Layer-A FAIL**, NOT harvest-eligible, S0–S6, run cannot end clean.
-2. **rung-2** — pipeline **LOST/dropped/corrupted/failed-to-surface info it provably
-   HELD**, OR took a floor-forbidden action ⇒ **latent Layer-A FAIL + a T7 add-the-CHECK
-   item** (add the missing verification surface this round).
-3. **rung-3** — otherwise (correct given real inputs/budgets/dealer behavior; nothing
-   held-then-lost) ⇒ **Layer-B HARVEST**.
+2. **Was it a real gap that did NOT block the journey?** → **BACKLOG.**
+   A correct-but-worse-than-it-should-be outcome: a finance buyer shown only cash
+   incentives; scan price-coverage below the healthy bar but not a total loss; a
+   same-source attribution ambiguity that did not actually mis-route this run; a missing
+   send-preview block; a thin comparison. Record it with evidence **and a falsifiable fix
+   idea** (the product change that would close the gap). It goes to the harvest-register
+   for `e2e-evolve`.
 
-DISCRIMINATOR: **HAD-and-lost ⇒ always A; never-had-or-correctly-declined ⇒ B.** You
-reach B ONLY by PASSING the floor check that would catch the lost-info case (the
-inversion is the anti-masking guard).
+3. **Otherwise** (correct, just rough) → **POLISH.**
+   UX friction, a suboptimal-but-valid outcome, a cosmetic issue. Record it. Lowest
+   priority.
 
-### Layer-A floors (strict pass/fail — cite each floor's OWN route verbatim, do NOT paraphrase)
+**The one hard rule (anti-masking):** a backlog or polish note can NEVER excuse a safety
+or data-loss breach. The discriminator is *had-and-lost vs never-had*: if the pipeline
+**held** a number and **lost** it, that is a BLOCKER, full stop. You may file a
+"low-quote-rate / ghosted dealer" outcome as backlog **only when the data proves no
+number was dropped** — i.e. `/__e2e/dataquality` returns its empty escape (nothing was
+extractable) or its all-withheld escape (every listing explicitly price-gated). A dealer
+who emailed an OTD the extractor dropped is always a blocker, never backlog.
 
-- **A1** — the 12 CLAUDE.md safety invariants (safety-auditor SAFE + per-step
-  `runAllInvariants` all-ok).
-- **A2** — `no_external_mutation==0` in test mode (`/__e2e/audit` aggregate).
-- **A2b** — POSITIVE fake-send assertion: after each of the 3 irreversible sends the
-  FAKE adapter fired (`mode='fake'` on the `sendRecord`/`fake_mailbox` row), catching a
-  silent real-adapter swap — NOT collapsible into A2's negative counter. A real-mode
-  send recorded in a test run is a hard Layer-A FAIL.
-- **A3** — decline = Δ0, profile-isolated (`/__e2e/rows` before/after).
-- **A4** — gate renders BEFORE prose (DOM order).
-- **A5** — #1244 fail-closed on the largest extraction (`dealer_reply_extract`), never
-  regex-execute a tool name (`MalformedToolCallAbort`).
-- **A6** — budget NEVER rendered as a number incl. the `batch-summary` (string scan).
-- **A7** — `dealer_reply_extract` data quality (cite `/__e2e/dataquality` verbatim):
-  **PASS iff `otd_present/n ≥ 0.5`**; any `0 < coverage < 0.5` is a **FAIL** (NO
-  VDP-budget escape — reply_extract has no budget excuse); `nullEscape:true` (n==0) =
-  SKIP. Do NOT use the looser `otd_present==0`.
-- **A8** — `inventory_site_scan` data quality (cite the route verbatim): hard-FAIL on
-  `n>0 AND priced==0 AND msrp_present==0 AND gated==0` (TOTAL price loss); `coverage≥0.5`
-  healthy; `0<coverage<0.5` a soft note **ONLY** because the per-dealer VDP budget bounds
-  it — this budget escape is **site_scan-ONLY**, never reply_extract.
-- **A9** — deterministic backstop GREEN, **SPLIT**: `RUN_UI_FUNCTIONAL=1 bash
-  scripts/green.sh` literal `GREEN` is a floor whenever code is edited (both modes);
-  `pnpm soak mp-replay` GREEN is a floor **ONLY when 3.9 ran**. `RUN_UI_FUNCTIONAL=1` is
-  pinned everywhere A9 is named (never bare `green.sh`).
-- **G2a** (cross-leak: separate threads landing on the wrong profile) is Layer-A
-  (`no_cross_profile_bleed`-class). An **OBSERVED live silent mis-attribution** (an
-  arbitrary pick where >1 dealer/profile matches) is a hard Layer-A FAIL that **FREEZES
-  the run** — NOT "Layer-A-adjacent" harvest; there is no such tier. **G2b** silent
-  re-stamp post-fix is Layer-A. (`references/multi-profile-lane.md`.)
+## The verdict
 
-### Layer-B harvest (clean-run-compatible PICs, default `lands=backlog`)
+One honest line, no scalar pass/fail:
 
-- **B1** dealer resistance/ghosting (a low quote-rate PASSES).
-- **B2** ghosted/cold profile (0 OTDs ⇒ terminal ghosted/cold, never fabricated).
-- **B3** sub-optimal-but-correct outcome — B3's "legit subset under VDP budget" is
-  **scoped to `inventory_site_scan` ONLY**.
-- **B4** G1 attribution ambiguity — Layer-B **ONLY IF** the running build surfaces the
-  thread as `unrouted`/zero-write; until that surfacing ships, B4 is an **EMPTY class**
-  and G1 is rung-2 latent-A + T7.
-- **B5** UX friction.
-- **B6** no-best-deal profile.
+> **Journey: complete | partial | blocked · Blockers N · Backlog N · Polish N**
 
-### THE WALL — mechanically enforced (route-backed, not prose)
+A run with N backlog items and a complete journey is a **good run** — that is the engine
+working. A full run that records **zero** imperfections is **suspect** (the journey is
+LLM-driven against live, resistant dealers — re-examine for under-exercised reality or a
+finding you dismissed too quickly). A `--light` read-only sweep may legitimately record
+zero. The only thing that makes a journey **blocked** is an unworked safety blocker —
+a real send, a budget leak, a gate-after-prose, a silent data loss — which you must
+either fix in-loop or, if you cannot, surface at the very top of the report as the run's
+headline.
 
-A Layer-B note can NEVER waive a Layer-A floor. Classification is **tied to the
-`/__e2e/dataquality` route response**: a "low quote-rate / ghosted" item may be filed
-Layer-B **ONLY** when the route returns `nullEscape:true` (n==0) OR `gated==n` (the data
-PROVES no number was dropped). `0<coverage<0.5` on `dealer_reply_extract` can NEVER be
-filed B1/B2 — it is rung-2 latent-A. Promotion is **one-directional**: a Layer-A breach
-can never be downgraded into a PIC; only a Layer-B PIC may be electively promoted into
-the normal S0–S6 machine (full fresh-context APPROVE/SAFE + `RUN_UI_FUNCTIONAL=1` green
-+ fresh live re-verify).
+## Guardrails (do not weaken)
 
-### PIC shape
+- **Test mode, isolated.** serve-live runs with `AUTOBROKER_MODE=test` (the sole
+  send-control variable) and a throwaway tmp data-dir. Mode is chosen at boot and is
+  immutable for the run — **never** flip it on a running host (a live flip arms a real
+  adapter on the next send with no second guard). **Never** set
+  `AUTOBROKER_TEST_AUTO_APPROVE` — the decline path must stay live (CLAUDE.md inv #11).
+- **The 3 irreversible skills stay fake-send** (`dealer_web_lead_submit`,
+  `negotiation_followup`, `dealer_closeout_email`); gates render before prose; a decline
+  changes nothing, proven via `/__e2e/rows` before/after.
+- **Seed only through the control routes** (`inject_replies`, `inject_reply_to_thread`,
+  `inject_crm_threads`, `inject_contact`) — a SQLite write made underneath the running
+  server is invisible to it. `inject_crm_threads` before `dealer_hygiene`; run
+  `dealer_closeout_email` second-to-last and `pipeline_reset` last.
+- **Budget never renders as a number** anywhere, including a batch summary (inv #9).
+- **The 12 CLAUDE.md safety invariants hold every step.** They are the floor; a breach is
+  always a blocker (above).
+- **Realism over cost.** Spend the LLM calls. A full run mimics the real email quote
+  pipeline: ≥10 dealers, a full pre-flight market search, and a deep mutual negotiation
+  (`references/dealer-brain.md`). Cross-shopping several cars at once is part of the
+  reality, not an extra (`references/multi-profile-lane.md`).
+- **Dealers resist — model it, don't over-cooperate.** Most dealers will not email an
+  out-the-door number: come-onsite-only, mid-thread ghosting, reverse-inducement. A
+  profile can legitimately finish with few or zero email quotes — a valid `ghosted` /
+  `cold` outcome, never a fabricated quote, never a failure on its own.
+- **Worktree needs `.env`.** `.env` is gitignored, so a fresh worktree has none — copy
+  the main checkout's `.env` into the worktree after `git worktree add` (it stays
+  gitignored, never staged), or serve-live reports "add your DeepSeek key" and the
+  router 500s.
+- **Self-contained `YYYY-MM-DD` HTML report**; `MEMORY.md` pointer ≤200 chars (detail
+  lives in the topic file).
 
-`{ id PIC-YYYYMMDD-n; class B1..B6; observed (grounded: skill/profile/route evidence);
-suboptimality (the BUYER value gap, not "a bug"); hypothesis (a falsifiable product
-change); evidence_ref (run-id + skill + dataquality/rows snapshot, replayable); lands
-fix-this-round|backlog (DEFAULT backlog); recurrence (cross-run count, semantic dedup by
-`class+suboptimality`, `≥3` graduates to a plan-repo round); status open|promoted|shipped|rejected }`.
+## Before you call it done
 
-## Guardrails
-
-- Isolated tmp data-dir; `AUTOBROKER_MODE=test` pinned (the sole send-control var);
-  **never** set `AUTOBROKER_TEST_AUTO_APPROVE` — keep the decline path live (CLAUDE.md inv #11).
-- The 3 irreversible skills stay **fake-send**; gates render BEFORE prose; decline =
-  Δ0, proven via `/__e2e/rows` (inv #8, #10).
-- #1244 fail-closed watch on the largest live extractions (inv #4, by name — never
-  re-paste).
-- Seed ONLY via the **6** control routes (`inject_replies`, `inject_reply_to_thread`,
-  `inject_crm_threads`, `inject_contact`, `audit`, `rows`) — external SQLite writes are
-  invisible to the running server; `inject_crm_threads` before hygiene;
-  `inject_contact` for a manager-escalation contact flip; closeout 2nd-last,
-  pipeline_reset last.
-- Budget never renders as a number (inv #9). Fresh-context auditors stay separate from
-  the fixer; "needs live verify" ≠ defer — run a fresh serve-live.
-- **Realism > cost (owner, 2026-06-22).** A full run mimics the REAL email quote
-  pipeline: ≥10 dealers, full pre-flight market search, and **deep mutual negotiation
-  driven to ≥4 rounds on multiple parallel threads** with multi-titled-contact
-  escalation, AI-auto first-touch, and ghosting (`references/dealer-brain.md`). Spend
-  the LLM calls — saving cost is secondary to exercising the realities.
-- **Multi-profile is part of the realities (step 3.9).** A real cross-shopper runs
-  several searches at once. A full run drives the **concurrent 3-different-brand
-  world** (Accord+Camry+Mazda6) on the REAL scheduler: N independent pipelines under
-  a hard cap, each negotiating its own dealers, overlapping on shared rooftops, every
-  approval funnelling into ONE inbox — surfacing the concurrency bugs the single-
-  profile spine can't (cross-profile bleed, shared-rooftop double-send, mis-routed
-  approval, a starved/wedged profile). The operator drives/observes it through the
-  **Phase-3 portfolio UI**: the `/portfolio` board (`portfolio-board`, segment-grouped
-  `portfolio-card-<id>` + health dots + `portfolio-status-bar` counts header), the
-  per-session pin toggle (`session-pin`), and the floating `needs-you-widget` (the DOM
-  face of `GET /api/approvals` — routes to the run's gate, never approves inline).
-  `references/multi-profile-lane.md`.
-- **Dealers RESIST — model it, don't over-cooperate (owner, 2026-06-24).** Most
-  dealers won't email an out-the-door number: model the realistic mix — come-onsite-only
-  (never a number, even at "ready to buy today"), mid-thread ghosting, reverse-inducement;
-  only a minority quote, late + grudgingly. A profile can finish with **few or 0 email
-  OTDs → a valid `ghosted`/`cold` outcome** (never a fabricated quote; verdict PASSES a
-  low quote-rate, FAIL only for a dropped-but-present OTD). The dealer actor runs as
-  **per-dealer Sonnet subagents, ≤3 concurrent on the OAuth subscription** (paced; rounds
-  sequential); **every reply is a live LLM generation — never canned/replayed in a live
-  run** (`references/dealer-brain.md`).
-- **Product behavior rules (owner, 2026-06-23 — also in CLAUDE.md):** (1) **Intake
-  never assumes a required vehicle field** — `model`/`trim`/`year` must be stated by
-  the buyer; if the persona's freeform omits one, the form leaves it blank and you
-  must supply it as the buyer's explicit choice (or ASK), never fabricate a default.
-  (2) **`inventory_site_scan` scans ALL in-radius dealers by default — no batch
-  approval gate** (read-only; the `batch-*` testids no longer render for it; there is
-  no site_scan decline path). The shared batch gate still guards the 3 send skills +
-  `inventory_link_scan`. (3) **Chat history stays in one session** — only a deliberate
-  new-search (intake fork) or explicit session switch resets the rail. (4)
-  **`incentive_scrape` always auto-approves new OEM sources** (read-only; no
-  first-encounter `approval-*` gate renders for it). (5) **`dealer_web_lead_submit`'s
-  batch card shows a `batch-summary`** (vehicle, email, placeholder-phone — never budget)
-  and the dealer list is height-capped + scrollable.
-- **Worktree needs `.env` (step-1 trap).** `.env` is gitignored, so a fresh sibling
-  worktree has none and `loadDotEnvKeys`' walk-up won't find the main checkout's copy
-  — serve-live then reports "Add your DeepSeek key" and the NL router 500s. Copy
-  `.env` into `$WT` after `git worktree add` (it stays gitignored, never staged).
-- **Immutable mode (load-bearing).** serve-live runs `AUTOBROKER_MODE=test`, chosen at
-  LAUNCH and immutable for the run; **never** flip mode on the running host (boot-only
-  `assertTestModeSafe` — a live flip arms a real adapter on the next send with no second
-  env ring). Cross-ref `references/harness-boundaries.md` "Mode model".
-- Self-contained `YYYY-MM-DD` HTML report; `MEMORY.md` pointer ≤200 chars (it is over
-  budget — detail goes in the topic file).
-
-## Self-check (every round, before declaring done)
-
-- **The run does not end with unresolved Layer-A leftovers** (this holds in `--light`
-  too): every **Layer-A** finding/backlog item this round is RESOLVED — fixed through the
-  step-4 S0–S6 machine (research → fix-in-worktree → fresh-context review APPROVE +
-  safety SAFE → `RUN_UI_FUNCTIONAL=1` green → fresh live re-verify → merge) OR given a
-  written `live-verified, no-code-change` ruling. The no-defer rule is unchanged. The
-  report's "本轮新 backlog" (§7) section is then **empty** — verify with a grep, not a
-  rhetorical question. **The inversion (Layer-B):** the Layer-A backlog MUST be empty,
-  but the Layer-B harvest (§7.5) should **NOT** be empty on a FULL LLM-dominant run (a
-  0-PIC FULL run is suspect — re-examine for under-exercised reality or silent dismissal);
-  a `--light` read-only run may legitimately emit **0**. Per-skill rows carry
-  `floor(held|breached)` + `harvest(PIC ids)`; only `floor=breached` blocks the run from
-  ending (`floor=held · harvest=PIC-…` is a fully successful skill run).
-- **Positive fake-send assertion (A2b).** After each of the 3 irreversible sends in a
-  test-mode run, assert the FAKE adapter fired (`mode='fake'` on the
-  `sendRecord`/`fake_mailbox` row) via a POST-RUN isolated-DB read (the isolated
-  serve-live DB is readable after the fact; this is NOT a banned mid-run seeding write)
-  OR a new `/__e2e` route that echoes the last send's adapter mode — do **NOT** collapse
-  it back into the A2 negative counter. A real-mode send recorded in a test run is a hard
-  Layer-A FAIL.
-- **Data-quality floor (count-green is NOT quality-green).** For every
-  data-bearing skill that wrote ≥1 row, hit `GET /__e2e/dataquality?skill=&profileId=`
-  and apply the per-skill threshold — never accept a `/__e2e/rows` count as the PASS.
-  `inventory_site_scan`: **hard FAIL when `n>0 AND priced==0 AND msrp_present==0 AND
-  gated==0`** (TOTAL price loss — the 2026-06-22 bug). A healthy scan covers
-  `covered/n ≥ 0.5`; below that but `>0` is a soft report note, not a FAIL (the
-  per-dealer VDP budget legitimately bounds how many CTA-gated cars get a VDP visit).
-  `dealer_reply_extract`: hard FAIL when `n>0 AND otd_present==0` (every quote
-  OTD-empty); `otd_present/n ≥ 0.5` is the healthy target. The ONLY non-FAIL
-  zero-coverage paths are the machine-checkable escapes the route surfaces as DATA,
-  never prose: `nullEscape:true` (n==0, empty metro / nothing extractable) OR
-  `gated==n` (every listing explicitly price-withheld). A FAIL goes through the
-  step-4 S0–S6 machine; record the coverage ratio in the report's per-skill row.
-- All 6 cross-session artifacts written (report, live-status box, memory file +
-  pointer, git commit, telemetry export, marker handled).
+- The report classifies every imperfection into the three buckets, each with replayable
+  evidence. The "本轮新 blocker" section is empty **or** every blocker is either fixed
+  in-loop or surfaced as the headline with a one-line reason it was handed off.
+- Every backlog item is mirrored to `harvest-register.md` (semantic dedup — bump
+  recurrence on a re-discovery, don't duplicate). That register is what `e2e-evolve` reads.
+- For every data-bearing skill that wrote ≥1 row, you checked `/__e2e/dataquality`, not
+  just the row count.
+- After each of the 3 irreversible sends, you confirmed the **fake** adapter fired (a
+  positive check, not just the negative "no real send" counter).
+- All cross-session artifacts written: the report, the run-ledger row, the memory pointer.
 - `.claude/.e2e-loop-active` removed (on done AND on any abort).
-- Calibration two-liner done: diff this round's verdicts/waivers against the owner's
-  prior-report judgment; a mismatch fixes the check, not the narrative.

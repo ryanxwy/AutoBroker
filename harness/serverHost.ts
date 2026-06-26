@@ -68,7 +68,7 @@ import {
   LEAD_SUBMIT_NOFORM_DEALER,
 } from "./fixtures/states/leadSubmitReady.js";
 
-import { harnessGenerateStub, resolveLocationStub, setScenario, type Scenario } from "./fixtures/stubs.js";
+import { harnessGenerateStub, resolveLocationStub, fetchTrimSourcesStub, setScenario, type Scenario } from "./fixtures/stubs.js";
 import { getFixtureState } from "./fixtures/states/index.js";
 
 /** Fixture mode is on only when the functional lane sets the env flag. The live
@@ -253,6 +253,7 @@ async function main(): Promise<void> {
     __setIntakeDepsForTests({
       harnessGenerate: harnessGenerateStub as never,
       resolveLocation: resolveLocationStub as never,
+      fetchTrimSources: fetchTrimSourcesStub as never,
     });
     // Freeform (chat_freeform) cases POST /api/route, which the REAL handler
     // resolves via the NL classifier — a LIVE router LLM call the func lane must
