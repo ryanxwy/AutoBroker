@@ -46,12 +46,36 @@ provider registry routes there.
 
 ## Quickstart
 
-```bash
-pnpm install
-cp .env.example .env
-# Edit .env: set DEEPSEEK_API_KEY (default) OR ANTHROPIC_API_KEY / OPENAI_API_KEY.
-# Read the Privacy section above first.
+**Fastest path — see it work with zero keys.** The built-in demo seeds sample
+data into an isolated `test`-mode database; no API key, Gmail, or network needed:
 
+```bash
+pnpm install            # requires Node >= 24.13.0 and pnpm 9
+pnpm doctor             # read-only env self-check (prints the fix for any problem)
+pnpm demo               # builds the server once, then boots the seeded demo (mode=test)
+# in a second terminal:
+pnpm --filter @autobroker/ui dev
+# open http://localhost:5173 — a populated dashboard, all sample data
+```
+
+**To do real work**, add at least one provider key (and a Google Maps key for
+dealer search):
+
+```bash
+cp .env.example .env
+# .env ships AUTOBROKER_MODE=test, so copying it starts you in SAFE test mode
+# (every send is the local fake mailbox). Delete/change that line to go buyer.
+#
+# Set keys in the app — Settings → API keys (paste → Test connection → Save) —
+# or hand-edit .env. Read the Privacy section above before choosing a provider.
+```
+
+> **Every credential has a step-by-step manual guide**, including the Gmail
+> Google-Cloud setup: **[docs/onboarding/CREDENTIALS_SETUP.md](docs/onboarding/CREDENTIALS_SETUP.md)**.
+
+The no-keys verification floor:
+
+```bash
 pnpm typecheck     # tsc --build across the workspace
 pnpm test          # vitest
 ```
@@ -85,9 +109,12 @@ pnpm desktop:start    # launch the Electron shell
 ```
 
 > **Note:** Full pipeline operation (Gmail inbox reading, lead submission) also
-> requires a Gmail OAuth credential configured via the onboarding guides in
-> `docs/onboarding/`. Running `pnpm test` and `pnpm ui:functional` works without
-> any provider keys and is the "no keys" verification floor.
+> requires a Gmail OAuth credential — set it up with the one-time command-line
+> consent flow in
+> [docs/onboarding/CREDENTIALS_SETUP.md §5](docs/onboarding/CREDENTIALS_SETUP.md#gmail-oauth)
+> (the in-app Connect button is still a placeholder). Running `pnpm test` and
+> `pnpm ui:functional` works without any provider keys and is the "no keys"
+> verification floor.
 
 ---
 
@@ -123,8 +150,10 @@ through the L2 in-process gate handler, which fails **closed**. `AUTOBROKER_MODE
 is the single send-control variable: `AUTOBROKER_MODE=test` resolves every send
 to the local fake mailbox, while `buyer` (the default) enables real sends — still
 one human-approved action at a time through the L2 gate. The three irreversible
-skills stay fake-send until their phase passes, and their human approval is never
-hidden. See `CLAUDE.md` for the full invariant set.
+skills (`dealer_web_lead_submit`, `negotiation_followup`, `dealer_closeout_email`)
+really send in `buyer` mode through that same gate and fake-send in `test` mode —
+via the one `AUTOBROKER_MODE` switch, with no separate per-skill flag — and their
+human approval is never hidden. See `CLAUDE.md` for the full invariant set.
 
 ---
 
@@ -140,6 +169,7 @@ takes over and the Python repo retires.
 
 - [Agent setup guide](docs/onboarding/AGENT_GUIDE.md) — step-by-step instructions for an AI agent configuring a fresh install.
 - [User guide](docs/onboarding/USER_GUIDE.md) — plain-language setup for the owner.
+- [Credential setup (manual)](docs/onboarding/CREDENTIALS_SETUP.md) — human, step-by-step procedures for every API key and the Gmail OAuth client.
 
 ---
 
