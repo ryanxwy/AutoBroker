@@ -929,6 +929,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* give-up advisory: a caution chip (consider switching dealers) — color is never
    the only signal, the chip text carries the meaning. */
 .mini-chip.warn { color: var(--amber-ink); border-color: var(--amber); }
+/* Negotiation-status chips: countered = the dealer is conceding (good); stalled /
+   dormant = not moving / gone quiet (caution). Color is never the only signal —
+   the chip text (countered / stalled / dormant) carries the meaning. */
+.thread-class-countered { color: var(--go); border-color: var(--go); }
+.thread-class-stalled, .thread-class-dormant { color: var(--amber-ink); border-color: var(--amber); }
 
 /* the ✕ remove control inside an editable chip — quiet until hovered */
 .mini-chip .chip-remove {

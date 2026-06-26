@@ -44,15 +44,34 @@ function classificationOf(row: ThreadRow): "quoted" | "replied" {
   return row.state === "quoted" ? "quoted" : "replied";
 }
 
+/** Buyer-facing labels for the jargony statuses (the raw key stays the CSS class).
+ *  countered/stalled/quoted/replied read fine as-is; only these are reworded. */
+const STATUS_LABEL: Record<string, string> = {
+  dormant: "gone quiet",
+  lead_sent: "awaiting reply",
+  dead: "closed",
+};
+
+/** The derived negotiation_status key (countered / stalled / dormant / …) when the
+ *  projection attached one, else the legacy quoted/replied fallback. */
+function statusOf(row: ThreadRow): string {
+  const ns = row.negotiation_status;
+  return typeof ns === "string" && ns !== "" ? ns : classificationOf(row);
+}
+
 function ThreadRowView({ row }: { row: ThreadRow }): JSX.Element {
-  const cls = classificationOf(row);
-  const when = relativeDate(row.updated_at);
+  const cls = statusOf(row);
+  const label = STATUS_LABEL[cls] ?? cls;
+  // The HONEST last-touch (the latest message) when the projection supplies it,
+  // falling back to updated_at for an un-enriched row.
+  const lastActivity = typeof row.last_activity_at === "string" ? row.last_activity_at : null;
+  const when = relativeDate(lastActivity ?? row.updated_at);
   return (
     <div className="tile" data-testid="canvas-thread-row">
       <div className="t-head">
         <span>{row.dealer_name ?? "Unknown dealer"}</span>
         <span className={`mini-chip thread-class-${cls}`} data-testid="thread-class-chip">
-          {cls}
+          {label}
         </span>
       </div>
       {row.subject !== null && row.subject !== "" && <div className="t-addr">{row.subject}</div>}

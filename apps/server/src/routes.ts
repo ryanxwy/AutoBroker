@@ -44,7 +44,7 @@ import {
   readProfileRow,
   listProfileRows,
   listProfileDealerRowsWithVerdicts,
-  listProfileThreadRows,
+  listProfileThreadRowsWithStatus,
   listProfileMessageRows,
   buildDigestView,
   profileHealth,
@@ -933,7 +933,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     if (profile === null) {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }
-    return withDb((db) => listProfileThreadRows(db, id));
+    // The thread rows enriched with the derived negotiation_status (countered /
+    // stalled / dormant / …) and re-ordered by the honest last_activity_at.
+    return withDb((db) => listProfileThreadRowsWithStatus(db, id));
   });
 
   // ---- GET /api/profiles/:id/messages — read-only ingested-message projection

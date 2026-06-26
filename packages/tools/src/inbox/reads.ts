@@ -29,6 +29,16 @@ export function listProfileThreadRows(db: Db, profileId: string): Record<string,
     .prepare(
       "SELECT t.thread_id, t.gmail_thread_id, t.subject, t.state, t.updated_at, " +
         "t.dealer_id, d.name AS dealer_name, " +
+        // The HONEST last-touch: the newest message timestamp on the thread, EITHER
+        // direction. threads.updated_at is clobbered by the inbox upsert on any
+        // non-status edit, so it is NOT a truthful "last update". Inbound rows carry
+        // received_at; OUTBOUND rows carry processed_at (received_at is NULL on a
+        // send), so COALESCE captures both — otherwise a thread we just followed up
+        // on would still read by the dealer's older inbound time. The negotiation-
+        // status projection orders + displays by THIS (parsed in JS — ISO or epoch-ms).
+        "(SELECT MAX(COALESCE(m.received_at, m.processed_at)) FROM messages m " +
+        "WHERE m.thread_id = t.thread_id " +
+        "AND m.search_profile_id = t.search_profile_id) AS last_activity_at, " +
         "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.thread_id " +
         "AND m.search_profile_id = t.search_profile_id " +
         "AND m.quote_extraction_status = 'failed') AS extract_failed " +

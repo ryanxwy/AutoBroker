@@ -77,6 +77,30 @@ describe("ThreadsSection — rows", () => {
     const { container } = render(<ThreadsSection threads={ok(rows)} dealerCount={2} />);
     expect(container.querySelector('[data-testid="message-extract-failed-badge"]')).toBeNull();
   });
+
+  it("renders the derived negotiation_status chip + class modifier when present (countered / dormant)", () => {
+    const withStatus: ThreadRowList = [
+      { ...rows[0]!, thread_id: "t-c", negotiation_status: "countered" },
+      { ...rows[1]!, thread_id: "t-d", negotiation_status: "dormant" },
+    ];
+    const { container } = render(<ThreadsSection threads={ok(withStatus)} dealerCount={2} />);
+    const chips = container.querySelectorAll('[data-testid="thread-class-chip"]');
+    // countered reads as-is; dormant is reworded to a buyer-facing "gone quiet"
+    // (the raw status stays the CSS class for color/styling).
+    expect([...chips].map((c) => c.textContent)).toEqual(["countered", "gone quiet"]);
+    expect(chips[0]!.className).toContain("thread-class-countered");
+    expect(chips[1]!.className).toContain("thread-class-dormant");
+  });
+
+  it("renders the HONEST last_activity_at, not the clobbered updated_at, for the timestamp", () => {
+    const recent = new Date(Date.now() - 86_400_000).toISOString(); // 1 day ago
+    const row: ThreadRowList = [
+      { ...rows[0]!, thread_id: "t-honest", updated_at: "2000-01-01T00:00:00.000Z", last_activity_at: recent },
+    ];
+    const { container } = render(<ThreadsSection threads={ok(row)} dealerCount={1} />);
+    // "yesterday" comes from last_activity_at; the year-2000 updated_at would read "… days ago".
+    expect(container.textContent ?? "").toContain("yesterday");
+  });
 });
 
 describe("ThreadsSection — loading / error", () => {

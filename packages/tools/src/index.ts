@@ -486,6 +486,11 @@ export {
   type GiveUpInput,
   type GiveUpDecision,
 } from "./dealerComm/giveUp.js";
+export {
+  deriveNegotiationStatus,
+  type NegotiationStatus,
+  type NegotiationStatusInput,
+} from "./dealerComm/negotiationStatus.js";
 
 // negotiation_followup (X2) — the single-transaction contact-flip writer + the
 // per-profile follow-up reads (open-quote OTD situation, needs-response thread
@@ -508,6 +513,11 @@ export {
   listProfileDealerRowsWithVerdicts,
   type DealerVerdictRow,
 } from "./inbox/giveUpProjection.js";
+export {
+  listProfileThreadStatuses,
+  listProfileThreadRowsWithStatus,
+  type ThreadStatusRow,
+} from "./inbox/negotiationStatusProjection.js";
 
 // dealer_closeout_email (X3) — the closeout target assembler (open threads minus
 // closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)
