@@ -28,6 +28,15 @@ export const MAX_RETRIES = 2;
  */
 export const ASSERTIVE_OTD_DELTA_USD = 500;
 
+/**
+ * The BATCH-lane silence window (days): negotiation_followup's batch follow-up
+ * drops a dealer whose last inbound is older than this — shorter than the single-
+ * target timing-gate default of 14d. The give-up advisory projection reuses THIS
+ * (not 14) so it reflects when a dealer is actually dropped from a follow-up run.
+ * Shared here so the workflow and the projection can never drift apart.
+ */
+export const BATCH_SILENCE_WINDOW_DAYS = 7;
+
 /** Subject prefix for the first contact with a dealer (a fresh quote ask). */
 export const SUBJECT_PREFIX_FIRST_TOUCH = "[Quote Request]";
 

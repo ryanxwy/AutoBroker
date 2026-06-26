@@ -926,6 +926,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .mini-chip[aria-disabled="true"] { opacity: 0.55; }
 /* budget = a lock affordance only, never a number anywhere */
 .mini-chip.budget-lock { color: var(--ink-mute); background: var(--paper); border-style: dashed; }
+/* give-up advisory: a caution chip (consider switching dealers) — color is never
+   the only signal, the chip text carries the meaning. */
+.mini-chip.warn { color: var(--amber-ink); border-color: var(--amber); }
 
 /* the ✕ remove control inside an editable chip — quiet until hovered */
 .mini-chip .chip-remove {

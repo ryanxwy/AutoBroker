@@ -43,7 +43,7 @@ import {
   resolveDataDir,
   readProfileRow,
   listProfileRows,
-  listProfileDealerRows,
+  listProfileDealerRowsWithVerdicts,
   listProfileThreadRows,
   listProfileMessageRows,
   buildDigestView,
@@ -918,7 +918,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     if (profile === null) {
       throw new RouteError("not_found", 404, `profile ${id} not found`);
     }
-    return withDb((db) => listProfileDealerRows(db, id));
+    // The dealer rows enriched with the derived-on-read give-up advisory (verdict /
+    // verdict_reason / batna_gap_usd, merged by dealer_id) so the Dealers canvas can
+    // render a "consider switching / gone quiet / paused" chip. Budget-free.
+    return withDb((db) => listProfileDealerRowsWithVerdicts(db, id));
   });
 
   // ---- GET /api/profiles/:id/threads — read-only dealer-reply projection ---

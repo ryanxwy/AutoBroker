@@ -82,6 +82,7 @@ import {
   subjectForFollowup,
   gateDecisionForTarget,
   followupCapDecision,
+  BATCH_SILENCE_WINDOW_DAYS,
   type Approver,
   type QuoteTone,
   type SendRecordTarget,
@@ -126,8 +127,10 @@ const APPROVED: Approver = { async decide() { return true; } };
 
 /** The cold-thread window: a dealer silent past this many days is dropped /
  *  throws. The X0 timing gate defaults the max-gap to 14d; this skill's success
- *  criterion is a 7-day silence window, so we pass maxGapDays:7 explicitly. */
-const SILENCE_WINDOW_DAYS = 7;
+ *  criterion is a 7-day silence window, so we pass maxGapDays explicitly. The
+ *  value is shared (tools BATCH_SILENCE_WINDOW_DAYS) so the give-up advisory
+ *  projection that mirrors this threshold can never drift from it. */
+const SILENCE_WINDOW_DAYS = BATCH_SILENCE_WINDOW_DAYS;
 
 // ---------------------------------------------------------------------------
 // dependency-injection seam (test-runner-guarded, mirroring the other skills)

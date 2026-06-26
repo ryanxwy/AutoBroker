@@ -421,6 +421,7 @@ export {
   FAKE_PHONE_DEFAULT,
   MAX_RETRIES,
   ASSERTIVE_OTD_DELTA_USD,
+  BATCH_SILENCE_WINDOW_DAYS,
   SUBJECT_PREFIX_FIRST_TOUCH,
   SUBJECT_PREFIX_FOLLOWUP,
   FOOTER_DISCLAIMER,
@@ -502,6 +503,11 @@ export {
   type ThreadSnapshotRead,
   type ReplyTargetInputsRead,
 } from "./inbox/followupReads.js";
+export {
+  listProfileDealerVerdicts,
+  listProfileDealerRowsWithVerdicts,
+  type DealerVerdictRow,
+} from "./inbox/giveUpProjection.js";
 
 // dealer_closeout_email (X3) — the closeout target assembler (open threads minus
 // closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)

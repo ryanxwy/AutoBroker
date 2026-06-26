@@ -88,6 +88,55 @@ describe("DealerTiles — tile rendering", () => {
   });
 });
 
+describe("DealerTiles — give-up advisory chip", () => {
+  it("renders 'consider switching' + the cheaper-elsewhere gap for give_up_switch (budget-free)", () => {
+    const { query } = render(
+      <DealerTiles
+        dealers={ok([
+          makeDealer({ verdict: "give_up_switch", verdict_reason: "silent", batna_gap_usd: 1000, lead_submission_count: 0 }),
+        ])}
+      />,
+    );
+    const chip = query("dealer-verdict-switch");
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain("consider switching");
+    expect(chip!.textContent).toMatch(/\$[\d,]+ cheaper elsewhere/); // a dealer-side gap, never a budget
+  });
+
+  it("renders 'gone quiet' for a cold hold, and 'paused' for the anti-pester cap (never 'switching')", () => {
+    const cold = render(
+      <DealerTiles dealers={ok([makeDealer({ verdict: "hold", verdict_reason: "silent", lead_submission_count: 0 })])} />,
+    );
+    expect(cold.query("dealer-verdict-hold")!.textContent).toContain("gone quiet");
+    expect(cold.query("dealer-verdict-switch")).toBeNull();
+
+    const paused = render(
+      <DealerTiles
+        dealers={ok([makeDealer({ verdict: "hold", verdict_reason: "unanswered_cap", lead_submission_count: 0 })])}
+      />,
+    );
+    expect(paused.query("dealer-verdict-hold")!.textContent).toContain("paused");
+    expect(paused.query("dealer-verdict-switch")).toBeNull();
+
+    const stuck = render(
+      <DealerTiles dealers={ok([makeDealer({ verdict: "hold", verdict_reason: "non_improving", lead_submission_count: 0 })])} />,
+    );
+    expect(stuck.query("dealer-verdict-hold")!.textContent).toContain("not moving");
+  });
+
+  it("renders no verdict chip for an active dealer or one with no advisory", () => {
+    const cont = render(
+      <DealerTiles dealers={ok([makeDealer({ verdict: "continue", lead_submission_count: 0 })])} />,
+    );
+    expect(cont.query("dealer-verdict-switch")).toBeNull();
+    expect(cont.query("dealer-verdict-hold")).toBeNull();
+
+    const absent = render(<DealerTiles dealers={ok([makeDealer({ lead_submission_count: 0 })])} />);
+    expect(absent.query("dealer-verdict-switch")).toBeNull();
+    expect(absent.query("dealer-verdict-hold")).toBeNull();
+  });
+});
+
 describe("DealerTiles — detail modal", () => {
   it("opens the portalled modal when a tile is clicked", () => {
     const r = render(<DealerTiles dealers={ok([makeDealer()])} />);

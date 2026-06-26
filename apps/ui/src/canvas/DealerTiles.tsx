@@ -34,6 +34,12 @@ function DealerTile({
 }): JSX.Element {
   const distance = num(row, "distance_miles");
   const name = str(row, "name") ?? "Unknown dealer";
+  // Derived-on-read give-up advisory (present only for dealers with an active
+  // thread). Budget-free: only a dealer-side "$N cheaper elsewhere" gap, no
+  // competing dealer name, no budget. `continue` renders no chip (the default).
+  const verdict = str(row, "verdict");
+  const batnaGap = num(row, "batna_gap_usd");
+  const verdictReason = str(row, "verdict_reason");
   return (
     <ClickableTile
       testid="canvas-dealer-tile"
@@ -53,6 +59,23 @@ function DealerTile({
           <span className="mini-chip" data-testid="dealer-lead-submitted">
             {" "}
             lead submitted
+          </span>
+        )}
+        {verdict === "give_up_switch" && (
+          <span className="mini-chip warn" data-testid="dealer-verdict-switch">
+            {" "}
+            consider switching
+            {batnaGap !== null ? ` · $${Math.round(batnaGap).toLocaleString("en-US")} cheaper elsewhere` : ""}
+          </span>
+        )}
+        {verdict === "hold" && (
+          <span className="mini-chip" data-testid="dealer-verdict-hold">
+            {" "}
+            {verdictReason === "unanswered_cap"
+              ? "paused"
+              : verdictReason === "silent"
+                ? "gone quiet"
+                : "not moving"}
           </span>
         )}
       </div>
