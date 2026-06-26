@@ -203,6 +203,11 @@ export interface BrowserContextOptions {
   emitter?: BrowserEmitter;
   /** Default: <AUTOBROKER_DATA_DIR or ~/.autobroker-ts>/traces (created if missing). */
   tracesDir?: string;
+  /** Optional abort: on abort the context is closed, which rejects any in-flight
+   *  nav ("Target closed") so `fn` settles promptly and the finally below runs FULL
+   *  teardown (incl. browser.close()). A caller wraps this with a per-call deadline so
+   *  one slow/hung site can never leave a Chromium process (and its FDs) leaked. */
+  signal?: AbortSignal;
 }
 
 export interface DealerLeadForm {
@@ -500,6 +505,25 @@ export async function withBrowserContext<T>(
         headless: false,
         serviceWorkers: "block",
       });
+    }
+
+    // Abort → close the context so a per-call timeout actually frees the browser
+    // tree. Closing the context rejects any in-flight nav, `fn` settles, and the
+    // finally below runs full teardown (incl. browser.close()). Without this an
+    // un-deadlined hung nav never lets `fn` settle, so the finally never runs and
+    // the Chromium process + its FDs leak — the batch-submit hang root cause when
+    // many dealer sites are navigated at once.
+    if (opts.signal !== undefined) {
+      const ctx = context;
+      if (opts.signal.aborted) {
+        void ctx.close().catch(() => undefined);
+      } else {
+        opts.signal.addEventListener(
+          "abort",
+          () => void ctx.close().catch(() => undefined),
+          { once: true },
+        );
+      }
     }
 
     await context.tracing.start({ snapshots: true, screenshots: true });

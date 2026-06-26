@@ -285,6 +285,18 @@ export async function scoutOneWithSession(deps: {
  *  real dealer sites) while still cutting the wall-clock to ~ceil(N/4)·per-dealer. */
 const SCOUT_CONCURRENCY = 4;
 
+/** Submit batch: each dealer opens its OWN isolated browser to navigate + (in test
+ *  mode) fake-submit. The submit step is the GATED MUTATING face and stays SERIAL (one
+ *  recipient at a time — inv #7; serial is also the strictest concurrency cap, so at
+ *  most ONE Chromium is ever live here). The hang root cause was NOT concurrency — it
+ *  was a serial loop with NO per-dealer deadline and NO per-dealer isolation: one
+ *  slow/blocking dealer site awaited forever (its Chromium never torn down → FDs piled
+ *  up → the listener stopped accepting), and any throw aborted the whole batch (0
+ *  anchors). The fix is a HARD per-dealer deadline (below) that aborts a hung site and
+ *  tears its browser down, plus per-dealer try/catch isolation so the batch proceeds and
+ *  the reachable dealers still anchor. */
+const SUBMIT_PER_DEALER_TIMEOUT_MS = 45_000;
+
 /**
  * A tiny inline bounded-concurrency map (no new dependency): run `fn` over `items`
  * with at most `limit` in flight, writing each result into a pre-sized array AT ITS
@@ -514,11 +526,21 @@ export async function submitOneWithSession(deps: {
  *  browser tree tears down in withBrowserContext's own finally. Offline tests
  *  inject a stub through the deps seam. */
 async function submitOneImpl(args: SubmitOneArgs): Promise<SubmitVerdict> {
-  return withBrowserContext(
-    `${args.runId}-leadsubmit-${args.dealerId}`,
-    { emitter: args.emitter },
-    (session) => submitOneWithSession({ session, ...args }),
-  );
+  // A hard per-dealer deadline: on timeout the AbortController fires, withBrowserContext
+  // closes the context (in-flight nav rejects), the browser tree tears down, and this
+  // call rejects — caught per-dealer in submitStep so one slow site never blocks the
+  // batch or the server's event loop.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), SUBMIT_PER_DEALER_TIMEOUT_MS);
+  try {
+    return await withBrowserContext(
+      `${args.runId}-leadsubmit-${args.dealerId}`,
+      { emitter: args.emitter, signal: ac.signal },
+      (session) => submitOneWithSession({ session, ...args }),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const realDeps: DealerWebLeadSubmitWorkflowDeps = {
@@ -1314,13 +1336,30 @@ const submitStep = createStep({
       // fill/click → fuse_blocked (the expected fake-submit). In buyer mode the
       // real fill+click runs against the FAKE/stubbed session offline → submitted.
       const form = leadFormFor(state, dealer);
-      const verdict = await deps().submitOne({
-        runId,
-        emitter,
-        dealerId: dealer.dealer_id,
-        form,
-        approver: APPROVED,
-      });
+      let verdict: SubmitVerdict;
+      try {
+        verdict = await deps().submitOne({
+          runId,
+          emitter,
+          dealerId: dealer.dealer_id,
+          form,
+          approver: APPROVED,
+        });
+      } catch (err) {
+        // Per-dealer isolation (inv #12 voiced): a timed-out (submitOneImpl deadline)
+        // or otherwise-throwing dealer becomes a typed `failed` row, NOT a batch-killing
+        // throw — the batch continues and the reachable dealers still anchor. This is the
+        // regression that produced "0 lead_submissions" when one site hung the batch.
+        try {
+          emitter.error(
+            `lead submit failed for ${dealer.name}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        } catch {
+          // a throwing emitter must not defeat the per-dealer isolation it is voicing
+        }
+        decided.push({ ...base, channel: "failed", fail_reason: "site_unreachable" });
+        continue;
+      }
 
       if (verdict.kind === "submitted" || verdict.kind === "fuse_blocked") {
         // A web-form dealer RECORDS web_form submitted — the fake-submit row.
@@ -1426,6 +1465,7 @@ const recordConfirmStep = createStep({
     let submissionsSuccessful = 0;
     let emailFallbackCount = 0;
     let captchaManualCount = 0;
+    let failedCount = 0;
 
     // THE LOCAL WRITE (NOT fuse-gated): one recordSubmission per decided dealer,
     // the XOR shape mirroring the channel. recordSubmission's typed union is the
@@ -1479,6 +1519,7 @@ const recordConfirmStep = createStep({
             db,
           );
         } else if (d.channel === "failed") {
+          failedCount += 1;
           deps().recordSubmission(
             {
               kind: "failed",
@@ -1532,6 +1573,7 @@ const recordConfirmStep = createStep({
       (captchaManualCount > 0 ? `, ${captchaManualCount} captcha-routed` : "") +
       (state.skippedDuplicate > 0 ? `; ${state.skippedDuplicate} already-submitted skipped` : "") +
       (state.usGateRejected > 0 ? `; ${state.usGateRejected} non-US dealer(s) filtered` : "") +
+      (failedCount > 0 ? `; ${failedCount} dealer(s) unreachable/failed` : "") +
       "." +
       conflictSentence +
       unavailableSentence;
