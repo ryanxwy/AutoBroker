@@ -2037,6 +2037,9 @@ const persistConfirmStep = createStep({
         `. Found ${state.listingsFound} listing(s), ${persist.listingsWritten} written/refreshed` +
         (persist.vinPromoted > 0 ? `, ${persist.vinPromoted} VIN-promoted` : "") +
         (persist.staleSuperseded > 0 ? `, ${persist.staleSuperseded} stale retired` : "") +
+        (persist.sourcesQuarantined > 0
+          ? `, ${persist.sourcesQuarantined} source(s) quarantined (truncated scan — listings kept, not retired)`
+          : "") +
         (state.rowsInvalidDropped + state.vinProvenanceDropped > 0
           ? `, ${state.rowsInvalidDropped + state.vinProvenanceDropped} row(s) dropped`
           : "") +
