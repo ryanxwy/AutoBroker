@@ -45,7 +45,7 @@ import {
   __setIntakeDepsForTests,
   type IntakeWorkflowDeps,
 } from "./searchProfileIntake.js";
-import { IntakePrefillSchema } from "./intakeContracts.js";
+import { IntakePrefillSchema, sanitizePrefillTrim } from "./intakeContracts.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -822,6 +822,27 @@ describe("search_profile_intake — #1244 malformed_tool_call → suspend", () =
 
 const TRIM_TEXT = "SOURCE: 2026 Honda Civic trims: LX, Sport, Sport Touring.";
 
+describe("sanitizePrefillTrim — price/superlative qualifiers are never a trim", () => {
+  it("nulls price/superlative words (case- and space-insensitive)", () => {
+    for (const q of ["cheapest", "Cheapest", "  cheapest  ", "BEST", "fully loaded", "least expensive", "lowest-priced", "nicest"]) {
+      expect(sanitizePrefillTrim(q)).toBeNull();
+    }
+  });
+  it("nulls non-value placeholder strings an LLM emits instead of JSON null", () => {
+    for (const q of ["null", "NULL", "none", "N/A", "na", "undecided", "unknown", "any", "tbd", "-", "", "  "]) {
+      expect(sanitizePrefillTrim(q)).toBeNull();
+    }
+  });
+  it("leaves real trim names (even adjective-like ones) intact", () => {
+    for (const t of ["LX", "EX-L", "XLE", "Limited", "Base", "Sport", "Premium", "Touring", "Premier", "cheapest LX"]) {
+      expect(sanitizePrefillTrim(t)).toBe(t);
+    }
+  });
+  it("passes null through", () => {
+    expect(sanitizePrefillTrim(null)).toBeNull();
+  });
+});
+
 describe("search_profile_intake — trim suggestion", () => {
   it("freeform without a trim → suspends a trim_suggestion picker with the web-extracted trims", async () => {
     wireDeps({
@@ -961,6 +982,40 @@ describe("search_profile_intake — trim suggestion", () => {
     expect(started.status).toBe("suspended");
     // The trim was extracted → straight to the form, no picker.
     expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+  });
+
+  it("freeform with a SUPERLATIVE mis-extracted as trim (\"cheapest\") → sanitized to null → the picker FIRES", async () => {
+    // The prefill model fills trim="cheapest" (a price intent, not a real trim).
+    // The sanitizer nulls it BEFORE the seed, so the trimSuggestion guard sees no
+    // trim and offers the grounded picker — the buyer is not silently saddled with a
+    // bogus trim, and gets the trim assist they should have. (Regression for the
+    // "the cheapest honda crv" → trim=cheapest live finding, run 70c96be9.)
+    const prefillSuperlative = (async (input: { useCase: string }) => {
+      if (input.useCase === "intake_trim_lookup") {
+        return { object: { trim_names: ["LX", "Sport", "Sport Touring"], trim_summaries: ["base", "sporty", "loaded"] }, usage: NO_USAGE };
+      }
+      if (input.useCase === "intake_trim_verify") {
+        return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
+      }
+      return {
+        object: IntakePrefillSchema.parse({
+          make: "Honda", model: "Civic", year: 2026, trim: "cheapest",
+          location_query: "Irvine, CA", search_radius_miles: null, financing_preference: "finance",
+        }),
+        usage: NO_USAGE,
+      };
+    }) as unknown as IntakeWorkflowDeps["harnessGenerate"];
+    wireDeps({ harnessGenerate: prefillSuperlative, fetchTrimSources: trimSourcesStub(TRIM_TEXT), resolveLocation: locationStub([RESOLVED]) });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-superlative" });
+    const started = await run.start({
+      inputData: { input_mode: "freeform", freeform_text: "the cheapest honda civic in Irvine this year", seed_fields: null },
+    });
+    expect(started.status).toBe("suspended");
+    // The bogus "cheapest" trim was sanitized away → the picker fires (not the form).
+    const payload = suspendPayloadOf(started, "trimSuggestion");
+    expect(payload["kind"]).toBe("trim_suggestion");
+    expect((payload["candidates"] as unknown[]).length).toBe(3);
   });
 
   it("slash launch → the trim picker NEVER fires (freeform-only guard)", async () => {

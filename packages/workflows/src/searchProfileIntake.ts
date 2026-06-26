@@ -107,6 +107,7 @@ import {
   ForceOverrideResumeSchema,
   IntakePrefillSchema,
   MalformedRetryResumeSchema,
+  sanitizePrefillTrim,
   TrimSuggestionResumeSchema,
   TrimSuggestionSchema,
   TrimVerifyResultSchema,
@@ -346,8 +347,11 @@ const prefillStep = createStep({
     }
 
     // Prefill OUTPUT ONLY SEEDS THE FORM (never persists). Drop nulls so the seed
-    // carries only what the model actually saw.
-    const prefill: IntakePrefill = result.object;
+    // carries only what the model actually saw. Sanitize trim FIRST: a price/superlative
+    // qualifier ("cheapest") is never a real trim — null it so it does not seed the form
+    // AND does not suppress the web-grounded trimSuggestion picker (which fires only when
+    // make+model+year are present but trim is absent).
+    const prefill: IntakePrefill = { ...result.object, trim: sanitizePrefillTrim(result.object.trim) };
     const seed: Record<string, unknown> = { ...(inputData.seed_fields ?? {}) };
     for (const [k, v] of Object.entries(prefill)) {
       if (v !== null) seed[k] = v;
