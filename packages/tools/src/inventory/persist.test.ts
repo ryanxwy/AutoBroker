@@ -31,6 +31,7 @@ import {
   type DealerScanOutcome,
 } from "./persist.js";
 import { computeSourceId, urlNormalize } from "./pure.js";
+import { readInventoryChangesSince } from "./auditWriter.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -121,7 +122,9 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  db.$client.exec("DELETE FROM inventory_listings; DELETE FROM dealer_inventory_sources;");
+  db.$client.exec(
+    "DELETE FROM inventory_listings; DELETE FROM dealer_inventory_sources; DELETE FROM audit_log;",
+  );
 });
 
 describe("persistScanResults — VIN arm", () => {
@@ -559,5 +562,114 @@ describe("supersedeStale — gated to scanned sources IN the verb", () => {
       supersedeStale({ searchProfileId: PROFILE_ID, sourceId, runStartedAt: T2, db, now: T3 }),
     ).toBe(1);
     expect(liveListings()).toHaveLength(0);
+  });
+});
+
+describe("persistScanResults — price change trail", () => {
+  function auditCount(): number {
+    return (
+      db.$client
+        .prepare("SELECT count(*) AS n FROM audit_log WHERE action = 'inventory.price_change'")
+        .get() as { n: number }
+    ).n;
+  }
+
+  it("emits an inventory.price_change audit row on a re-scan drop; readInventoryChangesSince surfaces it", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, price: 35000 })])],
+      db,
+      now: T1,
+    });
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, price: 33500 })])],
+      db,
+      now: T3,
+    });
+    expect(r2.priceChanges).toBe(1);
+
+    const audits = db.$client
+      .prepare("SELECT * FROM audit_log WHERE action = 'inventory.price_change'")
+      .all() as Array<Record<string, unknown>>;
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.field).toBe("listed_price");
+    expect(audits[0]!.old_value).toBe("35000");
+    expect(audits[0]!.new_value).toBe("33500");
+    expect(audits[0]!.target_table).toBe("inventory_listings");
+
+    const changes = readInventoryChangesSince(db, PROFILE_ID, T0);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.oldPrice).toBe(35000);
+    expect(changes[0]!.newPrice).toBe(33500);
+    expect(changes[0]!.dropUsd).toBe(1500); // positive = the price DROPPED
+  });
+
+  it("emits NOTHING when the price is unchanged, or when a sparse re-scan has a null price (COALESCE-preserve)", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, price: 35000 })])],
+      db,
+      now: T1,
+    });
+    // same price → no change
+    const same = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, price: 35000 })])],
+      db,
+      now: T3,
+    });
+    expect(same.priceChanges).toBe(0);
+    // null new price → COALESCE keeps 35000 → NOT a change (no bogus 35000→null)
+    const sparse = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, price: null })])],
+      db,
+      now: T3,
+    });
+    expect(sparse.priceChanges).toBe(0);
+    expect(auditCount()).toBe(0);
+  });
+
+  it("does NOT emit on a NEW listing (no prior price is not a change)", () => {
+    const r = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, price: 35000 })])],
+      db,
+      now: T1,
+    });
+    expect(r.priceChanges).toBe(0);
+    expect(auditCount()).toBe(0);
+  });
+
+  it("emits via the URL (VIN-absent) arm too: a re-scan drop on a URL-keyed listing", () => {
+    const url = "https://alpha-hyundai.example/vdp/url-priced";
+    // run 1: URL-keyed insert (no prior price → no emit).
+    const r1 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: url, price: 35000 })])],
+      db,
+      now: T1,
+    });
+    expect(r1.priceChanges).toBe(0);
+    // run 2: same URL re-observed at a lower price → updateLiveRow arm emits.
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: url, price: 33500 })])],
+      db,
+      now: T3,
+    });
+    expect(r2.priceChanges).toBe(1);
+    const changes = readInventoryChangesSince(db, PROFILE_ID, T0);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.dropUsd).toBe(1500);
   });
 });

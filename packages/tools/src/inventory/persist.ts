@@ -29,6 +29,7 @@
 import type { Db } from "@autobroker/db";
 import type { InventoryListing } from "@autobroker/core";
 import { getDb } from "../db.js";
+import { emitInventoryPriceChange } from "./auditWriter.js";
 import {
   computeListingId,
   computeSourceId,
@@ -86,6 +87,9 @@ export interface PersistRunResult {
    *  guard (a truncated capture re-observed too little of the live lot to
    *  trust its absences). Their unseen rows stay live, not mass-retired. */
   sourcesQuarantined: number;
+  /** Listings whose listed_price changed on this re-scan (an audit_log
+   *  inventory.price_change row was written for each). */
+  priceChanges: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +331,18 @@ export function persistScanResults(opts: {
   const upsertUrlArm = db.$client.prepare(UPSERT_URL_ARM);
   const countLive = db.$client.prepare(COUNT_LIVE_FOR_SOURCE);
   const countFreshObserved = db.$client.prepare(COUNT_FRESH_OBSERVED_FOR_SOURCE);
+  const selectPriceById = db.$client.prepare(
+    "SELECT listed_price FROM inventory_listings WHERE listing_id = ?",
+  );
+  // Capture the price at a listing_id BEFORE its write, and after the write emit an
+  // inventory.price_change audit row iff a NON-NULL new price actually differs from
+  // a prior price (a null new price COALESCE-preserves the old → not a change; a
+  // null old price is a fresh listing → not a change). Mirrors LISTING_ON_CONFLICT_
+  // BODY's COALESCE so no bogus "price -> null" rows are written.
+  const priceBefore = (listingId: string): number | null => {
+    const r = selectPriceById.get(listingId) as { listed_price: number | null } | undefined;
+    return r?.listed_price ?? null;
+  };
 
   const txn = db.$client.transaction((): PersistRunResult => {
     const result: PersistRunResult = {
@@ -336,9 +352,29 @@ export function persistScanResults(opts: {
       sourcesFailed: 0,
       listingsWritten: 0,
       vinPromoted: 0,
+      priceChanges: 0,
       sourcesQuarantined: 0,
       droppedNoKey: 0,
       staleSuperseded: 0,
+    };
+
+    // Emit one inventory.price_change audit row (+ count it) iff a NON-NULL new
+    // price actually differs from a prior price — the COALESCE-aware guard above.
+    // Notes: a reactivated/relisted car (a not_observed row that returns at a new
+    // price) DOES emit (defensible for "price dropped since you last looked"); the
+    // VIN-absent (URL) arm passes vin=null even when the existing row is VIN-bearing
+    // — the canonical vin is resolvable via the listing_id, which is always exact.
+    const recordPriceChange = (
+      listingId: string,
+      oldPrice: number | null,
+      newPrice: number | null | undefined,
+      dealerId: string,
+      vin: string | null,
+    ): void => {
+      if (oldPrice !== null && newPrice !== null && newPrice !== undefined && oldPrice !== newPrice) {
+        emitInventoryPriceChange({ db, listingId, searchProfileId: profileId, dealerId, vin, oldPrice, newPrice, at: now });
+        result.priceChanges += 1;
+      }
     };
 
     for (const outcome of opts.outcomes) {
@@ -425,10 +461,11 @@ export function persistScanResults(opts: {
               result.vinPromoted += 1;
             }
           }
-          upsertVinArm.run(
-            ...insertParams(computeListingId(profileId, outcome.dealerId, vin, nlurl)),
-          );
+          const vinListingId = computeListingId(profileId, outcome.dealerId, vin, nlurl);
+          const oldPriceVin = priceBefore(vinListingId);
+          upsertVinArm.run(...insertParams(vinListingId));
           result.listingsWritten += 1;
+          recordPriceChange(vinListingId, oldPriceVin, row.listing.price, outcome.dealerId, vin);
         } else {
           // VIN-absent arm, with orphan prevention: a live row already owning
           // this URL (possibly VIN-bearing, from the other capture order) is
@@ -437,6 +474,7 @@ export function persistScanResults(opts: {
             | { listing_id: string }
             | undefined;
           if (existing !== undefined) {
+            const oldPriceUrl = priceBefore(existing.listing_id);
             updateLiveRow.run(
               sourceId,
               row.listing.stock_number,
@@ -457,10 +495,12 @@ export function persistScanResults(opts: {
               now,
               existing.listing_id,
             );
+            recordPriceChange(existing.listing_id, oldPriceUrl, row.listing.price, outcome.dealerId, null);
           } else {
-            upsertUrlArm.run(
-              ...insertParams(computeListingId(profileId, outcome.dealerId, null, nlurl)),
-            );
+            const urlListingId = computeListingId(profileId, outcome.dealerId, null, nlurl);
+            const oldPriceNew = priceBefore(urlListingId); // a reactivated row carries a prior price
+            upsertUrlArm.run(...insertParams(urlListingId));
+            recordPriceChange(urlListingId, oldPriceNew, row.listing.price, outcome.dealerId, null);
           }
           result.listingsWritten += 1;
         }

@@ -2054,6 +2054,7 @@ const persistConfirmStep = createStep({
         (persist.sourcesQuarantined > 0
           ? `, ${persist.sourcesQuarantined} source(s) quarantined (truncated scan — listings kept, not retired)`
           : "") +
+        (persist.priceChanges > 0 ? `, ${persist.priceChanges} price change(s)` : "") +
         (state.rowsInvalidDropped + state.vinProvenanceDropped > 0
           ? `, ${state.rowsInvalidDropped + state.vinProvenanceDropped} row(s) dropped`
           : "") +

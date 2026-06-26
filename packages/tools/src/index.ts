@@ -279,6 +279,12 @@ export {
   type SupersedeReason,
 } from "./inventory/persist.js";
 export {
+  readInventoryChangesSince,
+  emitInventoryPriceChange,
+  INVENTORY_PRICE_CHANGE_ACTION,
+  type InventoryPriceChange,
+} from "./inventory/auditWriter.js";
+export {
   classifyTrimAvailability,
   normalizeTrim,
   trimSubsetMatch,
