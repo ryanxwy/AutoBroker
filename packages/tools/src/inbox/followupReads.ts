@@ -47,6 +47,18 @@ export interface QuoteSituationRead {
 const OPEN_QUOTE_PREDICATE =
   "(quote_expires_at IS NULL OR CAST(quote_expires_at AS INTEGER) > ?)";
 
+/** The give-up trajectory + competing reads only trust quotes whose extraction
+ *  confidence clears this floor. A NULL confidence (unrecorded) PASSES — only an
+ *  explicitly-low confidence is dropped — so a garbled re-extract cannot fake a
+ *  concession, a re-trade, or a phantom competing lowball. Named constant, never
+ *  env (owner anti-config bias). */
+const DEALER_QUOTE_MIN_CONFIDENCE = 0.5;
+/** How many recent SAME-vehicle quotes the concession trajectory reads (newest
+ *  first); three gives the two consecutive pairs the non-improving check needs. */
+const GIVEUP_TRAJECTORY_WINDOW = 3;
+/** Confidence floor as a reusable SQL fragment (NULL-tolerant, see above). */
+const CONFIDENCE_FLOOR_PREDICATE = "(confidence IS NULL OR confidence >= ?)";
+
 /**
  * Read the negotiation tone inputs for one thread's dealer:
  *   - current_otd = the latest open quote's otd_total for THIS dealer + profile
@@ -91,6 +103,159 @@ export function readQuoteSituationForThread(
     .get(args.profileId, args.dealerId, nowMs) as { best: number | null };
 
   return { isItemized, currentOtd, bestCompetingOtd: competing.best ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// the give-up verdict inputs — same-vehicle trajectory + symmetric BATNA
+// ---------------------------------------------------------------------------
+
+/** The DB inputs the pure dealerGiveUpDecision consumes. */
+export interface DealerGiveUpInputsRead {
+  /** Recent OTDs for this dealer's CURRENT vehicle (vin, else source_listing_id),
+   *  NEWEST first, confidence-floored. Length < 2 cannot show movement. */
+  otdTrajectory: number[];
+  /** Whether the current open quote is fully itemized. */
+  isItemized: boolean;
+  /** This dealer's current open OTD (raw), or null when not quoted. */
+  currentOtd: number | null;
+  /** Best competing OTD over OTHER dealers' open quotes that are ITEMIZED AND
+   *  confidence-floored — the SYMMETRIC BATNA guard. null when no quality
+   *  competitor exists, so a lone non-itemized lowball can never justify a switch. */
+  bestCompetingOtd: number | null;
+}
+
+/**
+ * Read the give-up verdict's inputs for one dealer + profile. The adversarial-
+ * review must-fixes live here:
+ *   - the trajectory is scoped to the current quote's SAME vehicle (vin, else
+ *     source_listing_id) AND its SAME financing_mode, so neither a cross-trim
+ *     pair nor the cash/finance/lease siblings of ONE email (which share a vin and
+ *     a received_at) ever read as a concession/stall; with no vehicle key it
+ *     degrades to the single current OTD (no movement);
+ *   - EVERY input is confidence-floored — the current quote too, so a garbled
+ *     low-confidence newest row can never become the current OTD / vehicle key and
+ *     skew the BATNA;
+ *   - rows are ordered newest-first in JS (toEpochMs) because quote_received_at is
+ *     ISO OR epoch-ms and no single SQL sort orders both, and the trajectory's
+ *     direction (conceding vs re-trade) is load-bearing across rows;
+ *   - the competing OTD only counts ITEMIZED, confidence-floored other-dealer
+ *     quotes in the SAME financing_mode as the current quote (the symmetric guard),
+ *     so neither a phantom lowball nor an off-mode (finance/lease) OTD that isn't
+ *     comparable to a cash OTD can drive a switch.
+ * OTD figures are RAW otd_total (matching readQuoteSituationForThread). Read-only.
+ */
+export function readDealerGiveUpInputs(
+  db: Db,
+  args: { profileId: string; dealerId: string; nowMs?: number },
+): DealerGiveUpInputsRead {
+  const nowMs = args.nowMs ?? Date.now();
+
+  // Open-ness is evaluated in JS (toEpochMs), not a SQL CAST: quote_expires_at —
+  // like quote_received_at — is ISO OR epoch-ms, so CAST(... AS INTEGER) would
+  // mis-judge a FUTURE ISO expiry as already-expired. (The sibling
+  // readQuoteSituationForThread still uses the SQL-CAST OPEN_QUOTE_PREDICATE — a
+  // pre-existing hazard left untouched here so its assertive-tone gate doesn't shift.)
+  const isOpen = (expiresAt: string | number | null): boolean => {
+    const ms = toEpochMs(expiresAt);
+    return ms === null || ms > nowMs;
+  };
+
+  // All of this dealer's confidence-floored quotes (a garbled low-confidence row is
+  // never trusted as the current quote nor in the trajectory). Open-ness + newest-
+  // first ordering are done in JS: quote_received_at is ISO OR epoch-ms (the
+  // schema's dual format), and neither a SQL CAST-to-INTEGER (collapses an ISO
+  // string to its year) nor a string sort (breaks epoch-ms numbers) orders both.
+  const rows = db.$client
+    .prepare(
+      "SELECT otd_total AS otd, selling_price AS selling, doc_fee AS doc, dealer_fee AS dealer, sales_tax AS tax, " +
+        "vin, source_listing_id AS sli, financing_mode AS mode, quote_received_at AS receivedAt, " +
+        "quote_expires_at AS expiresAt, quote_id AS quoteId " +
+        "FROM dealer_quotes WHERE search_profile_id = ? AND dealer_id = ? AND " +
+        CONFIDENCE_FLOOR_PREDICATE,
+    )
+    .all(args.profileId, args.dealerId, DEALER_QUOTE_MIN_CONFIDENCE) as Array<{
+    otd: number | null;
+    selling: number | null;
+    doc: number | null;
+    dealer: number | null;
+    tax: number | null;
+    vin: string | null;
+    sli: string | null;
+    mode: string | null;
+    receivedAt: string | number | null;
+    expiresAt: string | number | null;
+    quoteId: string;
+  }>;
+
+  const sorted = rows
+    .filter((r) => isOpen(r.expiresAt))
+    .map((r) => ({ ...r, ms: toEpochMs(r.receivedAt) }))
+    .sort((a, b) => {
+      const am = a.ms ?? -Infinity;
+      const bm = b.ms ?? -Infinity;
+      if (am !== bm) return bm - am; // newest first
+      return a.quoteId < b.quoteId ? 1 : a.quoteId > b.quoteId ? -1 : 0; // stable tiebreak
+    });
+  const current = sorted[0];
+
+  const currentOtd = current?.otd ?? null;
+  const isItemized =
+    current !== undefined &&
+    current.selling !== null &&
+    (current.doc !== null || current.dealer !== null || current.tax !== null);
+
+  // Same-vehicle (vin else sli) AND same-financing-mode trajectory, newest first,
+  // capped at the window. The mode filter keeps the cash/finance/lease siblings of
+  // ONE email (they share a vin + a received_at) out of the round-over-round
+  // series. The window is coupled to dealerGiveUpDecision's fixed 3-quote / 2-pair
+  // nonImproving check — keep GIVEUP_TRAJECTORY_WINDOW and that check in step.
+  let otdTrajectory: number[] = [];
+  if (current !== undefined && currentOtd !== null) {
+    const hasVin = current.vin !== null && current.vin !== "";
+    const hasSli = current.sli !== null && current.sli !== "";
+    if (hasVin || hasSli) {
+      otdTrajectory = sorted
+        .filter(
+          (r) =>
+            r.otd !== null &&
+            r.mode === current.mode &&
+            (hasVin ? r.vin === current.vin : r.sli === current.sli),
+        )
+        .slice(0, GIVEUP_TRAJECTORY_WINDOW)
+        .map((r) => r.otd!);
+    } else {
+      // No vehicle key — we can't prove two quotes are the same car, so the
+      // trajectory is just the current OTD (no movement can be inferred).
+      otdTrajectory = [currentOtd];
+    }
+  }
+
+  // The symmetric BATNA: the cheapest OTHER-dealer open quote that is ITEMIZED,
+  // confidence-floored, AND in the SAME financing_mode as the current quote — a
+  // finance/lease OTD is a different payment structure, not comparable to a cash
+  // OTD, so a cheaper off-mode quote must never fabricate a switch (the same
+  // non-comparability the trajectory's mode filter closes, here on the cross-dealer
+  // side that actually triggers give_up_switch). null when there is no current
+  // quote to compare against, or no quality same-mode competitor.
+  let bestCompetingOtd: number | null = null;
+  if (current !== undefined) {
+    const competingRows = db.$client
+      .prepare(
+        "SELECT otd_total AS otd, quote_expires_at AS expiresAt FROM dealer_quotes " +
+          "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total IS NOT NULL AND " +
+          CONFIDENCE_FLOOR_PREDICATE +
+          " AND financing_mode = ? AND selling_price IS NOT NULL " +
+          "AND (doc_fee IS NOT NULL OR dealer_fee IS NOT NULL OR sales_tax IS NOT NULL)",
+      )
+      .all(args.profileId, args.dealerId, DEALER_QUOTE_MIN_CONFIDENCE, current.mode) as Array<{
+      otd: number;
+      expiresAt: string | number | null;
+    }>;
+    const openOtds = competingRows.filter((r) => isOpen(r.expiresAt)).map((r) => r.otd);
+    bestCompetingOtd = openOtds.length > 0 ? Math.min(...openOtds) : null;
+  }
+
+  return { otdTrajectory, isItemized, currentOtd, bestCompetingOtd };
 }
 
 // ---------------------------------------------------------------------------

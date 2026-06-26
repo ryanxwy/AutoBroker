@@ -478,6 +478,13 @@ export {
   type QuoteTone,
   type QuoteSituation,
 } from "./dealerComm/quoteSituation.js";
+export {
+  dealerGiveUpDecision,
+  type DealerVerdict,
+  type GiveUpReason,
+  type GiveUpInput,
+  type GiveUpDecision,
+} from "./dealerComm/giveUp.js";
 
 // negotiation_followup (X2) — the single-transaction contact-flip writer + the
 // per-profile follow-up reads (open-quote OTD situation, needs-response thread
@@ -485,10 +492,12 @@ export {
 export { setPrimaryReplyTarget } from "./dealerComm/contactFlip.js";
 export {
   readQuoteSituationForThread,
+  readDealerGiveUpInputs,
   listFollowupCandidateThreads,
   readThreadSnapshotForDraft,
   readReplyTargetInputs,
   type QuoteSituationRead,
+  type DealerGiveUpInputsRead,
   type FollowupCandidateThread,
   type ThreadSnapshotRead,
   type ReplyTargetInputsRead,
