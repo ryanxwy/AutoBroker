@@ -13,6 +13,8 @@ import {
   PIN_REQUIRED_TIP,
   PIPELINE_STAGES,
   SkillsPopoverList,
+  applyServerSuggestions,
+  defaultSuggestionReason,
   groupSkillsByReadiness,
   nextSuggestedSkills,
 } from "./SkillsPopover.js";
@@ -108,7 +110,7 @@ function skill(name: string): SkillManifest {
 /** Every pipeline skill, in stage order — the realistic 17-skill manifest. */
 const ALL_SKILLS: SkillManifest[] = PIPELINE_STAGES.flat().map(skill);
 
-describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
+describe("nextSuggestedSkills — top-3 of the pipeline-stage sliding window", () => {
   it("no profile, no pin: only search_profile_intake is suggested", () => {
     const got = nextSuggestedSkills(ALL_SKILLS, {
       pin: null,
@@ -136,7 +138,7 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
     expect(got.map((s) => s.name)).toEqual(["search_profile_intake", "dealer_geosearch"]);
   });
 
-  it("lastSkill=dealer_geosearch (stage 1): window = stage 1 + the scan stage", () => {
+  it("lastSkill=dealer_geosearch (stage 1): top-3 of [stage 1 + the scan stage]", () => {
     const got = nextSuggestedSkills(ALL_SKILLS, {
       pin: "p1",
       hasActiveProfile: true,
@@ -146,12 +148,10 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
       "dealer_geosearch",
       "inventory_site_scan",
       "inventory_link_scan",
-      "incentive_scrape",
-      "inventory_compare",
     ]);
   });
 
-  it("lastSkill=inventory_compare (stage 2): window = the scan stage + lead-submit", () => {
+  it("lastSkill=inventory_compare (stage 2): top-3 of [the scan stage + lead-submit]", () => {
     const got = nextSuggestedSkills(ALL_SKILLS, {
       pin: "p1",
       hasActiveProfile: true,
@@ -161,12 +161,10 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
       "inventory_site_scan",
       "inventory_link_scan",
       "incentive_scrape",
-      "inventory_compare",
-      "dealer_web_lead_submit",
     ]);
   });
 
-  it("lastSkill=dealer_web_lead_submit (stage 3): window = lead-submit + the reply stage", () => {
+  it("lastSkill=dealer_web_lead_submit (stage 3): top-3 of [lead-submit + the reply stage]", () => {
     const got = nextSuggestedSkills(ALL_SKILLS, {
       pin: "p1",
       hasActiveProfile: true,
@@ -176,12 +174,10 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
       "dealer_web_lead_submit",
       "dealer_inbox_check",
       "dealer_reply_extract",
-      "quote_audit",
-      "quote_compare",
     ]);
   });
 
-  it("lastSkill=quote_audit (stage 4): window = the reply stage + the negotiate stage", () => {
+  it("lastSkill=quote_audit (stage 4): top-3 of [the reply stage + the negotiate stage]", () => {
     const got = nextSuggestedSkills(ALL_SKILLS, {
       pin: "p1",
       hasActiveProfile: true,
@@ -191,14 +187,10 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
       "dealer_inbox_check",
       "dealer_reply_extract",
       "quote_audit",
-      "quote_compare",
-      "negotiation_followup",
-      "quote_pipeline",
-      "daily_digest",
     ]);
   });
 
-  it("lastSkill=daily_digest (stage 5): window = the negotiate stage + the closeout stage", () => {
+  it("lastSkill=daily_digest (stage 5): top-3 of [the negotiate stage + the closeout stage]", () => {
     const got = nextSuggestedSkills(ALL_SKILLS, {
       pin: "p1",
       hasActiveProfile: true,
@@ -208,10 +200,14 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
       "negotiation_followup",
       "quote_pipeline",
       "daily_digest",
-      "dealer_hygiene",
-      "dealer_closeout_email",
-      "pipeline_reset",
     ]);
+  });
+
+  it("never suggests more than MAX_SUGGESTED (3) for any state", () => {
+    for (const lastSkill of [null, ...PIPELINE_STAGES.flat(), "not_a_real_skill"]) {
+      const got = nextSuggestedSkills(ALL_SKILLS, { pin: "p1", hasActiveProfile: true, lastSkill });
+      expect(got.length).toBeLessThanOrEqual(3);
+    }
   });
 
   it("lastSkill=pipeline_reset (last stage 6): window = the last stage alone (no next stage)", () => {
@@ -249,7 +245,83 @@ describe("nextSuggestedSkills — pipeline-stage sliding window", () => {
   });
 });
 
+describe("applyServerSuggestions — Hybrid LLM re-rank of the deterministic top-3", () => {
+  const a = skill("dealer_geosearch");
+  const b = skill("inventory_site_scan");
+  const c = skill("inventory_link_scan");
+
+  it("no server suggestions: deterministic order + curated default reasons", () => {
+    const got = applyServerSuggestions([a, b, c], undefined);
+    expect(got.map((x) => x.skill.name)).toEqual([a.name, b.name, c.name]);
+    expect(got[0]?.reason).toBe(defaultSuggestionReason(a));
+  });
+
+  it("re-orders the SAME candidates by the server order and uses server reasons", () => {
+    const got = applyServerSuggestions([a, b, c], [
+      { skillId: "inventory_site_scan", reason: "you just found dealers — scan them" },
+      { skillId: "dealer_geosearch", reason: "widen the radius first" },
+    ]);
+    expect(got.map((x) => x.skill.name)).toEqual([
+      "inventory_site_scan",
+      "dealer_geosearch",
+      "inventory_link_scan", // omitted by server → trails with its default reason
+    ]);
+    expect(got[0]?.reason).toBe("you just found dealers — scan them");
+    expect(got[2]?.reason).toBe(defaultSuggestionReason(c));
+  });
+
+  it("IGNORES any server skill outside the deterministic candidate set (safety/reachability)", () => {
+    const got = applyServerSuggestions([a, b], [
+      { skillId: "pipeline_reset", reason: "nuke everything" }, // NOT a candidate
+      { skillId: "inventory_site_scan", reason: "scan" },
+    ]);
+    expect(got.map((x) => x.skill.name)).toEqual(["inventory_site_scan", "dealer_geosearch"]);
+    expect(got.some((x) => x.skill.name === "pipeline_reset")).toBe(false);
+  });
+});
+
 describe("SkillsPopoverList — suggested set + 'More skills' disclosure", () => {
+  it("each suggested row renders a 'why this next' reason", () => {
+    const onRun = vi.fn();
+    const r = render(
+      <SkillsPopoverList
+        skills={ALL_SKILLS}
+        pin="p1"
+        hasActiveProfile
+        deepseekReady
+        lastSkill="dealer_geosearch"
+        onRun={onRun}
+      />,
+    );
+    // The top-3 after geosearch each carry a reason node.
+    expect(r.query("skills-reason-dealer_geosearch")).not.toBeNull();
+    expect(r.query("skills-reason-inventory_site_scan")).not.toBeNull();
+    expect(r.query("skills-reason-inventory_link_scan")).not.toBeNull();
+    r.unmount();
+  });
+
+  it("a server (LLM) re-rank re-orders + re-words the visible top-3 without widening it", () => {
+    const onRun = vi.fn();
+    const r = render(
+      <SkillsPopoverList
+        skills={ALL_SKILLS}
+        pin="p1"
+        hasActiveProfile
+        deepseekReady
+        lastSkill="dealer_geosearch"
+        serverSuggested={[
+          { skillId: "inventory_site_scan", reason: "scan the dealers you just found" },
+        ]}
+        onRun={onRun}
+      />,
+    );
+    const reasonNode = r.get("skills-reason-inventory_site_scan");
+    expect(reasonNode.textContent).toContain("scan the dealers you just found");
+    // The visible set is still the deterministic 3 — a non-candidate stays in More.
+    expect(r.query("skills-reason-pipeline_reset")).toBeNull();
+    r.unmount();
+  });
+
   it("renders only the suggested ready skills under Ready; the rest go behind 'More skills'", () => {
     const onRun = vi.fn();
     const r = render(

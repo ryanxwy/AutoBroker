@@ -637,4 +637,12 @@ export {
   type RouteDecision,
   type RouterContext,
   type ChatRouteEmit,
+  // suggest-next: the Hybrid skills-popover re-rank (advisory only — never
+  // launches; #1244 fail-closed → null so the UI keeps its deterministic order).
+  suggestNextSkills,
+  buildSuggestPrompt,
+  buildSuggestSchema,
+  redactBudgetText,
+  type SkillSuggestion,
+  type SuggestContext,
 } from "./router.js";

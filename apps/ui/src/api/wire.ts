@@ -234,6 +234,20 @@ export interface RouteRequestBody {
   from_session_id?: string | null;
 }
 
+/** POST /api/suggest-next-skills — the Hybrid skills-popover re-rank. The client
+ *  sends the DETERMINISTIC candidate ids it already computed + a short recent
+ *  conversation summary; the server re-orders WITHIN those ids and writes a
+ *  reason each (advisory only — never launches, never widens the set). */
+export interface SuggestRequestBody {
+  session_id?: string | null;
+  candidate_ids: string[];
+  conversation: string;
+}
+export const SuggestNextAckSchema = z.object({
+  suggestions: z.array(z.object({ skill_id: z.string(), reason: z.string() })),
+});
+export type SuggestNextAck = z.infer<typeof SuggestNextAckSchema>;
+
 /** The headless start body — routes.ts:55-65 (StartBodySchema). snake_case is
  *  intentional (it matches the workflow input verbatim). `skill` is any
  *  registered RunDescriptor id (the server 400s unknown_skill otherwise); the

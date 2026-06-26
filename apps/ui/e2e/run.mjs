@@ -457,6 +457,76 @@ async function scenarioE(browser, base) {
   await ctx.close();
 }
 
+// Scenario R — the draggable rail resizer. A LAYOUT-AWARE check (the unit test
+// RailResizer.test.tsx runs in happy-dom, which has no layout engine, so it can
+// only exercise the keyboard path and is blind to the CSS that decides whether
+// the seam is grabbable at all). This guards the regression where
+// `.rail-resizer { flex: 0 0 0px }` collapsed the 10px hit strip to 0px:
+// flex-basis:0 overrides width:10px, leaving an ungrabbable, mouse-dead seam.
+async function scenarioResize(browser, base) {
+  scenario("R: draggable rail resizer (layout-aware)");
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(T("app-main"), { timeout: 10000 });
+  await page.waitForSelector(T("chat-rail"), { timeout: 10000 });
+  await page.waitForTimeout(300); // let App's --rail-width effect run
+
+  const geom = () =>
+    page.evaluate(() => {
+      const res = document.querySelector(".rail-resizer");
+      const rail = document.querySelector(".chat-rail");
+      const main = document.querySelector(".app-main");
+      const rr = res.getBoundingClientRect();
+      const railR = rail.getBoundingClientRect();
+      const mainR = main.getBoundingClientRect();
+      const cs = getComputedStyle(res);
+      const cy = Math.round(railR.top + railR.height / 2);
+      const cx = Math.round(railR.left); // the visual seam = rail's left edge
+      const at = (x) => {
+        const e = document.elementFromPoint(x, cy);
+        return (e?.className || e?.tagName || "").toString();
+      };
+      return {
+        seamWidth: Math.round(rr.width * 100) / 100,
+        touchAction: cs.touchAction,
+        railWidth: Math.round(railR.width),
+        mainWidth: Math.round(mainR.width),
+        hitCenter: at(cx),
+        hitMinus4: at(cx - 4),
+        hitPlus4: at(cx + 4),
+        seamX: cx,
+        seamY: cy,
+        storage: localStorage.getItem("autobroker:rail-width"),
+      };
+    });
+
+  const before = await geom();
+  // The seam must be a real, grabbable target (the bug collapsed it to 0px).
+  check("seam has a real ~10px hit width", before.seamWidth >= 8 && before.seamWidth <= 12, `width=${before.seamWidth}`);
+  check("touch-action:none on the handle", before.touchAction === "none", `touch-action=${before.touchAction}`);
+  // Nothing overlays the seam — at its center and ±4px the resizer is on top
+  // (catches the negative-margin/stacking "steal" into canvas or rail).
+  check("seam center hits the resizer", before.hitCenter.includes("rail-resizer"), before.hitCenter);
+  check("seam -4px hits the resizer", before.hitMinus4.includes("rail-resizer"), before.hitMinus4);
+  check("seam +4px hits the resizer", before.hitPlus4.includes("rail-resizer"), before.hitPlus4);
+
+  // A real mouse drag of the seam to the LEFT widens the rail ~1:1 (rail is on
+  // the right). The bug left this at Δ0.
+  await page.mouse.move(before.seamX, before.seamY);
+  await page.mouse.down();
+  await page.mouse.move(before.seamX - 60, before.seamY, { steps: 6 });
+  await page.mouse.move(before.seamX - 120, before.seamY, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const after = await geom();
+  const dRail = after.railWidth - before.railWidth;
+  check("mouse drag widens the rail ~120px (1:1)", Math.abs(dRail - 120) <= 10, `Δrail=${dRail}`);
+  check("canvas narrows by the same amount", Math.abs(after.mainWidth - before.mainWidth + dRail) <= 4, `Δmain=${after.mainWidth - before.mainWidth}`);
+  check("committed width persisted to localStorage", String(after.railWidth) === after.storage, `storage=${after.storage} rail=${after.railWidth}`);
+
+  await page.close();
+}
+
 // ---------------------------------------------------------------------------
 // driver
 // ---------------------------------------------------------------------------
@@ -470,7 +540,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   let failed = false;
   try {
-    const scenarios = [scenarioA, scenarioB, scenarioC, scenarioD, scenarioE];
+    const scenarios = [scenarioA, scenarioB, scenarioC, scenarioD, scenarioE, scenarioResize];
     for (const s of scenarios) {
       try {
         console.log(`\n=== ${s.name} ===`);

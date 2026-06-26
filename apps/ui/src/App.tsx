@@ -80,6 +80,7 @@ import { navigate, useRoute } from "./router.js";
 import { Modal } from "./shell/Modal.js";
 import { PortfolioStatusBar } from "./shell/PortfolioStatusBar.js";
 import { RailResizer } from "./shell/RailResizer.js";
+import { nextSuggestedSkills, type ServerSuggestion } from "./shell/SkillsPopover.js";
 import { Toast } from "./shell/Toast.js";
 import { TopBar } from "./shell/TopBar.js";
 import { clampRailWidth, loadRailWidth } from "./store/layout.js";
@@ -231,6 +232,17 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // Transient browser activity view (live-only; never persisted into the
   // messages — the zone-4 trail + open count + latest screenshot).
   const [browserView, setBrowserView] = useState<BrowserView>(EMPTY_BROWSER_VIEW);
+  // The Hybrid skills-popover re-rank: an LLM ordering + reasons for the
+  // deterministic top-3, fetched ONCE when a run completes (cached per run id),
+  // and gated to a real-key context (the server no-ops it in any harness/CI
+  // lane). Empty (the default, and always in test) → the popover keeps its
+  // deterministic order + curated reasons; a result only re-orders/re-words the
+  // SAME visible 3.
+  const [serverSuggested, setServerSuggested] = useState<ServerSuggestion[]>([]);
+  const suggestFetchedRef = useRef<string | null>(null);
+  // Mirrors the active run id so a late suggest fetch can drop its result if the
+  // user has since launched another run (advisory — never apply a stale re-rank).
+  const activeRunIdRef = useRef<string | null>(null);
   onDataRef.current = (part): void => {
     if (part.type === "data-browser") {
       setBrowserView((v) => reduceBrowserView(v, part.data));
@@ -416,6 +428,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     setRailTitle(title);
     setScopeNotice(ack.scope_notice);
     setActiveRunId(ack.run_id);
+    setServerSuggested([]); // clear the prior run's re-rank until this one completes.
     sessionIdRef.current = ack.session_id;
     recoveredRef.current = ack.run_id; // a fresh launch needs no recovery.
     // Hydrate the linked session's pin + persisted notice (one fetch); a
@@ -642,6 +655,69 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       : null;
   const decision = useDecision(client, activeRunId, activeAwaiting?.decisionId ?? null);
 
+  // Hybrid skills-popover re-rank: when a run COMPLETES, fetch a conversation-
+  // aware ordering + reasons for the deterministic top-3 (ONCE per run id). The
+  // deterministic set still renders instantly; this only re-orders/re-words the
+  // SAME visible 3 when it arrives. Gated to a configured key; the server further
+  // no-ops it in any harness/CI lane and on a fail-closed model outcome, so the
+  // UI lane stays deterministic and makes no provider call.
+  activeRunIdRef.current = activeRunId; // latest run id for the async drop-stale guard.
+  useEffect(() => {
+    if (!deepseekReady) return;
+    if (activeRunId === null || !activeTurnTerminal) return;
+    if (suggestFetchedRef.current === activeRunId) return;
+    const skillList = skills.kind === "ok" ? skills.data : [];
+    if (skillList.length === 0) return; // skills not loaded yet — a later render retries.
+    // Derive lastSkill the SAME way the popover does (the literal last turn if it
+    // is an assistant run) so the candidate set we send the server is EXACTLY the
+    // set the popover renders and re-ranks against — never a divergent window.
+    const lastTurn = turns[turns.length - 1];
+    const lastSkill = lastTurn?.kind === "assistant" ? lastTurn.turn.skill : null;
+    const candidateIds = nextSuggestedSkills(skillList, {
+      pin: pinnedProfileId,
+      hasActiveProfile,
+      lastSkill,
+    }).map((s) => s.name);
+    if (candidateIds.length === 0) return;
+    // Mark fetched ONLY now — everything above is synchronous, so no interleaving
+    // render can double-fire, and we never poison the one-shot when data isn't
+    // ready yet (e.g. a cold reload onto a completed run while skills still load).
+    suggestFetchedRef.current = activeRunId;
+    const forRun = activeRunId;
+    const conversation = turns
+      .slice(-8)
+      .map((t) =>
+        t.kind === "user"
+          ? `user: ${t.text}`
+          : `assistant(${t.turn.skill ?? "?"}): ${t.turn.text || t.turn.status}`,
+      )
+      .join("\n");
+    client
+      .suggestNextSkills({
+        session_id: sessionIdRef.current,
+        candidate_ids: candidateIds,
+        conversation,
+      })
+      .then((ack) => {
+        // Drop a late result whose run is no longer active (the user launched
+        // another run while this was in flight) — advisory, never apply stale.
+        if (activeRunIdRef.current !== forRun) return;
+        setServerSuggested(ack.suggestions.map((s) => ({ skillId: s.skill_id, reason: s.reason })));
+      })
+      .catch(() => {
+        if (activeRunIdRef.current === forRun) setServerSuggested([]); // advisory — never surface.
+      });
+  }, [
+    activeRunId,
+    activeTurnTerminal,
+    deepseekReady,
+    turns,
+    skills,
+    pinnedProfileId,
+    hasActiveProfile,
+    client,
+  ]);
+
   const backendDown =
     mode.kind === "error" ? mode.message : skills.kind === "error" ? skills.message : null;
 
@@ -754,6 +830,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           pinZip={pinZip}
           currentSessionId={sessionIdRef.current}
           skills={skills.kind === "ok" ? skills.data : []}
+          serverSuggested={serverSuggested}
           hasActiveProfile={hasActiveProfile}
           deepseekReady={deepseekReady}
           onSlash={onSlash}

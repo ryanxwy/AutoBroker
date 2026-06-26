@@ -278,3 +278,147 @@ export async function classifySkillFromText(
     reason: emitted.reason,
   };
 }
+
+// ===========================================================================
+// suggest-next: the Hybrid skills-popover re-rank (a SIBLING of the router).
+// ===========================================================================
+//
+// The rail's skills popover already shows a DETERMINISTIC top-3 (a pure
+// pipeline-stage window in the UI). This adds the optional "based on the live
+// conversation" layer the owner asked for: given the SAME deterministic
+// candidate ids + a short recent-conversation summary, the model RE-ORDERS them
+// and writes a one-line reason each. Load-bearing constraints:
+//   - it NEVER introduces a skill outside the passed candidate set (the enum is
+//     the candidates only) → the visible set can't widen, so the popover's
+//     reachability invariant and the skills' own gates are untouched;
+//   - it NEVER launches anything (suggestion only) — pure advisory;
+//   - #1244 fail-closed: one emit_result + Zod via harness.generate; ANY
+//     malformed/zod/suspend outcome returns null → the caller keeps the
+//     deterministic order + curated reasons (no UI flake, no error);
+//   - the conversation summary is budget-REDACTED before it reaches the model
+//     (inv #9 discipline — the rank never needs a dollar figure).
+
+/** One ranked suggestion: a candidate skill id + a short conversation-aware
+ *  reason. The order of the returned array IS the suggested order. */
+export interface SkillSuggestion {
+  skillId: string;
+  reason: string;
+}
+
+/** Strip obvious budget figures from the conversation summary before it reaches
+ *  the model — the suggestion rank never needs a dollar amount, so redacting is
+ *  pure privacy upside (inv #9 discipline). Best-effort: it catches $-amounts,
+ *  comma-grouped numbers, k/grand shorthand, and bare 5+-digit figures, while
+ *  deliberately KEEPING 4-digit numbers (model years like 2026) that a next-step
+ *  rank legitimately uses. (workflows can't import the canonical tools redactor —
+ *  the dep wall is one-way — so this is a local, conservative copy.) */
+export function redactBudgetText(text: string): string {
+  return text
+    .replace(/\$\s?\d[\d.,]*\s?(?:k|m|grand)?/gi, "$[redacted]") // $41,000  $38k  $42500.50
+    .replace(/\b\d{1,3}(?:,\d{3})+\b/g, "[redacted]") // 41,000 (money; years/zips aren't grouped)
+    .replace(/\b\d{1,3}\s?(?:k|grand)\b/gi, "[redacted]") // 40k, 38 grand (no $)
+    .replace(/\b\d{5,}\b/g, "[redacted]"); // 40000 (5+ digits; keeps 4-digit years)
+}
+
+/** The flat, strict emit contract for one suggest-next call: an ordered list of
+ *  {skill_id (CANDIDATES only), reason}. Built per call because the candidate
+ *  enum is dynamic. Lowest-common JSON-Schema subset (#1244). */
+export function buildSuggestSchema(candidateIds: string[]): z.ZodType<{
+  suggestions: { skill_id: string; reason: string }[];
+}> {
+  const ids = (candidateIds.length > 0 ? candidateIds : [NONE]) as [string, ...string[]];
+  return z
+    .object({
+      suggestions: z.array(
+        z
+          .object({
+            skill_id: z.enum(ids),
+            reason: z.string(),
+          })
+          .strict(),
+      ),
+    })
+    .strict();
+}
+
+/** The context the suggest endpoint hands the model: the deterministic candidate
+ *  ids to rank, a short recent-conversation summary, the pin (context only), and
+ *  the ledger identity for the call. */
+export interface SuggestContext {
+  candidateIds: string[];
+  conversation: string;
+  pinnedProfileId: string | null;
+  ledger: HarnessLedgerContext;
+}
+
+/** Build the suggest prompt: the candidate catalog (id + intent) + the
+ *  budget-redacted recent conversation + the strict ranking instruction. */
+export function buildSuggestPrompt(ctx: SuggestContext): string {
+  const byId = new Map(SKILLS.map((s) => [s.id, s] as const));
+  const catalog = ctx.candidateIds
+    .map((id) => `- ${id}: ${byId.get(id)?.summary ?? id}`)
+    .join("\n");
+  const convo = redactBudgetText(ctx.conversation).slice(0, 2000);
+  return [
+    "You are helping a local car-buying assistant suggest the user's NEXT step.",
+    "Below are the candidate next skills (already filtered to what is launchable",
+    "right now). Rank them from MOST to least useful as the next step given the",
+    "recent conversation, and for EACH write a short reason (<= 8 words) addressed",
+    "to the user (e.g. 'scan the dealers you just found').",
+    "",
+    "Candidate skills (use ONLY these ids):",
+    catalog,
+    "",
+    "Recent conversation:",
+    convo.length > 0 ? convo : "(no conversation yet)",
+    "",
+    "Rules:",
+    "- Only use ids from the candidate list above; never invent an id.",
+    "- Return every candidate exactly once, best first.",
+    "- reason is short, concrete, and addressed to the user.",
+    "",
+    "Call emit_result exactly once with your ranked suggestions.",
+  ].join("\n");
+}
+
+/**
+ * Re-rank the deterministic candidate skills by the live conversation and attach
+ * a one-line reason to each. Returns the ranked {skillId, reason}[] on success,
+ * or `null` on ANY fail-closed outcome (malformed tool call, zod rejection,
+ * suspend, transport error) so the caller falls back to the deterministic order.
+ * Suggestions naming a non-candidate are dropped; duplicates are de-duped.
+ */
+export async function suggestNextSkills(
+  ctx: SuggestContext,
+  _testOverrides?: HarnessTestOverrides,
+): Promise<SkillSuggestion[] | null> {
+  if (ctx.candidateIds.length === 0) return [];
+  const allowed = new Set(ctx.candidateIds);
+  const schema = buildSuggestSchema(ctx.candidateIds);
+  const prompt = buildSuggestPrompt(ctx);
+
+  try {
+    const result = await harness.generate(
+      { useCase: "chat_route", schema, prompt, hitlAvailable: false },
+      ctx.ledger,
+      _testOverrides,
+    );
+    if (isHarnessSuspend(result)) return null;
+    const emitted = result.object as { suggestions: { skill_id: string; reason: string }[] };
+    const seen = new Set<string>();
+    const out: SkillSuggestion[] = [];
+    for (const s of emitted.suggestions) {
+      if (!allowed.has(s.skill_id) || seen.has(s.skill_id)) continue;
+      seen.add(s.skill_id);
+      out.push({ skillId: s.skill_id, reason: s.reason.trim().slice(0, 80) });
+    }
+    return out;
+  } catch {
+    // Suggestions are ADVISORY — ANY failure (#1244 malformed, zod-authority,
+    // transport/auth, anything) degrades to null so the caller keeps the
+    // deterministic order. Unlike the router (which surfaces routing errors),
+    // a failed suggestion must never throw into the page. We never guess an
+    // order or fabricate a reason from content.
+    return null;
+  }
+}

@@ -20,7 +20,7 @@ import type { DecisionController } from "../chat/useDecision.js";
 import { HistoryIcon, PinIcon } from "../shell/icons.js";
 import { Popover } from "../shell/Popover.js";
 import { SearchPicker } from "../shell/SearchPicker.js";
-import { SkillsPopoverList } from "../shell/SkillsPopover.js";
+import { SkillsPopoverList, type ServerSuggestion } from "../shell/SkillsPopover.js";
 import { AssistantTurn } from "./AssistantTurn.js";
 import { ChatInput } from "./ChatInput.js";
 import { IntakeScopeNoticeCard } from "./IntakeScopeNotice.js";
@@ -58,6 +58,9 @@ export interface ChatRailProps {
   currentSessionId: string | null;
   /** The implemented skill manifest (the rail Skills tray directory). */
   skills: SkillManifest[];
+  /** OPTIONAL Hybrid-layer re-rank of the deterministic top-3 (LLM order +
+   *  reasons); empty when no run has completed / in the deterministic lane. */
+  serverSuggested?: ServerSuggestion[];
   /** Whether at least one ACTIVE profile exists (skill readiness grouping). */
   hasActiveProfile: boolean;
   /** Whether the required DeepSeek key is configured (skill launch gate). */
@@ -96,6 +99,7 @@ export function ChatRail({
   pinZip,
   currentSessionId,
   skills,
+  serverSuggested,
   hasActiveProfile,
   deepseekReady,
   onSlash,
@@ -245,6 +249,7 @@ export function ChatRail({
             hasActiveProfile={hasActiveProfile}
             deepseekReady={deepseekReady}
             lastSkill={lastSkill}
+            serverSuggested={serverSuggested ?? []}
             onRun={onRunSkill}
           />
         </div>

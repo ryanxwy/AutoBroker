@@ -106,15 +106,53 @@ function stageIndexOf(skillName: string): number {
   return PIPELINE_STAGES.findIndex((stage) => stage.includes(skillName));
 }
 
+/** The visible suggested-set cap. The popover surfaces at most this many "next
+ *  step" skills by default; everything else stays reachable behind the "More
+ *  skills" disclosure (the cap shrinks the VISIBLE set, never the REACHABLE set
+ *  — the uiDriver depends on that). Owner-directed (2026-06-25): a top-3,
+ *  reason-carrying set, not a whole-stage wall. */
+export const MAX_SUGGESTED = 3;
+
+/** A short, action-oriented reason rendered beside each suggested skill — the
+ *  deterministic DEFAULT. The Hybrid layer's LLM may override these per-skill
+ *  from the live conversation (see `serverSuggested`), but this map is always
+ *  the instant, offline, test-safe fallback. */
+export const SKILL_REASON: Record<string, string> = {
+  search_profile_intake: "Start a new car search",
+  dealer_geosearch: "Find dealers in range of your search",
+  inventory_site_scan: "Scan dealer sites for matching cars",
+  inventory_link_scan: "Pull cars from links you paste",
+  incentive_scrape: "Check manufacturer rebates & APR offers",
+  inventory_compare: "Rank the cars you've found",
+  dealer_web_lead_submit: "Send quote requests to dealers",
+  dealer_inbox_check: "Check for new dealer replies",
+  dealer_reply_extract: "Pull quotes out of dealer emails",
+  quote_audit: "Sanity-check a quote's math & fees",
+  quote_compare: "Compare quotes side by side",
+  negotiation_followup: "Push dealers for a better price",
+  quote_pipeline: "Run the full quote pipeline",
+  daily_digest: "Summarize where every search stands",
+  dealer_hygiene: "Clean up stale dealer threads",
+  dealer_closeout_email: "Tell the other dealers you're done",
+  pipeline_reset: "Wipe this search and start over",
+};
+
+/** The default one-line reason for a skill (its curated reason, else its
+ *  summary). */
+export function defaultSuggestionReason(skill: SkillManifest): string {
+  return SKILL_REASON[skill.name] ?? skill.summary;
+}
+
 /**
- * The suggested next-available subset of the ready skills — the small set the
- * rail surfaces by default so the popover is not a 17-row wall. With no
- * profile/pin only `search_profile_intake` is suggested (it is the only thing
- * that can run). Otherwise the window is the stage the `lastSkill` belongs to
+ * The suggested next-step subset — at most MAX_SUGGESTED (3) ready skills, so
+ * the popover is a short "what's next" list, not a 17-row wall. With no
+ * profile/pin only `search_profile_intake` is suggested (the only launchable
+ * thing). Otherwise the CANDIDATE window is the stage the `lastSkill` belongs to
  * PLUS the next stage (a sliding window over PIPELINE_STAGES), narrowed to
- * skills whose pin posture is satisfied. If that window is empty (e.g. lastSkill
- * is unknown and the next stage is all-blocked) we fall back to the full ready
- * list, so a suggested set is NEVER smaller than nothing actionable.
+ * pin-posture-satisfied skills, ordered current-stage-before-next, then capped
+ * to 3. If that window is empty (e.g. an out-of-pipeline lastSkill whose stages
+ * are all blocked) we fall back to the (capped) ready list so the set is never
+ * empty when something is actionable.
  */
 export function nextSuggestedSkills(
   skills: SkillManifest[],
@@ -134,9 +172,50 @@ export function nextSuggestedSkills(
     ...(PIPELINE_STAGES[fromStage] ?? []),
     ...(PIPELINE_STAGES[fromStage + 1] ?? []),
   ]);
-  const suggested = ready.filter((s) => windowNames.has(s.name));
-  // Empty window → fall back to the full ready list (always actionable).
-  return suggested.length > 0 ? suggested : ready;
+  const inWindow = ready.filter((s) => windowNames.has(s.name));
+  // Order current-stage skills before next-stage ones (stable within a stage),
+  // then cap to the top MAX_SUGGESTED — the visible "next step" set. Empty
+  // window → fall back to the ready list (always actionable), capped the same.
+  const ordered = inWindow
+    .map((s, i) => ({ s, i, stage: stageIndexOf(s.name) }))
+    .sort((a, b) => a.stage - b.stage || a.i - b.i)
+    .map((x) => x.s);
+  return (ordered.length > 0 ? ordered : ready).slice(0, MAX_SUGGESTED);
+}
+
+/** One LLM-written suggestion: a skill id from the deterministic candidate set
+ *  plus a conversation-aware reason. The Hybrid layer passes an ordered list of
+ *  these; it can RE-ORDER and RE-WORD the visible top-3 but never introduce a
+ *  skill outside the deterministic candidates (safety + reachability). */
+export interface ServerSuggestion {
+  skillId: string;
+  reason: string;
+}
+
+/** Apply an optional server (LLM) re-rank to the deterministic suggested set:
+ *  keep ONLY the deterministic candidates (never widen the visible set), order
+ *  them by the server's order where present, and attach the server reason; any
+ *  candidate the server omitted keeps its default reason and trails after. */
+export function applyServerSuggestions(
+  suggested: SkillManifest[],
+  serverSuggested: ServerSuggestion[] | undefined,
+): { skill: SkillManifest; reason: string }[] {
+  const byName = new Map(suggested.map((s) => [s.name, s] as const));
+  if (serverSuggested === undefined || serverSuggested.length === 0) {
+    return suggested.map((s) => ({ skill: s, reason: defaultSuggestionReason(s) }));
+  }
+  const out: { skill: SkillManifest; reason: string }[] = [];
+  const used = new Set<string>();
+  for (const sug of serverSuggested) {
+    const skill = byName.get(sug.skillId);
+    if (skill === undefined || used.has(skill.name)) continue; // ignore non-candidates
+    used.add(skill.name);
+    out.push({ skill, reason: sug.reason.trim() || defaultSuggestionReason(skill) });
+  }
+  for (const s of suggested) {
+    if (!used.has(s.name)) out.push({ skill: s, reason: defaultSuggestionReason(s) });
+  }
+  return out;
 }
 
 export interface SkillsPopoverProps {
@@ -151,6 +230,11 @@ export interface SkillsPopoverProps {
   /** The most-recently-run skill id (drives the suggested-set sliding window),
    *  or null when no run has happened yet. */
   lastSkill?: string | null;
+  /** OPTIONAL Hybrid-layer re-rank of the deterministic top-3: the LLM's
+   *  conversation-aware ordering + reasons. Absent (the default, and ALWAYS in
+   *  test/CI/no-key) → the deterministic order + curated reasons render. It may
+   *  re-order/re-word the visible top-3 but never widen it. */
+  serverSuggested?: ServerSuggestion[];
   onRun: (skill: SkillManifest) => void;
 }
 
@@ -159,6 +243,7 @@ function SkillRows({
   disabled,
   tip,
   tipFor,
+  reasonFor,
   onRun,
 }: {
   skills: SkillManifest[];
@@ -167,6 +252,9 @@ function SkillRows({
   tip?: string;
   /** A per-skill tip (the blocked group, where the reason varies by posture). */
   tipFor?: (skill: SkillManifest) => string;
+  /** A per-skill "why this next" reason (the suggested set). When present the
+   *  row shows the reason in place of the generic summary. */
+  reasonFor?: (skill: SkillManifest) => string;
   onRun: (skill: SkillManifest) => void;
 }): JSX.Element {
   return (
@@ -174,7 +262,17 @@ function SkillRows({
       {skills.map((skill) => (
         <div className="skills-row" key={skill.name} data-testid={`skills-row-${skill.name}`}>
           <span className="skills-row-text">
-            <strong>{skill.name}</strong> — {skill.summary}
+            <strong>{skill.name}</strong>
+            {reasonFor ? (
+              <>
+                {" "}
+                <span className="skills-row-reason" data-testid={`skills-reason-${skill.name}`}>
+                  {reasonFor(skill)}
+                </span>
+              </>
+            ) : (
+              <> — {skill.summary}</>
+            )}
           </span>
           <button
             type="button"
@@ -198,6 +296,7 @@ export function SkillsPopoverList({
   hasActiveProfile,
   deepseekReady,
   lastSkill = null,
+  serverSuggested,
   onRun,
 }: SkillsPopoverProps): JSX.Element {
   // First-run gate wins over the readiness grouping: with no DeepSeek key no
@@ -220,7 +319,13 @@ export function SkillsPopoverList({
   // default (so the popover is not a 17-row wall), the rest of the ready skills
   // hide behind a collapsed "More skills" disclosure (still reachable).
   const suggested = nextSuggestedSkills(skills, { ...state, lastSkill });
-  const suggestedNames = new Set(suggested.map((s) => s.name));
+  // Hybrid layer: an optional LLM re-rank (order + reasons) of THESE candidates
+  // only — never widens the visible set, so `moreReady` (= ready \ suggested)
+  // still holds every other ready skill and the uiDriver stays able to reach it.
+  const suggestedWithReasons = applyServerSuggestions(suggested, serverSuggested);
+  const suggestedSkills = suggestedWithReasons.map((x) => x.skill);
+  const reasonByName = new Map(suggestedWithReasons.map((x) => [x.skill.name, x.reason] as const));
+  const suggestedNames = new Set(suggestedSkills.map((s) => s.name));
   const moreReady = groups.ready.filter((s) => !suggestedNames.has(s.name));
   // The blocked group mixes two reasons (no search vs no pin); the group header
   // shows the pin-required hint when ANY blocked skill is pin-required with an
@@ -234,7 +339,12 @@ export function SkillsPopoverList({
   return (
     <div data-testid="skills-list">
       <h3 className="skills-group-title">Ready</h3>
-      <SkillRows skills={suggested} disabled={false} onRun={onRun} />
+      <SkillRows
+        skills={suggestedSkills}
+        disabled={false}
+        reasonFor={(s) => reasonByName.get(s.name) ?? defaultSuggestionReason(s)}
+        onRun={onRun}
+      />
       {moreReady.length > 0 && (
         <details data-testid="skills-more">
           <summary data-testid="skills-more-toggle">More skills</summary>

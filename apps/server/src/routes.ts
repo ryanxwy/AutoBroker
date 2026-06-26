@@ -94,8 +94,11 @@ import {
 import {
   DuplicateRunIdError,
   classifySkillFromText,
+  suggestNextSkills,
   type RouteDecision,
   type RouterContext,
+  type SuggestContext,
+  type SkillSuggestion,
 } from "@autobroker/workflows";
 import type { SessionService, IntakeScopeNotice } from "./sessions.js";
 
@@ -148,6 +151,17 @@ const RouteBodySchema = z.object({
   nl_input: z.string().min(1),
   session_id: z.string().nullable().optional(),
   from_session_id: z.string().nullable().optional(),
+});
+
+/** POST /api/suggest-next-skills body — the Hybrid skills-popover re-rank
+ *  request. The CLIENT sends the DETERMINISTIC candidate ids it already computed
+ *  (so the server never re-derives the window — no drift) plus a short recent
+ *  conversation summary. The server validates the ids against the registry,
+ *  re-ranks within them (the LLM can never widen the set), and returns reasons. */
+const SuggestBodySchema = z.object({
+  session_id: z.string().nullable().optional(),
+  candidate_ids: z.array(z.string()).max(8),
+  conversation: z.string().default(""),
 });
 
 /** POST /api/sessions body (camelCase). */
@@ -269,6 +283,69 @@ export function __setRouteClassifierForTests(fn: RouteClassifier): void {
 /** TEST-ONLY: restore the real classifier. */
 export function __resetRouteClassifierForTests(): void {
   routeClassifier = (nl, ctx) => classifySkillFromText(nl, ctx);
+}
+
+/** The suggest-next provider the popover endpoint invokes — the real workflows
+ *  re-ranker by default. Returns null on ANY fail-closed outcome so the handler
+ *  degrades to an empty suggestion list (the UI then keeps its deterministic
+ *  order). NEVER reassigned outside a test runner. */
+type SuggestFn = (ctx: SuggestContext) => Promise<SkillSuggestion[] | null>;
+
+/** Whether the conversation-aware re-rank should NOT make a real model call.
+ *  TRUE in the deterministic UI lanes — the functional lane (AUTOBROKER_HARNESS
+ *  / fixture, set by serverHost) and the e2e/serve.mjs lane (an obviously-fake
+ *  DeepSeek key) — so they make ZERO provider calls. FALSE in serve-live and
+ *  buyer (a real key, no harness sentinel), where the model fires. NOTE we do
+ *  NOT key off NODE_ENV: serve-live sets NODE_ENV=test yet IS the live lane. */
+function suggestionsDisabled(): boolean {
+  if (process.env["AUTOBROKER_HARNESS"] === "1" || process.env["AUTOBROKER_HARNESS_FIXTURE"] === "1") {
+    return true;
+  }
+  const key = (process.env["DEEPSEEK_API_KEY"] ?? "").trim();
+  // The deterministic lanes use an obviously-fake key (serve.mjs → "e2e-dummy-
+  // not-used", the func lane → "functional-dummy-not-used"); both carry "dummy".
+  // A real DeepSeek key (sk-… hex) never matches, so this is a safe secondary
+  // gate behind the AUTOBROKER_HARNESS sentinel above.
+  return key === "" || /dummy|not[-_]?used/i.test(key);
+}
+
+/** The DEFAULT re-ranker: a real model call in a real (buyer / serve-live)
+ *  context, but a no-op (null → deterministic order) in the deterministic UI
+ *  lanes. The gate lives here (not in the handler) so a unit test that injects
+ *  its own deterministic re-ranker via the seam is NOT short-circuited. */
+function defaultSuggestNext(ctx: SuggestContext): Promise<SkillSuggestion[] | null> {
+  if (suggestionsDisabled()) return Promise.resolve(null);
+  return suggestNextSkills(ctx);
+}
+let suggestNext: SuggestFn = defaultSuggestNext;
+
+/** TEST-ONLY seam: inject a deterministic re-ranker so the suggest endpoint
+ *  wiring is exercised without a live model. Refused outside a test runner. */
+export function __setSuggestNextForTests(fn: SuggestFn): void {
+  if (process.env["VITEST"] === undefined && process.env["NODE_ENV"] !== "test") {
+    throw new Error("__setSuggestNextForTests is a test-only seam");
+  }
+  suggestNext = fn;
+}
+
+/** TEST-ONLY: restore the real re-ranker AND clear the suggest cache (the cache
+ *  is module-level, so it would otherwise leak across test cases). */
+export function __resetSuggestNextForTests(): void {
+  suggestNext = defaultSuggestNext;
+  SUGGEST_CACHE.clear();
+}
+
+/** A tiny bounded cache for the suggest endpoint so a duplicate request (same
+ *  session + same candidates + same conversation) doesn't re-spend a model call.
+ *  The client already gates calls to run-completion; this is belt-and-suspenders
+ *  against rapid duplicate POSTs. Keyed by the request shape; FIFO-capped. */
+const SUGGEST_CACHE = new Map<string, SkillSuggestion[]>();
+const SUGGEST_CACHE_CAP = 100;
+function suggestCacheKey(sessionId: string | null, candidateIds: string[], conversation: string): string {
+  // Key on the SAME conversation window the model actually consumes (the prompt
+  // slices to ~2000 chars) so two states sharing length + prefix but differing
+  // later don't collide and get served a stale ranking.
+  return `${sessionId ?? "anon"}|${candidateIds.join(",")}|${conversation.slice(0, 2000)}`;
 }
 
 /** Map a service-layer FormDecisionError onto the route error envelope. */
@@ -589,6 +666,65 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       }
       throw err;
     }
+  });
+
+  // ---- POST /api/suggest-next-skills — the Hybrid skills-popover re-rank ------
+  // Advisory ONLY: re-orders the client's DETERMINISTIC candidate ids by the live
+  // conversation and writes a one-line reason for each. It NEVER launches, NEVER
+  // widens the candidate set (the model's choices are constrained to the ids the
+  // client sent, then re-filtered here), and degrades to an empty list on ANY
+  // fail-closed model outcome — the UI then keeps its deterministic order +
+  // curated reasons. No run is started; no gate is touched.
+  app.post("/api/suggest-next-skills", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = parseBody(SuggestBodySchema, req.body);
+    // Keep ONLY real, registry-known skills (defense-in-depth — the server never
+    // trusts arbitrary ids even though the UI sends its own deterministic set).
+    const candidateIds = body.candidate_ids.filter(
+      (id) => skillRuns.descriptorFor(id) !== undefined,
+    );
+    if (candidateIds.length === 0) {
+      reply.code(200);
+      return { suggestions: [] };
+    }
+
+    const sessionId = body.session_id ?? null;
+    const cacheKey = suggestCacheKey(sessionId, candidateIds, body.conversation);
+    const cached = SUGGEST_CACHE.get(cacheKey);
+    if (cached !== undefined) {
+      reply.code(200);
+      return { suggestions: cached.map((s) => ({ skill_id: s.skillId, reason: s.reason })) };
+    }
+
+    const ctx: SuggestContext = {
+      candidateIds,
+      conversation: body.conversation,
+      // Reserved for future grounding; the suggest prompt ignores it today, so we
+      // skip the per-request session read (the re-ranker never infers/launches —
+      // the skill's own resolveScope stays the floor).
+      pinnedProfileId: null,
+      ledger: {
+        runId: `suggest-${sessionId ?? "anon"}-${Date.now()}`,
+        skill: "chat_route",
+        layer: "L2",
+        promptVersion: null,
+        schemaVersion: null,
+      },
+    };
+
+    // null == fail-closed (malformed/zod/transport) → empty list (the UI keeps
+    // its deterministic order). Only a NON-null result is cached, so a transient
+    // model hiccup never poisons the cache for that request shape.
+    const raw = await suggestNext(ctx);
+    const ranked = raw ?? [];
+    if (raw !== null) {
+      if (SUGGEST_CACHE.size >= SUGGEST_CACHE_CAP) {
+        const oldest = SUGGEST_CACHE.keys().next().value;
+        if (oldest !== undefined) SUGGEST_CACHE.delete(oldest);
+      }
+      SUGGEST_CACHE.set(cacheKey, ranked);
+    }
+    reply.code(200);
+    return { suggestions: ranked.map((s) => ({ skill_id: s.skillId, reason: s.reason })) };
   });
 
   // ---- GET /api/skill-runs/:id — status projection + pending suspend --------

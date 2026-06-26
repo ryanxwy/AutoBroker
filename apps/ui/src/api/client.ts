@@ -50,6 +50,7 @@ import {
   ProfileRowSchema,
   PurgeProfileAckSchema,
   RouteAckSchema,
+  SuggestNextAckSchema,
   SaveKeyAckSchema,
   SessionListSchema,
   SessionResponseSchema,
@@ -82,6 +83,8 @@ import {
   type PurgeProfileAck,
   type RouteAck,
   type RouteRequestBody,
+  type SuggestRequestBody,
+  type SuggestNextAck,
   type SecretKeyId,
   type SessionList,
   type SessionResponse,
@@ -204,6 +207,19 @@ export class ApiClient {
       body: JSON.stringify(body),
     });
     return decode(res, RouteAckSchema);
+  }
+
+  /** POST /api/suggest-next-skills → the Hybrid skills-popover re-rank. Sends the
+   *  deterministic candidate ids + a short conversation summary; gets back an
+   *  ordered {skill_id, reason}[] (possibly empty — the UI then keeps its
+   *  deterministic order). Advisory only; never starts a run. */
+  async suggestNextSkills(body: SuggestRequestBody): Promise<SuggestNextAck> {
+    const res = await this.fetchImpl(this.url("/api/suggest-next-skills"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return decode(res, SuggestNextAckSchema);
   }
 
   /** GET /api/skill-runs/:id → status summary (routes.ts:166 / intakeRuns.ts:547). */
