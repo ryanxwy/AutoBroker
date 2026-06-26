@@ -198,9 +198,54 @@ function locationStub(sequence: GoplacesResult[]) {
   return fn;
 }
 
-/** Wire deps with the real createProfile/openDb (writes the tmp DB). */
+/** Default fetchTrimSources stub — {none} so the trimSuggestion step passes
+ *  straight through to collect (NO real web, NO trim_suggestion suspend). The
+ *  trim-suggestion describe overrides it with a resolved stub. */
+const noneTrimSources: IntakeWorkflowDeps["fetchTrimSources"] = async () => ({ kind: "none" });
+
+/** A fetchTrimSources stub that returns fixed grounding text (the trim-suggestion
+ *  describe pairs it with a harnessGenerate stub that extracts the trim list). */
+function trimSourcesStub(text: string): IntakeWorkflowDeps["fetchTrimSources"] {
+  return async () => ({ kind: "resolved", text, sources: ["https://example.test/trims"] });
+}
+
+/** harnessGenerate stub for the trim-suggestion path: intake_trim_lookup → the
+ *  given parallel arrays; intake_trim_verify → the given verdict (proves grounded
+ *  pick SKIPS verify even when verify would say invalid). */
+function trimLookupStub(args: {
+  names: string[];
+  summaries: string[];
+  verifyValid?: boolean;
+}): IntakeWorkflowDeps["harnessGenerate"] {
+  const fn = async (input: { useCase: string }) => {
+    if (input.useCase === "intake_trim_lookup") {
+      return { object: { trim_names: args.names, trim_summaries: args.summaries }, usage: NO_USAGE };
+    }
+    if (input.useCase === "intake_trim_verify") {
+      return {
+        object: {
+          valid: args.verifyValid ?? true,
+          attestation: "from stub",
+          suggested_trims: [],
+        },
+        usage: NO_USAGE,
+      };
+    }
+    return {
+      object: IntakePrefillSchema.parse({
+        make: "Honda", model: "Civic", year: 2026, trim: null,
+        location_query: "Irvine, CA", search_radius_miles: null, financing_preference: "finance",
+      }),
+      usage: NO_USAGE,
+    };
+  };
+  return fn as unknown as IntakeWorkflowDeps["harnessGenerate"];
+}
+
+/** Wire deps with the real createProfile/openDb (writes the tmp DB). A {none}
+ *  fetchTrimSources is the default (no real web) unless the case overrides it. */
 function wireDeps(over: Partial<IntakeWorkflowDeps>): void {
-  __setIntakeDepsForTests(over);
+  __setIntakeDepsForTests({ fetchTrimSources: noneTrimSources, ...over });
 }
 
 /** Build a fresh in-process Mastra instance with the intake workflow registered,
@@ -772,11 +817,200 @@ describe("search_profile_intake — #1244 malformed_tool_call → suspend", () =
 });
 
 // ---------------------------------------------------------------------------
+// trim suggestion (web-grounded pre-collect picker)
+// ---------------------------------------------------------------------------
+
+const TRIM_TEXT = "SOURCE: 2026 Honda Civic trims: LX, Sport, Sport Touring.";
+
+describe("search_profile_intake — trim suggestion", () => {
+  it("freeform without a trim → suspends a trim_suggestion picker with the web-extracted trims", async () => {
+    wireDeps({
+      harnessGenerate: trimLookupStub({ names: ["LX", "Sport", "Sport Touring"], summaries: ["base", "sporty", "loaded"] }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-1" });
+    const started = await run.start({
+      inputData: { input_mode: "freeform", freeform_text: "i want a 2026 honda civic in Irvine", seed_fields: null },
+    });
+    expect(started.status).toBe("suspended");
+    const payload = suspendPayloadOf(started, "trimSuggestion");
+    expect(payload["kind"]).toBe("trim_suggestion");
+    expect((payload["candidates"] as unknown[]).length).toBe(3);
+  });
+
+  it("pick → the chosen trim seeds the form AND trimVerify is SKIPPED (grounded), even when verify would say invalid → created", async () => {
+    wireDeps({
+      // verifyValid:false would normally force the force_override gate — but a
+      // grounded pick must SKIP trimVerify entirely.
+      harnessGenerate: trimLookupStub({ names: ["LX", "Sport"], summaries: ["base", "sporty"], verifyValid: false }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-2" });
+    await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    const afterPick = await run.resume({ step: "trimSuggestion", resumeData: { action: "pick", picked_index: 1 } });
+    expect(afterPick.status).toBe("suspended"); // now the collect form
+    const collect = suspendPayloadOf(afterPick, "collect");
+    expect(collect["kind"]).toBe("data_collection");
+    expect((collect["seed_fields"] as Record<string, unknown>)["trim"]).toBe("Sport");
+
+    const created = await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Sport" }) } });
+    expect(created.status).toBe("success");
+    if (created.status !== "success") return;
+    expect(created.result.outcome).toBe("created"); // NOT a force_override suspend → grounded skipped verify
+    expect(rowCount("search_profiles")).toBe(1);
+  });
+
+  it("skip → proceeds to the form with the trim still blank (manual entry)", async () => {
+    wireDeps({
+      harnessGenerate: trimLookupStub({ names: ["LX", "Sport"], summaries: ["base", "sporty"] }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-3" });
+    await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    const afterSkip = await run.resume({ step: "trimSuggestion", resumeData: { action: "skip" } });
+    expect(afterSkip.status).toBe("suspended");
+    const collect = suspendPayloadOf(afterSkip, "collect");
+    expect(collect["kind"]).toBe("data_collection");
+    const seed = (collect["seed_fields"] as Record<string, unknown>) ?? {};
+    expect(seed["trim"] ?? null).toBeNull(); // skip seeded NO trim
+  });
+
+  it("decline → terminal declined, ZERO write", async () => {
+    wireDeps({
+      harnessGenerate: trimLookupStub({ names: ["LX"], summaries: ["base"] }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-4" });
+    await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    const declined = await run.resume({ step: "trimSuggestion", resumeData: { action: "decline" } });
+    expect(declined.status).toBe("success");
+    if (declined.status !== "success") return;
+    expect(declined.result.outcome).toBe("declined");
+    expect(rowCount("search_profiles")).toBe(0);
+  });
+
+  it("retry → re-runs the lookup and re-suspends the picker", async () => {
+    wireDeps({
+      harnessGenerate: trimLookupStub({ names: ["LX", "Sport"], summaries: ["base", "sporty"] }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-5" });
+    await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    const afterRetry = await run.resume({ step: "trimSuggestion", resumeData: { action: "retry", refine_query: "hatchback" } });
+    expect(afterRetry.status).toBe("suspended");
+    expect(suspendPayloadOf(afterRetry, "trimSuggestion")["kind"]).toBe("trim_suggestion");
+  });
+
+  it("fetchTrimSources {none} → NO trim_suggestion suspend, straight to the collect form (existing freeform behavior preserved)", async () => {
+    wireDeps({
+      harnessGenerate: harnessStub({ valid: true }),
+      resolveLocation: locationStub([RESOLVED]),
+      // fetchTrimSources defaults to {none}
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-6" });
+    const started = await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    expect(started.status).toBe("suspended");
+    // The FIRST suspend is the collect form, not the trim picker.
+    expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+  });
+
+  it("0 trims extracted → graceful pass-through to the collect form", async () => {
+    wireDeps({
+      harnessGenerate: trimLookupStub({ names: [], summaries: [] }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-7" });
+    const started = await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    expect(started.status).toBe("suspended");
+    expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+  });
+
+  it("freeform WITH a trim already extracted → the picker does NOT fire (only fires when trim is missing)", async () => {
+    const prefillWithTrim = (async (input: { useCase: string }) => {
+      if (input.useCase === "intake_trim_lookup") {
+        return { object: { trim_names: ["LX"], trim_summaries: ["base"] }, usage: NO_USAGE };
+      }
+      if (input.useCase === "intake_trim_verify") {
+        return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
+      }
+      return {
+        object: IntakePrefillSchema.parse({
+          make: "Honda", model: "Civic", year: 2026, trim: "Sport",
+          location_query: "Irvine, CA", search_radius_miles: null, financing_preference: "finance",
+        }),
+        usage: NO_USAGE,
+      };
+    }) as unknown as IntakeWorkflowDeps["harnessGenerate"];
+    wireDeps({ harnessGenerate: prefillWithTrim, fetchTrimSources: trimSourcesStub(TRIM_TEXT), resolveLocation: locationStub([RESOLVED]) });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-present" });
+    const started = await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Sport Irvine", seed_fields: null } });
+    expect(started.status).toBe("suspended");
+    // The trim was extracted → straight to the form, no picker.
+    expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+  });
+
+  it("slash launch → the trim picker NEVER fires (freeform-only guard)", async () => {
+    wireDeps({
+      harnessGenerate: trimLookupStub({ names: ["LX"], summaries: ["base"] }),
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-8" });
+    const started = await run.start({
+      inputData: { input_mode: "slash", freeform_text: null, seed_fields: { make: "Honda", model: "Civic", year: 2026 } },
+    });
+    expect(started.status).toBe("suspended");
+    expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+  });
+
+  it("#1244 on the lookup extraction → graceful pass-through (non-authoritative helper never blocks intake)", async () => {
+    const malformedLookup = (async (input: { useCase: string }) => {
+      if (input.useCase === "intake_trim_lookup") {
+        return { suspended: true, reason: "malformed_tool_call", signals: ["finish_reason_not_tool_calls"] };
+      }
+      return {
+        object: IntakePrefillSchema.parse({
+          make: "Honda", model: "Civic", year: 2026, trim: null,
+          location_query: "Irvine, CA", search_radius_miles: null, financing_preference: "finance",
+        }),
+        usage: NO_USAGE,
+      };
+    }) as unknown as IntakeWorkflowDeps["harnessGenerate"];
+    wireDeps({
+      harnessGenerate: malformedLookup,
+      fetchTrimSources: trimSourcesStub(TRIM_TEXT),
+      resolveLocation: locationStub([RESOLVED]),
+    });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-trim-suggest-9" });
+    const started = await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
+    expect(started.status).toBe("suspended");
+    // Degrades to the form (NOT a malformed_tool_call gate) — the suggestion is optional.
+    expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // flat-shape structural assertion (no nested workflow step)
 // ---------------------------------------------------------------------------
 
 describe("search_profile_intake — flat shape (design convention)", () => {
-  it("the workflow registers exactly the 8 named steps, none of them a nested workflow", () => {
+  it("the workflow registers exactly the 9 named steps, none of them a nested workflow", () => {
     const wf = intakeWorkflow();
     const stepIds = Object.keys(wf.steps);
     expect(stepIds.sort()).toEqual(
@@ -787,6 +1021,7 @@ describe("search_profile_intake — flat shape (design convention)", () => {
         "persist",
         "prefill",
         "resolveLocation",
+        "trimSuggestion",
         "trimVerify",
         "validate",
       ].sort(),

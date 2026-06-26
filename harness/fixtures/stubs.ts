@@ -107,6 +107,11 @@ export const resolveLocationStub = async (): Promise<unknown> => {
   }
 };
 
+/** fetchTrimSources stub: NEVER hit the real web in the func lane. {kind:'none'}
+ *  makes the trimSuggestion step pass straight through to the data_collection form
+ *  (no trim_suggestion suspend), so the existing intake func cases stay identical. */
+export const fetchTrimSourcesStub = async (): Promise<unknown> => ({ kind: "none" });
+
 /** harnessGenerate stub: a trim_verify verdict from scenario.trimValid; a fixed
  *  freeform-prefill seed otherwise (NO live LLM). */
 export const harnessGenerateStub = async (input: { useCase: string }): Promise<unknown> => {
@@ -126,6 +131,12 @@ export const harnessGenerateStub = async (input: { useCase: string }): Promise<u
       },
       usage: NO_USAGE,
     };
+  }
+  // intake_trim_lookup — defensive: with fetchTrimSourcesStub returning {none} the
+  // trimSuggestion step never reaches this call, but keep a valid empty extraction
+  // so a future scenario can't get a prefill-shaped object back here.
+  if (input.useCase === "intake_trim_lookup") {
+    return { object: { trim_names: [], trim_summaries: [] }, usage: NO_USAGE };
   }
   // intake_freeform_prefill — a fixed nullable subset seed (PII/budget absent).
   return {

@@ -154,6 +154,91 @@ export function AmbiguousLocationPicker({
   );
 }
 
+/** trim_suggestion: a web-grounded radio list of real trims (name + what
+ *  distinguishes it); pick → seeds the form trim. "Enter it myself" is a distinct
+ *  ACCEPT-style skip (NOT decline — decline cancels the whole search). The list
+ *  starts UNSELECTED (product-rule #1: never auto-pick a trim for the buyer). */
+export function TrimSuggestionPicker({
+  gate,
+  submitting,
+  onResume,
+  onDecline,
+}: GateProps & { gate: Extract<GateModel, { kind: "trim_suggestion" }> }): JSX.Element {
+  const [picked, setPicked] = useState<number | null>(null);
+  const [refine, setRefine] = useState("");
+  const vehicle = `${gate.year ?? ""} ${gate.make} ${gate.model}`.trim();
+  return (
+    <div className="gate-card" data-testid="gate-trim-suggestion" role="alertdialog" aria-label="Pick a trim">
+      <strong>Which trim of the {vehicle}?</strong>
+      <p className="muted">
+        We looked up the {vehicle} trims on the web. Pick the one you want, or enter it yourself.
+      </p>
+      <div
+        className="candidate-list"
+        role="radiogroup"
+        aria-label="Trim candidates"
+        style={{ maxHeight: 260, overflowY: "auto" }}
+      >
+        {gate.candidates.map((c) => (
+          <label key={c.index} style={{ display: "block", marginBottom: 6 }}>
+            <input
+              type="radio"
+              name="trim-candidate"
+              data-testid={`gate-trim-option-${c.index}`}
+              checked={picked === c.index}
+              onChange={() => setPicked(c.index)}
+            />
+            <strong>{c.name}</strong>
+            {c.summary !== "" ? <span className="muted"> — {c.summary}</span> : null}
+          </label>
+        ))}
+      </div>
+      <div className="gate-actions">
+        <button
+          type="button"
+          className="btn-primary"
+          data-testid="gate-trim-pick"
+          disabled={submitting || picked === null}
+          onClick={() => picked !== null && onResume({ action: "pick", picked_index: picked })}
+        >
+          Use this trim
+        </button>
+        <button
+          type="button"
+          data-testid="gate-trim-skip"
+          disabled={submitting}
+          onClick={() => onResume({ action: "skip" })}
+        >
+          I&apos;ll enter it myself
+        </button>
+      </div>
+      <div className="field" style={{ marginTop: 10 }}>
+        <label htmlFor="trim-refine">…or refine the search (e.g. a body style)</label>
+        <input
+          id="trim-refine"
+          type="text"
+          data-testid="gate-trim-retry-input"
+          value={refine}
+          onChange={(e) => setRefine(e.target.value)}
+        />
+      </div>
+      <div className="gate-actions">
+        <button
+          type="button"
+          data-testid="gate-trim-retry"
+          disabled={submitting}
+          onClick={() => onResume({ action: "retry", refine_query: refine.trim() === "" ? null : refine.trim() })}
+        >
+          Search again
+        </button>
+        <button type="button" className="btn-danger" data-testid="gate-trim-decline" disabled={submitting} onClick={onDecline}>
+          Cancel search
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** location failure (coordinate-resolution invariant): geocode
  *  parse/no-result/exhausted → re-fill. The location field is flagged, the
  *  failure reason is shown, the user retries. */

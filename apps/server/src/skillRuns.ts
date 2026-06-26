@@ -96,6 +96,7 @@ import {
   CollectResumeSchema,
   ForceOverrideResumeSchema,
   AmbiguousLocationResumeSchema,
+  TrimSuggestionResumeSchema,
   MalformedRetryResumeSchema,
   BatchReviewResumeSchema,
   HygieneResumeSchema,
@@ -235,6 +236,8 @@ function intakeResumeSchemaFor(step: string): z.ZodTypeAny {
       return ForceOverrideResumeSchema;
     case "resolveLocation":
       return AmbiguousLocationResumeSchema;
+    case "trimSuggestion":
+      return TrimSuggestionResumeSchema;
     case "trimVerify":
     case "prefill":
       return MalformedRetryResumeSchema;

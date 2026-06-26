@@ -110,7 +110,7 @@ beforeEach(async () => {
 
   resetMastraForTests();
   resetRuntimeGlueForTests();
-  __setIntakeDepsForTests({ harnessGenerate: harnessStub(), resolveLocation: locationStub() });
+  __setIntakeDepsForTests({ harnessGenerate: harnessStub(), resolveLocation: locationStub(), fetchTrimSources: async () => ({ kind: "none" }) });
   server = await buildServer({ quiet: true });
 });
 

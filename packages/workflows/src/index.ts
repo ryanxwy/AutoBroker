@@ -105,14 +105,19 @@ export {
 export {
   IntakePrefillSchema,
   TrimVerifyResultSchema,
+  TrimSuggestionSchema,
   CollectResumeSchema,
   ForceOverrideResumeSchema,
   AmbiguousLocationResumeSchema,
+  TrimSuggestionResumeSchema,
   MalformedRetryResumeSchema,
   buildPrefillPrompt,
   buildTrimVerifyPrompt,
+  buildTrimSuggestionPrompt,
   type IntakePrefill,
   type TrimVerifyResult,
+  type TrimSuggestion,
+  type TrimSuggestionResume,
 } from "./intakeContracts.js";
 
 // The dealer_geosearch skill workflow (skill #2, first browser skill) — one
