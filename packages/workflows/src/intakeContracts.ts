@@ -78,6 +78,47 @@ const _PREFILL_PII_EXCLUDED: _PrefillExcludesSensitive = 2;
 void _PREFILL_PII_EXCLUDED;
 
 /**
+ * Price/superlative/marketing qualifiers that are NEVER real trim names. When the
+ * buyer's prose states only a price intent ("the cheapest CR-V") with no real trim,
+ * prefill must leave `trim` NULL so the web-grounded trimSuggestion picker can offer
+ * real options — never seed a superlative as if it were a trim. A bogus non-null trim
+ * also makes the picker's "no trim yet" guard think a trim is present, suppressing it.
+ * Conservative BY CONSTRUCTION: only words that are never trim names. Real trims that
+ * happen to read like adjectives (Base, Sport, Premium, Limited, Touring, Premier,
+ * Select, Preferred) are deliberately ABSENT here, so a legitimately-typed trim is never
+ * nulled. Hard constraint in code, not prompt text (inv #9).
+ */
+const NON_TRIM_QUALIFIERS = new Set<string>([
+  "cheapest", "cheap", "cheaper", "lowest", "lowest price", "lowest priced",
+  "lowest-priced", "low price", "least expensive", "most affordable", "affordable",
+  "best", "best value", "best price", "best deal", "nicest", "top trim",
+  "top of the line", "top-of-the-line", "highest", "most expensive", "priciest",
+  "loaded", "fully loaded", "fully-loaded", "maxed out",
+]);
+
+/** Literal non-value placeholder strings an LLM sometimes emits INSTEAD of JSON null
+ *  (live-observed: DeepSeek returned trim:"null" for "the cheapest CR-V"). Treated as
+ *  null so a placeholder neither seeds the form nor suppresses the trimSuggestion picker.
+ *  None is a real trim, so this is conservative. */
+const NON_VALUE_PLACEHOLDERS = new Set<string>([
+  "null", "none", "n/a", "na", "nil", "undecided", "unknown", "unspecified", "any", "tbd", "-",
+]);
+
+/**
+ * Null out a prefilled trim that is not a real trim name — a price/superlative qualifier
+ * ("cheapest") or a non-value placeholder string ("null", "none"). Exact normalized match
+ * only (no compound-string stripping): "cheapest" → null, but "cheapest LX" is left intact
+ * (a real trim token means the buyer named one).
+ */
+export function sanitizePrefillTrim(trim: string | null): string | null {
+  if (trim === null) return null;
+  const norm = trim.trim().toLowerCase();
+  if (norm === "") return null;
+  if (NON_VALUE_PLACEHOLDERS.has(norm) || NON_TRIM_QUALIFIERS.has(norm)) return null;
+  return trim;
+}
+
+/**
  * intake_trim_verify emit contract. The trim-verifier's structured
  * verdict. `valid` = trim truly exists for the make/model/year; `attestation` =
  * one-line plain-speak reason shown to the user; `suggested_trims` = real-ish
@@ -122,6 +163,8 @@ export function buildPrefillPrompt(freeformText: string): string {
   return (
     "Extract the car-buying preferences explicitly stated in the buyer's sentence. " +
     "Fill only fields you actually see; leave everything else null. " +
+    "Put a real trim NAME (e.g. LX, EX-L, XLE, Limited) in `trim` only; never a price " +
+    "or superlative word like 'cheapest', 'best', or 'loaded' — leave `trim` null for those. " +
     "Never guess email, phone, or budget. Return via the emit_result tool.\n" +
     `Input: ${JSON.stringify(freeformText)}`
   );
