@@ -575,6 +575,10 @@ export {
   CRM_PLATFORM_HOSTS,
 } from "./inbox/crm.js";
 export {
+  isNonSubstantiveReply,
+  type ReplyFilterRow,
+} from "./inbox/replyFilter.js";
+export {
   routeThread,
   lookupDealerBySender,
   type RouteResult,

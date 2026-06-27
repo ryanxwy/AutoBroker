@@ -198,7 +198,7 @@ export type ThreadClassification = "quoted" | "replied";
 
 /** Tokens whose presence in dealer prose marks a thread as carrying a price /
  *  quote (vs a plain conversational reply). Lowercased substring match. */
-const QUOTE_SIGNAL_TOKENS: readonly string[] = [
+export const QUOTE_SIGNAL_TOKENS: readonly string[] = [
   "out-the-door",
   "out the door",
   "otd",
