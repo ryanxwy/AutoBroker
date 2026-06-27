@@ -90,6 +90,9 @@ anything.
    decline change nothing?), and **data-quality coverage** `/__e2e/dataquality` (is the
    data actually usable?). This is the verdict.
 2. **The live DOM** — `browser_evaluate` on the active Canvas panel. Corroboration.
+   For the Negotiations board do NOT stop at the grid; `browser_click` a
+   `canvas-negotiation-card` and `browser_evaluate` the opened
+   `negotiation-detail-modal` sections.
 3. **A screenshot** — a report artifact, never a verdict.
 4. **`frontend-taste`** — an advisory usability opinion.
 
