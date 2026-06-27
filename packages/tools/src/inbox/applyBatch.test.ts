@@ -76,6 +76,7 @@ function decision(over: Partial<ThreadDecision> = {}): ThreadDecision {
     gmailThreadId: "g-t-1",
     dealerId: DEALER_A,
     contactDisplayName: "Sam Sales",
+    contactRole: "Sales Manager",
     contactId: "contact-1",
     normalizedSenderEmail: "sam@example-dealer.com",
     isCrmPlatformSender: false,
@@ -161,6 +162,50 @@ describe("applyInboxBatch — APPROVE", () => {
     });
     expect(res2.newMessages).toBe(0); // dedup → no new message
     expect(count("messages")).toBe(1);
+  });
+
+  it("writes the contact role, and a later null KEEPS the prior role (COALESCE)", () => {
+    applyInboxBatch({
+      searchProfileId: PROFILE_ID,
+      runId: "run-1",
+      approve: [decision({ contactRole: "Internet Sales Manager" })],
+      reject: [],
+      db,
+    });
+    const first = db.$client
+      .prepare("SELECT role FROM dealer_contacts WHERE contact_id = 'contact-1'")
+      .get() as { role: string | null };
+    expect(first.role).toBe("Internet Sales Manager");
+
+    // A later sweep of the SAME contact with a null role must not erase it.
+    applyInboxBatch({
+      searchProfileId: PROFILE_ID,
+      runId: "run-2",
+      approve: [
+        decision({
+          contactRole: null,
+          messages: [
+            {
+              messageId: "m-2",
+              gmailMessageId: "g-m-2",
+              sender: "Sam Sales <sam@example-dealer.com>",
+              senderEmail: "sam@example-dealer.com",
+              senderName: "Sam Sales",
+              recipient: "buyer@example.com",
+              subject: "Re: Tucson availability",
+              bodyText: "follow-up",
+              receivedAt: "2026-06-13T12:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+      reject: [],
+      db,
+    });
+    const after = db.$client
+      .prepare("SELECT role FROM dealer_contacts WHERE contact_id = 'contact-1'")
+      .get() as { role: string | null };
+    expect(after.role).toBe("Internet Sales Manager"); // null did NOT overwrite
   });
 });
 

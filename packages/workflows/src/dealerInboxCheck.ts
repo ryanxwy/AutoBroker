@@ -61,6 +61,7 @@ import {
   listProfileDealerRows as listProfileDealerRowsImpl,
   listProfileRows as listProfileRowsImpl,
   listSuppressedGmailThreadIds as listSuppressedGmailThreadIdsImpl,
+  parseContactRole,
   readFirstLeadSubmitAtMs as readFirstLeadSubmitAtMsImpl,
   readLastInboxCheckAt as readLastInboxCheckAtImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
@@ -660,6 +661,18 @@ const batchReviewStep = createStep({
 // step 3 — applyBatch (the ONE atomic write; gated on !declined)
 // ---------------------------------------------------------------------------
 
+/** Parse the dealer-contact role from the reply signatures — newest message
+ *  first, first recognized role wins; null when no message names a known role. */
+function deriveContactRole(
+  messages: readonly z.infer<typeof InboxMessageStateSchema>[],
+): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const role = parseContactRole(messages[i]?.body_text ?? null);
+    if (role !== null) return role;
+  }
+  return null;
+}
+
 const applyBatchStep = createStep({
   id: "applyBatch",
   inputSchema: InboxCheckStateSchema,
@@ -678,6 +691,7 @@ const applyBatchStep = createStep({
           gmailThreadId: t.gmail_thread_id,
           dealerId: g.dealer_id,
           contactDisplayName: t.messages[0]?.sender_name ?? null,
+          contactRole: deriveContactRole(t.messages),
           contactId: g.contact_id,
           normalizedSenderEmail: g.normalized_sender_email,
           isCrmPlatformSender: g.is_crm_platform_sender,

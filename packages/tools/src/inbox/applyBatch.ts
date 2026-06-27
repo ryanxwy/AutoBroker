@@ -57,6 +57,9 @@ export interface ThreadDecision {
   dealerId: string;
   /** The dealer-contact display name for the sender (null when unknown). */
   contactDisplayName: string | null;
+  /** The parsed dealer-contact role from the reply signature (null when none).
+   *  COALESCE-kept on conflict — a later null never overwrites a known role. */
+  contactRole: string | null;
   contactId: string;
   normalizedSenderEmail: string;
   isCrmPlatformSender: boolean;
@@ -92,12 +95,13 @@ const UPSERT_THREAD =
 const UPSERT_CONTACT =
   "INSERT INTO dealer_contacts " +
   "(contact_id, dealer_id, email, display_name, normalized_email, last_seen_at, " +
-  "is_crm_platform_sender, search_profile_id) " +
-  "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+  "is_crm_platform_sender, role, search_profile_id) " +
+  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
   "ON CONFLICT(dealer_id, normalized_email) DO UPDATE SET " +
   "display_name = COALESCE(excluded.display_name, dealer_contacts.display_name), " +
   "last_seen_at = excluded.last_seen_at, " +
-  "is_crm_platform_sender = excluded.is_crm_platform_sender";
+  "is_crm_platform_sender = excluded.is_crm_platform_sender, " +
+  "role = COALESCE(excluded.role, dealer_contacts.role)";
 
 // gmail_message_id is the dedup key — ON CONFLICT on the message PK absorbs a
 // re-ingest of the same product id, and the pre-insert existence check on
@@ -168,6 +172,7 @@ export function applyInboxBatch(args: ApplyInboxBatchArgs): ApplyInboxBatchResul
         d.normalizedSenderEmail,
         now,
         d.isCrmPlatformSender ? 1 : 0,
+        d.contactRole,
         profileId,
       );
 
