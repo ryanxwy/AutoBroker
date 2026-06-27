@@ -935,6 +935,50 @@ body.resizing { cursor: col-resize; user-select: none; }
 .thread-class-countered { color: var(--go); border-color: var(--go); }
 .thread-class-stalled, .thread-class-dormant { color: var(--amber-ink); border-color: var(--amber); }
 
+/* ── Negotiations board (Replies tab) ─────────────────────────────────────── */
+/* The card name leads each board card — a calm heading, not a jumbo title. */
+.negotiation-card-name { font-size: 13px; font-weight: 600; margin: 0; }
+/* "Needs you now" — countered/stalled cards (the buyer should reply) wear a
+   stronger left accent so they read as actionable. Color is never the only
+   signal: the status chip text + sort order carry the meaning too. */
+.negotiation-needs-you { border-left: 3px solid var(--go); }
+/* The four per-metric tallies — a quiet mono row beneath the chips. */
+.negotiation-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.negotiation-metric { color: var(--ink-soft); }
+.negotiation-metric-label { color: var(--ink-mute); }
+
+/* Negotiation detail modal sections — calm spacing between the ordered blocks. */
+.negotiation-section { margin-top: 14px; }
+.negotiation-contact-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.negotiation-contact-email { font-family: var(--mono); font-size: 11px; }
+/* The lazy LLM line is SUBORDINATE to the always-present status_line — quieter,
+   tagged so the buyer knows it is AI-generated. A null summary leaves no hole. */
+.negotiation-ai-summary { font-size: 11.5px; margin-top: 6px; }
+.negotiation-ai-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-right: 5px;
+}
+/* The replies list is height-capped + scrollable so a chatty thread never swamps
+   the modal. */
+.negotiation-replies-scroll { max-height: 280px; overflow-y: auto; }
+.negotiation-reply-row { padding: 8px 0; border-top: 1px solid var(--rule-soft); }
+.negotiation-reply-row:first-child { border-top: 0; }
+.negotiation-reply-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; }
+.negotiation-reply-subject { font-size: 11.5px; margin-top: 2px; }
+.negotiation-reply-body { font-size: 11px; margin-top: 3px; }
+
 /* the ✕ remove control inside an editable chip — quiet until hovered */
 .mini-chip .chip-remove {
   border: 0;

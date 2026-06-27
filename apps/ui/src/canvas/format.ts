@@ -44,3 +44,22 @@ export function relativeDate(value: string | null): string {
 export function expiryLine(expires: string | null): string {
   return expires !== null && expires !== "" ? `expires ${expires}` : "";
 }
+
+/** An ABSOLUTE "Jun 12, 2026, 3:04 PM" timestamp from an ISO string OR an
+ *  epoch-ms number (the negotiation reply `received_at` wire shape is a
+ *  `string | number`). Unlike `relativeDate` (which accepts only a string and
+ *  returns "" on a number), this handles both. Degrades to "" when null, blank,
+ *  or unparseable so the caller can omit the line. */
+export function absoluteTimestamp(value: string | number | null): string {
+  if (value === null) return "";
+  if (typeof value === "string" && value.trim() === "") return "";
+  const ms = typeof value === "number" ? value : Date.parse(value);
+  if (Number.isNaN(ms)) return "";
+  return new Date(ms).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}

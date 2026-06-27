@@ -22,6 +22,7 @@ import { useAsync, type AsyncState } from "../api/useApi.js";
 import { invalidate, useDataRefetch } from "../api/useDataChanged.js";
 import type {
   DealerList,
+  DealerNegotiationList,
   DigestView,
   IncentiveList,
   InventoryCompareResult,
@@ -46,8 +47,8 @@ import { Incentives } from "./Incentives.js";
 import { ProfileSummary } from "./ProfileSummary.js";
 import { InventoryCandidates } from "./InventoryCandidates.js";
 import { ProfileRemoveControl } from "./ProfileRemoveControl.js";
+import { NegotiationsBoard } from "./NegotiationsBoard.js";
 import { QuotesPanel } from "./QuotesPanel.js";
-import { ThreadsSection } from "./ThreadsSection.js";
 
 /** The data kinds the Canvas's read views render — stable module-level literals
  *  so useDataRefetch re-registers only when the refetch identity (not the array
@@ -57,6 +58,10 @@ const DEALER_KINDS = ["dealers"] as const;
 /** The dealer-reply Threads section refetches on a threads/messages pulse (the
  *  inbox-pull skill writes both families). */
 const THREAD_KINDS = ["threads", "messages"] as const;
+/** The Negotiations board is derived from the dealer/thread/quote/message/lead
+ *  families — any of those writes can shift a dealer's negotiation status, tally,
+ *  or BATNA gap, so the grid refetches on a pulse to any of them. */
+const NEGOTIATION_KINDS = ["dealers", "threads", "quotes", "messages", "lead_submissions"] as const;
 /** A submitted lead changes the dealer/pipeline rail: the lead-submit skill writes
  *  a lead_submissions row, may set a dealer's contact_email, and an email fallback
  *  writes a (fake) messages row — refetch the dealer tiles on any of those. */
@@ -406,6 +411,11 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
+  const negotiations = useAsync<DealerNegotiationList>(
+    () => client.listDealerNegotiations(activeId ?? ""),
+    [activeId],
+    activeId !== null,
+  );
   const inventory = useAsync<InventoryCompareResult>(
     () => client.listProfileInventoryCompare(activeId ?? ""),
     [activeId],
@@ -452,6 +462,7 @@ export function Canvas({
   useDataRefetch(PROFILE_KINDS, explicit.refetch, activeId);
   useDataRefetch(DEALER_KINDS, dealers.refetch, activeId);
   useDataRefetch(THREAD_KINDS, threads.refetch, activeId);
+  useDataRefetch(NEGOTIATION_KINDS, negotiations.refetch, activeId);
   useDataRefetch(LEAD_KINDS, dealers.refetch, activeId);
   useDataRefetch(INVENTORY_KINDS, inventory.refetch, activeId);
   useDataRefetch(QUOTE_KINDS, quotes.refetch, activeId);
@@ -542,7 +553,11 @@ export function Canvas({
                   count: inventory.kind === "ok" ? inventory.data.candidates.length : null,
                 },
                 { key: "quotes", label: "Quotes", count: quotesRaw.kind === "ok" ? quotesRaw.data.length : null },
-                { key: "replies", label: "Replies", count: threads.kind === "ok" ? threads.data.length : null },
+                {
+                  key: "replies",
+                  label: "Negotiations",
+                  count: negotiations.kind === "ok" ? negotiations.data.length : null,
+                },
                 {
                   key: "incentives",
                   label: "Incentives",
@@ -584,9 +599,17 @@ export function Canvas({
               />
             )}
             {tab === "replies" && (
-              <ThreadsSection
-                threads={threads}
+              <NegotiationsBoard
+                negotiations={negotiations}
                 dealerCount={dealers.kind === "ok" ? dealers.data.length : 0}
+                {...(activeId !== null
+                  ? {
+                      fetchDetail: (dealerId: string) =>
+                        client.getDealerNegotiationDetail(activeId, dealerId),
+                      fetchSummary: (dealerId: string) =>
+                        client.getDealerNegotiationSummary(activeId, dealerId),
+                    }
+                  : {})}
               />
             )}
             {tab === "incentives" && <Incentives incentives={incentives} />}

@@ -45,8 +45,9 @@ function classificationOf(row: ThreadRow): "quoted" | "replied" {
 }
 
 /** Buyer-facing labels for the jargony statuses (the raw key stays the CSS class).
- *  countered/stalled/quoted/replied read fine as-is; only these are reworded. */
-const STATUS_LABEL: Record<string, string> = {
+ *  countered/stalled/quoted/replied read fine as-is; only these are reworded.
+ *  Exported so the Negotiations board + detail modal reuse the same wording. */
+export const STATUS_LABEL: Record<string, string> = {
   dormant: "gone quiet",
   lead_sent: "awaiting reply",
   dead: "closed",
