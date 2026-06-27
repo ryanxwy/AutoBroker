@@ -142,4 +142,12 @@ describe("incentive_scrape contracts", () => {
     // Budget is structurally absent from the extraction surface.
     expect(prompt.toLowerCase()).not.toContain("budget");
   });
+
+  it("scopes the extraction to the searched model and rejects other-model offers", () => {
+    // The OEM offers page lists every model; the prompt must keep the LLM from
+    // attributing another model's cash (e.g. an IONIQ figure) to the Tucson.
+    const prompt = buildIncentiveExtractPrompt("Hyundai", "Tucson Hybrid", "OFFER TEXT");
+    expect(prompt).toContain("extract ONLY offers that apply to the Tucson Hybrid");
+    expect(prompt).toContain("SKIP any offer that names a different model");
+  });
 });
