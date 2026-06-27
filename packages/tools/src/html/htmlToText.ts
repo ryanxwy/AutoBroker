@@ -37,6 +37,7 @@ export function stripHtmlToText(html: string, cap: number = DEFAULT_CAP): string
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&#x27;|&#39;|&apos;/gi, "'")
+    .replace(/&#x[0-9a-f]+;|&#\d+;/gi, " ")
     .replace(/&quot;/gi, '"')
     .replace(/&[a-z]+;/gi, " ")
     .replace(/\s+/g, " ")

@@ -86,6 +86,14 @@ describe("stripHtmlToText", () => {
     expect(codePoints.every((cp) => cp !== "�")).toBe(true);
   });
 
+  it("replaces numeric character references (decimal and hex) with a space", () => {
+    // &#8217; = right single quotation mark, &#x2019; = same, &#8212; = em dash
+    const result = stripHtmlToText("don&#8217;t&#x2019;stop&#8212;go");
+    expect(result).not.toMatch(/&#8217;|&#x2019;|&#8212;/i);
+    // whitespace-collapsed so the spaces are merged
+    expect(result).toBe("don t stop go");
+  });
+
   it("handles an empty string", () => {
     expect(stripHtmlToText("")).toBe("");
   });

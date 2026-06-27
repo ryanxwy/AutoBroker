@@ -88,6 +88,12 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   cross-border dealer(s) excluded"). A US dealer on a Spanish-named street ("Ensenada Dr")
   correctly stays. Re-flag ONLY if a non-US dealer reaches the scan/lead/ranked set.
   Shipped 2026-06-27 (`phase2/dealer_geosearch`).
+- HTML-only dealer email body is recovered to text via `stripHtmlToText` (the frozen Python
+  oracle silently dropped it — this is a deliberate, beneficial oracle-superseding fix).
+  Re-flag ONLY if a genuine quote-bearing dealer email still persists an empty `body_text`
+  after the mapping step. Honest cost to watch: an HTML-only marketing blast can now yield a
+  deterministic quote-signal/intent where it previously produced none — file as backlog if it
+  materially misleads, not as a blocker.
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)

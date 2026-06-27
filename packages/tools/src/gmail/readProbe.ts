@@ -100,34 +100,37 @@ export function assertReadProbeEnvelope(): { account: string } {
  * structurally incapable of sending, rather than relying on an env flag.
  */
 export class ReadOnlyGmailAdapter implements GmailAdapter {
-  constructor(private readonly inner: GmailAdapter) {}
+  #inner: GmailAdapter;
+  constructor(inner: GmailAdapter) {
+    this.#inner = inner;
+  }
 
   get kind(): GmailBackend {
-    return this.inner.kind;
+    return this.#inner.kind;
   }
 
   search(query: string, maxResults?: number): Promise<ThreadRef[]> {
-    return this.inner.search(query, maxResults);
+    return this.#inner.search(query, maxResults);
   }
 
   getThread(threadId: string): Promise<Thread> {
-    return this.inner.getThread(threadId);
+    return this.#inner.getThread(threadId);
   }
 
   getMessage(messageId: string): Promise<Message> {
-    return this.inner.getMessage(messageId);
+    return this.#inner.getMessage(messageId);
   }
 
   downloadAttachment(messageId: string, ref: AttachmentRef): Promise<AttachmentData> {
-    return this.inner.downloadAttachment(messageId, ref);
+    return this.#inner.downloadAttachment(messageId, ref);
   }
 
   historyList(startHistoryId: string): Promise<HistoryPage> {
-    return this.inner.historyList(startHistoryId);
+    return this.#inner.historyList(startHistoryId);
   }
 
   getCurrentHistoryId(): Promise<string> {
-    return this.inner.getCurrentHistoryId();
+    return this.#inner.getCurrentHistoryId();
   }
 
   /** ALWAYS rejects — send is structurally forbidden from a read-only probe. */
@@ -138,6 +141,6 @@ export class ReadOnlyGmailAdapter implements GmailAdapter {
   }
 
   health(): Promise<HealthResult> {
-    return this.inner.health();
+    return this.#inner.health();
   }
 }

@@ -96,8 +96,9 @@ async function main() {
           const data = await ro.downloadAttachment(msg.messageId, ref);
           const result = await extractAttachmentText(data.bytes, data.mimeType, data.filename);
           if (result.ok) attachmentsParsed++;
-        } catch {
+        } catch (attachErr) {
           // Transient download failures are non-fatal; skip and continue.
+          process.stderr.write(`[probe] attachment skip (${ref.filename ?? ref.attachmentId}): ${String(attachErr)}\n`);
         }
       }
     }
