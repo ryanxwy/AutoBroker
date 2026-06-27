@@ -101,6 +101,15 @@ export const USE_CASES = [
    */
   "negotiation_followup",
   /**
+   * Negotiation-state SUMMARY for the dealer-negotiation detail modal: a single
+   * emit_result structured generation over the dealer's already-stored
+   * substantive reply bodies (flat .strict() {summary, headline}). An advisory,
+   * read-only projection — ANY failure degrades to null. Routes to deepseek.chat,
+   * mirroring intake_freeform_prefill (emit_result discipline; never Output.object
+   * + tools on DeepSeek).
+   */
+  "negotiation_summary",
+  /**
    * NL skill-router: classify a free-form chat message into ONE of the 17
    * skills / intake / none. A single emit_result tool carrying the flat
    * ChatRouteEmitSchema (temp 0, thinking OFF) — never Output.object + tools on
@@ -162,6 +171,9 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Negotiation follow-up PROSE draft (NO tools, NO structured output — the
   // draftProse facade). #1244 is structurally inapplicable; deepseek.chat.
   negotiation_followup: "deepseek.chat",
+  // Negotiation-state summary (single emit_result tool over the dealer's reply
+  // bodies); same DeepSeek emit_result discipline as intake_freeform_prefill.
+  negotiation_summary: "deepseek.chat",
   // NL skill-router classify pass (single emit_result tool, temp 0, thinking
   // OFF). Same DeepSeek emit_result discipline as the other classify useCases;
   // a provider swap is a one-string edit here.

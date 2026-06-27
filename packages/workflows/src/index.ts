@@ -422,6 +422,24 @@ export {
   ContactFlipApprovalResumeSchema,
 } from "./negotiationFollowupContracts.js";
 
+// negotiation_summary — the advisory LLM read of a dealer's negotiation state
+// for the dealer-negotiation detail modal (single emit_result, hitlAvailable
+// false; ANY failure degrades to {summary:null}). The cache + test-only deps
+// seam are exported alongside the emit schema + fenced prompt builder.
+export {
+  getOrGenerateDealerNegotiationSummary,
+  __setNegotiationSummaryDepsForTests,
+  __resetNegotiationSummaryDepsForTests,
+  type NegotiationSummaryDeps,
+} from "./negotiationSummary.js";
+export {
+  NegotiationSummaryEmitSchema,
+  buildNegotiationSummaryPrompt,
+  capSummarySnapshot,
+  SUMMARY_SNAPSHOT_CAP_CHARS,
+  type NegotiationSummaryEmit,
+} from "./negotiationSummaryContracts.js";
+
 // dealer_closeout_email (X3) — the Phase-5 EXIT skill: near-zero-LLM, state-only
 // (close + suppress, never delete). NO browser, NO LLM, so no emitter setter and
 // no resume vocabulary beyond the shared BatchReviewResumeSchema.
