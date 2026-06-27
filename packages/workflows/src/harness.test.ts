@@ -47,7 +47,12 @@ import {
 } from "@autobroker/model";
 import { openDb, type Db } from "@autobroker/tools";
 
-import { harness, type HarnessLedgerContext } from "./harness.js";
+import {
+  harness,
+  THINKING_AUTO_EMIT_USE_CASES,
+  THINKING_EMIT_EFFORT,
+  type HarnessLedgerContext,
+} from "./harness.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -575,5 +580,35 @@ describe("harness.generate — transport throw (injected llm fault) fails CLOSED
     expect(rows[0]?.fail_reason).not.toBeNull(); // Error.name recorded on the throw.
     expect(rows[0]?.cost_usd).toBeNull(); // NULL-not-$0 (no usage on a failed call).
     expect(rows[0]?.pricing_source).toBe("unavailable");
+  });
+});
+
+describe("thinking-emit lane — recovery-hop membership + per-useCase effort", () => {
+  const RECOVERY_HOPS = [
+    "dealer_reply_extract_retry",
+    "geosearch_extract_retry",
+    "inventory_extract_retry",
+    "incentive_extract_retry",
+    "lead_form_map_retry",
+  ] as const;
+
+  it("all five *_retry hops run on the thinking-auto-emit lane", () => {
+    for (const uc of RECOVERY_HOPS) {
+      expect(THINKING_AUTO_EMIT_USE_CASES.has(uc)).toBe(true);
+    }
+  });
+
+  it("dealer_reply_extract_retry stays 'high'; the four shared hops fall through to 'medium'", () => {
+    expect(THINKING_EMIT_EFFORT["dealer_reply_extract_retry"]).toBe("high");
+    // The shared-helper hops are NOT in the map → `?? \"medium\"` resolves them.
+    for (const uc of [
+      "geosearch_extract_retry",
+      "inventory_extract_retry",
+      "incentive_extract_retry",
+      "lead_form_map_retry",
+    ] as const) {
+      expect(THINKING_EMIT_EFFORT[uc]).toBeUndefined();
+      expect(THINKING_EMIT_EFFORT[uc] ?? "medium").toBe("medium");
+    }
   });
 });
