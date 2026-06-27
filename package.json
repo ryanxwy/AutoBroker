@@ -28,8 +28,12 @@
     "e2e:serve-live": "node apps/ui/e2e/serve-live.mjs",
     "ui:functional": "pnpm --filter @autobroker/ui run build && for c in harness/cases/*.func.toml; do echo \"=== $c ===\"; AUTOBROKER_MODE=test MASTRA_TELEMETRY_DISABLED=1 DEEPSEEK_API_KEY=functional-dummy-not-used pnpm --filter @autobroker/harness run functional -- --case \"$(basename \"$c\")\" || exit 1; done",
     "desktop:bundle": "pnpm --filter @autobroker/desktop run bundle",
-    "desktop:start": "pnpm --filter @autobroker/desktop run start",
-    "desktop:smoke": "pnpm --filter @autobroker/desktop run smoke"
+    "desktop:dist": "pnpm --filter @autobroker/desktop run dist && node scripts/desktop-dist-tripwire.mjs",
+    "desktop:hooks:install": "node scripts/install-desktop-hooks.mjs",
+    "desktop:install": "node scripts/desktop-refresh.mjs --first-install",
+    "desktop:refresh": "node scripts/desktop-refresh.mjs --refresh",
+    "desktop:smoke": "pnpm --filter @autobroker/desktop run smoke",
+    "desktop:start": "pnpm --filter @autobroker/desktop run start"
   },
   "devDependencies": {
     "@types/node": "^24",
