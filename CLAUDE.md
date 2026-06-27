@@ -187,7 +187,17 @@ the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
    **closed** through the Mastra output Processor / post-step detector path:
    under HITL suspend and ask; with no HITL, hard-abort with a typed
    `MalformedToolCallAbort`. **Never** regex a function name out of content and
-   execute it. fail-open == silent-fallback.
+   execute it. fail-open == silent-fallback. **Bounded recovery (additive — never
+   weakens this floor):** the **no-HITL** lane of opt-in heavy extractors
+   (`geosearch_extract`/`inventory_extract`/`incentive_extract`/`lead_form_map` +
+   the original `dealer_reply_extract`) retries the malformed class EXACTLY ONCE on
+   the same-provider v4-pro+thinking lane (shared `recoverEmitWithRetry`: a fresh
+   generation over the ORIGINAL prompt, `provider==='deepseek'`-asserted, per-run
+   budget-capped, high-precision-signal-gated — never `retry:true` /
+   `experimental_repairToolCall` / regex-execute) before the identical hard-abort;
+   HITL stays suspend-first (recovery never fires under HITL). Every malformed trip
+   is recorded into `test_run_records` with a truncated, budget/PII-redacted sample
+   (inv #9).
 5. **Structured output:** never mix structured object output + tools in the same
    DeepSeek model step (per-step json_schema injection triggers the #1244 text
    dump). Use a single `emit_result` tool with a Zod schema, or a two-phase
