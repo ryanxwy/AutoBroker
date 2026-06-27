@@ -159,6 +159,14 @@ describe("redactMalformedSample", () => {
     expect(out).toContain("#");
   });
 
+  it("catches non-decimal numeric glyphs (No superscripts/fractions, Nl numerals)", () => {
+    for (const g of ["²", "½", "Ⅻ"]) {
+      const out = redactMalformedSample(`a ${g} b`);
+      expect(out).not.toContain(g);
+      expect(out).toContain("#");
+    }
+  });
+
   it("truncates a long input to <=240 chars + a … marker", () => {
     const long = "a".repeat(500);
     const out = redactMalformedSample(long);

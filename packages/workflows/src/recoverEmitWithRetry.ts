@@ -10,6 +10,16 @@
  * failure, a blob-only malformed signal, or a SECOND failure all fail closed at
  * the identical terminus.
  *
+ * NOTE — dealerReplyExtract.ts keeps its OWN inline `extractWithRecovery` rather
+ * than calling this helper (deliberate: the owner-blessed reply-extract path is
+ * the only one with live #1244-recovery proof, and it carries per-message
+ * `failed` semantics + a `servedUseCase` provenance return this generic helper
+ * does not). It also predates the two guards added here — the blob-only
+ * precision gate and the per-run budget. The two implementations therefore differ
+ * ON PURPOSE; consolidating the inline copy onto this helper is a deferred
+ * follow-up (do it only once the shared path is proven parity-equal on the
+ * reply-extract corpus), tracked here so they do not silently drift.
+ *
  * Design constraints (each one is load-bearing — violating any re-opens the
  * #1244 closure):
  *   - Skill-CALLED helper, NOT lifted into harness.generate. The suspend decision

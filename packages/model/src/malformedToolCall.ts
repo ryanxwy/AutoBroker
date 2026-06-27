@@ -141,8 +141,9 @@ const MALFORMED_SAMPLE_MAX = 240;
  *
  * The raw malformed turn is untrusted model content that may carry PII / budget
  * (inv #9: communication never includes budget; emails/phones are sensitive), so
- * we redact BEFORE truncating — a secret near the start must not survive into the
- * truncated tail. Redaction order is email → currency → magnitude-shorthand →
+ * we redact BEFORE truncating — truncating first could split a secret across the
+ * 240-char boundary, leaving an unredactable fragment the redactor no longer
+ * recognizes (e.g. `jane@exam|ple.com`). Redaction order is email → currency → magnitude-shorthand →
  * generic digit-run so the `<email>` / `<amount>` placeholders are already
  * digit-free when the generic digit pass runs (it would otherwise chew their
  * numerals).
@@ -150,10 +151,12 @@ const MALFORMED_SAMPLE_MAX = 240;
  * NO budget figure may survive. The generic backstop therefore redacts EVERY
  * digit run — including lone single digits and `k`/`m` magnitude shorthand
  * (`come down 2k`, `1.5k below invoice`), the most common way a buyer's target
- * price shows up in negotiation prose (one of the four capture sites). Unicode
- * digits (`\p{Nd}`, fullwidth etc.) are caught too. Over-redacting a stored
- * malformed sample is acceptable; leaking a figure is not — we lose a digit
- * before we leak budget.
+ * price shows up in negotiation prose (one of the four capture sites). The
+ * generic pass redacts the full Unicode numeric span — decimal digits
+ * (`\p{Nd}`, incl. fullwidth), plus `\p{No}` (superscripts/fractions like `²`/`½`)
+ * and `\p{Nl}` (numeric letters like Roman numerals) — so no numeric glyph
+ * survives. Over-redacting a stored malformed sample is acceptable; leaking a
+ * figure is not — we lose a digit before we leak budget.
  *
  * Pure + deterministic (no imports beyond the TS stdlib): a given input always
  * yields the same redacted, length-bounded string.
@@ -175,9 +178,11 @@ export function redactMalformedSample(content: string): string {
     .replace(/\b\p{Nd}+(?:[.,]\p{Nd}+)?\s*[kKmM]\b/gu, "<amount>")
     // 4. Generic backstop — redact EVERY remaining digit run, including lone
     //    single digits and separator/decimal groups, then any stray lone digit.
-    //    A single-digit-thousands target like bare `9` must NOT survive.
-    .replace(/\p{Nd}[\p{Nd}.,]*/gu, "#")
-    .replace(/\p{Nd}/gu, "#");
+    //    A single-digit-thousands target like bare `9` must NOT survive. Covers
+    //    the full numeric span (Nd decimal incl. fullwidth, No superscripts/
+    //    fractions, Nl numeric letters) so no numeric glyph leaks.
+    .replace(/[\p{Nd}\p{No}\p{Nl}][\p{Nd}\p{No}\p{Nl}.,]*/gu, "#")
+    .replace(/[\p{Nd}\p{No}\p{Nl}]/gu, "#");
 
   return redacted.length > MALFORMED_SAMPLE_MAX
     ? `${redacted.slice(0, MALFORMED_SAMPLE_MAX)}…`
