@@ -49,6 +49,11 @@ export interface MessageProvenance {
   /** The per-message classified intent the success state stamps onto messages
    *  (NOT NULL on success). */
   intent: Intent;
+  /** The sender's job title parsed by the keystone LLM emit (null when absent).
+   *  The LLM title FALLBACK: written to the message's dealer_contacts.role ONLY
+   *  when the deterministic role heuristic left it NULL (COALESCE-keep — a known
+   *  role is never overwritten). */
+  contactRole: string | null;
 }
 
 /** The outcome of one message's persist. */
@@ -147,6 +152,16 @@ UPDATE messages SET
 WHERE message_id = ?
 `;
 
+/** The LLM title fallback: stamp the sender's job title onto the message's
+ *  dealer_contacts.role, but ONLY when the deterministic role heuristic left it
+ *  NULL (the `role IS NULL` guard is the COALESCE-keep — a known role is never
+ *  overwritten). A null message.contact_id matches no row → no-op. */
+const UPDATE_CONTACT_ROLE = `
+UPDATE dealer_contacts SET role = ?
+WHERE contact_id = (SELECT contact_id FROM messages WHERE message_id = ?)
+  AND role IS NULL
+`;
+
 // ---------------------------------------------------------------------------
 // persistMessageQuotes
 // ---------------------------------------------------------------------------
@@ -208,11 +223,16 @@ export function persistMessageQuotes(opts: {
   // All rows valid — write them + mark succeeded in ONE transaction.
   const upsert = c.prepare(UPSERT_QUOTE);
   const markSucceeded = c.prepare(MARK_SUCCEEDED);
+  const updateContactRole = c.prepare(UPDATE_CONTACT_ROLE);
   const txn = c.transaction((): number => {
     for (const values of validatedRows) {
       upsert.run(...QUOTE_COLS.map((col) => values[col]));
     }
     markSucceeded.run(p.intent, now, p.messageId);
+    // LLM title fallback — gated on `role IS NULL` so the heuristic always wins.
+    if (p.contactRole != null) {
+      updateContactRole.run(p.contactRole, p.messageId);
+    }
     return validatedRows.length;
   });
 

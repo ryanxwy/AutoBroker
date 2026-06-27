@@ -90,6 +90,7 @@ function provenance(over: Partial<MessageProvenance> = {}): MessageProvenance {
     extractorProvider: "deepseek",
     extractionMethod: "text",
     intent: "real_quote",
+    contactRole: null,
     ...over,
   };
 }
@@ -152,6 +153,29 @@ function messageRow(): Record<string, unknown> {
   return db.$client
     .prepare("SELECT * FROM messages WHERE message_id = ?")
     .get(MSG_ID) as Record<string, unknown>;
+}
+
+const CONTACT_ID = "contact-aaaa";
+
+/** Seed a dealer_contacts row for the sender and point MSG_ID at it, so the LLM
+ *  title-fallback write has a target. `role` starts as supplied (null lets the
+ *  fallback fire; a value exercises the heuristic-wins COALESCE-keep). */
+function seedContact(role: string | null): void {
+  db.$client
+    .prepare(
+      "INSERT INTO dealer_contacts (contact_id, dealer_id, normalized_email, role) " +
+        "VALUES (?, ?, ?, ?)",
+    )
+    .run(CONTACT_ID, DEALER_A, "sales@example.com", role);
+  db.$client.prepare("UPDATE messages SET contact_id = ? WHERE message_id = ?").run(CONTACT_ID, MSG_ID);
+}
+
+function contactRole(): string | null {
+  return (
+    db.$client
+      .prepare("SELECT role FROM dealer_contacts WHERE contact_id = ?")
+      .get(CONTACT_ID) as { role: string | null }
+  ).role;
 }
 
 describe("persistMessageQuotes — success", () => {
@@ -245,6 +269,51 @@ describe("persistMessageQuotes — all-or-nothing failure", () => {
     expect(msg.quote_extraction_status).toBe("failed");
     expect(msg.quote_extraction_intent).toBeNull();
     expect(msg.processed_at).toBeNull(); // re-queued
+  });
+});
+
+describe("persistMessageQuotes — LLM title fallback (gated role write)", () => {
+  it("writes the LLM role onto the contact when the heuristic left it NULL", () => {
+    seedContact(null);
+    const res = persistMessageQuotes({
+      provenance: provenance({ contactRole: "Sales Manager" }),
+      rows: [row({ financing_mode: "cash", otd_total: 38120 })],
+      db,
+    });
+    expect(res.ok).toBe(true);
+    expect(contactRole()).toBe("Sales Manager");
+  });
+
+  it("never overwrites a role the heuristic already set (COALESCE-keep)", () => {
+    seedContact("Finance Manager");
+    persistMessageQuotes({
+      provenance: provenance({ contactRole: "Sales Manager" }),
+      rows: [row({ financing_mode: "cash", otd_total: 38120 })],
+      db,
+    });
+    expect(contactRole()).toBe("Finance Manager"); // heuristic wins
+  });
+
+  it("leaves the role NULL when the LLM emitted no title", () => {
+    seedContact(null);
+    persistMessageQuotes({
+      provenance: provenance({ contactRole: null }),
+      rows: [row({ financing_mode: "cash", otd_total: 38120 })],
+      db,
+    });
+    expect(contactRole()).toBeNull();
+  });
+
+  it("does not write a role on a failed (rolled-back) message", () => {
+    seedContact(null);
+    const res = persistMessageQuotes({
+      provenance: provenance({ contactRole: "Sales Manager" }),
+      // Rule 1 bleed → whole message fails → no role write.
+      rows: [row({ financing_mode: "cash", finance_apr: 3.9 })],
+      db,
+    });
+    expect(res.ok).toBe(false);
+    expect(contactRole()).toBeNull();
   });
 });
 

@@ -258,7 +258,11 @@ async function extractOneMessage(args: {
   useCase: typeof EXTRACT_USE_CASE | typeof EXTRACT_RETRY_USE_CASE;
   messageBody: string;
   attachmentText: string;
-}): Promise<{ quotes: DealerReplyQuoteRow[]; messageIntent: MessageIntent }> {
+}): Promise<{
+  quotes: DealerReplyQuoteRow[];
+  messageIntent: MessageIntent;
+  contactRole: string | null;
+}> {
   const result = await deps().harnessGenerate(
     {
       useCase: args.useCase,
@@ -276,6 +280,7 @@ async function extractOneMessage(args: {
   return {
     quotes: result.object.quotes,
     messageIntent: result.object.message_intent,
+    contactRole: result.object.contact_role,
   };
 }
 
@@ -300,6 +305,7 @@ async function extractWithRecovery(args: {
 }): Promise<{
   quotes: DealerReplyQuoteRow[];
   messageIntent: MessageIntent;
+  contactRole: string | null;
   servedUseCase: typeof EXTRACT_USE_CASE | typeof EXTRACT_RETRY_USE_CASE;
 }> {
   try {
@@ -488,6 +494,7 @@ const extractAndPersistStep = createStep({
             extractorProvider,
             extractionMethod,
             intent: extracted.messageIntent,
+            contactRole: extracted.contactRole,
           },
           rows,
           db: deps().getDb(),
