@@ -92,7 +92,11 @@ afterAll(() => {
 // 1. phaseInstall — happy path
 // ---------------------------------------------------------------------------
 
-describe("phaseInstall — happy path", () => {
+// phaseInstall drives the real macOS `ditto` / `xattr` (the feature is
+// macOS-only — see CLAUDE.md "Scope: macOS-only"). On a non-darwin CI runner
+// `/usr/bin/ditto` is absent (spawnSync ENOENT), so guard these real-install
+// blocks to darwin; the platform-independent blocks below still run everywhere.
+describe.skipIf(process.platform !== "darwin")("phaseInstall — happy path", () => {
   it("installs the bundle, writes the marker LAST, strips quarantine, clears the staged signal", () => {
     const paths = isolatedPaths();
     const staged = makeStagedApp();
@@ -168,7 +172,7 @@ describe("phaseInstall — happy path", () => {
 // 2. phaseInstall — completeness failure
 // ---------------------------------------------------------------------------
 
-describe("phaseInstall — completeness failure", () => {
+describe.skipIf(process.platform !== "darwin")("phaseInstall — completeness failure", () => {
   it("throws and writes NO marker when the staged bundle is missing server.cjs", () => {
     const paths = isolatedPaths();
     const staged = makeStagedApp({ withServer: false });
