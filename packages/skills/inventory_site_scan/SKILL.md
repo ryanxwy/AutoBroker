@@ -46,7 +46,15 @@ The runtime flow, grounded in the 6-step workflow
 6. **Persist + confirm** — ONE capture-then-serial write
    (`packages/tools/src/inventory/persist.ts`): VIN-arm and listing-URL-arm
    upserts with their composite UNIQUE keys, atomic VIN promotion, stale
-   listings superseded only under sources whose scan actually succeeded.
+   listings superseded only under sources whose scan actually succeeded. Each row
+   also carries the **deterministically-harvested price detail** (no LLM): `msrp`
+   + `listed_price`, plus `dealer_markup` (a **LABELED** market-adjustment / ADM
+   line only — the `selling>MSRP` inference is intentionally NOT used) and
+   `pricing_breakdown_json` (dealer add-on line items + `priceGated`). These two
+   columns merge **harvest-aware**: a re-scanned VDP that reads cleanly and finds
+   no markup CLEARS it (sentinel `0` / empty blob → `COALESCE` clears), a VDP not
+   visited PRESERVES the prior value (`null` → `COALESCE` keeps), so a red markup
+   flag de-ratchets honestly when the dealer removes it.
    Confirm is a zero-LLM templated summary; the run ends here — no auto-chain
    into lead submission.
 
@@ -92,8 +100,14 @@ In-repo paths only:
   `packages/tools/src/inventory/pure.ts`
 - Filter ladder (URL templates + DOM widget whitelist):
   `packages/tools/src/inventory/filter.ts`
-- Persist (capture-then-serial writer, supersede rules):
-  `packages/tools/src/inventory/persist.ts`
+- Persist (capture-then-serial writer, supersede rules, harvest-aware
+  markup/breakdown merge): `packages/tools/src/inventory/persist.ts`
+- VDP price + breakdown harvest (deterministic, regex-only, no LLM):
+  `packages/workflows/src/inventoryPriceHarvest.ts` (MSRP / selling / priceGated),
+  `packages/tools/src/inventory/inventoryBreakdownHarvest.ts` (LABELED dealer
+  markup + add-on line items). Migration `packages/db/drizzle/0004_*.sql` adds
+  `dealer_markup` + `pricing_breakdown_json`. (Downstream: `inventory_compare`'s
+  color cross-check advisory uses `packages/tools/src/inventory/colorMatch.ts`.)
 - SRP resolution / platform fingerprint: `packages/tools/src/inventoryScout.ts`
 - Browser service (isolation, politeness, block classification, filter face):
   `packages/tools/src/browser.ts`
