@@ -199,7 +199,7 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--run); }
   color: var(--ink);
 }
 .topbar .brand-link:hover { text-decoration: none; }
-.topbar .brand-mark { display: block; color: var(--gate); flex: 0 0 auto; }
+.topbar .brand-mark { display: block; flex: 0 0 auto; border-radius: 7px; object-fit: cover; box-shadow: var(--shadow); }
 .topbar .wordmark {
   font-family: var(--chrome-x);
   font-stretch: 125%;

@@ -5,25 +5,21 @@
  * quiet ledger iconography. Dependency wall: app/ui layer (react only).
  */
 
-/** Brand mark — a monoline steering wheel: instantly "car", geometric, on-theme.
- *  The orange fill comes from `.brand-mark { color: var(--gate) }`. */
-export function BrandMark({ size = 22 }: { size?: number }): JSX.Element {
+/** Brand mark — the BrokerClaw mascot (the product's logo), served as a static
+ *  asset from public/logo/ (the artwork is a raster sticker, so it is an <img>,
+ *  not an inline glyph like the rest of this set). Same asset the rest of the
+ *  product uses; decorative, so the accessible name lives on the brand link. */
+export function BrandMark({ size = 30 }: { size?: number }): JSX.Element {
   return (
-    <svg
+    <img
       className="brand-mark"
+      src="/logo/mark.svg"
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
+      alt=""
       aria-hidden="true"
-      focusable="false"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="2.5" />
-      <path d="M12 9.5V3.2M9.8 13.6 4.7 17.4M14.2 13.6l5.1 3.8" />
-    </svg>
+      draggable={false}
+    />
   );
 }
 
