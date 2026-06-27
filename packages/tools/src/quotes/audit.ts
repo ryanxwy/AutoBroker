@@ -89,6 +89,11 @@ const APR_MARKUP_PCT = 1.5;
 const MF_MARKUP_MULTIPLIER = 2.0;
 const DEALER_FEE_OUTLIER_MULTIPLIER = 2.0;
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
+// A manufacturer rebate larger than this fraction of the quote's own price is
+// implausible for that vehicle — almost always a cross-model contamination in
+// the incentive slice (e.g. an EV's $7,500 cash mis-attributed to a $31k
+// compact SUV). The audit must not advise the buyer to demand it.
+const REBATE_PLAUSIBILITY_PCT = 0.2;
 
 // --------------------------------------------------------------------------- //
 // Severity classifier — the surfacing authority                              //
@@ -343,6 +348,11 @@ function checkMissingRebate(
   // per incentive row over-states the missed savings (e.g. "10 rebates not
   // applied" summing to ~$38k). Collapse to the single best (highest) unapplied
   // amount per rebate TYPE, and note how many variants exist.
+  // Anchor on this quote's own price so the plausibility ceiling scales with the
+  // vehicle (20% of a $31k SUV = $6.2k; 20% of a $60k EV = $12k). When neither
+  // price is known the guard fails open — a no-price quote is already flagged
+  // MISSING_BREAKDOWN, and we never silently drop a rebate on a weak signal.
+  const rebatePriceAnchor = quote.selling_price ?? quote.otd_total;
   const bestByType = new Map<string, { amount: number; count: number }>();
   for (const inc of incentives) {
     if ((inc.make ?? "").toLowerCase() !== profileMake) continue;
@@ -351,6 +361,9 @@ function checkMissingRebate(
     const incType = (inc.type ?? "").toLowerCase();
     if (incType && appliedStrings.some((s) => s && s.includes(incType))) continue;
     const amount = inc.amount ?? 0;
+    if (rebatePriceAnchor !== null && amount > rebatePriceAnchor * REBATE_PLAUSIBILITY_PCT) {
+      continue;
+    }
     const prev = bestByType.get(incType);
     if (prev === undefined) bestByType.set(incType, { amount, count: 1 });
     else bestByType.set(incType, { amount: Math.max(prev.amount, amount), count: prev.count + 1 });

@@ -398,6 +398,34 @@ describe("MISSING_REBATE", () => {
     const q = quote({ rebates_json: [] });
     expect(codes(auditQuote(q, [], [], prof))).not.toContain("MISSING_REBATE");
   });
+
+  it("suppresses an implausibly large rebate on a priced quote (cross-model contamination)", () => {
+    // $10,000 customer_cash on a $31k quote = 32% — a cross-model leak (e.g. an
+    // EV's cash mis-attributed to a compact SUV); never advise demanding it.
+    const q = quote({ selling_price: 31000, rebates_json: [] });
+    expect(codes(auditQuote(q, [], [inc({ amount: 10000 })], prof))).not.toContain("MISSING_REBATE");
+  });
+
+  it("still fires for a plausible rebate on a priced quote", () => {
+    const q = quote({ selling_price: 31000, rebates_json: [] });
+    expect(codes(auditQuote(q, [], [inc({ amount: 1500 })], prof))).toContain("MISSING_REBATE");
+  });
+
+  it("anchors the plausibility guard on otd_total when selling_price is null", () => {
+    const q = quote({ selling_price: null, otd_total: 33000, rebates_json: [] });
+    expect(codes(auditQuote(q, [], [inc({ amount: 10000 })], prof))).not.toContain("MISSING_REBATE");
+  });
+
+  it("fails open (still fires) when the quote carries no price anchor", () => {
+    const q = quote({ selling_price: null, otd_total: null, rebates_json: [] });
+    expect(codes(auditQuote(q, [], [inc({ amount: 10000 })], prof))).toContain("MISSING_REBATE");
+  });
+
+  it("guard boundary: a rebate at exactly the plausibility ceiling fires, just over drops", () => {
+    const q = quote({ selling_price: 31000, rebates_json: [] }); // 20% ceiling = $6,200
+    expect(codes(auditQuote(q, [], [inc({ amount: 6200 })], prof))).toContain("MISSING_REBATE");
+    expect(codes(auditQuote(q, [], [inc({ amount: 6201 })], prof))).not.toContain("MISSING_REBATE");
+  });
 });
 
 // --------------------------------------------------------------------------- //
