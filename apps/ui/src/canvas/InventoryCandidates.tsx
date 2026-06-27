@@ -192,15 +192,20 @@ function ColorCrossCheckTile({
   onDismiss,
 }: {
   items: InventoryColorCrossCheckItem[];
-  onAdd: (color: string) => void;
+  onAdd: (color: string) => Promise<void>;
   onDismiss: () => void;
 }): JSX.Element {
   // The names the buyer has tapped this view — immediate feedback + no double-add
   // (the next ranker refetch drops a reconciled name from the suggestions anyway).
   const [added, setAdded] = useState<Set<string>>(new Set());
-  const handleAdd = (color: string): void => {
-    setAdded((prev) => new Set(prev).add(color));
-    onAdd(color);
+  const handleAdd = async (color: string): Promise<void> => {
+    try {
+      await onAdd(color);
+      // Only mark added (the ✓) once the PATCH actually succeeded.
+      setAdded((prev) => new Set(prev).add(color));
+    } catch {
+      // PATCH failed — leave the button enabled (no false ✓) so the buyer retries.
+    }
   };
   return (
     <div className="color-crosscheck" role="note" data-testid="inventory-color-crosscheck">
@@ -221,7 +226,7 @@ function ColorCrossCheckTile({
                   className="cc-add mini-chip"
                   data-testid="inventory-color-add"
                   disabled={added.has(s)}
-                  onClick={() => handleAdd(s)}
+                  onClick={() => void handleAdd(s)}
                 >
                   {added.has(s) ? `Added ✓ ${s}` : `Add “${s}” to my colors`}
                 </button>
@@ -315,7 +320,7 @@ export function InventoryCandidates({
       {showCrossCheck && (
         <ColorCrossCheckTile
           items={colorCrossCheck}
-          onAdd={(color) => void onAddPreferredColor?.(color)}
+          onAdd={(color) => onAddPreferredColor?.(color) ?? Promise.resolve()}
           onDismiss={() => setDismissedFor((prev) => new Set(prev).add(ccKey))}
         />
       )}

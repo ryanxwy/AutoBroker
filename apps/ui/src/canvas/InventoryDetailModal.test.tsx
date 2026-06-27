@@ -104,6 +104,14 @@ describe("InventoryDetailModal — labeled markup", () => {
     expect(doc("inventory-detail-markup")).toBeNull();
     close();
   });
+
+  it("renders the markup row even with NO listed price and NO MSRP (price-gated VDP)", () => {
+    const close = open(makeRow({ dealer_markup: 2500, listed_price: null, msrp: null }));
+    const markup = doc("inventory-detail-markup");
+    expect(markup).not.toBeNull();
+    expect(markup!.textContent).toBe("+$2,500");
+    close();
+  });
 });
 
 // ---------------------------------------------------------------------------

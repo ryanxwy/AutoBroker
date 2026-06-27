@@ -148,6 +148,15 @@ describe("harvestBreakdownFromSnapshot — bundle / fee / government exclusions"
     expect(r.addonsTotal).toBe(1200);
   });
 
+  it("keeps BOTH a bundle and an UNRELATED smaller add-on (components don't reconstruct the total)", () => {
+    // The lone $99 nitrogen line is NOT a component of the $1,295 Appearance
+    // Package; their sum (1394) is well below the bundle, so neither is dropped.
+    const r = harvestBreakdownFromSnapshot("Appearance Package $1,295 Nitrogen $99");
+    expect(r.addOns).toContainEqual({ label: "appearance package", amount: 1295 });
+    expect(r.addOns).toContainEqual({ label: "nitrogen", amount: 99 });
+    expect(r.addonsTotal).toBe(1394); // 1295 + 99 — the bundle is NOT over-dropped
+  });
+
   it("excludes government charges and the manufacturer destination/doc fees", () => {
     const r = harvestBreakdownFromSnapshot(
       "MSRP $40,000 Sales Tax $2,400 Title Fee $85 Registration $350 " +

@@ -1104,6 +1104,69 @@ describe("inventory_site_scan — extract phase", () => {
     expect(rows).toEqual([{ dealer_markup: null, pricing_breakdown_json: null }]);
   });
 
+  it("a re-scan whose VDP is UNREADABLE (breakdownParsed=false) PRESERVES a prior dealer_markup", async () => {
+    seedOne();
+    const vdpUrl = "https://www.d-a.com/new/Hyundai-Tucson-1.htm";
+
+    // Scan 1: a READABLE VDP with a LABELED market adjustment → writes 1995.
+    const readable = harvestBreakdownFromSnapshot(
+      "MSRP $32,100  Market Adjustment $1,995  Selling Price $34,095",
+    );
+    expect(readable.dealerMarkup).toBe(1995);
+    expect(readable.breakdownParsed).toBe(true);
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        listing({ vin: VIN_A, price: 34095, listing_url: `${vdpUrl}?utm_source=srp` }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) =>
+        args.targets.map((t) =>
+          scannedOutcome(t, {
+            vdpFacts: [
+              vdpFact({ url: vdpUrl, vin: VIN_A, listedPrice: 34095, msrp: 32100, breakdown: readable }),
+            ],
+          }),
+        ),
+      ),
+    });
+    const first = await runApproved("scan-vdp-preserve-1a");
+    expect(first.status).toBe("success");
+    if (first.status !== "success") return;
+    expect(
+      (db.$client.prepare("SELECT dealer_markup FROM inventory_listings").get() as {
+        dealer_markup: number | null;
+      }).dealer_markup,
+    ).toBe(1995);
+
+    // Scan 2 of the SAME car (same VIN + URL → same listing_id), but this time
+    // the VDP pricing text is UNREADABLE: breakdownParsed=false. The clear
+    // sentinel must NOT fire — the prior 1995 markup is PRESERVED, not 0/null.
+    const unreadable = harvestBreakdownFromSnapshot("2026 Hyundai Tucson Jet Black 24/30 MPG");
+    expect(unreadable.breakdownParsed).toBe(false);
+    expect(unreadable.dealerMarkup).toBeNull();
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        listing({ vin: VIN_A, price: 34095, listing_url: `${vdpUrl}?utm_source=srp` }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) =>
+        args.targets.map((t) =>
+          scannedOutcome(t, {
+            // A VIN-only VDP whose pricing couldn't be read — a fact still exists.
+            vdpFacts: [
+              vdpFact({ url: vdpUrl, vin: VIN_A, listedPrice: null, msrp: null, breakdown: unreadable }),
+            ],
+          }),
+        ),
+      ),
+    });
+    const second = await runApproved("scan-vdp-preserve-1b");
+    expect(second.status).toBe("success");
+    if (second.status !== "success") return;
+    const row = db.$client
+      .prepare("SELECT dealer_markup FROM inventory_listings")
+      .get() as { dealer_markup: number | null };
+    expect(row.dealer_markup).toBe(1995); // PRESERVED — not cleared to 0 or null
+  });
+
   it("an LLM-emitted listing_url OUTSIDE the collected href set is cleared + counted; the key-less row dies at persist", async () => {
     seedOne();
     __setInventoryScanDepsForTests({

@@ -505,7 +505,7 @@ describe("InventoryCandidates — color config cross-check", () => {
     expect(adds[1]!.textContent).toContain("Rallye Red");
   });
 
-  it("Add calls onAddPreferredColor with the canonical stocked name", () => {
+  it("Add calls onAddPreferredColor with the canonical name and marks added on SUCCESS", async () => {
     const calls: string[] = [];
     const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
     const { all } = render(
@@ -518,10 +518,29 @@ describe("InventoryCandidates — color config cross-check", () => {
       />,
     );
     click(all("inventory-color-add")[0]!);
+    await act(async () => {}); // flush the awaited PATCH + the success setAdded
     expect(calls).toEqual(["Radiant Red Metallic II"]);
-    // The tapped suggestion shows immediate feedback + disables (no double-add).
+    // The tapped suggestion shows the ✓ + disables (no double-add) once it resolved.
     expect((all("inventory-color-add")[0]! as HTMLButtonElement).disabled).toBe(true);
     expect(all("inventory-color-add")[0]!.textContent).toContain("Added");
+  });
+
+  it("does NOT mark added when onAddPreferredColor REJECTS (button stays actionable, no false ✓)", async () => {
+    const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
+    const { all } = render(
+      <InventoryCandidates
+        inventory={ok(result)}
+        profileId="prof-1"
+        onAddPreferredColor={async () => {
+          throw new Error("patch failed");
+        }}
+      />,
+    );
+    click(all("inventory-color-add")[0]!);
+    await act(async () => {}); // flush the awaited (rejecting) PATCH
+    const btn = all("inventory-color-add")[0]! as HTMLButtonElement;
+    expect(btn.disabled).toBe(false); // still actionable — retry allowed
+    expect(btn.textContent).not.toContain("Added"); // no optimistic ✓ on failure
   });
 
   it("dismiss hides the tile", () => {

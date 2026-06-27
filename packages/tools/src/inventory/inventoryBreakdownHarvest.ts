@@ -233,10 +233,14 @@ function findAddOns(textLc: string, amounts: AmountHit[]): { label: string; amou
     }
   }
 
-  // Drop bundle TOTALS when itemized components are present (no double-count); a
-  // standalone bundle (no components) is kept as the only signal.
-  const itemized = collected.filter((c) => !c.bundle);
-  const kept = itemized.length > 0 ? itemized : collected;
+  // Drop a bundle TOTAL only when its components are actually itemized — i.e. the
+  // separately-listed NON-bundle add-ons reconstruct the total (their sum >= the
+  // bundle's own amount). A standalone bundle, OR one sitting beside only smaller
+  // UNRELATED add-ons whose sum stays below it, is KEPT (it is not a double-count).
+  const itemizedTotal = collected
+    .filter((c) => !c.bundle)
+    .reduce((sum, c) => sum + c.amount, 0);
+  const kept = collected.filter((c) => !c.bundle || itemizedTotal < c.amount);
 
   // Dedup by (label, amount).
   const seen = new Set<string>();

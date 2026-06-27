@@ -49,8 +49,10 @@ export function InventoryDetailModal({
   const markup =
     typeof row.dealer_markup === "number" && row.dealer_markup > 0 ? row.dealer_markup : null;
   // The price stack is shown when there is any price/discount to anchor the
-  // (static) rebate caveat to.
-  const hasPriceInfo = listed !== null || msrp !== null || belowMsrp !== null;
+  // (static) rebate caveat to — OR a labeled markup, so a price-gated VDP that
+  // still exposes a "Market Adjustment" renders the RED markup row (the card
+  // flags it RED; the modal must not hide the very thing).
+  const hasPriceInfo = listed !== null || msrp !== null || belowMsrp !== null || markup !== null;
   const addOns = Array.isArray(row.add_ons) ? row.add_ons : [];
   const addonsTotal = typeof row.addons_total === "number" ? row.addons_total : null;
   // Severity → token: add-ons are AMBER caution, escalating to RED at a heavy

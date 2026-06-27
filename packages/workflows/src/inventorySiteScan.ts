@@ -1960,17 +1960,27 @@ const extractStep = createStep({
             if (fact !== undefined) {
               if (price === null) price = fact.listedPrice;
               msrp = fact.msrp;
-              // This row's VDP WAS harvested. A labeled market adjustment →
-              // its amount; no labeled markup → 0 ("harvested, no markup",
-              // clears a stale value via COALESCE(0, old)=0). The blob is
-              // always an explicit non-null string so it overwrites in lockstep.
-              dealerMarkup = fact.breakdown.dealerMarkup ?? 0;
-              pricingBreakdownJson = JSON.stringify({
-                addOns: fact.breakdown.addOns,
-                addonsTotal: fact.breakdown.addonsTotal,
-                priceGated: fact.priceGated,
-                breakdownParsed: fact.breakdown.breakdownParsed,
-              });
+              // This row's VDP was harvested AND its pricing text was READABLE
+              // (breakdownParsed===true): a labeled market adjustment → its
+              // amount; no labeled markup → 0 ("harvested, no markup", clears a
+              // stale value via COALESCE(0, old)=0). The blob is always an
+              // explicit non-null string so scalar + JSON overwrite in lockstep.
+              //
+              // breakdownParsed===false means the pricing text could NOT be read
+              // (a VIN/price-only VDP whose fact survives on its VIN) — that is
+              // UNKNOWN, not "none". Emitting the 0 sentinel here would silently
+              // DESTROY a previously-harvested markup. So leave BOTH keys
+              // undefined → persist passes null → COALESCE PRESERVES the prior
+              // markup + blob (scalar and JSON stay in lockstep, both preserved).
+              if (fact.breakdown.breakdownParsed) {
+                dealerMarkup = fact.breakdown.dealerMarkup ?? 0;
+                pricingBreakdownJson = JSON.stringify({
+                  addOns: fact.breakdown.addOns,
+                  addonsTotal: fact.breakdown.addonsTotal,
+                  priceGated: fact.priceGated,
+                  breakdownParsed: fact.breakdown.breakdownParsed,
+                });
+              }
             }
           }
 
