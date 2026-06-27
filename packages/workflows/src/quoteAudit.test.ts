@@ -431,4 +431,31 @@ describe("quote_audit — read-only three-branch + idempotent audit", () => {
     expect(codesFor(out, "q-probe")).not.toContain("MISSING_REBATE");
     expect(codesFor(out, "q-probe")).toHaveLength(0);
   });
+
+  it("Probe-7: an implausibly large (cross-model contamination) incentive is NOT advised", async () => {
+    seedProfile(); // Hyundai Tucson 92614.
+    seedDealer(DEALER_A, "Alpha Hyundai");
+    // A same-model $10,000 customer_cash — the live bug's cross-model leak (an
+    // IONIQ figure stamped onto the Tucson). On a ~$31k quote that is 32% of the
+    // price; the magnitude plausibility guard must suppress the advice rather
+    // than tell the buyer to demand a phantom $10k rebate on every quote.
+    seedIncentive({ amount: 10000 });
+    seedQuote({
+      quoteId: "q-bogus",
+      dealerId: DEALER_A,
+      messageId: "m-bogus",
+      sellingPrice: 31000,
+      docFee: 80,
+      salesTax: 2325,
+      otdTotal: 33405,
+      rebatesJson: null,
+    });
+
+    const { result } = await startRun("qa-probe7-1", null);
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as AuditOutput;
+    expect(out.audited).toBe(1);
+    expect(codesFor(out, "q-bogus")).not.toContain("MISSING_REBATE");
+  });
 });
