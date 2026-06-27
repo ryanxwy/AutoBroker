@@ -86,6 +86,7 @@ function NegotiationCard({
   const verdict = row.verdict;
   const batnaGap = row.batna_gap_usd ?? null;
   const verdictReason = row.verdict_reason;
+  const extractFailed = row.extract_failed_count > 0;
   const otd = dollarLabel(row.best_otd);
   const discount = dollarLabel(row.best_discount);
 
@@ -121,6 +122,14 @@ function NegotiationCard({
               : verdictReason === "silent"
                 ? "gone quiet"
                 : "not moving"}
+          </span>
+        )}
+        {/* A dealer reply failed quote extraction (the dealer_reply_extract skill
+            flips messages.quote_extraction_status to 'failed', even after its
+            automatic same-provider recovery hop). */}
+        {extractFailed && (
+          <span className="mini-chip" data-testid="message-extract-failed-badge">
+            extraction failed
           </span>
         )}
       </div>

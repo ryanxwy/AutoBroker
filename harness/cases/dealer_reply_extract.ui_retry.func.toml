@@ -51,8 +51,9 @@ kind = "ui"
 fixture_state = "dealer_reply_extract_retry_world"
 purpose = "A failed extraction lights the per-thread extract-failed badge; the manual retry button is GONE (recovery is automatic + same-provider, not a user affordance)."
 
-# Open the Replies tab — the Threads section (with the extract-failed badge)
-# lives behind it (the click both navigates AND waits for the section to mount).
+# Open the Replies tab — the Negotiations board renders the per-dealer
+# extract-failed badge on its card (the click both navigates AND waits for the
+# board to mount).
 [[steps.ui_actions]]
 verb = "click"
 testid = "canvas-tab-replies"

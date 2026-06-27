@@ -922,6 +922,9 @@ export const DealerNegotiationRowSchema = z
     candidate_status: z.string().nullable(),
     lead_submission_count: z.number(),
     email_count: z.number(),
+    // COUNT of this dealer's inbound messages whose extraction failed (the grid
+    // always returns it; the board lights the extract-failed badge when >0).
+    extract_failed_count: z.number(),
     quote_sent: z.boolean(),
     best_otd: z.number().nullable(),
     best_discount: z.number().nullable(),

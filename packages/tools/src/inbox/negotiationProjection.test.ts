@@ -69,6 +69,15 @@ function outbound(c: Db["$client"], id: string, threadId: string, processedAt: n
       "VALUES (?, ?, 'outbound', ?, ?, 'pending')",
   ).run(id, threadId, processedAt, PROFILE);
 }
+/** An inbound message whose extraction FAILED (the CHECK requires intent NULL for
+ *  status 'failed'). Counts toward extract_failed_count. */
+function inboundFailed(c: Db["$client"], id: string, threadId: string, receivedAt: number): void {
+  c.prepare(
+    "INSERT INTO messages (message_id, thread_id, direction, received_at, search_profile_id, " +
+      "quote_extraction_status, quote_extraction_intent) " +
+      "VALUES (?, ?, 'inbound', ?, ?, 'failed', NULL)",
+  ).run(id, threadId, receivedAt, PROFILE);
+}
 function quote(
   c: Db["$client"],
   q: { quoteId: string; dealerId: string; otd: number; discount: number; vin: string; receivedAt: number },
@@ -143,6 +152,28 @@ describe("listProfileDealerNegotiations", () => {
     expect(bare.best_otd).toBeNull();
     expect(bare.best_discount).toBeNull();
     expect(bare.negotiation_status).toBeUndefined(); // no thread → no status chip
+  });
+
+  it("counts each dealer's inbound failed-extraction messages (extract_failed_count); a clean dealer is 0", () => {
+    const c = db.$client;
+    dealer(c, "d-fail", "Fail Hyundai");
+    dealer(c, "d-clean", "Clean Hyundai");
+    bind(c, "d-fail");
+    bind(c, "d-clean");
+
+    // d-fail: one pending inbound + one FAILED inbound → extract_failed_count 1.
+    thread(c, "t-f", "d-fail");
+    inbound(c, "in-f-ok", "t-f", NOW - 2 * DAY);
+    inboundFailed(c, "in-f-bad", "t-f", NOW - 1 * DAY);
+
+    // d-clean: a bare reply, no failure → extract_failed_count 0.
+    thread(c, "t-cl", "d-clean");
+    inbound(c, "in-cl", "t-cl", NOW - 1 * DAY);
+
+    const rows = listProfileDealerNegotiations(db, PROFILE, { nowMs: NOW });
+    const byId = new Map(rows.map((r) => [r.dealer_id, r]));
+    expect(byId.get("d-fail")!.extract_failed_count).toBe(1);
+    expect(byId.get("d-clean")!.extract_failed_count).toBe(0);
   });
 
   it("reduces a multi-thread dealer to its MOST-ACTIONABLE status (rank-min wins over recency)", () => {

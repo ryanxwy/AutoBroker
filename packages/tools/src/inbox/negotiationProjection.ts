@@ -68,6 +68,8 @@ export interface DealerNegotiationRow {
   candidate_status: string | null;
   lead_submission_count: number;
   email_count: number;
+  /** COUNT of this dealer's inbound messages with quote_extraction_status='failed'. */
+  extract_failed_count: number;
   quote_sent: boolean;
   best_otd: number | null;
   best_discount: number | null;
@@ -87,6 +89,20 @@ function emailCountByDealer(db: Db, profileId: string): Map<string, number> {
       "SELECT t.dealer_id AS dealerId, COUNT(*) AS cnt " +
         "FROM messages m JOIN threads t ON t.thread_id = m.thread_id " +
         "WHERE m.search_profile_id = ? " +
+        "GROUP BY t.dealer_id",
+    )
+    .all(profileId) as Array<{ dealerId: string; cnt: number }>;
+  return new Map(rows.map((r) => [r.dealerId, r.cnt]));
+}
+
+/** COUNT(inbound messages whose quote_extraction_status='failed') per dealer via
+ *  the same threads.dealer_id join, profile-scoped. Absent from the map ⇒ 0. */
+function extractFailedCountByDealer(db: Db, profileId: string): Map<string, number> {
+  const rows = db.$client
+    .prepare(
+      "SELECT t.dealer_id AS dealerId, COUNT(*) AS cnt " +
+        "FROM messages m JOIN threads t ON t.thread_id = m.thread_id " +
+        "WHERE m.search_profile_id = ? AND m.direction = 'inbound' AND m.quote_extraction_status = 'failed' " +
         "GROUP BY t.dealer_id",
     )
     .all(profileId) as Array<{ dealerId: string; cnt: number }>;
@@ -153,6 +169,7 @@ export function listProfileDealerNegotiations(
 ): DealerNegotiationRow[] {
   const base = listProfileDealerRowsWithVerdicts(db, profileId, opts);
   const emails = emailCountByDealer(db, profileId);
+  const extractFailed = extractFailedCountByDealer(db, profileId);
   const quotes = quoteAggByDealer(db, profileId);
   const statuses = negotiationStatusByDealer(db, profileId, opts);
 
@@ -168,6 +185,7 @@ export function listProfileDealerNegotiations(
       candidate_status: (r.candidate_status as string | null) ?? null,
       lead_submission_count: Number(r.lead_submission_count ?? 0),
       email_count: emails.get(dealerId) ?? 0,
+      extract_failed_count: extractFailed.get(dealerId) ?? 0,
       quote_sent: agg !== undefined,
       best_otd: agg?.bestOtd ?? null,
       best_discount: agg?.bestDiscount ?? null,

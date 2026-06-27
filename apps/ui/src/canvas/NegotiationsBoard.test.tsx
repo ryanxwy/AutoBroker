@@ -28,6 +28,7 @@ function makeRow(overrides: Partial<DealerNegotiationRow> = {}): DealerNegotiati
     candidate_status: "bound",
     lead_submission_count: 1,
     email_count: 5,
+    extract_failed_count: 0,
     quote_sent: true,
     best_otd: 43210,
     best_discount: 2500,
@@ -87,6 +88,25 @@ describe("NegotiationsBoard — cards + metrics", () => {
     expect(text).toContain("Jim Click Hyundai");
     expect(text).toContain("countered");
     expect(text).not.toContain("d-1");
+  });
+
+  it("lights the extract-failed badge when extract_failed_count > 0, and not when 0", () => {
+    const failed = render(
+      <NegotiationsBoard
+        negotiations={ok([makeRow({ extract_failed_count: 1 })])}
+        dealerCount={1}
+      />,
+    );
+    expect(
+      failed.container.querySelector('[data-testid="message-extract-failed-badge"]'),
+    ).not.toBeNull();
+
+    const clean = render(
+      <NegotiationsBoard negotiations={ok([makeRow({ extract_failed_count: 0 })])} dealerCount={1} />,
+    );
+    expect(
+      clean.container.querySelector('[data-testid="message-extract-failed-badge"]'),
+    ).toBeNull();
   });
 
   it("renders the give-up verdict chip (consider switching + the BATNA gap, no competitor name)", () => {

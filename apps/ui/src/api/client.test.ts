@@ -322,6 +322,7 @@ describe("ApiClient — dealer negotiations", () => {
     candidate_status: "contacted",
     lead_submission_count: 1,
     email_count: 2,
+    extract_failed_count: 0,
     quote_sent: true,
     best_otd: 33192,
     best_discount: 1500,
