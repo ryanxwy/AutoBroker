@@ -25,7 +25,9 @@
  *      npm-install it with npm_config_runtime=electron + the pinned Electron
  *      version, so prebuild-install fetches the Electron-ABI binary (zero
  *      compile); then prove the ABI by requiring better-sqlite3 inside the
- *      Electron binary in Node mode.
+ *      Electron binary in Node mode. The npm-install + ABI-proof are SKIPPED
+ *      when bundle/.deps-stamp shows the native deps are unchanged (so a repeat
+ *      bundle does no network I/O); package.json is still written every run.
  *
  * ELECTRON VERSION BUMP-GATE (checked 2026-06-12): pin the newest Electron
  * major that has an official better-sqlite3 prebuild asset. Verify with
@@ -35,6 +37,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -206,6 +209,8 @@ const nativeDeps = {
   ]),
   playwright: installedVersion(join(repoRoot, "packages", "tools"), ["playwright"]),
 };
+// Always write package.json — ensures it reflects the current workspace
+// versions even on a skip-install run (e.g. after a package.json deletion).
 writeFileSync(
   join(bundleDir, "package.json"),
   JSON.stringify(
@@ -219,24 +224,52 @@ writeFileSync(
     2,
   ) + "\n",
 );
-execFileSync("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], {
-  cwd: bundleDir,
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    npm_config_runtime: "electron",
-    npm_config_target: electronVersion,
-    npm_config_disturl: "https://electronjs.org/headers",
-  },
-});
 
-// ABI proof: require better-sqlite3 inside Electron's Node (the exact runtime
-// utilityProcess uses). A system-ABI binary would throw ERR_DLOPEN_FAILED here.
-execFileSync(
-  electronBin,
-  ["-e", "require('better-sqlite3')(':memory:').prepare('select 1 as ok').get(); console.log('abi-ok');"],
-  { cwd: bundleDir, stdio: "inherit", env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
-);
+// Stamp: SHA-256 of the exact set of native-dep versions + Electron version.
+// Written to bundle/.deps-stamp after a successful install + ABI proof. On the
+// next run, if the stamp matches and node_modules/better-sqlite3 still exists
+// (guard against a deleted/corrupt node_modules with a stale stamp), skip the
+// npm install and ABI proof entirely so offline rebuilds succeed and the common
+// case is fast. The stamp file lives inside bundle/ which is gitignored.
+const depsStampContent = JSON.stringify({
+  electronVersion,
+  "better-sqlite3": nativeDeps["better-sqlite3"],
+  libsql: nativeDeps.libsql,
+  playwright: nativeDeps.playwright,
+});
+const depsStamp = createHash("sha256").update(depsStampContent).digest("hex");
+const stampPath = join(bundleDir, ".deps-stamp");
+
+const savedStamp = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : null;
+const nativeInstalled = existsSync(join(bundleDir, "node_modules", "better-sqlite3"));
+
+if (savedStamp === depsStamp && nativeInstalled) {
+  console.log(`bundle: native deps unchanged, skipping install (${depsStamp.slice(0, 7)})`);
+} else {
+  execFileSync("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], {
+    cwd: bundleDir,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      npm_config_runtime: "electron",
+      npm_config_target: electronVersion,
+      npm_config_disturl: "https://electronjs.org/headers",
+    },
+  });
+
+  // ABI proof: require better-sqlite3 inside Electron's Node (the exact runtime
+  // utilityProcess uses). A system-ABI binary would throw ERR_DLOPEN_FAILED here.
+  execFileSync(
+    electronBin,
+    ["-e", "require('better-sqlite3')(':memory:').prepare('select 1 as ok').get(); console.log('abi-ok');"],
+    { cwd: bundleDir, stdio: "inherit", env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
+  );
+
+  // Write stamp ONLY after both install and ABI proof succeed; a failed install
+  // must not leave a "fresh" stamp that would cause the next run to skip a
+  // necessary reinstall.
+  writeFileSync(stampPath, depsStamp + "\n");
+}
 
 console.log(
   `bundle: OK (electron ${electronVersion}, better-sqlite3 ${nativeDeps["better-sqlite3"]}, libsql ${nativeDeps.libsql}, playwright ${nativeDeps.playwright})`,
