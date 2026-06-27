@@ -36,10 +36,11 @@
  * and navigates to a placeholder (the deep-link digest target is a later wave).
  */
 
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   app,
@@ -53,6 +54,16 @@ import {
   utilityProcess,
   type UtilityProcess,
 } from "electron";
+
+import {
+  isValidRepoPath,
+  markerPathFor,
+  readMarker,
+  readStagedSignal,
+  refreshSpawnSpec,
+  stagedPathFor,
+  type DesktopRefreshMarker,
+} from "./launchFreshness.js";
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist
 const desktopDir = resolve(here, "..");
@@ -465,7 +476,185 @@ async function createWindow(port: number): Promise<void> {
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
 }
 
+// ---- packaged launch-time freshness (mechanism C) --------------------------
+// Make the INSTALLED build auto-fresh without ever blocking or blanking the
+// launch: boot immediately, and if a newer build is staged (cold start) or the
+// repo source has moved past what is installed, surface a NON-blocking "Update
+// ready — Relaunch". Entirely INERT unless this is the packaged app AND a valid
+// external marker for this install path exists — so dev (`electron .`,
+// app.isPackaged === false, used by the smoke suite) and a shipped dmg / copied
+// .app (no marker) take none of this. Fail-soft throughout: any error degrades
+// to a normal launch of the installed build. The marker lives OUTSIDE the
+// bundle and holds DATA ONLY; interpreters resolve by fixed rule (never the
+// marker). No new IPC/preload — the UI reuses the existing toast + notification
+// seams.
+
+/** Resolved, validated launch-freshness state for THIS install. */
+interface FreshnessContext {
+  dataDir: string;
+  marker: DesktopRefreshMarker;
+  stagedPath: string;
+}
+
+/** The installed `.app` bundle root, derived by FIXED RULE from this packaged
+ *  process — never from the marker. process.resourcesPath is
+ *  `<AutoBroker.app>/Contents/Resources`, so the bundle root is two dirs up; the
+ *  refresh script keys the marker by sha256 of this same path. */
+function installedAppPath(): string {
+  return dirname(dirname(process.resourcesPath));
+}
+
+/** Read + validate the external marker for this install. null when there is no
+ *  usable marker (missing / corrupt / repoPath is not a git work-tree) → the
+ *  caller boots the installed build unchanged. */
+function resolveFreshnessContext(): FreshnessContext | null {
+  const dataDir = realDataDir();
+  const appPath = installedAppPath();
+  const marker = readMarker(markerPathFor(dataDir, appPath));
+  if (marker === null) return null;
+  if (!isValidRepoPath(marker.repoPath)) return null;
+  return { dataDir, marker, stagedPath: stagedPathFor(dataDir, appPath) };
+}
+
+/** Spawn the refresh orchestrator detached. Interpreters by fixed rule
+ *  (process.execPath + ELECTRON_RUN_AS_NODE=1, the repo's desktop-refresh.mjs);
+ *  env-clean (no AUTOBROKER_MODE). The child outlives us (it waits for our exit
+ *  on the install path), so it is detached + unref'd. */
+function spawnRefresh(ctx: FreshnessContext, mode: "install" | "launch-bg"): void {
+  const spec = refreshSpawnSpec({
+    execPath: process.execPath,
+    repoPath: ctx.marker.repoPath,
+    dataDir: ctx.dataDir,
+    mode,
+    selfPid: process.pid,
+  });
+  spawn(spec.file, spec.args, { detached: true, stdio: "ignore", env: spec.env }).unref();
+}
+
+/** Step 0 — cold-start consume of an ALREADY-staged build. When a staged build
+ *  with a different (non-null) stamp is waiting, relaunch into it via the
+ *  orchestrator (it waits for our exit, installs the staged .app, then re-opens
+ *  by absolute path) rather than booting stale bytes. v1 always relaunches to
+ *  consume a staged build — no in-process bundle mutation (a future optimization
+ *  can hot-swap Contents/Resources/bundle in place). Returns true when it has
+ *  initiated a quit, in which case the caller must NOT keep booting. */
+function consumeStagedBuild(ctx: FreshnessContext): boolean {
+  const staged = readStagedSignal(ctx.stagedPath);
+  if (staged === null) return false;
+  if (staged.builtStamp === null || staged.builtStamp === ctx.marker.builtStamp) return false;
+  spawnRefresh(ctx, "install"); // --install --quitting-pid <self> --open
+  app.quit();
+  return true;
+}
+
+let updateReadyAnnounced = false;
+
+/** Surface the NON-modal "Update ready — Relaunch" affordance exactly once. A
+ *  native Notification whose click triggers the relaunch is the simplest action
+ *  affordance that adds no preload/IPC bridge (the click handler runs in main,
+ *  like the notify() ladder). If native notifications are unsupported, degrade
+ *  to an in-app toast (informational — the staged build installs on the next
+ *  manual relaunch / next cold start anyway). */
+function announceUpdateReady(ctx: FreshnessContext): void {
+  if (updateReadyAnnounced) return;
+  updateReadyAnnounced = true;
+  if (!Notification.isSupported()) {
+    void postToastToRenderer("AutoBroker update ready", "Relaunch to use the latest build.", "/");
+    return;
+  }
+  const n = new Notification({ title: "AutoBroker update ready", body: "Click to relaunch into the latest build." });
+  n.on("click", () => relaunchIntoStaged(ctx));
+  n.show();
+}
+
+/** Relaunch into the staged build: spawn the orchestrator in install mode
+ *  (consumes the staged .app, then re-opens) and quit. Fail-soft — a spawn
+ *  failure leaves the running build untouched. */
+function relaunchIntoStaged(ctx: FreshnessContext): void {
+  try {
+    spawnRefresh(ctx, "install");
+    app.quit();
+  } catch {
+    /* leave the running build untouched */
+  }
+}
+
+/** Compute the live built stamp for the marker's repo by importing THAT repo's
+ *  compiled freshness module (cache-busted so a rebuilt dist is re-read). Using
+ *  the repo's own algorithm — not the installed build's possibly-older copy —
+ *  is what makes "live === staged.builtStamp" compare like-for-like (the refresh
+ *  script stamps a staged build with the same repo-side algorithm). Returns the
+ *  stamp string, or null on any error / in-progress git op / missing dist. */
+async function computeLiveBuiltStamp(repoPath: string): Promise<string | null> {
+  try {
+    const distFreshness = join(repoPath, "apps", "desktop", "dist", "freshness.js");
+    if (!existsSync(distFreshness)) return null;
+    const mod = (await import(pathToFileURL(distFreshness).href + "?v=" + Date.now())) as typeof import("./freshness.js");
+    const stamp = mod.computeBuiltStamp(repoPath, { git: mod.resolveGit() });
+    return stamp.state === "ok" ? stamp.builtStamp : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Poll (bounded) for the staged build whose stamp matches `live`, then surface
+ *  the relaunch affordance. Best-effort — a build that never lands just lets the
+ *  poll lapse, leaving the running app untouched. */
+function watchForStaged(ctx: FreshnessContext, live: string): void {
+  let attempts = 0;
+  const maxAttempts = 120; // ~10 min at a 5s cadence
+  const tick = (): void => {
+    const s = readStagedSignal(ctx.stagedPath);
+    if (s !== null && s.builtStamp === live) {
+      announceUpdateReady(ctx);
+      return;
+    }
+    if (++attempts < maxAttempts) setTimeout(tick, 5_000);
+  };
+  setTimeout(tick, 5_000);
+}
+
+/** Step 3 — off-critical-path freshness check, run AFTER the window is shown.
+ *  Never gates the launch. If the installed build is current → nothing. If the
+ *  repo source moved past it: surface the relaunch immediately when a matching
+ *  build is already staged, else kick a background prepare and watch for it. */
+async function checkFreshnessInBackground(ctx: FreshnessContext): Promise<void> {
+  try {
+    const live = await computeLiveBuiltStamp(ctx.marker.repoPath);
+    if (live === null) return; // threw / in-progress / dist missing → do nothing
+    if (live === ctx.marker.builtStamp) return; // installed build is current
+
+    const matchingStaged = (): boolean => {
+      const s = readStagedSignal(ctx.stagedPath);
+      return s !== null && s.builtStamp === live;
+    };
+    if (matchingStaged()) {
+      announceUpdateReady(ctx);
+      return;
+    }
+    spawnRefresh(ctx, "launch-bg");
+    void postToastToRenderer("Preparing AutoBroker update", "A newer build is being prepared in the background.", "/");
+    watchForStaged(ctx, live);
+  } catch {
+    /* fail-soft — running build untouched */
+  }
+}
+
 async function run(): Promise<void> {
+  // Packaged-only launch-time freshness (mechanism C). Gated on app.isPackaged
+  // so dev/smoke (unpackaged) takes NONE of this. Each step is fail-soft.
+  let freshness: FreshnessContext | null = null;
+  if (app.isPackaged) {
+    try {
+      freshness = resolveFreshnessContext();
+      // Step 0 (before startServer): consume an already-staged build by
+      // relaunching into it. If that initiates a quit, stop — do not keep booting.
+      if (freshness !== null && consumeStagedBuild(freshness)) return;
+    } catch {
+      freshness = null; // any error → boot the installed build normally
+    }
+  }
+
   // Optional runtime dock icon — `electron .` otherwise shows Electron's
   // default. The artwork is a machine-local artifact (generated next to the
   // dev launcher, never committed); silently skipped when absent.
@@ -476,6 +665,10 @@ async function run(): Promise<void> {
   await maybeOfferDemo();
   const port = await startServer();
   await createWindow(port);
+
+  // Step 3 (after the window is shown): off-critical-path staleness check. Never
+  // awaited — the launch is never gated on the stamp.
+  if (freshness !== null) void checkFreshnessInBackground(freshness);
 }
 
 app.setName("autobroker-desktop"); // stable userData path → stable single-instance lock
