@@ -50,6 +50,7 @@ beforeAll(() => {
   db = openDb();
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0001_redundant_ozymandias.sql"), "utf8"));
+  db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0004_empty_celestials.sql"), "utf8"));
   db.$client
     .prepare(
       "INSERT INTO dealers (dealer_id, name, website, country, state, postal_code, city) VALUES (?, ?, ?, ?, ?, ?, ?)",

@@ -64,7 +64,11 @@ const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0001_redundant_ozymandias.sql"].map(
+const MIGRATION_SQLS = [
+  "0000_military_red_skull.sql",
+  "0001_redundant_ozymandias.sql",
+  "0004_empty_celestials.sql",
+].map(
   (f) => join(here, "..", "..", "db", "drizzle", f),
 );
 
