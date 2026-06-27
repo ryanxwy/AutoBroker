@@ -975,6 +975,7 @@ export const DealerNegotiationDetailSchema = z
     name: z.string().nullable(),
     city: z.string().nullable(),
     state: z.string().nullable(),
+    website: z.string().nullable(),
     negotiation_status: z.string().nullable(),
     email_count: z.number(),
     quote_sent: z.boolean(),

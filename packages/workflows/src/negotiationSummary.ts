@@ -192,7 +192,6 @@ export async function getOrGenerateDealerNegotiationSummary(
     // surfaces, and is NEVER cached.
     const parsed = NegotiationSummaryEmitSchema.parse(result.object);
     assertNoBudget(parsed.summary);
-    assertNoBudget(parsed.headline);
     cacheSet(key, parsed.summary);
     return { summary: parsed.summary };
   } catch (err) {

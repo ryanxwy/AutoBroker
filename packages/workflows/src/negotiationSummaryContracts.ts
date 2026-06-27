@@ -22,23 +22,20 @@ import { z } from "zod";
 
 /**
  * The ONLY tool schema the summary step binds. Flat, all-required, .strict().
- * `summary` is the few-sentence negotiation read; `headline` is a short one-line
- * label. Both are budget-belted post-generation (assertNoBudget) — the prompt
- * forbids any budget figure and the belt fail-closes the whole call to null.
- * NEVER mixed with other tools or structured object output in the same call.
+ * `summary` is the few-sentence negotiation read; it is budget-belted
+ * post-generation (assertNoBudget) — the prompt forbids any budget figure and the
+ * belt fail-closes the whole call to null. NEVER mixed with other tools or
+ * structured object output in the same call.
  */
 export const NegotiationSummaryEmitSchema = z
   .object({
     /** A few-sentence read of where the negotiation stands (no budget, no
      *  competing-dealer name — only this dealer's own figures/state). */
     summary: z.string(),
-    /** A short one-line label for the negotiation state (e.g. "Holding firm
-     *  on a finance quote"). */
-    headline: z.string(),
   })
   .strict()
   .describe(
-    "A short negotiation-state read + one-line headline drawn from a dealer's substantive replies.",
+    "A short negotiation-state read drawn from a dealer's substantive replies.",
   );
 export type NegotiationSummaryEmit = z.infer<typeof NegotiationSummaryEmitSchema>;
 
@@ -72,7 +69,7 @@ export function buildNegotiationSummaryPrompt(bodies: string[]): string {
     "during a price negotiation (newest first). Write a SHORT, factual read of " +
     "where the negotiation stands: what the dealer has quoted or countered, " +
     "whether they are holding firm, stalling, or moving, and what is still open. " +
-    "Also write a one-line headline that labels the state. Use ONLY facts stated " +
+    "Use ONLY facts stated " +
     "in the fenced replies — NEVER invent a number, a fee, a date, or a " +
     "commitment the dealer did not state. NEVER include any budget, spending " +
     "ceiling, or the buyer's private maximum, and NEVER name a competing dealer. " +

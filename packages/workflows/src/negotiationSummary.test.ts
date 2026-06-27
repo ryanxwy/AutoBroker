@@ -30,9 +30,9 @@ const NO_USAGE = {
 };
 
 /** A harness stub returning a FIXED emit object for every call. */
-function harnessFixed(summary: string, headline = "State"): NegotiationSummaryDeps["generate"] {
+function harnessFixed(summary: string): NegotiationSummaryDeps["generate"] {
   return (async () => ({
-    object: { summary, headline },
+    object: { summary },
     usage: NO_USAGE,
   })) as unknown as NegotiationSummaryDeps["generate"];
 }
@@ -98,7 +98,7 @@ describe("getOrGenerateDealerNegotiationSummary", () => {
 
   it("serves the cache on the same sig (a second call does not re-invoke the harness)", async () => {
     const generate = vi.fn(async () => ({
-      object: { summary: "cached read", headline: "State" },
+      object: { summary: "cached read" },
       usage: NO_USAGE,
     }));
     __setNegotiationSummaryDepsForTests({
@@ -116,7 +116,7 @@ describe("getOrGenerateDealerNegotiationSummary", () => {
 
   it("re-generates when the body set (sig) changes", async () => {
     const generate = vi.fn(async () => ({
-      object: { summary: "fresh read", headline: "State" },
+      object: { summary: "fresh read" },
       usage: NO_USAGE,
     }));
     let bodies = ["first body set"];

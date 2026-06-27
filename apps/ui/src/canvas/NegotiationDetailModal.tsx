@@ -18,9 +18,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import type { DealerNegotiationDetail, DealerNegotiationSummary, DealerRow } from "../api/wire.js";
+import type { DealerNegotiationDetail, DealerNegotiationSummary } from "../api/wire.js";
 import { Modal } from "../shell/Modal.js";
-import { str } from "./dealerFields.js";
 import { DetailRow } from "./DetailRow.js";
 import { absoluteTimestamp, dollarLabel } from "./format.js";
 import { STATUS_LABEL } from "./ThreadsSection.js";
@@ -89,7 +88,6 @@ export function NegotiationDetailModal({
     );
   }
 
-  const row = detail as unknown as DealerRow;
   const name = detail.name;
   const location = [detail.city, detail.state].filter((p): p is string => p !== null && p !== "").join(", ");
   const statusKey = detail.negotiation_status;
@@ -108,7 +106,7 @@ export function NegotiationDetailModal({
     .sort((a, b) => receivedMs(b.received_at) - receivedMs(a.received_at));
 
   const hasCompeting = detail.best_competing_otd !== null || detail.batna_gap_usd !== null;
-  const website = str(row, "website");
+  const website = detail.website;
   const hasWebsite = website !== null && /^https?:\/\//i.test(website);
 
   return (

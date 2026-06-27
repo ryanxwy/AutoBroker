@@ -42,6 +42,7 @@ function makeDetail(overrides: Partial<DealerNegotiationDetail> = {}): DealerNeg
     name: "Jim Click Hyundai",
     city: "Tucson",
     state: "AZ",
+    website: "https://jimclick.example",
     negotiation_status: "countered",
     email_count: 6,
     quote_sent: true,
@@ -212,6 +213,20 @@ describe("NegotiationDetailModal — sections", () => {
     expect(text).not.toContain("d-1");
     expect(text).not.toContain("m-new");
     expect(text).not.toContain("c-1");
+    r.unmount();
+  });
+
+  it("renders the dealer website link from the typed website field", () => {
+    const r = render(<NegotiationDetailModal detail={makeDetail()} onClose={() => {}} />);
+    const link = docQuery("negotiation-detail-website")!;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toBe("https://jimclick.example");
+    r.unmount();
+  });
+
+  it("drops the website link when website is null", () => {
+    const r = render(<NegotiationDetailModal detail={makeDetail({ website: null })} onClose={() => {}} />);
+    expect(docQuery("negotiation-detail-website")).toBeNull();
     r.unmount();
   });
 

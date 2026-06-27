@@ -317,6 +317,8 @@ export interface DealerNegotiationDetail {
   name: string | null;
   city: string | null;
   state: string | null;
+  /** The dealer's public website URL (or null) — the modal footer link. */
+  website: string | null;
   negotiation_status: NegotiationStatus | null;
   email_count: number;
   quote_sent: boolean;
@@ -362,12 +364,12 @@ export function readDealerNegotiationDetail(
 
   const dealer = db.$client
     .prepare(
-      "SELECT d.name AS name, d.city AS city, d.state AS state " +
+      "SELECT d.name AS name, d.city AS city, d.state AS state, d.website AS website " +
         "FROM profile_dealers pd JOIN dealers d ON d.dealer_id = pd.dealer_id " +
         "WHERE pd.search_profile_id = ? AND pd.dealer_id = ?",
     )
     .get(args.profileId, args.dealerId) as
-    | { name: string | null; city: string | null; state: string | null }
+    | { name: string | null; city: string | null; state: string | null; website: string | null }
     | undefined;
   if (dealer === undefined) return null; // foreign dealer → 404
 
@@ -400,7 +402,13 @@ export function readDealerNegotiationDetail(
     inputs.currentOtd !== null && bestCompetingOtd !== null
       ? Math.max(0, inputs.currentOtd - bestCompetingOtd)
       : null;
-  const quoteSent = inputs.currentOtd !== null;
+  // quote_sent matches the grid (quoteAggByDealer): presence of ANY dealer_quotes
+  // row for this dealer in this profile — so a quote row with a null otd_total
+  // reads quote_sent on the card AND the modal consistently.
+  const quoteRow = db.$client
+    .prepare("SELECT COUNT(*) AS cnt FROM dealer_quotes WHERE search_profile_id = ? AND dealer_id = ?")
+    .get(args.profileId, args.dealerId) as { cnt: number };
+  const quoteSent = quoteRow.cnt > 0;
 
   // Reduce the dealer's threads to its MOST-ACTIONABLE one (status rank min, newest
   // activity tie-break) and keep that thread's gate/cap for the advisory.
@@ -482,6 +490,7 @@ export function readDealerNegotiationDetail(
     name: dealer.name,
     city: dealer.city,
     state: dealer.state,
+    website: dealer.website,
     negotiation_status: repStatus,
     email_count: emailCount,
     quote_sent: quoteSent,
