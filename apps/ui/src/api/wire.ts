@@ -904,3 +904,97 @@ export type ApprovalItem = z.infer<typeof ApprovalItemSchema>;
 
 export const ApprovalListSchema = z.array(ApprovalItemSchema);
 export type ApprovalList = z.infer<typeof ApprovalListSchema>;
+
+// ---------------------------------------------------------------------------
+// Dealer negotiations — GET /api/profiles/:id/dealer-negotiations: the per-dealer
+// negotiation grid (tools listProfileDealerNegotiations). One card per bound
+// dealer, derived each read. dealer_id is the React key only (never rendered);
+// the competing dealer is never NAMED — only the batna scalars. NO budget. A
+// tolerant (passthrough) shape keeps a server field add from breaking decode.
+// ---------------------------------------------------------------------------
+
+export const DealerNegotiationRowSchema = z
+  .object({
+    dealer_id: z.string(),
+    name: z.string().nullable(),
+    city: z.string().nullable(),
+    state: z.string().nullable(),
+    candidate_status: z.string().nullable(),
+    lead_submission_count: z.number(),
+    email_count: z.number(),
+    quote_sent: z.boolean(),
+    best_otd: z.number().nullable(),
+    best_discount: z.number().nullable(),
+    // Derived negotiation status + give-up verdict + batna gap (all optional for
+    // tolerance — the grid reads them when present).
+    negotiation_status: z.string().nullable().optional(),
+    verdict: z.string().optional(),
+    verdict_reason: z.string().optional(),
+    batna_gap_usd: z.number().nullable().optional(),
+  })
+  .passthrough();
+export type DealerNegotiationRow = z.infer<typeof DealerNegotiationRowSchema>;
+
+export const DealerNegotiationListSchema = z.array(DealerNegotiationRowSchema);
+export type DealerNegotiationList = z.infer<typeof DealerNegotiationListSchema>;
+
+// ---------------------------------------------------------------------------
+// Dealer negotiation detail — GET /api/profiles/:id/dealer-negotiations/:dealerId
+// (tools readDealerNegotiationDetail). The modal's contacts + substantive replies
+// + competing-OTD scalars (NO competitor name) + composed status/strategy/next
+// steps. message_id/contact_id are React keys only; budget-redacted excerpts; NO
+// budget. received_at is an ISO string OR an epoch-ms number. Tolerant passthrough.
+// ---------------------------------------------------------------------------
+
+export const NegotiationContactRowSchema = z
+  .object({
+    contact_id: z.string(),
+    display_name: z.string().nullable(),
+    email: z.string().nullable(),
+    role: z.string().nullable(),
+    is_primary_reply_target: z.boolean(),
+  })
+  .passthrough();
+export type NegotiationContactRow = z.infer<typeof NegotiationContactRowSchema>;
+
+export const NegotiationReplyRowSchema = z
+  .object({
+    message_id: z.string(),
+    sender_name: z.string().nullable(),
+    sender_email: z.string().nullable(),
+    subject: z.string().nullable(),
+    body_excerpt: z.string().nullable(),
+    received_at: z.union([z.string(), z.number()]).nullable(),
+  })
+  .passthrough();
+export type NegotiationReplyRow = z.infer<typeof NegotiationReplyRowSchema>;
+
+export const DealerNegotiationDetailSchema = z
+  .object({
+    dealer_id: z.string(),
+    name: z.string().nullable(),
+    city: z.string().nullable(),
+    state: z.string().nullable(),
+    negotiation_status: z.string().nullable(),
+    email_count: z.number(),
+    quote_sent: z.boolean(),
+    best_competing_otd: z.number().nullable(),
+    batna_gap_usd: z.number().nullable(),
+    status_line: z.string(),
+    strategy: z.string(),
+    next_steps: z.array(z.string()),
+    contacts: z.array(NegotiationContactRowSchema),
+    replies: z.array(NegotiationReplyRowSchema),
+  })
+  .passthrough();
+export type DealerNegotiationDetail = z.infer<typeof DealerNegotiationDetailSchema>;
+
+// GET /api/profiles/:id/dealer-negotiations/:dealerId/summary → the LLM
+// negotiation-state summary. ALWAYS 200; { summary:null } on any degrade (#1244 /
+// budget-belt / transport). Tolerant passthrough.
+export const DealerNegotiationSummarySchema = z
+  .object({
+    summary: z.string().nullable(),
+  })
+  .passthrough();
+export type DealerNegotiationSummary = z.infer<typeof DealerNegotiationSummarySchema>;

@@ -34,6 +34,9 @@ import { z } from "zod";
 import {
   ApprovalListSchema,
   DealerListSchema,
+  DealerNegotiationListSchema,
+  DealerNegotiationDetailSchema,
+  DealerNegotiationSummarySchema,
   DigestViewSchema,
   EnvConfigResponseSchema,
   ErrorEnvelopeSchema,
@@ -62,6 +65,9 @@ import {
   type ApprovalList,
   type CreateSessionBody,
   type DealerList,
+  type DealerNegotiationList,
+  type DealerNegotiationDetail,
+  type DealerNegotiationSummary,
   type DigestView,
   type PortfolioView,
   type ThreadList,
@@ -330,6 +336,50 @@ export class ApiClient {
       this.url(`/api/profiles/${encodeURIComponent(id)}/dealers`),
     );
     return decode(res, DealerListSchema);
+  }
+
+  /** GET /api/profiles/:id/dealer-negotiations → the per-dealer negotiation grid
+   *  rows bound to one profile, most-actionable first (read-only projection; 404
+   *  for a missing profile). The Negotiation cards canvas section renders these —
+   *  derived status + email/quote tallies + best OTD/discount + batna scalars,
+   *  NEVER a budget and NEVER a competing dealer's name. */
+  async listDealerNegotiations(id: string): Promise<DealerNegotiationList> {
+    const res = await this.fetchImpl(
+      this.url(`/api/profiles/${encodeURIComponent(id)}/dealer-negotiations`),
+    );
+    return decode(res, DealerNegotiationListSchema);
+  }
+
+  /** GET /api/profiles/:id/dealer-negotiations/:dealerId → the one-dealer
+   *  negotiation detail the modal renders (read-only; 404 for a missing profile
+   *  OR a dealer not bound to it). Contacts + substantive replies + competing-OTD
+   *  scalars (no competitor name) + composed status/strategy/next-steps; budget-free. */
+  async getDealerNegotiationDetail(
+    id: string,
+    dealerId: string,
+  ): Promise<DealerNegotiationDetail> {
+    const res = await this.fetchImpl(
+      this.url(
+        `/api/profiles/${encodeURIComponent(id)}/dealer-negotiations/${encodeURIComponent(dealerId)}`,
+      ),
+    );
+    return decode(res, DealerNegotiationDetailSchema);
+  }
+
+  /** GET /api/profiles/:id/dealer-negotiations/:dealerId/summary → the LLM
+   *  negotiation-state summary ({ summary }). ALWAYS 200 for a bound dealer (the
+   *  workflow degrades to { summary:null } on any #1244 / budget-belt / transport
+   *  failure); only a missing profile is a 404. */
+  async getDealerNegotiationSummary(
+    id: string,
+    dealerId: string,
+  ): Promise<DealerNegotiationSummary> {
+    const res = await this.fetchImpl(
+      this.url(
+        `/api/profiles/${encodeURIComponent(id)}/dealer-negotiations/${encodeURIComponent(dealerId)}/summary`,
+      ),
+    );
+    return decode(res, DealerNegotiationSummarySchema);
   }
 
   /** GET /api/profiles/:id/threads → the dealer-reply thread rows bound to one

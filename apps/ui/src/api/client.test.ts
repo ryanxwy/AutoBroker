@@ -311,6 +311,116 @@ describe("ApiClient error decode — error envelope → ApiError", () => {
   });
 });
 
+describe("ApiClient — dealer negotiations", () => {
+  /** GET /api/profiles/:id/dealer-negotiations → one grid row per bound dealer
+   *  (tools listProfileDealerNegotiations; server.integration.test.ts:651). */
+  const NEGOTIATION_ROW_FIXTURE = {
+    dealer_id: "d-near",
+    name: "Dealer d-near",
+    city: "Irvine",
+    state: "CA",
+    candidate_status: "contacted",
+    lead_submission_count: 1,
+    email_count: 2,
+    quote_sent: true,
+    best_otd: 33192,
+    best_discount: 1500,
+    negotiation_status: "countered",
+    verdict: "keep",
+    verdict_reason: "responsive",
+    batna_gap_usd: 692,
+  };
+
+  /** GET /api/profiles/:id/dealer-negotiations/:dealerId → the modal detail
+   *  (tools readDealerNegotiationDetail). received_at is epoch-ms on one reply,
+   *  an ISO string on the other (the wire union must take both). */
+  const NEGOTIATION_DETAIL_FIXTURE = {
+    dealer_id: "d-near",
+    name: "Dealer d-near",
+    city: "Irvine",
+    state: "CA",
+    negotiation_status: "countered",
+    email_count: 2,
+    quote_sent: true,
+    best_competing_otd: 32500,
+    batna_gap_usd: 692,
+    status_line: "Countered — awaiting their reply.",
+    strategy: "Hold the competing OTD as your anchor.",
+    next_steps: ["Reply with the cross-shop number.", "Set a 48h deadline."],
+    contacts: [
+      {
+        contact_id: "c-1",
+        display_name: "Sam Sales",
+        email: "sam@dealer.example",
+        role: "sales",
+        is_primary_reply_target: true,
+      },
+    ],
+    replies: [
+      {
+        message_id: "m-1",
+        sender_name: "Sam Sales",
+        sender_email: "sam@dealer.example",
+        subject: "Re: your quote",
+        body_excerpt: "We can do 33,192 out the door.",
+        received_at: 1750000000000,
+      },
+      {
+        message_id: "m-2",
+        sender_name: null,
+        sender_email: null,
+        subject: null,
+        body_excerpt: null,
+        received_at: "2026-06-25T00:00:00.000Z",
+      },
+    ],
+  };
+
+  /** GET …/summary → { summary } (always 200; null on a degrade). */
+  const NEGOTIATION_SUMMARY_FIXTURE = { summary: "Dealer is countering near your anchor." };
+
+  it("listDealerNegotiations decodes the grid rows incl. the batna scalars", async () => {
+    const { fetch, calls } = spyFetch(200, [NEGOTIATION_ROW_FIXTURE]);
+    const client = new ApiClient({ fetchImpl: fetch });
+    const rows = await client.listDealerNegotiations("sp-1");
+    expect(calls[0]!.url).toBe("/api/profiles/sp-1/dealer-negotiations");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dealer_id).toBe("d-near");
+    expect(rows[0]!.quote_sent).toBe(true);
+    expect(rows[0]!.batna_gap_usd).toBe(692);
+    expect("budget_max" in rows[0]!).toBe(false);
+  });
+
+  it("listDealerNegotiations tolerates an added server field (passthrough)", async () => {
+    const client = new ApiClient({
+      fetchImpl: mockFetch(200, [{ ...NEGOTIATION_ROW_FIXTURE, brand_new_field: "x" }]),
+    });
+    const rows = await client.listDealerNegotiations("sp-1");
+    expect(rows[0]!["brand_new_field"]).toBe("x");
+  });
+
+  it("getDealerNegotiationDetail decodes contacts + replies (received_at string OR number)", async () => {
+    const { fetch, calls } = spyFetch(200, NEGOTIATION_DETAIL_FIXTURE);
+    const client = new ApiClient({ fetchImpl: fetch });
+    const detail = await client.getDealerNegotiationDetail("sp-1", "d-near");
+    expect(calls[0]!.url).toBe("/api/profiles/sp-1/dealer-negotiations/d-near");
+    expect(detail.name).toBe("Dealer d-near");
+    expect(detail.contacts[0]!.is_primary_reply_target).toBe(true);
+    expect(detail.replies[0]!.received_at).toBe(1750000000000);
+    expect(detail.replies[1]!.received_at).toBe("2026-06-25T00:00:00.000Z");
+    expect(detail.next_steps).toHaveLength(2);
+  });
+
+  it("getDealerNegotiationSummary decodes { summary } and the null degrade", async () => {
+    const okClient = new ApiClient({ fetchImpl: mockFetch(200, NEGOTIATION_SUMMARY_FIXTURE) });
+    expect((await okClient.getDealerNegotiationSummary("sp-1", "d-near")).summary).toBe(
+      "Dealer is countering near your anchor.",
+    );
+    const nullClient = new ApiClient({ fetchImpl: mockFetch(200, { summary: null }) });
+    expect((await nullClient.getDealerNegotiationSummary("sp-1", "d-near")).summary).toBeNull();
+  });
+});
+
 describe("ApiClient — settings / environment", () => {
   it("getEnvConfig decodes { vars: EnvVarState[] } incl. the read-only demo row", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch(200, ENV_CONFIG_FIXTURE) });
