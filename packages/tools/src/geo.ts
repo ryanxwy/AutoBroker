@@ -16,12 +16,15 @@
  *    TLDs → false.
  * 3. Canadian-province state code → false; a clean US state code → true.
  * 4. Canadian postal-code format (`A1A 1A1`) → false.
- * 5. `city` or dealer `name` containing an unambiguous Canadian city token
- *    (e.g. Chilliwack, Coquitlam, Abbotsford) → false. The token list is
- *    hand-curated to avoid collisions with US cities that share the spelling
- *    (Vancouver WA, Richmond VA, Victoria TX are NOT on the list). This
- *    catches the long-tail of `.com` dealerships in BC/AB/ON whose other
- *    fields are sparse.
+ * 5. `city`/`name` containing an unambiguous Canadian city token (e.g.
+ *    Chilliwack, Coquitlam) or a collision-free Mexican border-city token
+ *    (Tijuana, Ciudad Juárez, …) → false; or the `address` ending in a
+ *    ", Mexico" country word → false. City tokens are matched in `name`/`city`
+ *    ONLY (some recur as US street/place names), so the free-form `address` is
+ *    checked for the anchored country word alone. Both lists are hand-curated
+ *    to avoid US collisions (Vancouver WA, Richmond VA, Laredo TX, "New Mexico"
+ *    are NOT matched). This catches the long-tail of `.com` border dealerships
+ *    whose other fields are sparse.
  * 6. Anything else (including all-null inputs) → true. This is the
  *    conservative default because the `country` column defaults to 'US' and
  *    we never want to silently drop a US dealer with sparse metadata.
@@ -103,6 +106,61 @@ function containsCanadianCity(text: string | null | undefined): boolean {
   return CANADIAN_CITY_RE.test(text);
 }
 
+// Unambiguous Mexican BORDER-city tokens — the only Mexican dealerships that
+// fall inside a US-metro search radius are the border ones (Tijuana inside a
+// San Diego radius, Ciudad Juárez inside El Paso, etc.). Curated to have NO US
+// collision as a dealer NAME token: bare `Laredo`/`Nogales`/`Mexico` are
+// OMITTED (Laredo TX, Nogales AZ, Mexico MO / "New Mexico"); the multi-word
+// "Nuevo Laredo" is kept because it is unambiguous. Like the Canadian list
+// these are matched in `name`/`city` ONLY — several (Tecate, Ensenada,
+// Matamoros) also occur as US street/place names ("Ensenada Dr", "Matamoros
+// St", Tecate CA), so a free-form `address` is NOT scanned for them; only the
+// anchored trailing ", Mexico" country word is address-safe.
+const MEXICAN_CITY_TOKENS: readonly string[] = [
+  // Baja California (San Diego / Calexico border)
+  "tijuana", "mexicali", "ensenada", "rosarito", "tecate",
+  // Sonora (Yuma / San Luis border)
+  "hermosillo", "san luis rio colorado",
+  // Chihuahua (El Paso border)
+  "ciudad juarez",
+  // Coahuila (Eagle Pass / Del Rio border)
+  "piedras negras", "ciudad acuna",
+  // Tamaulipas (Laredo / McAllen / Brownsville border)
+  "nuevo laredo", "reynosa", "matamoros",
+];
+
+// Same word-boundary construction as CANADIAN_CITY_RE; multi-word tokens carry
+// a literal interior space and still match on either boundary.
+const MEXICAN_CITY_RE = new RegExp(
+  "(?:^|[^A-Za-z])(" +
+    [...MEXICAN_CITY_TOKENS].sort().join("|") +
+    ")(?:[^A-Za-z]|$)",
+  "i",
+);
+
+// A trailing ", Mexico" / ", México" country word in an address is
+// unambiguous: it does NOT match "Albuquerque, New Mexico" (the token before
+// "Mexico" there is "New", not a comma) nor a US town named Mexico (whose
+// address ends in its US state/ZIP, never in ", Mexico").
+const MEXICO_COUNTRY_ADDRESS_RE = /,\s*m[eé]xico\.?\s*$/i;
+
+/** Return true iff the inputs carry an unambiguous Mexican geography signal. */
+function isMexicanGeography(
+  name: string | null | undefined,
+  city: string | null | undefined,
+  address: string | null | undefined,
+): boolean {
+  // City tokens: `name` / `city` ONLY. Several tokens recur as US street/place
+  // names, so scanning a free-form address for them would silently drop a
+  // legitimate US dealer (the very failure rule 6 guards against).
+  if ((name && MEXICAN_CITY_RE.test(name)) || (city && MEXICAN_CITY_RE.test(city))) {
+    return true;
+  }
+  // Country word: anchored to a trailing ", Mexico" — collision-safe (does not
+  // match "New Mexico" or a US "Mexico, MO" town), so the address is fair game.
+  return [name, city, address].some((t) => !!t && MEXICO_COUNTRY_ADDRESS_RE.test(t));
+}
+
 /**
  * Return the last DNS label of `website`'s hostname, lowercased.
  *
@@ -144,6 +202,7 @@ export interface IsUsDealerOptions {
   postal_code?: string | null;
   name?: string | null;
   city?: string | null;
+  address?: string | null;
 }
 
 /**
@@ -153,7 +212,7 @@ export interface IsUsDealerOptions {
  * optional and any may be null.
  */
 export function isUsDealer(options: IsUsDealerOptions = {}): boolean {
-  const { country, website, state, postal_code, name, city } = options;
+  const { country, website, state, postal_code, name, city, address } = options;
 
   // 1. Explicit country wins outright.
   if (country != null) {
@@ -192,7 +251,16 @@ export function isUsDealer(options: IsUsDealerOptions = {}): boolean {
     }
   }
 
-  // 5. Unambiguous Canadian city token in `city` or dealer `name`.
-  //    Anything that doesn't match falls through to default-trust (rule 6).
-  return !(containsCanadianCity(city) || containsCanadianCity(name));
+  // 5. Unambiguous non-US geography signal. Canadian + Mexican city tokens are
+  //    scanned in `city` / `name` only (some carry US-address collisions like
+  //    "Toronto St" / "Ensenada Dr"); the free-form `address` is checked only
+  //    for the anchored trailing ", Mexico" country word. Anything that doesn't
+  //    match falls through to default-trust (rule 6).
+  if (containsCanadianCity(city) || containsCanadianCity(name)) {
+    return false;
+  }
+  if (isMexicanGeography(name, city, address)) {
+    return false;
+  }
+  return true;
 }

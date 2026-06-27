@@ -303,6 +303,53 @@ describe("dealer_geosearch — happy path (zero-LLM)", () => {
     expect(out.summary).toContain("/dealer_web_lead_submit");
     expect(out.summary).toContain("no follow-on skill is auto-invoked");
   });
+
+  it("excludes an in-radius cross-border (Tijuana) dealer from the discovered set + the DB", async () => {
+    seedProfile();
+    const resolution = { kind: null as string | null };
+
+    const us = candidate(); // Tustin Hyundai, in radius
+    // In-radius by coordinates (same origin as the US dealer) but a Mexican
+    // border rooftop — must be dropped by the cross-border filter, NOT by
+    // distance, so it never enters the ranked/discovered set or the DB.
+    const tijuana = candidate({
+      name: "Hyundai Premier Tijuana",
+      address: "Blvd. Insurgentes 1810, Tijuana, B.C.",
+      website: "https://hyundaipremiertijuana.com",
+      google_place_id: "0xtj:0x1",
+      latitude: 33.7,
+      longitude: -117.8,
+    });
+
+    __setGeosearchDepsForTests({
+      harnessGenerate: harnessNeverCalled,
+      resolveProfile: spyResolve(resolution),
+      scanViewports: scanStub((vps) =>
+        vps.map((vp) => ({ label: vp.label, kind: "rows" as const, rows: [us, tijuana] })),
+      ),
+    });
+
+    const r = await startRun("geo-cross-border-1");
+    expect(r.status).toBe("success");
+    if (r.status !== "success") return;
+
+    const out = r.result as {
+      dealersDiscovered: number;
+      dealersUpserted: number;
+      nonUsSkipped: number;
+      summary: string;
+    };
+    // Only the US dealer survives into the discovered/ranked set.
+    expect(out.dealersDiscovered).toBe(1);
+    expect(out.dealersUpserted).toBe(1);
+    expect(out.nonUsSkipped).toBe(1);
+    expect(out.summary).toContain("1 cross-border dealer(s) excluded");
+    expect(out.summary).toContain("Tustin Hyundai");
+    expect(out.summary).not.toContain("Tijuana");
+
+    // The DB never carried the cross-border dealer.
+    expect(rowCount("dealers")).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
