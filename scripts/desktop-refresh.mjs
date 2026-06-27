@@ -798,8 +798,17 @@ export function phaseBuild(opts = {}) {
     }
   }
 
-  // 3. Install deps in the worktree only when the lockfile changed (or deps are
-  //    absent — a fresh worktree has no node_modules).
+  // 3. Install deps in the worktree when the lockfile changed OR the build
+  //    toolchain is missing. A fresh worktree has no node_modules; a prior
+  //    interrupted (or devDep-less) install can leave an INCOMPLETE one, so the
+  //    presence of node_modules is not enough — `.bin/tsc` is the sentinel that
+  //    the dev toolchain (typescript/@types/node/vite/electron-builder, all
+  //    devDependencies) was actually installed.
+  //    The install MUST include devDependencies, so it runs with NODE_ENV
+  //    UNSET: pnpm omits devDependencies under NODE_ENV=production, which would
+  //    silently strip tsc/@types/node/electron-builder and break the build.
+  //    confirm-modules-purge=false keeps a re-install non-interactive (stdin is
+  //    ignored, so a purge prompt would otherwise hang).
   const lockHash = sha256(readFileSync(join(wt, "pnpm-lock.yaml"), "utf8"));
   let lastLockHash = "";
   try {
@@ -807,8 +816,15 @@ export function phaseBuild(opts = {}) {
   } catch {
     /* none yet */
   }
-  if (!existsSync(join(wt, "node_modules")) || lockHash !== lastLockHash) {
-    runCmd("pnpm", ["install", "--frozen-lockfile"], { cwd: wt, env, log });
+  const toolchainReady = existsSync(join(wt, "node_modules", ".bin", "tsc"));
+  if (!toolchainReady || lockHash !== lastLockHash) {
+    const installEnv = { ...env };
+    delete installEnv.NODE_ENV; // include devDependencies (pnpm skips them under production)
+    runCmd("pnpm", ["install", "--frozen-lockfile", "--config.confirm-modules-purge=false"], {
+      cwd: wt,
+      env: installEnv,
+      log,
+    });
     mkdirSync(dirname(paths.lastLockHashPath), { recursive: true });
     writeFileSync(paths.lastLockHashPath, lockHash + "\n");
   }
