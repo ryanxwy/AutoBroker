@@ -141,27 +141,29 @@ describe("listProfileDealerNegotiations", () => {
     expect(bare.negotiation_status).toBeUndefined(); // no thread → no status chip
   });
 
-  it("reduces a multi-thread dealer to its MOST-ACTIONABLE status, tie-break newest activity", () => {
+  it("reduces a multi-thread dealer to its MOST-ACTIONABLE status (rank-min wins over recency)", () => {
     const c = db.$client;
     dealer(c, "d-multi", "Multi Hyundai");
     bind(c, "d-multi");
 
-    // Thread 1: a fresh single quote with no movement → "quoted".
-    thread(c, "t-quoted", "d-multi");
-    inbound(c, "in-q", "t-quoted", NOW - 2 * DAY);
-    quote(c, { quoteId: "q-q", dealerId: "d-multi", otd: 46000, discount: 1000, vin: "VQ", receivedAt: NOW - 2 * DAY });
-
-    // Thread 2: a bare reply, no quote → "replied" (rank 3, less actionable than quoted=2).
-    thread(c, "t-replied", "d-multi");
-    inbound(c, "in-r", "t-replied", NOW - 1 * DAY);
+    // Two threads with DISTINCT ranks, driven by persisted state (so the per-dealer
+    // quote coupling can't collapse them to one status — this dealer has no quote):
+    //   - t-agreed: state='agreed' → "agreed" (rank 6), the LESS actionable terminal
+    //     state, and it carries the NEWER activity (NOW-1*DAY).
+    //   - t-replied: a bare reply → "replied" (rank 3), MORE actionable, OLDER
+    //     activity (NOW-2*DAY).
+    // Thread-id sort ("t-agreed" < "t-replied") visits the rank-6 thread FIRST, so
+    // the rank-min reduction must REPLACE it with the rank-3 thread — proving the
+    // rollup keeps the lower rank even though the higher-rank thread is newer.
+    thread(c, "t-agreed", "d-multi", "agreed");
+    inbound(c, "in-a", "t-agreed", NOW - 1 * DAY);
+    thread(c, "t-replied", "d-multi", "replied");
+    inbound(c, "in-r", "t-replied", NOW - 2 * DAY);
 
     const rows = listProfileDealerNegotiations(db, PROFILE, { nowMs: NOW });
     const multi = rows.filter((r) => r.dealer_id === "d-multi");
     expect(multi).toHaveLength(1); // ONE record per dealer
-    // CAVEAT: readDealerGiveUpInputs is per-dealer, so the dealer's single open
-    // quote drives BOTH threads' overlay — both read "quoted" (rank 2), the most
-    // actionable, so the rollup keeps "quoted".
-    expect(multi[0]!.negotiation_status).toBe("quoted");
+    expect(multi[0]!.negotiation_status).toBe("replied"); // rank 3 < rank 6, kept
   });
 
   it("sorts by actionability: status rank asc, then batna_gap_usd desc, then name asc, zero-thread last", () => {
