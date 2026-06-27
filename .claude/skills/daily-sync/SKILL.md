@@ -49,9 +49,13 @@ This is the deliberate counterpart to the passive Stop hook.
 4. **Rebuild the index** (`new-day.sh` already calls `build-index.sh`; if you
    refreshed manually, run `"$PLAN/ts-rebuild/tools/build-index.sh"`).
 
-5. **Present, do not auto-commit.** Show the drafted human sections and the
-   refreshed machine tables for the user to edit. Committing the plan repo is a
-   separate, deliberate step the user takes.
+5. **Present.** Show the drafted human sections and the refreshed machine tables
+   for the user to edit. This skill itself does NOT commit. Note, however, that the
+   code-repo Stop hook `sync-daily.sh` (step 3) auto-commits + pushes the generated
+   `daily/<date>.html` scaffold + `index.html` to the private plan repo's
+   `origin/main`, and any human-narrative edits you make land on the next
+   qualifying code-repo turn-end — so "nothing is committed until the user
+   deliberately does it" is no longer an absolute guarantee.
 
 ## Guardrails
 
