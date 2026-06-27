@@ -125,6 +125,32 @@ dialog appears:
 
 ---
 
+## Desktop app — install & keep fresh
+
+If you're running the Electron desktop app (macOS only), two one-time commands
+build and install it — then keep it current automatically:
+
+```bash
+pnpm desktop:install          # builds and installs /Applications/AutoBroker.app
+pnpm desktop:hooks:install    # arms the git hooks that warm up rebuilds on each commit
+```
+
+**What "fresh" means:** the app always opens immediately on the last-installed build.
+Within seconds a non-blocking **"Update ready — Relaunch"** prompt appears if a newer
+build is ready. Freshness is *eventually consistent*: an uncommitted edit is fresh only
+after the background build finishes; an edit committed while the app was closed is fresh
+on the next launch.
+
+**Kill switch:** set `AUTOBROKER_DESKTOP_REFRESH=0` to turn off auto-rebuilds.
+
+**Safety is unchanged.** Send-mode stays buyer-by-default and the in-app TopBar toggle
+stays authoritative. The refresh build performs no sends and the relaunch is env-clean.
+
+> A distributed `.dmg` or a copied app is a normal frozen build — auto-refresh applies
+> only to the checkout where you ran `desktop:hooks:install`.
+
+---
+
 ## Troubleshooting
 
 | What you see | What it means | What to do |

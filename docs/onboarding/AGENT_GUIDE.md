@@ -258,6 +258,39 @@ environment variable never sees this dialog (deliberate boot target).
 
 ---
 
+## Desktop app — install & auto-fresh (macOS, optional)
+
+If the user wants the Electron app installed to `/Applications` with automatic
+build-on-change, run these two commands once in order:
+
+```bash
+pnpm desktop:install          # builds and installs /Applications/AutoBroker.app
+pnpm desktop:hooks:install    # arms the git hooks that pre-warm rebuilds on commit/merge/checkout
+```
+
+**Freshness is eventually-consistent, not instantaneous.** The app opens immediately
+on the last-installed build; a non-blocking "Update ready — Relaunch" notification
+appears within seconds when a newer build is ready. An uncommitted edit is fresh only
+after the background build completes; edits committed while the app was closed are
+fresh on the next launch.
+
+The launch-time check in `apps/desktop/src/freshness.ts` is the actual guarantee —
+not the git hooks. GUI/IDE commits give the hook a minimal PATH with no `node`, so
+the hook silently skips; the packaged launch check fires regardless and catches it.
+
+**Kill switch:** `AUTOBROKER_DESKTOP_REFRESH=0` disables the auto-rebuild.
+
+**Scope and coupling:** macOS-only; requires `mac.identity: null` (unsigned local
+build). The stamp marker lives outside the `.app` bundle at
+`~/.autobroker-ts/desktop-refresh/<hash>.json`, so a copied or shipped `.app` is a
+normal frozen build with no self-rebuild. Only the checkout where
+`desktop:hooks:install` ran warms `/Applications`; other worktrees are inert.
+
+**Safety unchanged:** send-mode stays buyer-by-default, the in-app TopBar toggle is
+authoritative, the refresh build performs no sends, and the relaunch is env-clean.
+
+---
+
 ## Failure-mode reference table
 
 | Symptom | Likely cause | Fix |

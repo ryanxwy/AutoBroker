@@ -44,6 +44,37 @@ pnpm lint:deps        # enforces the five-layer one-way dependency rule (below)
 pnpm check:strings    # enforces the forbidden-strings ban (no stale AutoBroker-* names)
 ```
 
+## Desktop app (`apps/desktop`) — install & auto-fresh
+
+Two one-time commands bootstrap the installed desktop app:
+
+```bash
+pnpm desktop:install          # build + install /Applications/AutoBroker.app
+pnpm desktop:hooks:install    # arm git hooks that pre-warm rebuilds on commit/merge/checkout
+```
+
+**Freshness is eventually-consistent, not instantaneous.** The installed app always
+boots immediately on the last-installed build and converges to the current build within
+seconds via a non-blocking "Update ready — Relaunch" notification. An uncommitted edit
+is fresh only after the background build completes (not on the very first open after the
+edit); committed-while-closed edits are fresh on the next launch.
+
+The packaged launch-time check (`apps/desktop/src/main.ts` + `launchFreshness.ts`, gated
+on `app.isPackaged`) — not the git hooks — is the actual guarantee: GUI/IDE commits give
+the hook a minimal PATH with no `node`, so the hook silently skips; the launch check
+catches it regardless.
+
+**Kill switch:** `AUTOBROKER_DESKTOP_REFRESH=0` disables the auto-rebuild.
+
+**Scope:** macOS-only; requires `mac.identity: null` (unsigned local build). The stamp
+marker lives outside the `.app` bundle (`~/.autobroker-ts/desktop-refresh/<hash>.json`),
+so a copied or shipped `.app` is a normal frozen build with no self-rebuild. Only the
+checkout where `desktop:hooks:install` ran warms `/Applications`; other worktrees are
+inert.
+
+**Safety unchanged:** send-mode stays buyer-by-default, the in-app TopBar toggle is
+authoritative, the refresh build performs no sends, and the relaunch is env-clean.
+
 ## Five-layer one-way dependency rule
 
 A pnpm monorepo with a strict one-way ownership wall, enforced by TS project
