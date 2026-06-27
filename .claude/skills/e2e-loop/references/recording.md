@@ -72,6 +72,22 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   `site_unreachable` row and the batch continues so the reachable dealers still anchor — a
   partial-failure batch is correct; only a whole-server hang / zero-anchor batch is a bug.
   Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
+- `quote_audit` NOT advising a manufacturer rebate larger than ~20% of the quote's own
+  price (`selling_price ?? otd_total`): an OEM offers page is multi-model, so
+  `incentive_scrape` can mis-attribute another model's cash (an EV's $7.5k onto a $31k
+  compact SUV); the audit's magnitude guard suppresses the implausible `MISSING_REBATE`
+  rather than advise demanding a phantom rebate. A *plausible* missing rebate (≤20%) still
+  fires; a no-price quote fails open (already `MISSING_BREAKDOWN`). Re-flag ONLY if the
+  audit advises a rebate that is an implausible fraction of the quote price (a regression).
+  Shipped 2026-06-27 (`phase1/quote_audit` + `phase2/incentive_scrape`).
+- `dealer_geosearch` EXCLUDING a cross-border (non-US) dealer from the discovered/ranked
+  set + the DB: a border metro (San Diego/El Paso/Laredo) can surface an in-radius foreign
+  rooftop (e.g. "Hyundai Premier Tijuana", MX) that is non-transactable for a US buyer;
+  `isUsDealer` now detects Mexican border cities (name/city) + a trailing ", Mexico"
+  address word, and the pure filter drops it before ranking (the headline surfaces "N
+  cross-border dealer(s) excluded"). A US dealer on a Spanish-named street ("Ensenada Dr")
+  correctly stays. Re-flag ONLY if a non-US dealer reaches the scan/lead/ranked set.
+  Shipped 2026-06-27 (`phase2/dealer_geosearch`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
