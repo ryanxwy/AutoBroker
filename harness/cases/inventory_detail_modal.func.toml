@@ -67,3 +67,13 @@ expect = "visible"
 kind = "dom_state"
 testid = "inventory-detail-title"
 expect = "visible"
+
+# The HONEST price-breakdown payoff: lst_strong carries a $2,500 LABELED dealer
+# market adjustment, so the modal's red markup row renders. This is the one
+# representative red-flag proof on the offline lane (the amber/red add-on split,
+# the three coverage states, the availability reframe, and the static rebate
+# caveat are covered exhaustively by the InventoryDetailModal vitest tests).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-detail-markup"
+expect = "visible"

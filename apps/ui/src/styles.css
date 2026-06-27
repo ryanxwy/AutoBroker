@@ -1806,6 +1806,45 @@ details.optional[open] summary { margin-bottom: 10px; }
 }
 .inventory-detail-list dt { color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9px; padding-top: 2px; }
 .inventory-detail-list dd { margin: 0; word-break: break-all; color: var(--ink); }
+/* Inventory price-breakdown honesty surfaces. Color is NEVER the only signal:
+   the markup label, the add-on $ amounts, and the note prose each carry the
+   meaning in text. A LABELED dealer markup is always RED; dealer add-ons are
+   AMBER caution, escalating to RED at a heavy total (~$2k/veh benchmark). */
+.inventory-detail-list .breakdown-flag-red { color: var(--stop); }
+.inventory-detail-list dd.breakdown-soft { color: var(--ink-mute); }
+.breakdown-addons { margin-top: 12px; }
+/* the add-on line items — height-capped + scrolls internally (mirrors the batch
+   dealer list) so a long junk-fee menu never swamps the modal. */
+.breakdown-addon-list { max-height: 180px; overflow-y: auto; margin-top: 6px; }
+.breakdown-addons.sev-amber .breakdown-addon-list dd { color: var(--amber-ink); }
+.breakdown-addons.sev-red .breakdown-addon-list dd { color: var(--stop); }
+/* the "couldn't read a breakdown" coverage note — CONSPICUOUS, not muted: an
+   empty add-on section must never read as a clean car. */
+.breakdown-unknown {
+  margin-top: 12px;
+  padding: 8px 11px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--amber-ink);
+  background: var(--amber-wash);
+  border-left: 3px solid var(--amber);
+  border-radius: 4px;
+}
+/* the static conditional-rebate caveat — NON-muted, full --ink contrast (WCAG AA):
+   advertised prices often assume rebates most buyers can't claim. */
+.breakdown-caveat {
+  margin-top: 10px;
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.breakdown-note { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+/* the consolidated card price-flag chip — sized ABOVE the 9.5px micro chip so the
+   markup / add-on dollar figure reads at a glance (this is a financial warning). */
+.mini-chip.flag-chip { font-size: 11px; padding: 2px 8px; }
+.mini-chip.flag-red { color: var(--stop); border-color: var(--stop-line); }
 /* the quote-detail modal's section headings + scrollable source-email body */
 .quote-detail-h3 { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mute); margin: 16px 0 0; }
 .quote-detail-source-body {

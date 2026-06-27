@@ -41,10 +41,23 @@ export interface InventoryCandidate {
   model: string | null;
   trim: string | null;
   exterior_color: string | null;
+  interior_color: string | null;
   /** Public VDP href (or null) — the card's "View listing" click-through target. */
   listing_url: string | null;
   listed_price: number | null;
   msrp: number | null;
+  /** The dealer's own LABELED market adjustment (markup) in dollars, or null. 0
+   *  means "scanned, none"; a positive number is the only thing red-flagged. */
+  dealer_markup: number | null;
+  /** Dealer add-on line items (the junk buyers hate); [] when none captured. */
+  add_ons: { label: string; amount: number }[];
+  /** Sum of the add-on amounts in dollars, or null. */
+  addons_total: number | null;
+  /** true when the listing's price was hidden behind a "Get your price" CTA. */
+  price_gated: boolean;
+  /** true ⇔ a price-stack region was actually read; false = "couldn't read"
+   *  (distinct from a parsed-but-empty breakdown). */
+  breakdown_parsed: boolean;
   inventory_status: string;
   dealer_name: string | null;
   distance_miles: number | null;
@@ -72,6 +85,16 @@ function CandidateRow({
   const header = vehicleHeader(row) || "Inventory listing";
   const price = dollarLabel(row.listed_price);
   const distance = distanceLabel(row.distance_miles);
+  // ONE consolidated price-flag chip (never two). A LABELED dealer markup (RED)
+  // outranks add-ons (AMBER); itemization stays in the detail modal. The ⚑ glyph
+  // is decorative (aria-hidden) — the chip text carries the meaning (a11y: color
+  // is never the only signal).
+  const markup =
+    typeof row.dealer_markup === "number" && row.dealer_markup > 0 ? row.dealer_markup : null;
+  const addonsTotal = typeof row.addons_total === "number" ? row.addons_total : null;
+  const hasAddons =
+    (Array.isArray(row.add_ons) && row.add_ons.length > 0) ||
+    (addonsTotal !== null && addonsTotal > 0);
   return (
     <ClickableTile
       testid="inventory-candidate-row"
@@ -126,6 +149,22 @@ function CandidateRow({
           </>
         )}
       </div>
+      {markup !== null ? (
+        <div className="chip-row">
+          <span className="mini-chip flag-chip flag-red" data-testid="inventory-markup-flag">
+            <span aria-hidden="true">⚑</span> dealer markup +{dollarLabel(markup)}
+          </span>
+        </div>
+      ) : hasAddons ? (
+        <div className="chip-row">
+          <span className="mini-chip flag-chip warn" data-testid="inventory-addons-flag">
+            <span aria-hidden="true">⚑</span>{" "}
+            {addonsTotal !== null && addonsTotal > 0
+              ? `${dollarLabel(addonsTotal)} add-ons`
+              : "dealer add-ons"}
+          </span>
+        </div>
+      ) : null}
       {row.reasons.length > 0 && (
         <div className="chip-row">
           {row.reasons.map((reason) => (

@@ -1,0 +1,223 @@
+// @vitest-environment happy-dom
+/**
+ * InventoryDetailModal.test — the read-only inventory detail surface, focused on
+ * the HONEST price breakdown: the LABELED dealer-markup red row, the add-on
+ * amber/red severity split, the three add-on coverage states (couldn't-read vs
+ * none-detected vs the itemized list), the interior-color row, the availability
+ * reframe ("unknown" → "not confirmed by scan"), the static rebate caveat, and
+ * the price-gated note. The modal portals to document.body, so its nodes are
+ * queried off the document, not a render container. All pre-existing testids
+ * (modal/title/match-status/close) stay intact.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import { render } from "../test/render.js";
+import type { InventoryCandidate } from "./InventoryCandidates.js";
+import { InventoryDetailModal } from "./InventoryDetailModal.js";
+
+/** The detail modal portals to document.body — query it off the document. */
+const doc = (testId: string): HTMLElement | null =>
+  document.body.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+
+function makeRow(overrides: Partial<InventoryCandidate> = {}): InventoryCandidate {
+  return {
+    listing_id: "lst-1",
+    vin: "KM8JBCAE3RU000042",
+    stock_number: "STK-1",
+    year: 2026,
+    make: "Hyundai",
+    model: "Tucson Hybrid",
+    trim: "Limited",
+    exterior_color: "Shimmering Silver",
+    interior_color: "Gray Cloth",
+    listing_url: "https://dealer.example.com/vdp/lst-1",
+    listed_price: 44175,
+    msrp: 46500,
+    dealer_markup: null,
+    add_ons: [],
+    addons_total: null,
+    price_gated: false,
+    breakdown_parsed: false,
+    inventory_status: "in_stock",
+    dealer_name: "Jim Click Hyundai",
+    distance_miles: 4.2,
+    reasons: [],
+    match_status: "exact",
+    recommended: true,
+    ...overrides,
+  };
+}
+
+function open(row: InventoryCandidate): () => void {
+  const r = render(<InventoryDetailModal row={row} onClose={() => {}} />);
+  return () => r.unmount();
+}
+
+// ---------------------------------------------------------------------------
+// Pre-existing structure preserved
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — existing structure", () => {
+  it("keeps the modal, title, match-status chip, close button, VIN + selling price", () => {
+    const close = open(makeRow());
+    expect(doc("inventory-detail-modal")).not.toBeNull();
+    expect(doc("inventory-detail-title")!.textContent).toContain("Hyundai");
+    expect(doc("inventory-detail-match-status")!.textContent).toBe("exact");
+    expect(doc("inventory-detail-close")).not.toBeNull();
+    const modal = doc("inventory-detail-modal")!;
+    expect(modal.textContent).toContain("KM8JBCAE3RU000042"); // full VIN
+    expect(modal.textContent).toContain("$44,175"); // selling price (= listed_price)
+    close();
+  });
+
+  it("renders an inert modal (no dialog) when row is null", () => {
+    const r = render(<InventoryDetailModal row={null} onClose={() => {}} />);
+    expect(doc("inventory-detail-modal")).toBeNull();
+    r.unmount();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Labeled dealer markup (RED)
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — labeled markup", () => {
+  it("renders a RED labeled markup row with explicit '+$' text when dealer_markup > 0", () => {
+    const close = open(makeRow({ dealer_markup: 3000 }));
+    const markup = doc("inventory-detail-markup");
+    expect(markup).not.toBeNull();
+    expect(markup!.textContent).toBe("+$3,000");
+    // Color is reinforced (RED) but the text carries the meaning.
+    expect(markup!.className).toContain("breakdown-flag-red");
+    close();
+  });
+
+  it("omits the markup row when dealer_markup is 0 (scanned, none)", () => {
+    const close = open(makeRow({ dealer_markup: 0 }));
+    expect(doc("inventory-detail-markup")).toBeNull();
+    close();
+  });
+
+  it("omits the markup row when dealer_markup is null", () => {
+    const close = open(makeRow({ dealer_markup: null }));
+    expect(doc("inventory-detail-markup")).toBeNull();
+    close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Add-on coverage states + amber/red severity
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — add-on coverage states", () => {
+  it("breakdown_parsed=false → a conspicuous (non-muted) couldn't-read note, no list", () => {
+    const close = open(makeRow({ breakdown_parsed: false }));
+    const note = doc("inventory-detail-breakdown-unknown");
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain("UNKNOWN");
+    expect(note!.className).not.toContain("muted"); // conspicuous, not muted
+    expect(doc("inventory-detail-no-addons")).toBeNull();
+    expect(doc("inventory-detail-addons")).toBeNull();
+    close();
+  });
+
+  it("breakdown_parsed=true + no add-ons → 'No dealer add-ons detected.' (distinct state)", () => {
+    const close = open(makeRow({ breakdown_parsed: true, add_ons: [], addons_total: null }));
+    expect(doc("inventory-detail-no-addons")).not.toBeNull();
+    expect(doc("inventory-detail-breakdown-unknown")).toBeNull();
+    expect(doc("inventory-detail-addons")).toBeNull();
+    close();
+  });
+
+  it("a small add-on total (< $2k) renders the list AMBER with each item + total", () => {
+    const close = open(
+      makeRow({
+        breakdown_parsed: true,
+        add_ons: [
+          { label: "Nitrogen tire fill", amount: 299 },
+          { label: "Window etch", amount: 199 },
+        ],
+        addons_total: 498,
+      }),
+    );
+    const block = doc("inventory-detail-addons");
+    expect(block).not.toBeNull();
+    expect(block!.className).toContain("sev-amber");
+    expect(block!.className).not.toContain("sev-red");
+    expect(document.body.querySelectorAll('[data-testid="inventory-detail-addon"]')).toHaveLength(2);
+    expect(block!.textContent).toContain("Nitrogen tire fill");
+    expect(doc("inventory-detail-addons-total")!.textContent).toContain("$498");
+    // The "couldn't read" / "none detected" notes do NOT also appear.
+    expect(doc("inventory-detail-breakdown-unknown")).toBeNull();
+    expect(doc("inventory-detail-no-addons")).toBeNull();
+    close();
+  });
+
+  it("a heavy add-on total (>= $2k) escalates the list to RED", () => {
+    const close = open(
+      makeRow({
+        breakdown_parsed: true,
+        add_ons: [{ label: "Protection package", amount: 2200 }],
+        addons_total: 2200,
+      }),
+    );
+    const block = doc("inventory-detail-addons");
+    expect(block).not.toBeNull();
+    expect(block!.className).toContain("sev-red");
+    expect(block!.className).not.toContain("sev-amber");
+    close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interior color, availability reframe, rebate caveat, price gated
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — interior color / availability / caveat / gated", () => {
+  it("renders the interior color row when present, omits it when null", () => {
+    const close = open(makeRow({ interior_color: "Black Leather" }));
+    expect(doc("inventory-detail-interior-color")!.textContent).toBe("Black Leather");
+    close();
+
+    const close2 = open(makeRow({ interior_color: null }));
+    expect(doc("inventory-detail-interior-color")).toBeNull();
+    close2();
+  });
+
+  it("reframes an 'unknown' status to 'not confirmed by scan' (not the bare word)", () => {
+    const close = open(makeRow({ inventory_status: "unknown" }));
+    const av = doc("inventory-detail-availability");
+    expect(av).not.toBeNull();
+    expect(av!.textContent).toBe("not confirmed by scan");
+    expect(av!.textContent).not.toBe("unknown");
+    close();
+  });
+
+  it("keeps in_stock / in_transit / ordered statuses verbatim", () => {
+    for (const status of ["in_stock", "in_transit", "ordered"]) {
+      const close = open(makeRow({ inventory_status: status }));
+      expect(doc("inventory-detail-availability")!.textContent).toBe(status);
+      close();
+    }
+  });
+
+  it("always shows the static rebate caveat (when a price is shown) and it is NOT muted", () => {
+    const close = open(makeRow());
+    const caveat = doc("inventory-detail-rebate-caveat");
+    expect(caveat).not.toBeNull();
+    expect(caveat!.textContent).toContain("rebates");
+    expect(caveat!.className).not.toContain("muted"); // WCAG AA: full --ink contrast
+    close();
+  });
+
+  it("renders the price-gated note only when price_gated is true", () => {
+    const close = open(makeRow({ price_gated: true }));
+    expect(doc("inventory-detail-price-gated")).not.toBeNull();
+    close();
+
+    const close2 = open(makeRow({ price_gated: false }));
+    expect(doc("inventory-detail-price-gated")).toBeNull();
+    close2();
+  });
+});

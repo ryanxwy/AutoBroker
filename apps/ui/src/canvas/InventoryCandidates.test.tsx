@@ -293,6 +293,68 @@ describe("InventoryCandidates — candidate row fields", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Consolidated price-flag chip (one chip max: RED markup > AMBER add-ons)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — consolidated flag chip", () => {
+  it("renders a RED markup flag with '+$' text when dealer_markup > 0", () => {
+    const result = makeResult([makeCandidate({ dealer_markup: 2500 })]);
+    const { query } = render(<InventoryCandidates inventory={ok(result)} />);
+    const chip = query("inventory-markup-flag");
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain("+$2,500");
+    expect(chip!.className).toContain("flag-red");
+    // The ⚑ glyph is decorative — aria-hidden so the text carries the meaning.
+    const glyph = chip!.querySelector('[aria-hidden="true"]');
+    expect(glyph).not.toBeNull();
+    expect(glyph!.textContent).toBe("⚑");
+    // No add-ons chip when markup wins.
+    expect(query("inventory-addons-flag")).toBeNull();
+  });
+
+  it("renders an AMBER add-ons flag (no markup) when add-ons are present", () => {
+    const result = makeResult([
+      makeCandidate({
+        dealer_markup: null,
+        add_ons: [{ label: "Nitrogen tire fill", amount: 299 }],
+        addons_total: 299,
+      }),
+    ]);
+    const { query } = render(<InventoryCandidates inventory={ok(result)} />);
+    const chip = query("inventory-addons-flag");
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain("$299 add-ons");
+    expect(chip!.className).toContain("warn");
+    expect(chip!.querySelector('[aria-hidden="true"]')!.textContent).toBe("⚑");
+    expect(query("inventory-markup-flag")).toBeNull();
+  });
+
+  it("shows exactly ONE flag chip (markup wins) when both markup and add-ons exist", () => {
+    const result = makeResult([
+      makeCandidate({
+        dealer_markup: 1500,
+        add_ons: [{ label: "Paint protection", amount: 999 }],
+        addons_total: 999,
+      }),
+    ]);
+    const { query, container } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(query("inventory-markup-flag")).not.toBeNull();
+    expect(query("inventory-addons-flag")).toBeNull();
+    expect(container.querySelectorAll(".flag-chip")).toHaveLength(1);
+  });
+
+  it("renders NO flag chip when there is no markup and no add-ons", () => {
+    const result = makeResult([
+      makeCandidate({ dealer_markup: 0, add_ons: [], addons_total: null }),
+    ]);
+    const { query, container } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(query("inventory-markup-flag")).toBeNull();
+    expect(query("inventory-addons-flag")).toBeNull();
+    expect(container.querySelectorAll(".flag-chip")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Detail modal (clickable tile → portalled read-only modal)
 // ---------------------------------------------------------------------------
 

@@ -13,7 +13,7 @@
  * and knows nothing about the API client.
  */
 
-import { useId } from "react";
+import { Fragment, useId } from "react";
 
 import { Modal } from "../shell/Modal.js";
 import { DetailRow } from "./DetailRow.js";
@@ -45,6 +45,21 @@ export function InventoryDetailModal({
     row.msrp !== null && row.listed_price !== null && row.msrp > row.listed_price
       ? dollarLabel(row.msrp - row.listed_price)
       : null;
+  // LABELED markup only (>0). 0/null = "scanned, none" → no row, never a flag.
+  const markup =
+    typeof row.dealer_markup === "number" && row.dealer_markup > 0 ? row.dealer_markup : null;
+  // The price stack is shown when there is any price/discount to anchor the
+  // (static) rebate caveat to.
+  const hasPriceInfo = listed !== null || msrp !== null || belowMsrp !== null;
+  const addOns = Array.isArray(row.add_ons) ? row.add_ons : [];
+  const addonsTotal = typeof row.addons_total === "number" ? row.addons_total : null;
+  // Severity → token: add-ons are AMBER caution, escalating to RED at a heavy
+  // total (the ~$2k/veh benchmark). A labeled markup is always RED.
+  const addonsSevere = addonsTotal !== null && addonsTotal >= 2000;
+  // Availability reframe: "unknown" is scanner-side uncertainty, NOT a defective
+  // car — show a muted "not confirmed by scan" rather than the bare word. Keep
+  // in_stock / in_transit / ordered verbatim; never drop the row.
+  const availabilityUnknown = row.inventory_status === "unknown";
   const distance = distanceLabel(row.distance_miles);
   // Only ever link to an http(s) VDP — the same external-link discipline the
   // Dealer/Incentive modals use (defense-in-depth even though listing_url comes
@@ -74,14 +89,97 @@ export function InventoryDetailModal({
         <dl className="inventory-detail-list">
           <DetailRow label="VIN" value={row.vin} />
           <DetailRow label="Stock #" value={row.stock_number} />
-          <DetailRow label="Listed price" value={listed} />
-          <DetailRow label="MSRP" value={msrp} />
-          <DetailRow label="below MSRP" value={belowMsrp} />
-          <DetailRow label="Color" value={row.exterior_color} />
-          <DetailRow label="Status" value={row.inventory_status} />
+          <DetailRow label="Exterior color" value={row.exterior_color} />
+          {row.interior_color !== null && row.interior_color !== "" && (
+            <>
+              <dt>Interior color</dt>
+              <dd data-testid="inventory-detail-interior-color">{row.interior_color}</dd>
+            </>
+          )}
           <DetailRow label="Dealer" value={row.dealer_name} />
           <DetailRow label="Distance" value={distance} />
+          {availabilityUnknown ? (
+            <>
+              <dt>Availability</dt>
+              <dd className="breakdown-soft" data-testid="inventory-detail-availability">
+                not confirmed by scan
+              </dd>
+            </>
+          ) : (
+            <>
+              <dt>Status</dt>
+              <dd data-testid="inventory-detail-availability">{row.inventory_status}</dd>
+            </>
+          )}
         </dl>
+
+        {hasPriceInfo && (
+          <>
+            <h3 className="quote-detail-h3">Price breakdown</h3>
+            <dl className="inventory-detail-list">
+              <DetailRow label="MSRP" value={msrp} />
+              <DetailRow label="below MSRP" value={belowMsrp} />
+              <DetailRow label="Selling price" value={listed} />
+              {markup !== null && (
+                <>
+                  <dt className="breakdown-flag-red">Dealer market adjustment</dt>
+                  <dd className="breakdown-flag-red" data-testid="inventory-detail-markup">
+                    +{dollarLabel(markup)}
+                  </dd>
+                </>
+              )}
+            </dl>
+            {/* Static rebate caveat — NON-muted (WCAG AA), shown whenever a price
+                or discount is shown. Not per-listing detection: advertised prices
+                routinely assume rebates most buyers can't claim. */}
+            <p className="breakdown-caveat" data-testid="inventory-detail-rebate-caveat">
+              Advertised prices often assume rebates (military / loyalty / financing)
+              most buyers don&apos;t qualify for. Confirm your real quote.
+            </p>
+          </>
+        )}
+
+        {/* Add-on coverage state — an empty section must NEVER imply a clean car.
+            couldn't-read (conspicuous) vs none-detected vs the itemized list. */}
+        {row.breakdown_parsed === false ? (
+          <p className="breakdown-unknown" data-testid="inventory-detail-breakdown-unknown">
+            Couldn&apos;t read a price breakdown: markup and add-ons UNKNOWN. Verify on
+            the dealer&apos;s site.
+          </p>
+        ) : addOns.length === 0 ? (
+          <p className="breakdown-note muted" data-testid="inventory-detail-no-addons">
+            No dealer add-ons detected.
+          </p>
+        ) : (
+          <div
+            className={`breakdown-addons ${addonsSevere ? "sev-red" : "sev-amber"}`}
+            data-testid="inventory-detail-addons"
+          >
+            <h3 className="quote-detail-h3">Dealer add-ons</h3>
+            <dl className="inventory-detail-list breakdown-addon-list">
+              {addOns.map((addOn, i) => (
+                <Fragment key={`${addOn.label}-${i}`}>
+                  <dt>{addOn.label}</dt>
+                  <dd data-testid="inventory-detail-addon">{dollarLabel(addOn.amount)}</dd>
+                </Fragment>
+              ))}
+              {addonsTotal !== null && (
+                <>
+                  <dt>Add-ons total</dt>
+                  <dd data-testid="inventory-detail-addons-total">
+                    <strong>{dollarLabel(addonsTotal)}</strong>
+                  </dd>
+                </>
+              )}
+            </dl>
+          </div>
+        )}
+
+        {row.price_gated === true && (
+          <p className="breakdown-note" data-testid="inventory-detail-price-gated">
+            Price hidden behind a &quot;Get your price&quot; CTA.
+          </p>
+        )}
         {row.reasons.length > 0 && (
           <div className="chip-row">
             {row.reasons.map((reason) => (

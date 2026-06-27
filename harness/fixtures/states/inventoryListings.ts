@@ -88,11 +88,22 @@ export const inventoryListings: FixtureState = {
       "INSERT INTO inventory_listings " +
         "(listing_id, search_profile_id, dealer_id, vin, stock_number, year, make, model, trim, " +
         "exterior_color, msrp, listed_price, inventory_status, match_status, raw_listing_json, " +
-        "first_seen_at, last_seen_at, observed_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)",
+        "first_seen_at, last_seen_at, observed_at, interior_color, dealer_markup, pricing_breakdown_json) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?)",
     );
+    // The strong candidate carries a LABELED dealer markup + a parsed add-on so
+    // the Inventory detail modal has honest red/amber data to surface (the func
+    // lane asserts the red markup row); the others leave the new columns null so
+    // their cards stay flag-free.
+    const STRONG_BREAKDOWN = JSON.stringify({
+      addOns: [{ label: "Nitrogen tire fill", amount: 299 }],
+      addonsTotal: 299,
+      priceGated: false,
+      breakdownParsed: true,
+    });
     // (a) the strong candidate — exact trim, in stock, full VIN, under budget,
-    //     preferred color, near dealer → top-ranked + recommended.
+    //     preferred color, near dealer → top-ranked + recommended. Plus a $2,500
+    //     labeled market adjustment + a $299 add-on (the breakdown red/amber flags).
     insertListing.run(
       "lst_strong",
       PROFILE_ID,
@@ -111,6 +122,9 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-10",
       "2026-06-01",
+      "Gray Cloth",
+      2500,
+      STRONG_BREAKDOWN,
     );
     // (b) a NULL listed_price row → the "incomplete" badge (passes the budget filter).
     insertListing.run(
@@ -131,6 +145,9 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-05",
       "2026-06-01",
+      null,
+      null,
+      null,
     );
     // (c) a NULL stock_number row → the em-dash.
     insertListing.run(
@@ -151,6 +168,9 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-03",
       "2026-06-01",
+      null,
+      null,
+      null,
     );
     // (d) an ORDERED row → dropped by the hard filter (never a candidate).
     insertListing.run(
@@ -171,6 +191,9 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-02",
       "2026-06-01",
+      null,
+      null,
+      null,
     );
     // (e) an over-budget row (53000 > 1.10 * 45000 = 49500) → dropped.
     insertListing.run(
@@ -191,6 +214,9 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-04",
       "2026-06-01",
+      null,
+      null,
+      null,
     );
   },
 };
