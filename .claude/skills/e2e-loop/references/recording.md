@@ -94,6 +94,19 @@ known-correct entry here so it is never re-flagged.)
 
 ---
 
+### Buyer-email probe findings
+
+When the optional buyer-email probe ran this session, record its findings in a
+**"Buyer-email probe"** sub-section inside **本轮发现**, separate from the 17-skill
+逐技能表. Apply the same three-bucket rules: a broken real-read capability is a
+blocker or backlog; a low coverage ratio is backlog with a falsifiable fix idea;
+cosmetic oddities are polish. Mirror backlog items to `harvest-register.md`
+(semantic dedup, bump recurrence on re-discovery) using `probe-<YYYY-MM-DD>` as the
+`evidence_ref` plus the JSON coverage object as the snapshot. `e2e-evolve` drains
+this section the same way it drains any other backlog entry.
+
+---
+
 ## Step 6b — the trivial / safety in-loop fix (the ONLY fixing the runner does)
 
 A blocker qualifies for an in-loop fix **only if both**: (a) it is a **localized** fix —

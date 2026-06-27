@@ -108,11 +108,12 @@ async function main() {
     window: windowDays,
     matched,
     scanned,
+    // withBodyText: messages where bodyText is non-empty after mapMessage.
+    // This is the closest proxy for HTML→plain recovery available from the
+    // Message struct (the HTML-only path populates bodyText when the
+    // text/plain part is absent), but it cannot distinguish that case from
+    // a normal text-part message — so no separate htmlOnlyRecovered field.
     withBodyText,
-    // htmlOnlyRecovered: approximate — messages with non-empty bodyText are
-    // the closest proxy we have from the Message struct (the HTML→plain
-    // fallback populates bodyText when the text/plain part is absent).
-    htmlOnlyRecovered: withBodyText,
     attachmentsParsed,
     deterministicQuoteSignals,
     currentHistoryId,

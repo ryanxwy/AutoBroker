@@ -51,6 +51,15 @@ ends with a full report; it does **not** need an empty backlog.
   already-running) serve-live. If its DB is empty, do a minimal intake first to seed one
   profile (this also exercises intake live). Light still writes a report; it just
   expects fewer findings (a clean read-only sweep may legitimately record zero).
+- **Buyer-email probe** (optional, owner-run, separate from serve-live): validates the
+  REAL Gmail I/O layer — OAuth/refresh, real MIME parse (incl. HTML-only recovery),
+  attachment download, historyId — that the test-mode journey can never reach. It is a
+  **standalone script** (`pnpm e2e:buyer-email-probe`), NOT serve-live, NOT in `green.sh`,
+  **read-only by construction** (the `ReadOnlyGmailAdapter` facade makes send structurally
+  impossible — no env flag, unconditional throw), and never sends anything. Run it by hand
+  when you want to confirm the live adapter is healthy after an OAuth or MIME change.
+  Findings slot into the three-bucket report under a separate "Buyer-email probe"
+  sub-section (not in the 逐技能表). See `references/buyer-email-probe.md`.
 
 ## Safety gate (do this first, fail closed)
 
