@@ -13,31 +13,38 @@
  * Exit 0 — .app is clean.
  * Exit 1 — .app absent (run electron-builder first) OR contamination found.
  *
- * Contamination rules (all file reads use Buffer to safely handle binaries):
+ * What we are catching: a LEAKED MARKER (the external freshness marker, or the
+ * abandoned in-bundle "dev-origin" draft, accidentally shipped INSIDE the .app)
+ * and a test-mode token baked into the packed server bundle. A leaked marker is
+ * a FILE, so we detect it by FILE IDENTITY — never by substring-scanning source
+ * text. The compiled launch-check code legitimately ships inside app.asar and
+ * contains the marker FIELD NAMES (`repoPath`, `builtStamp`) and the data-dir
+ * sub-path (`desktop-refresh/`) as live property accesses + JSDoc; a raw
+ * substring scan would false-positive on that asar on every real build. So:
  *
- *   RULE 1 — Marker schema signature: any file containing BOTH the strings
- *     "repoPath" and "builtStamp". These are the two field names that identify
- *     the external freshness marker schema. The marker lives outside the .app
- *     at ~/.autobroker-ts/desktop-refresh/<hash>.json and must never be
- *     written into the bundle or shipped as extraResources.
+ *   RULE A — Leaked marker by FILE IDENTITY: for each `.json` file under the
+ *     .app, JSON.parse it; if it parses to an OBJECT carrying the marker
+ *     key-set (`repoPath` AND `builtStamp` AND `schemaVersion`/`frameworkStamp`)
+ *     → FAIL. The external marker lives outside the .app at
+ *     ~/.autobroker-ts/desktop-refresh/<hash>.json and must never ship inside
+ *     the bundle. A real app.asar is a binary concat — it will NOT JSON.parse to
+ *     such an object (and it does not end in .json), so the asar never trips.
  *
- *   RULE 2 — Abandoned draft name: any file containing the literal "dev-origin".
- *     This was the discarded name for a proposed in-bundle marker variant;
- *     banning its presence in the artifact mirrors the source-level check:strings
- *     rule that prevents re-introducing it.
+ *   RULE B — Abandoned draft marker FILE: any file whose BASENAME matches
+ *     `dev-origin` (e.g. dev-origin.json) → FAIL. A leaked draft marker would be
+ *     a file; we check the file's identity, NOT its contents (check:strings
+ *     already bans the literal in tracked source, and the asar holds it as
+ *     compiled launch-check source).
  *
- *   RULE 3 — Marker home path fragment: any file containing "desktop-refresh/".
- *     The marker's data-dir sub-path must not be hard-wired into the shipped
- *     bundle (would only appear there by accident / a stale import).
- *
- *   RULE 4 — Test-mode auto-approve token in server.cjs: the packed
+ *   RULE C — Test-mode auto-approve token in server.cjs: the packed
  *     Contents/Resources/bundle/server.cjs must not contain
  *     AUTOBROKER_TEST_AUTO_APPROVE. The build env is sanitised before
  *     electron-builder runs (that token is deleted from env), so its presence
  *     in the bundle means the server was compiled with test-mode env baked in.
+ *     This is the one correctly-narrow content scan (server.cjs only).
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -108,42 +115,55 @@ function bufHas(buf, str) {
   return buf.indexOf(Buffer.from(str, "utf8")) !== -1;
 }
 
-// Search targets (kept as plain literals — this file is excluded from the
-// check:strings "dev-origin" rule because it is the scanner for that pattern).
-const MARKER_REPO_PATH = "repoPath";
-const MARKER_BUILT_STAMP = "builtStamp";
-const ABANDONED_DRAFT_NAME = "dev-origin";
-const MARKER_HOME_FRAGMENT = "desktop-refresh/";
+// The abandoned in-bundle marker draft name (kept as a plain literal — this file
+// is excluded from the check:strings "dev-origin" rule because it is the scanner
+// for that pattern). Matched against a file BASENAME, never substring-scanned.
+const ABANDONED_DRAFT_BASENAME = /^dev-origin(\.|$)/i;
 const AUTO_APPROVE_TOKEN = "AUTOBROKER_TEST_AUTO_APPROVE";
 
 const serverCjsAbs = join(appRoot, "Contents", "Resources", "bundle", "server.cjs");
 
 walk(appRoot, (file) => {
-  let buf;
-  try {
-    buf = readFileSync(file);
-  } catch {
-    return; // unreadable file — not a contamination
+  const base = basename(file);
+
+  // RULE B: abandoned draft marker FILE (by basename, not contents).
+  if (ABANDONED_DRAFT_BASENAME.test(base)) {
+    reportFail(`abandoned draft marker file present:\n  ${file}`);
+    return;
   }
 
-  // RULE 1: marker schema signature
-  if (bufHas(buf, MARKER_REPO_PATH) && bufHas(buf, MARKER_BUILT_STAMP)) {
-    reportFail(`marker schema signature (${MARKER_REPO_PATH}+${MARKER_BUILT_STAMP}) found in:\n  ${file}`);
+  // RULE A: leaked freshness marker by FILE IDENTITY. Only .json files are
+  // candidates; a binary app.asar does not end in .json and would not parse to
+  // the marker object even if it did, so this never false-positives on the asar.
+  if (base.toLowerCase().endsWith(".json")) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      parsed = null; // not JSON / not utf8 → not a marker
+    }
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "repoPath" in parsed &&
+      "builtStamp" in parsed &&
+      ("schemaVersion" in parsed || "frameworkStamp" in parsed)
+    ) {
+      reportFail(`leaked freshness marker (marker key-set) in JSON file:\n  ${file}`);
+    }
   }
 
-  // RULE 2: abandoned draft marker name
-  if (bufHas(buf, ABANDONED_DRAFT_NAME)) {
-    reportFail(`"${ABANDONED_DRAFT_NAME}" found in:\n  ${file}`);
-  }
-
-  // RULE 3: marker home path fragment
-  if (bufHas(buf, MARKER_HOME_FRAGMENT)) {
-    reportFail(`"${MARKER_HOME_FRAGMENT}" found in:\n  ${file}`);
-  }
-
-  // RULE 4: test-mode token in server.cjs only
-  if (file === serverCjsAbs && bufHas(buf, AUTO_APPROVE_TOKEN)) {
-    reportFail(`"${AUTO_APPROVE_TOKEN}" in server.cjs:\n  ${file}`);
+  // RULE C: test-mode token in the packed server bundle only.
+  if (file === serverCjsAbs) {
+    let buf;
+    try {
+      buf = readFileSync(file);
+    } catch {
+      return; // unreadable — not a contamination
+    }
+    if (bufHas(buf, AUTO_APPROVE_TOKEN)) {
+      reportFail(`"${AUTO_APPROVE_TOKEN}" in server.cjs:\n  ${file}`);
+    }
   }
 });
 

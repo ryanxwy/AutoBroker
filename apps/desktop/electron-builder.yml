@@ -29,9 +29,16 @@ directories:
   output: release            # packaged output (gitignored, never committed)
 
 # Inside the asar: just the compiled main process. The renderer + server live
-# in bundle/ (shipped as extraResources below).
+# in bundle/ (shipped as extraResources below). The desktop tsconfig compiles
+# src/**/*.ts — which includes the *.test.ts unit tests — into dist/, so the
+# negation globs keep those compiled test artifacts (and their .d.ts/maps) OUT
+# of the packed asar: they are dead weight and they carry the marker field names.
 files:
   - dist/**
+  - "!dist/**/*.test.js"
+  - "!dist/**/*.test.d.ts"
+  - "!dist/**/*.test.js.map"
+  - "!dist/**/*.test.d.ts.map"
   - package.json
 
 # Ship the pre-assembled bundle verbatim into Contents/Resources/bundle. The

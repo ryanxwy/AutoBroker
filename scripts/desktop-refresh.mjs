@@ -714,6 +714,15 @@ function sanitizedBuildEnv() {
  * (unless skipBuild), then imports the COMPILED module cache-busted so a rebuilt
  * dist is always re-read. A throw (ForceRebuild / GitUnavailable) is the
  * caller's signal to treat the tree as STALE and rebuild.
+ *
+ * NOTE on the dev-tree build: when run against the live dev checkout
+ * (skipBuild=false), `tsc -b` writes gitignored cross-package `*.tsbuildinfo`
+ * files and can race a concurrent dev `tsc -b`. Those artifacts are gitignored,
+ * so they never dirty `git status`, but the write does happen. (A standalone
+ * single-file compile of freshness.ts — it imports only node built-ins — into a
+ * temp dir would avoid the dev-tree write; deferred, because freshness.ts changes
+ * rarely and the temp module's ESM/CJS emit shape + node-type resolution add
+ * complexity disproportionate to a gitignored write.)
  */
 export async function computeLiveStamp(repoRoot = REPO_ROOT, opts = {}) {
   if (!opts.skipBuild) {
@@ -1014,6 +1023,31 @@ export async function runWorker(opts) {
     // Any build/install error: the currently-installed app + marker are left
     // UNTOUCHED, never a half-written marker. Manual modes surface the failure.
     log(`ERROR: ${err?.stack ?? err}`);
+
+    // Never-strand floor for the install/relaunch (doOpen) mode. If a build or
+    // install threw AFTER the old instance already quit, the success-path
+    // relaunch (inside phaseInstall) was never reached and the staged signal is
+    // still on disk — so the next manual reopen would re-consume that staged
+    // build and re-quit, a quit-LOOP. So on ANY failure in doOpen mode we:
+    //   (a) clear the staged signal, breaking the re-consume loop on next launch,
+    //   (b) relaunch whatever .app is currently at appPath. The atomic swap
+    //       guarantees a valid bundle is always there (the untouched old one on a
+    //       failed install), so `--install --open` always ends with the app
+    //       running, success or failure.
+    if (opts.doOpen) {
+      try {
+        rmSync(paths.stagedPath, { force: true });
+      } catch {
+        /* best-effort */
+      }
+      if (opts.quittingPid) waitForPidExit(opts.quittingPid, 30_000);
+      relaunchApp(paths.appPath, {
+        liveInstancePids: opts.liveInstancePids,
+        quittingPid: opts.quittingPid,
+        open: opts.open,
+        log,
+      });
+    }
     return 1;
   } finally {
     releaseLock(paths.lockDir);

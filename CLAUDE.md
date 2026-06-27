@@ -60,9 +60,13 @@ is fresh only after the background build completes (not on the very first open a
 edit); committed-while-closed edits are fresh on the next launch.
 
 The packaged launch-time check (`apps/desktop/src/main.ts` + `launchFreshness.ts`, gated
-on `app.isPackaged`) — not the git hooks — is the actual guarantee: GUI/IDE commits give
-the hook a minimal PATH with no `node`, so the hook silently skips; the launch check
-catches it regardless.
+on `app.isPackaged`) always SURFACES staleness and CONSUMES an already-built staged build —
+that staged-consumption needs no build step and is the real guarantee. BUILDING a
+not-yet-built edit (e.g. an uncommitted change) is the part that needs a terminal-context
+PATH: the background `node`/`pnpm` build only runs when triggered from a terminal context —
+the git hook on a terminal commit, or an app launched from a terminal. A Finder/launchd
+launch has a minimal PATH with no `node`, so its background build fails soft (the app still
+boots and still consumes any build that is already staged).
 
 **Kill switch:** `AUTOBROKER_DESKTOP_REFRESH=0` disables the auto-rebuild.
 

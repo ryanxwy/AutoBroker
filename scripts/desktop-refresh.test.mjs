@@ -506,3 +506,79 @@ describe("runWorker — FIX 2: consume the staged build", () => {
     expect(installedWith).toEqual([builtApp]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// runWorker — never-strand: --install --open ALWAYS ends with the app running.
+//
+// If phaseInstall throws AFTER the old instance already quit, the doOpen mode
+// must still (a) clear the staged signal (break the quit-loop on next launch)
+// and (b) relaunch the app currently at appPath.
+// ---------------------------------------------------------------------------
+
+describe("runWorker — never-strand on a failed --install --open", () => {
+  it("clears the staged signal and relaunches appPath when phaseInstall throws", async () => {
+    const paths = isolatedPaths();
+    mkdirSync(paths.refreshDir, { recursive: true });
+    // A staged signal is on disk (would be re-consumed on the next launch if we
+    // failed to clear it → quit-loop).
+    writeFileSync(
+      paths.stagedPath,
+      JSON.stringify({ stagedAppPath: makeStagedApp(), builtStamp: "STAMP-NEW", frameworkStamp: "FW", builtAtIso: "x" }),
+    );
+    // No marker → not fresh → the worker enters the build/install path.
+
+    const opened = [];
+    const code = await runWorker({
+      paths,
+      env: {},
+      repoRoot: mkTmp("dr-repo-"),
+      allowNoPrimary: true,
+      acquireOrWait: true, // the --install / relaunch mode
+      doOpen: true,
+      computeLiveStamp: async () => ({ state: "ok", source: "src", frameworkStamp: "FW", builtStamp: "STAMP-NEW" }),
+      phaseBuild: () => ({ stagedAppPath: makeStagedApp() }),
+      // Simulate a disk/permission/ditto failure during the atomic install.
+      phaseInstall: () => {
+        throw new Error("install boom (ditto/disk failure)");
+      },
+      // Stand-in opener + a liveInstancePids that reports the app present so the
+      // relaunch "did it appear" loop resolves immediately (no real open/wait).
+      open: (p) => opened.push(p),
+      liveInstancePids: () => [7777],
+    });
+
+    expect(code).toBe(1); // the failure is still surfaced
+    expect(opened).toEqual([paths.appPath]); // relaunch fired with the absolute path
+    expect(existsSync(paths.stagedPath)).toBe(false); // staged signal cleared → no quit-loop
+  });
+
+  it("does NOT relaunch or clear the staged signal on a failed worker/hook run (no doOpen)", async () => {
+    const paths = isolatedPaths();
+    mkdirSync(paths.refreshDir, { recursive: true });
+    writeFileSync(
+      paths.stagedPath,
+      JSON.stringify({ stagedAppPath: makeStagedApp(), builtStamp: "STAMP-NEW", frameworkStamp: "FW", builtAtIso: "x" }),
+    );
+
+    const opened = [];
+    const code = await runWorker({
+      paths,
+      env: {},
+      repoRoot: mkTmp("dr-repo-"),
+      allowNoPrimary: true,
+      coalesce: true,
+      doOpen: false, // hook/worker path — no relaunch, no staged clear
+      computeLiveStamp: async () => ({ state: "ok", source: "src", frameworkStamp: "FW", builtStamp: "STAMP-NEW" }),
+      phaseBuild: () => ({ stagedAppPath: makeStagedApp() }),
+      phaseInstall: () => {
+        throw new Error("install boom");
+      },
+      open: (p) => opened.push(p),
+      liveInstancePids: () => [7777],
+    });
+
+    expect(code).toBe(1);
+    expect(opened).toEqual([]); // nothing relaunched
+    expect(existsSync(paths.stagedPath)).toBe(true); // staged signal preserved (no doOpen recovery)
+  });
+});
