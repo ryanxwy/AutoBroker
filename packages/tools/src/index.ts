@@ -510,6 +510,14 @@ export {
   type NegotiationStatus,
   type NegotiationStatusInput,
 } from "./dealerComm/negotiationStatus.js";
+export {
+  composeStatusLine,
+  composeNegotiationStrategy,
+  composeNextSteps,
+  type StatusLineInput,
+  type NegotiationStrategyInput,
+  type NextStepsInput,
+} from "./dealerComm/negotiationAdvice.js";
 
 // negotiation_followup (X2) — the single-transaction contact-flip writer + the
 // per-profile follow-up reads (open-quote OTD situation, needs-response thread
