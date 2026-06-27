@@ -339,6 +339,7 @@ describe("ApiClient — dealer negotiations", () => {
     name: "Dealer d-near",
     city: "Irvine",
     state: "CA",
+    website: "https://dealer.example",
     negotiation_status: "countered",
     email_count: 2,
     quote_sent: true,
