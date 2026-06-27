@@ -77,6 +77,39 @@ General heuristics (non-tech-user tuned; a miss is usually MED unless it blocks 
     they created silently hidden behind `[0]`. MED→HIGH if it traps the buyer.
     Adding a profile switcher is the loop's step-4 backlog item, not frontend-taste's job.
 
+Negotiation board + detail-modal soft content (judge the `negotiation-detail-modal`
+LLM-written prose against the visible replies/quotes — open a `canvas-negotiation-card`
+and read the modal regions):
+
+14. **Status-summary coherence.** The across-emails summary
+    (`negotiation-status-summary`) must read as a coherent, non-contradictory account
+    of the thread — it must NOT contradict the visible `negotiation-reply-row`s, the
+    `negotiation-competing-quote`, or the grid status chip. A summary that says
+    "no quote yet" while a quote is shown, or claims progress the replies don't
+    support, is a HIGH finding (incoherent buyer-facing copy). MED if merely thin.
+15. **Strategy sensibility.** The `negotiation-strategy` line must be sensible for the
+    thread's CURRENT state (e.g. don't advise "push for a counter" on a `dead` thread,
+    or "wait for their first quote" once a quote is in). Strategy that ignores the
+    thread's actual status is a HIGH finding; a generic-but-not-wrong strategy is MED.
+16. **Next-steps actionability.** `negotiation-next-steps` must be concrete and doable
+    by the buyer ("reply asking them to beat $32,500 OTD"), not vague filler
+    ("continue the conversation", "see what happens"). Vague, non-actionable next
+    steps are MED.
+17. **Correct filtering + ordering.** The replies surfaced
+    (`negotiation-reply-row`) must be ONLY substantive dealer replies, newest first.
+    A non-substantive auto-reply that leaked in is MED. **But a number the pipeline
+    HELD then DROPPED** (a quote/OTD/discount the data once carried that is now
+    silently absent from the card or modal) is a **BLOCKER via the anti-masking
+    wall** — it is a data-loss regression, not a taste note; report it as BLOCKER and
+    name where it dropped, do not soften it to a polish item.
+
+HARD RULE (overrides severity tuning): **any budget number rendered in the
+`canvas-negotiation-card` or the `negotiation-detail-modal` is a BLOCKER** — the
+buyer's internal budget must never appear there in any form (inv #9 / `assertNoBudget`).
+Only `$` dealer-quote figures (OTD, discount, competing-quote scalars) are allowed;
+a leaked budget is both a usability red line and a safety-invariant breach. This
+restates lens 10 for the negotiation surface and is non-negotiable.
+
 ## Severity rubric
 
 - **BLOCKER** — a buyer cannot safely complete a core task, or a safety/clarity
@@ -119,3 +152,9 @@ green → merge); MED/POLISH go to the report's "本轮新 backlog".
   if a new external affordance would regress that.
 - **Don't invent findings.** Only report what you can substantiate from the live
   DOM. "Looks fine" is a valid result — say so and move on.
+- **Advisory, and Opus-judged.** This pass is the e2e-loop step-5 ADVISORY lens — it
+  surfaces findings but NEVER blocks the loop. The judge is Claude OAuth Opus (the
+  same model running this 巡检); there is NO DeepSeek judge lane — never route the
+  soft-content lenses (14–17) through DeepSeek. The one exception to "advisory" is
+  the anti-masking wall in lens 17 (a held-then-dropped number is a BLOCKER that the
+  loop's fix step must act on) and the budget HARD RULE.
