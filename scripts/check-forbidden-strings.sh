@@ -36,7 +36,22 @@ if git grep -nE 'AUTOBROKER_GMAIL_BACKEND|AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS' -
   status=1
 fi
 
+# (3) MARKER DRAFT NAME: "dev-origin" was the abandoned draft name for an
+#     in-bundle freshness marker. Banning it prevents re-introducing any
+#     in-bundle marker or electron-builder extraResources entry for it.
+#     The tripwire script and its test are excluded because they hold this
+#     literal as a scan target / test fixture string.
+if git grep -nE 'dev-origin' -- \
+  ':!pnpm-lock.yaml' \
+  ':!CLAUDE.md' \
+  ':!scripts/check-forbidden-strings.sh' \
+  ':!scripts/desktop-dist-tripwire.mjs' \
+  ':!scripts/desktop-dist-tripwire.test.mjs'; then
+  echo "ERROR: \"dev-origin\" found in tracked source (see above). This is the abandoned draft in-bundle marker name; use only the external marker at ~/.autobroker-ts/desktop-refresh/<hash>.json." >&2
+  status=1
+fi
+
 if [ "$status" -ne 0 ]; then
   exit 1
 fi
-echo "OK: no forbidden stale names or removed env vars."
+echo "OK: no forbidden stale names, removed env vars, or abandoned marker draft names."
