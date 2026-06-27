@@ -48,6 +48,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   closeDb,
+  harvestBreakdownFromSnapshot,
   openDb,
   persistScanResults,
   type BrowserEmitter,
@@ -86,9 +87,14 @@ const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0001_redundant_ozymandias.sql"].map(
-  (f) => join(here, "..", "..", "db", "drizzle", f),
-);
+const MIGRATION_SQLS = [
+  "0000_military_red_skull.sql",
+  "0001_redundant_ozymandias.sql",
+  // 0004 ADDs dealer_markup + pricing_breakdown_json to inventory_listings
+  // (only ALTERs that table, so no 0002/0003 dependency); persistScanResults
+  // writes both columns, so the scan-persist path needs them present.
+  "0004_empty_celestials.sql",
+].map((f) => join(here, "..", "..", "db", "drizzle", f));
 
 let tmpDir: string;
 let db: Db;
@@ -244,6 +250,23 @@ function scannedOutcome(
     snapshotText: `New 2026 Hyundai Tucson SEL ${VIN_A} $33,999`,
     cardHrefs: ["https://www.d-a.com/new/Hyundai-Tucson-1.htm"],
     vdpFacts: [],
+    ...over,
+  };
+}
+
+/** Build one VDP-harvested fact. priceGated + breakdown default to a clean
+ *  (no-markup, no-add-on) parse; override `breakdown` with the REAL parser to
+ *  exercise the breakdown→persist wiring end to end. */
+function vdpFact(
+  over: Partial<DealerCaptureOutcome["vdpFacts"][number]> = {},
+): DealerCaptureOutcome["vdpFacts"][number] {
+  return {
+    url: "https://www.d-a.com/new/Hyundai-Tucson-1.htm",
+    vin: null,
+    listedPrice: null,
+    msrp: null,
+    priceGated: false,
+    breakdown: { dealerMarkup: null, addOns: [], addonsTotal: null, breakdownParsed: true },
     ...over,
   };
 }
@@ -955,7 +978,7 @@ describe("inventory_site_scan — extract phase", () => {
       ]),
       scanDealers: scanStub({ calls: [] }, (args) =>
         args.targets.map((t) =>
-          scannedOutcome(t, { vdpFacts: [{ url: vdpUrl, vin: VIN_B, listedPrice: null, msrp: null }] }),
+          scannedOutcome(t, { vdpFacts: [vdpFact({ url: vdpUrl, vin: VIN_B })] }),
         ),
       ),
     });
@@ -982,7 +1005,7 @@ describe("inventory_site_scan — extract phase", () => {
       scanDealers: scanStub({ calls: [] }, (args) =>
         args.targets.map((t) =>
           scannedOutcome(t, {
-            vdpFacts: [{ url: vdpUrl, vin: VIN_B, listedPrice: 30480, msrp: 32100 }],
+            vdpFacts: [vdpFact({ url: vdpUrl, vin: VIN_B, listedPrice: 30480, msrp: 32100 })],
           }),
         ),
       ),
@@ -994,6 +1017,91 @@ describe("inventory_site_scan — extract phase", () => {
       .prepare("SELECT vin, listed_price, msrp FROM inventory_listings")
       .all() as Array<{ vin: string | null; listed_price: number | null; msrp: number | null }>;
     expect(rows).toEqual([{ vin: VIN_B, listed_price: 30480, msrp: 32100 }]);
+  });
+
+  it("a VDP-harvested LABELED markup + add-on flow to dealer_markup + pricing_breakdown_json", async () => {
+    seedOne();
+    const vdpUrl = "https://www.d-a.com/new/Hyundai-Tucson-1.htm";
+    // A real VDP price stack: MSRP, a LABELED market adjustment, a junk add-on.
+    // Run it through the REAL deterministic parser so the parser → carry →
+    // extract-attach → persist integration is genuinely exercised.
+    const breakdown = harvestBreakdownFromSnapshot(
+      "MSRP $32,100  Market Adjustment $1,995  Selling Price $34,095  Nitrogen Filled Tires $90",
+    );
+    expect(breakdown.dealerMarkup).toBe(1995); // sanity: the parser read the ADM
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        listing({ vin: null, price: null, listing_url: `${vdpUrl}?utm_source=srp` }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) =>
+        args.targets.map((t) =>
+          scannedOutcome(t, {
+            vdpFacts: [
+              vdpFact({ url: vdpUrl, vin: VIN_B, listedPrice: 34095, msrp: 32100, breakdown }),
+            ],
+          }),
+        ),
+      ),
+    });
+    const final = await runApproved("scan-vdp-markup-1");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const rows = db.$client
+      .prepare("SELECT dealer_markup, pricing_breakdown_json FROM inventory_listings")
+      .all() as Array<{ dealer_markup: number | null; pricing_breakdown_json: string | null }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dealer_markup).toBe(1995);
+    const blob = JSON.parse(rows[0]!.pricing_breakdown_json!) as {
+      addOns: { label: string; amount: number }[];
+      breakdownParsed: boolean;
+    };
+    expect(blob.addOns).toContainEqual({ label: "nitrogen", amount: 90 });
+    expect(blob.breakdownParsed).toBe(true);
+  });
+
+  it("a harvested VDP with no labeled markup writes dealer_markup=0 (clear sentinel, not null)", async () => {
+    seedOne();
+    const vdpUrl = "https://www.d-a.com/new/Hyundai-Tucson-1.htm";
+    const breakdown = harvestBreakdownFromSnapshot("MSRP $32,100  Selling Price $31,500");
+    expect(breakdown.dealerMarkup).toBeNull(); // sanity: no ADM in this stack
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([
+        listing({ vin: VIN_A, price: 31500, listing_url: `${vdpUrl}?utm_source=srp` }),
+      ]),
+      scanDealers: scanStub({ calls: [] }, (args) =>
+        args.targets.map((t) =>
+          scannedOutcome(t, {
+            vdpFacts: [
+              vdpFact({ url: vdpUrl, vin: VIN_A, listedPrice: 31500, msrp: 32100, breakdown }),
+            ],
+          }),
+        ),
+      ),
+    });
+    const final = await runApproved("scan-vdp-clean-1");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const row = db.$client
+      .prepare("SELECT dealer_markup, pricing_breakdown_json FROM inventory_listings")
+      .get() as { dealer_markup: number | null; pricing_breakdown_json: string | null };
+    expect(row.dealer_markup).toBe(0); // harvested, no markup → 0 (CLEARS), never null
+    expect(row.pricing_breakdown_json).not.toBeNull(); // explicit blob, not preserved-null
+  });
+
+  it("a scanned row with NO VDP fact leaves dealer_markup + pricing_breakdown_json NULL (not-harvested → preserve)", async () => {
+    seedOne();
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([listing({ vin: VIN_A })]),
+      // default scannedOutcome carries vdpFacts: [] → no fact for the row's URL
+      scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
+    });
+    const final = await runApproved("scan-no-vdp-1");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const rows = db.$client
+      .prepare("SELECT dealer_markup, pricing_breakdown_json FROM inventory_listings")
+      .all() as Array<{ dealer_markup: number | null; pricing_breakdown_json: string | null }>;
+    expect(rows).toEqual([{ dealer_markup: null, pricing_breakdown_json: null }]);
   });
 
   it("an LLM-emitted listing_url OUTSIDE the collected href set is cleared + counted; the key-less row dies at persist", async () => {

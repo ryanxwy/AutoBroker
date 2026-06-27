@@ -290,6 +290,10 @@ export {
   trimSubsetMatch,
   type TrimAvailability,
 } from "./inventory/trimMatch.js";
+export {
+  harvestBreakdownFromSnapshot,
+  type HarvestedBreakdown,
+} from "./inventory/inventoryBreakdownHarvest.js";
 
 // inventory_link_scan deterministic core — the junk-link pre-filter (5 closed
 // rules, single source of truth), the profile accept/reject policy, and the

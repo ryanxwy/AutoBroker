@@ -119,6 +119,7 @@ import {
   FILTER_SELECTOR_MAP,
   fingerprintPlatform,
   getDb,
+  harvestBreakdownFromSnapshot,
   haversineMiles,
   isUsDealerBatch,
   listProfileDealerRows as listProfileDealerRowsImpl,
@@ -138,6 +139,7 @@ import {
   type DealerPlatform,
   type DealerScanOutcome,
   type FilterProfileSlice,
+  type HarvestedBreakdown,
   type PlatformFilterSelectors,
 } from "@autobroker/tools";
 
@@ -972,14 +974,10 @@ export interface DealerCaptureOutcome {
   /** VDP-harvested facts keyed by normalized listing URL: the
    *  verbatim-validated VIN (or null) plus the deterministically-parsed price
    *  off the SAME VDP snapshot (the detail page shows price the SRP card may
-   *  have gated behind a "Get Instant Price" CTA). Price parsing never reaches
+   *  have gated behind a "Get Instant Price" CTA), the price-gated flag, and
+   *  the deterministic labeled-markup + add-on breakdown. Parsing never reaches
    *  an LLM — pure regex over the already-fetched snapshot. */
-  vdpFacts: Array<{
-    url: string;
-    vin: string | null;
-    listedPrice: number | null;
-    msrp: number | null;
-  }>;
+  vdpFacts: VdpFact[];
 }
 
 /** One bucket task's runner (the seam the pool test fakes). */
@@ -1146,6 +1144,12 @@ type VdpFact = {
   vin: string | null;
   listedPrice: number | null;
   msrp: number | null;
+  /** Whether the VDP price was withheld behind a CTA — a free signal off the
+   *  SAME price harvest that the call site used to discard. */
+  priceGated: boolean;
+  /** Deterministic labeled-markup + dealer-add-on breakdown parsed off the SAME
+   *  VDP snapshot (pure, no LLM — VDPs never reach a model). */
+  breakdown: HarvestedBreakdown;
 };
 
 /** VDP tab fan-out: ≤2 tabs concurrently loading, staggered opens, navigation
@@ -1186,9 +1190,13 @@ async function harvestVdpFacts(deps: {
           if (nav.blocked !== null) return null;
           const vdpSnapshot = await session.snapshot(page);
           const vin = harvestVinFromSnapshot(vdpSnapshot);
-          const { listedPrice, msrp } = harvestPriceFromSnapshot(vdpSnapshot);
+          const { listedPrice, msrp, priceGated } = harvestPriceFromSnapshot(vdpSnapshot);
+          // Same snapshot, same worker (the only scope the VDP text lives in):
+          // deterministically parse the dealer breakdown (labeled markup +
+          // add-ons). Pure regex, fail-closed, no LLM.
+          const breakdown = harvestBreakdownFromSnapshot(vdpSnapshot);
           if (vin === null && listedPrice === null && msrp === null) return null;
-          return { url: normalizeListingUrl(link), vin, listedPrice, msrp };
+          return { url: normalizeListingUrl(link), vin, listedPrice, msrp, priceGated, breakdown };
         } finally {
           await page.close().catch(() => undefined);
         }
@@ -1320,7 +1328,7 @@ interface ScanCarry {
     {
       snapshotText: string;
       cardHrefs: string[];
-      vdpFacts: Array<{ url: string; vin: string | null; listedPrice: number | null; msrp: number | null }>;
+      vdpFacts: VdpFact[];
     }
   >;
   classified: Map<string, ClassifiedListingRow[]>;
@@ -1775,7 +1783,7 @@ const scanDealersStep = createStep({
       {
         snapshotText: string;
         cardHrefs: string[];
-        vdpFacts: Array<{ url: string; vin: string | null; listedPrice: number | null; msrp: number | null }>;
+        vdpFacts: VdpFact[];
       }
     >();
     let rungUrlTemplateHits = 0;
@@ -1940,11 +1948,29 @@ const extractStep = createStep({
           // SRP price; MSRP is VDP-only (the SRP card never carries it).
           let price = listing.price;
           let msrp: number | null = null;
+          // Harvest-aware breakdown sentinel (see ClassifiedListingRow /
+          // persist COALESCE notes): `undefined` = "this row's VDP was NOT
+          // harvested → PRESERVE any prior markup/blob"; an EXPLICIT value
+          // (0 or a blob string) = "VDP harvested → CLEAR/record". The two
+          // stay in lockstep so the scalar and the JSON never desync.
+          let dealerMarkup: number | null | undefined;
+          let pricingBreakdownJson: string | null | undefined;
           if (listingUrl !== null) {
             const fact = vdpFactByUrl.get(normalizeListingUrl(listingUrl));
             if (fact !== undefined) {
               if (price === null) price = fact.listedPrice;
               msrp = fact.msrp;
+              // This row's VDP WAS harvested. A labeled market adjustment →
+              // its amount; no labeled markup → 0 ("harvested, no markup",
+              // clears a stale value via COALESCE(0, old)=0). The blob is
+              // always an explicit non-null string so it overwrites in lockstep.
+              dealerMarkup = fact.breakdown.dealerMarkup ?? 0;
+              pricingBreakdownJson = JSON.stringify({
+                addOns: fact.breakdown.addOns,
+                addonsTotal: fact.breakdown.addonsTotal,
+                priceGated: fact.priceGated,
+                breakdownParsed: fact.breakdown.breakdownParsed,
+              });
             }
           }
 
@@ -1963,6 +1989,10 @@ const extractStep = createStep({
             listing: { ...listing, vin, price, listing_url: listingUrl },
             matchStatus,
             msrp,
+            // Omit the keys entirely (vs explicit undefined) when the VDP was
+            // not harvested — persist reads an absent field as null → PRESERVE.
+            ...(dealerMarkup !== undefined ? { dealerMarkup } : {}),
+            ...(pricingBreakdownJson !== undefined ? { pricingBreakdownJson } : {}),
             raw: { ...raw },
           });
           listingsFound += 1;
