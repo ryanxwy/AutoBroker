@@ -79,6 +79,7 @@ import {
   detectMalformedToolCall,
   MalformedToolCallAbort,
   policy,
+  redactMalformedSample,
   resolveModel,
   toModelMessages,
   type HarnessGenerateInput,
@@ -375,7 +376,10 @@ async function generate<TSchema extends z.ZodTypeAny>(
   /** Write the one ledger row for this run with the given verdict. The route
    *  identity (provider + alias) is the policy() resolution, never a caller
    *  string. */
-  const writeLedger = (failReason: string | null): void => {
+  const writeLedger = (
+    failReason: string | null,
+    malformed?: { signals: ReadonlyArray<string>; text: string },
+  ): void => {
     writeTestRunRecord(
       {
         runId: ledger.runId,
@@ -394,6 +398,12 @@ async function generate<TSchema extends z.ZodTypeAny>(
         promptVersion: ledger.promptVersion,
         schemaVersion: ledger.schemaVersion,
         failReason,
+        // #1244 evidence — ONLY the malformed branch passes a payload. The
+        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
+        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
+        // both columns NULL.
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       },
       ..._dbArg(_testOverrides),
     );
@@ -404,7 +414,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // metadata IS our MalformedToolCallTripMetadata.
   const trip = readMalformedTrip(result.tripwire);
   if (trip !== null) {
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals: trip.signals, text: result.text ?? "" });
     if (input.hitlAvailable) {
       return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
     }
@@ -449,7 +459,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
       writeLedger("empty_tool_call_no_signal");
       throw new MalformedToolCallAbort(["empty_tool_calls"]);
     }
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals, text: result.text ?? "" });
     if (input.hitlAvailable) {
       return { suspended: true, reason: "malformed_tool_call", signals };
     }
@@ -595,7 +605,10 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  const writeLedger = (failReason: string | null): void => {
+  const writeLedger = (
+    failReason: string | null,
+    malformed?: { signals: ReadonlyArray<string>; text: string },
+  ): void => {
     writeTestRunRecord(
       {
         runId: ledger.runId,
@@ -614,6 +627,12 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
         promptVersion: ledger.promptVersion,
         schemaVersion: ledger.schemaVersion,
         failReason,
+        // #1244 evidence — ONLY the malformed branch passes a payload. The
+        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
+        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
+        // both columns NULL.
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       },
       ..._dbArg(_testOverrides),
     );
@@ -623,7 +642,7 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   // processor RESOLVES with result.tripwire populated (live-probed; not a throw).
   const trip = readMalformedTrip(result.tripwire);
   if (trip !== null) {
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals: trip.signals, text: result.text ?? "" });
     if (input.hitlAvailable) {
       return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
     }
@@ -878,7 +897,10 @@ async function draftProse(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  const writeLedger = (failReason: string | null): void => {
+  const writeLedger = (
+    failReason: string | null,
+    malformed?: { signals: ReadonlyArray<string>; text: string },
+  ): void => {
     writeTestRunRecord(
       {
         runId: ledger.runId,
@@ -897,6 +919,12 @@ async function draftProse(
         promptVersion: ledger.promptVersion,
         schemaVersion: ledger.schemaVersion,
         failReason,
+        // #1244 evidence — ONLY the malformed branch passes a payload. The
+        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
+        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
+        // both columns NULL.
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       },
       ..._dbArg(_testOverrides),
     );
@@ -915,7 +943,7 @@ async function draftProse(
     content: text,
   });
   if (signals.length > 0) {
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals, text });
     throw new MalformedToolCallAbort(signals);
   }
 

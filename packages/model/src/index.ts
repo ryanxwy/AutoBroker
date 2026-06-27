@@ -63,6 +63,7 @@ export {
   detectMalformedToolCall,
   assertToolTurnOrFailClosed,
   looksLikeToolShapedBlob,
+  redactMalformedSample,
   MalformedToolCallAbort,
   MALFORMED_TOOL_CALL_REASON,
 } from "./malformedToolCall.js";

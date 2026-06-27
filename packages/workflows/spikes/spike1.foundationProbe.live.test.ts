@@ -66,7 +66,7 @@
 
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { Agent } from "@mastra/core/agent";
@@ -130,6 +130,32 @@ function testRunRecordsCreateIfNotExists(): string {
   );
 }
 
+/**
+ * Every committed `ALTER TABLE test_run_records ADD ...;` from migrations AFTER
+ * 0000, in migration order. The 0000 CREATE is the base shape; later migrations
+ * add columns (e.g. 0005 added malformed_signals / malformed_sample). The probe
+ * applies these on top of the IF-NOT-EXISTS create so a pre-existing parity DB
+ * row write through the production writer (which lists every column) never hits
+ * a "no such column". SQLite ADD COLUMN is not idempotent, so the caller ignores
+ * the "duplicate column" error — keeping this resilient to future column adds
+ * without re-running the whole migration against the parity DB.
+ */
+function testRunRecordsLaterAddColumns(): string[] {
+  const dir = dirname(MIGRATION_SQL);
+  const files = readdirSync(dir)
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f) && !f.startsWith("0000_"))
+    .sort();
+  const stmts: string[] = [];
+  for (const f of files) {
+    const sql = readFileSync(join(dir, f), "utf8");
+    for (const line of sql.split("\n")) {
+      const t = line.trim().replace(/;.*$/, ";");
+      if (/^ALTER TABLE `test_run_records` ADD\b/.test(t)) stmts.push(t);
+    }
+  }
+  return stmts;
+}
+
 // ---------------------------------------------------------------------------
 // PROBE A — emit_result through harness.generate, row lands in the parity DB.
 // ---------------------------------------------------------------------------
@@ -177,6 +203,16 @@ describe.skipIf(!LIVE)("spike1 PROBE A — foundation_probe → ledger row in th
     // family the ledger writer opens.
     const ensureDb = openDb(PARITY_DB);
     ensureDb.$client.exec(testRunRecordsCreateIfNotExists());
+    // Apply later column adds (e.g. 0005 malformed_signals/_sample) on top of the
+    // base create; ADD COLUMN is not idempotent, so a "duplicate column" on a DB
+    // already carrying it is benign and ignored.
+    for (const alter of testRunRecordsLaterAddColumns()) {
+      try {
+        ensureDb.$client.exec(alter);
+      } catch (err) {
+        if (!/duplicate column name/i.test(String(err))) throw err;
+      }
+    }
     ensureDb.$client.close();
 
     const runId = `m0-spike1-${todayStamp()}`;

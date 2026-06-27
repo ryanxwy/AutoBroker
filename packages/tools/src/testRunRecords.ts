@@ -76,10 +76,16 @@ export function writeTestRunRecord(
 
   // Single INSERT … RETURNING id. better-sqlite3 is the synchronous dialect, so
   // `.get()` returns the row directly (no Promise). null in `record` is passed
-  // straight to SQL NULL — drizzle never coerces it to 0.
+  // straight to SQL NULL — drizzle never coerces it to 0. The #1244 malformed
+  // evidence columns default to explicit NULL when a caller omits them (every
+  // non-malformed row), so existing call sites stay valid unchanged.
   const inserted = db
     .insert(testRunRecords)
-    .values(record)
+    .values({
+      ...record,
+      malformedSignals: record.malformedSignals ?? null,
+      malformedSample: record.malformedSample ?? null,
+    })
     .returning({ id: testRunRecords.id })
     .get();
 
