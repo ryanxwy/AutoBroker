@@ -26,8 +26,10 @@
  *                      email-fallback candidate.
  *   1b scoutMapCustom — the ONLY LLM step: a single emit_result field-map for
  *                      Custom-platform forms (hitlAvailable:false → a malformed
- *                      tool call fail-closes as a thrown MalformedToolCallAbort,
- *                      never a prose fallthrough). Known platforms skip it.
+ *                      first hop is retried ONCE on the lead_form_map_retry lane
+ *                      via recoverEmitWithRetry, else fail-closes as a thrown
+ *                      MalformedToolCallAbort, never a prose fallthrough). Known
+ *                      platforms skip it.
  *   2 buildPayloads — buildLeadPayload (fake phone LOCKED, budget redacted,
  *                      consent CHECKED, sms_optin OMITTED) + the duplicate-skip /
  *                      force_retry precondition (a prior submitted row → skip,
@@ -57,16 +59,17 @@
  * redact + assertNoBudget belt in buildLeadPayload / buildRaw); the phone is the
  * fake default; consent is CHECKED, sms opt-in is OMITTED.
  *
- * Dependency wall: imports @mastra/* (legal only here), @autobroker/model (typed
- * abort + suspend type), @autobroker/tools (resolver + dealer-row read + the
- * scout + the gated browser session + recordSubmission + sendAndRecord — the ONLY
- * DB/side-effect paths), and this layer's harness facade + the skill contracts.
+ * Dependency wall: imports @mastra/* (legal only here), @autobroker/tools
+ * (resolver + dealer-row read + the scout + the gated browser session +
+ * recordSubmission + sendAndRecord — the ONLY DB/side-effect paths), this
+ * layer's harness facade + the skill contracts, and the recoverEmitWithRetry
+ * recovery helper (which owns the @autobroker/model contact for the
+ * malformed-class retry hop).
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
 import {
   buildLeadPayload,
   checkSubmissionPrecondition as checkSubmissionPreconditionImpl,
@@ -112,6 +115,7 @@ import {
   profileStopCode,
 } from "./dealerWebLeadSubmitContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 export { DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID };
 
@@ -756,11 +760,6 @@ function asState(inputData: unknown): LeadSubmitState {
   return LeadSubmitStateSchema.parse(inputData);
 }
 
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
 /** Run `fn` against the SHARED tools-layer DB connection. */
 function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
@@ -1066,20 +1065,20 @@ const scoutMapCustomStep = createStep({
         continue;
       }
 
-      const result = await deps().harnessGenerate(
-        {
+      const result = await recoverEmitWithRetry({
+        harnessGenerate: deps().harnessGenerate,
+        input: {
           useCase: "lead_form_map",
           schema: LeadFormMapSchema,
           prompt: buildLeadFormMapPrompt(dealer.form_snapshot),
-          // FAIL-CLOSED: a malformed tool call hard-aborts (never a prose
-          // fallthrough, never a regexed-out tool call).
+          // FAIL-CLOSED: a malformed tool call retries ONCE on the strong+
+          // thinking lane, else fail-closes (never a prose fallthrough, never a
+          // regexed-out tool call).
           hitlAvailable: false,
         },
-        leadSubmitLedger(runId),
-      );
-      if (isHarnessSuspend(result)) {
-        throw new MalformedToolCallAbort(result.signals);
-      }
+        retryUseCase: "lead_form_map_retry",
+        ledger: leadSubmitLedger(runId),
+      });
       const map = LeadFormMapSchema.parse(result.object); // Zod post-validate.
       mapped.push({
         ...dealer,

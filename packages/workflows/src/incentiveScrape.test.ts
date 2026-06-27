@@ -47,6 +47,7 @@ import {
   type OfferCaptureArgs,
   type OfferCaptureOutcome,
 } from "./incentiveScrape.js";
+import { __resetRecoveryBudgetForTests } from "./recoverEmitWithRetry.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -815,5 +816,51 @@ describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
     if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
     expect(output.rowsInvalidDropped).toBe(2);
     expect(output.incentivesWritten).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1244 malformed-class recovery — the wired recoverEmitWithRetry hop
+// ---------------------------------------------------------------------------
+
+/** A harness stub that throws a (retry-eligible) MalformedToolCallAbort on the
+ *  PRIMARY useCase and returns a clean object on the *_retry useCase — proving
+ *  the wired one-hop recovery self-heals a #1244 first hop end-to-end. */
+function recoveringHarnessStub(
+  rows: Record<string, unknown>[],
+  record?: { useCases: string[] },
+): IncentiveScrapeWorkflowDeps["harnessGenerate"] {
+  return (async (input: { useCase: string }) => {
+    record?.useCases.push(input.useCase);
+    if (input.useCase === "incentive_extract") {
+      throw new MalformedToolCallAbort(["finish_reason_not_tool_calls", "empty_tool_calls"]);
+    }
+    return { object: { incentives: rows }, usage: NO_USAGE };
+  }) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"];
+}
+
+describe("incentive_scrape #1244 malformed-class recovery (the wired retry hop)", () => {
+  it("a malformed FIRST hop self-heals on the *_retry lane → run completes, rows persist", async () => {
+    __resetRecoveryBudgetForTests(); // deterministic budget window.
+    seedProfile();
+    const seen = { useCases: [] as string[] };
+    installDeps({
+      harnessGenerate: recoveringHarnessStub(
+        [{ type: "customer_cash", amount: 1500, expires: "2026-07-06", eligibility: "all" }],
+        seen,
+      ),
+    });
+
+    const { result } = await startRun("inc-recover-1");
+    expect((result as { status: string }).status).toBe("success");
+
+    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
+    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
+    expect(output.incentivesWritten).toBe(1);
+    expect(incentiveRows()).toHaveLength(1);
+
+    // The primary hop ran (and threw malformed); the recovery hop ran the
+    // *_retry useCase that served the clean object — exactly one retry.
+    expect(seen.useCases).toEqual(["incentive_extract", "incentive_extract_retry"]);
   });
 });

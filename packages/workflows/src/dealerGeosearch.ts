@@ -51,9 +51,11 @@
  * scope, so the Mastra snapshot blob stays bounded.
  *
  * #1244: the LLM call runs with hitlAvailable=false (no suspend step exists
- * here), so a malformed tool call fail-closes as a thrown typed
- * MalformedToolCallAbort and the run FAILS — never a prose fallthrough, never a
- * regexed-out tool call.
+ * here), so a malformed first hop is retried ONCE on the
+ * geosearch_extract_retry (v4-pro+thinking) lane via recoverEmitWithRetry; only
+ * a SECOND malformed / blob-only / budget-exhausted failure fail-closes as a
+ * thrown typed MalformedToolCallAbort and the run FAILS — never a prose
+ * fallthrough, never a regexed-out tool call.
  *
  * UNTRUSTED CONTENT: Maps page text is attacker-influencable. The snapshot is
  * fenced between BEGIN/END UNTRUSTED CONTENT markers with an explicit
@@ -62,16 +64,16 @@
  * can never become SQL or a skill action.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
- * (DealerCandidate), @autobroker/model (HarnessSuspend type + the typed abort),
- * @autobroker/tools (resolver + viewport math + browser session + upsert +
- * getDb — the ONLY DB/side-effect path), and this layer's harness facade.
+ * (DealerCandidate), @autobroker/tools (resolver + viewport math + browser
+ * session + upsert + getDb — the ONLY DB/side-effect path), this layer's harness
+ * facade, and the recoverEmitWithRetry recovery helper (which owns the
+ * @autobroker/model contact for the malformed-class retry hop).
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
 import { DealerCandidateSchema, type DealerCandidate } from "@autobroker/core";
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
 import {
   capSnapshot,
   dedupByPlaceId,
@@ -90,6 +92,7 @@ import {
 } from "@autobroker/tools";
 
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 // ---------------------------------------------------------------------------
 // typed terminal errors (the run fails loud with a user-facing message)
@@ -462,11 +465,6 @@ function asState(inputData: unknown): GeosearchState {
   return GeosearchStateSchema.parse(inputData);
 }
 
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
 /** Run `fn` against the SHARED tools-layer DB connection (same convention as
  *  the intake workflow — one cached handle, released by tests via closeDb). */
 function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
@@ -638,22 +636,20 @@ const scanViewportsStep = createStep({
       // collapse in the dedup step (place id is the authoritative key).
       usedSnapshotFallback = true;
       collect(outcome.completeRows);
-      const result = await deps().harnessGenerate(
-        {
+      const result = await recoverEmitWithRetry({
+        harnessGenerate: deps().harnessGenerate,
+        input: {
           useCase: "geosearch_extract",
           schema: GeosearchExtractSchema,
           prompt: buildGeosearchExtractPrompt(state.make, outcome.snapshotText),
           // No suspend step exists in this workflow → no HITL: a #1244 malformed
-          // tool call hard-aborts (fail-closed), it never falls through to prose.
+          // tool call retries ONCE on the strong+thinking lane, else fail-closes
+          // (never a prose fallthrough).
           hitlAvailable: false,
         },
-        geosearchLedger(runId),
-      );
-      if (isHarnessSuspend(result)) {
-        // Defensive: with hitlAvailable=false the harness throws rather than
-        // suspends; a suspend-shaped return still fail-closes identically.
-        throw new MalformedToolCallAbort(result.signals);
-      }
+        retryUseCase: "geosearch_extract_retry",
+        ledger: geosearchLedger(runId),
+      });
       collect(result.object.candidates);
     }
 

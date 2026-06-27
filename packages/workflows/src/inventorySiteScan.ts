@@ -76,8 +76,10 @@
  *                      VIN-or-URL key rule at persist); VDP-harvested VINs
  *                      attach to VIN-less rows by normalized listing URL. Extraction
  *                      runs 4 dealers concurrently. hitlAvailable=false: a
- *                      malformed tool call fail-closes as a thrown typed
- *                      MalformedToolCallAbort — never a prose fallthrough.
+ *                      malformed first hop is retried ONCE on the
+ *                      inventory_extract_retry lane via recoverEmitWithRetry,
+ *                      else fail-closes as a thrown typed MalformedToolCallAbort
+ *                      — never a prose fallthrough.
  *   5 persistConfirm — the ONLY DB write: ONE persistScanResults call over
  *                      every dealer outcome (capture-then-serial; the writer
  *                      itself gates supersession to freshly-SCANNED sources,
@@ -100,17 +102,17 @@
  * — only make/model/year reach the filter ladder and the extraction prompt.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
- * (InventoryListing), @autobroker/model (typed abort + suspend type),
- * @autobroker/tools (resolver + dealer-row read + browser session + pure
- * helpers + the persist writer — the ONLY DB/side-effect paths), and this
- * layer's harness facade.
+ * (InventoryListing), @autobroker/tools (resolver + dealer-row read + browser
+ * session + pure helpers + the persist writer — the ONLY DB/side-effect
+ * paths), this layer's harness facade, and the recoverEmitWithRetry recovery
+ * helper (which owns the @autobroker/model contact for the malformed-class
+ * retry hop).
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
 import { InventoryListingSchema, type InventoryListing } from "@autobroker/core";
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
 import { harvestPriceFromSnapshot } from "./inventoryPriceHarvest.js";
 import {
   buildFilteredSrpUrl,
@@ -144,6 +146,7 @@ import {
 } from "@autobroker/tools";
 
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 /** A page handle as the browser session mints it (no direct playwright import
  *  here — the type flows off the tools session surface). */
@@ -1558,11 +1561,6 @@ function asState(inputData: unknown): InventoryScanState {
   return InventoryScanStateSchema.parse(inputData);
 }
 
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
 /** Run `fn` against the SHARED tools-layer DB connection. */
 function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
@@ -1872,22 +1870,20 @@ const extractStep = createStep({
         const capture = carry.captures.get(row.dealer_id);
         if (capture === undefined) throw new InventoryScanCaptureLostError();
 
-        const result = await deps().harnessGenerate(
-          {
+        const result = await recoverEmitWithRetry({
+          harnessGenerate: deps().harnessGenerate,
+          input: {
             useCase: "inventory_extract",
             schema: InventoryExtractSchema,
             prompt: buildInventoryExtractPrompt(state.make, state.model, capture.snapshotText),
-            // A malformed tool call hard-aborts (fail-closed) — never a prose
-            // fallthrough, never a regexed-out tool call.
+            // A malformed tool call retries ONCE on the strong+thinking lane,
+            // else fail-closes — never a prose fallthrough, never a regexed-out
+            // tool call.
             hitlAvailable: false,
           },
-          inventoryScanLedger(runId),
-        );
-        if (isHarnessSuspend(result)) {
-          // Defensive: with hitlAvailable=false the harness throws rather than
-          // suspends; a suspend-shaped return still fail-closes identically.
-          throw new MalformedToolCallAbort(result.signals);
-        }
+          retryUseCase: "inventory_extract_retry",
+          ledger: inventoryScanLedger(runId),
+        });
 
         const vdpVinByUrl = new Map(
           capture.vdpFacts
