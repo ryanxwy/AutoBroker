@@ -14,6 +14,7 @@
 import type { Db } from "@autobroker/db";
 
 import { listListingsForProfile } from "./read.js";
+import { classifyColorAvailability, normalizeColor } from "./colorMatch.js";
 import {
   rankListings,
   type ProfileMatchCtx,
@@ -102,6 +103,18 @@ export interface RankInventoryResult {
    *  grounding sees a trim a dealer stocks even when it is over budget or
    *  on-order. Verbatim dealer strings (e.g. "LX CVT", "EX-L Hybrid"). */
   allInventoryTrims: string[];
+  /** Distinct exterior-color names over ALL the profile's live listings (the
+   *  UNFILTERED set, mirroring allInventoryTrims) — the REAL stocked names the
+   *  color cross-check reconciles loose prefs against. */
+  allInventoryColors: string[];
+  /** Color config cross-check advisory — per UNMATCHED preferred color (the
+   *  ranker's colorAxis is EXACT equality, so a loose "red" scores low against
+   *  "Radiant Red Metallic II"), the real stocked names to OFFER so the buyer can
+   *  ADD the canonical name (then colorAxis fires). Only the actionable ones — a
+   *  real whole-token overlap exists AND the canonical name is not already a pref
+   *  / equal to the pref verbatim — appear; [] when every preferred color already
+   *  matches exactly or nothing overlaps. ASSIST-only: never auto-written. */
+  colorCrossCheck: { requested: string; suggestions: string[] }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +279,8 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
       sourcesScanned: 0,
       sourcesBlocked: 0,
       allInventoryTrims: [],
+      allInventoryColors: [],
+      colorCrossCheck: [],
     };
   }
 
@@ -299,6 +314,38 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     ),
   ];
 
+  // Distinct stocked exterior-color names over the SAME unfiltered set — the
+  // ground truth for the color cross-check (mirrors allInventoryTrims).
+  const allInventoryColors = [
+    ...new Set(
+      listings
+        .map((l) => asString(l["exterior_color"]))
+        .filter((c): c is string => c !== null && c.trim() !== ""),
+    ),
+  ];
+
+  // Color config cross-check: reconcile the buyer's loose preferred colors to the
+  // real stocked names. The ranker's colorAxis is EXACT equality, so a loose
+  // "red" never fires against "Radiant Red Metallic II". Surface the canonical
+  // stocked names to OFFER (the buyer taps to add one — assist, never auto-write).
+  // "Actionable" (what the UI shows) = a stocked name whole-token-overlaps the
+  // loose pref AND that canonical name is not already in the prefs / equal to the
+  // pref verbatim. (If it were, colorAxis already fires → nothing to do — i.e.
+  // the requested color is "unmatched" by the EXACT ranker yet HAS a real name to
+  // suggest.) Degrades to [] for no inventory / all-already-matched prefs.
+  const preferredColors = ctx.preferred_exterior_colors ?? [];
+  const prefNormSet = new Set(preferredColors.map(normalizeColor));
+  const colorCrossCheck = classifyColorAvailability(preferredColors, allInventoryColors)
+    .map((c) => {
+      const reqNorm = normalizeColor(c.requested);
+      const suggestions = c.suggestions.filter((s) => {
+        const n = normalizeColor(s);
+        return n !== reqNorm && !prefNormSet.has(n);
+      });
+      return { requested: c.requested, suggestions };
+    })
+    .filter((c) => c.suggestions.length > 0);
+
   // scannedAtMax = max last_seen_at over the (post-filter) candidate listings.
   // Listings carry last_seen_at as an ISO/text timestamp; pick the lexically
   // greatest non-empty value (ISO-8601 sorts chronologically).
@@ -321,5 +368,7 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     sourcesScanned,
     sourcesBlocked,
     allInventoryTrims,
+    allInventoryColors,
+    colorCrossCheck,
   };
 }

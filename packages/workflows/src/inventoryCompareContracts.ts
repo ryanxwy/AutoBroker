@@ -85,6 +85,21 @@ export const RankedCandidateSchema = z
 export type RankedCandidate = z.infer<typeof RankedCandidateSchema>;
 
 /**
+ * One color-config cross-check advisory row: a buyer's loose preferred color the
+ * ranker's EXACT colorAxis won't match, plus the REAL stocked names to offer.
+ * Assist-not-autofill — the buyer taps a suggestion to add it; nothing is
+ * auto-written. Empty when every preferred color already matches a stocked name
+ * exactly (or nothing overlaps).
+ */
+export const ColorCrossCheckItemSchema = z
+  .object({
+    requested: z.string(),
+    suggestions: z.array(z.string()),
+  })
+  .strict();
+export type ColorCrossCheckItem = z.infer<typeof ColorCrossCheckItemSchema>;
+
+/**
  * The workflow output — a SINGLE object (no union, no suspend): the ranked
  * candidates plus the header tallies, the profile-resolution provenance, and
  * the deterministic terminal summary. An empty rail is a VALID success
@@ -104,6 +119,10 @@ export const InventoryCompareOutputSchema = z
      *  inventory in_stock/in_transit AND score >= 0.6). */
     recommendedCount: z.number().int(),
     candidates: z.array(RankedCandidateSchema),
+    /** Color config cross-check advisory — loose preferred colors the EXACT
+     *  colorAxis won't match, with the real stocked names to offer (assist-only,
+     *  never auto-written). [] when nothing is actionable. */
+    colorCrossCheck: z.array(ColorCrossCheckItemSchema).default([]),
     /** The deterministic terminal sentence (no budget number anywhere). */
     summary: z.string(),
   })

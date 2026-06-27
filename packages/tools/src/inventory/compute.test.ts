@@ -373,6 +373,45 @@ describe("rankInventoryForProfile", () => {
     expect(row.breakdown_parsed).toBe(false);
   });
 
+  it("surfaces allInventoryColors and a color cross-check advisory for a loose preferred color", () => {
+    seedProfile({ budgetMax: null, preferredExteriorColorsJson: JSON.stringify(["red"]) });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_red",
+      vin: FULL_VIN,
+      exteriorColor: "Radiant Red Metallic II",
+      listedPrice: 30000,
+    });
+    // 'Bluestone' contains the substring 'blue' but is one token — never suggested.
+    insertListing({ listingId: "lst_blue", exteriorColor: "Bluestone", listedPrice: 30000 });
+
+    const { allInventoryColors, colorCrossCheck } = rankInventoryForProfile(db, PROFILE_ID);
+    expect(allInventoryColors).toContain("Radiant Red Metallic II");
+    expect(allInventoryColors).toContain("Bluestone");
+    // "red" whole-token-overlaps "Radiant Red Metallic II" (not "Bluestone") and is
+    // not yet a verbatim pref → actionable, offers the canonical stocked name.
+    expect(colorCrossCheck).toEqual([
+      { requested: "red", suggestions: ["Radiant Red Metallic II"] },
+    ]);
+  });
+
+  it("emits no color cross-check when the preferred color already matches a stocked name exactly", () => {
+    seedProfile({
+      budgetMax: null,
+      preferredExteriorColorsJson: JSON.stringify(["Radiant Red Metallic II"]),
+    });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_red",
+      vin: FULL_VIN,
+      exteriorColor: "Radiant Red Metallic II",
+      listedPrice: 30000,
+    });
+
+    const { colorCrossCheck } = rankInventoryForProfile(db, PROFILE_ID);
+    expect(colorCrossCheck).toEqual([]);
+  });
+
   it("returns an empty result for a missing profile", () => {
     const result = rankInventoryForProfile(db, "no-such-profile");
     expect(result).toEqual({
@@ -383,6 +422,8 @@ describe("rankInventoryForProfile", () => {
       sourcesScanned: 0,
       sourcesBlocked: 0,
       allInventoryTrims: [],
+      allInventoryColors: [],
+      colorCrossCheck: [],
     });
   });
 });

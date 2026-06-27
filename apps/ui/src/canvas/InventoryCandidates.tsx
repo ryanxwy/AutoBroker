@@ -23,7 +23,7 @@
 import { useMemo, useState } from "react";
 
 import type { AsyncState } from "../api/useApi.js";
-import type { InventoryCompareResult } from "../api/wire.js";
+import type { InventoryColorCrossCheckItem, InventoryCompareResult } from "../api/wire.js";
 import { ClickableTile } from "./ClickableTile.js";
 import { distanceLabel, dollarLabel, relativeDate } from "./format.js";
 import { InventoryDetailModal } from "./InventoryDetailModal.js";
@@ -178,14 +178,91 @@ function CandidateRow({
   );
 }
 
+/**
+ * ColorCrossCheckTile — the color-config cross-check advisory. The scan found the
+ * REAL stocked exterior-color names; the buyer's loose preference ("red") won't
+ * exact-match them ("Radiant Red Metallic II"), so matching cars rank lower. This
+ * explains WHY and offers each canonical name as an explicit ONE-TAP add (the
+ * human taps — assist-not-autofill, product rule #1). Dismissible. No suspend,
+ * no ranker change — adding the canonical name is what makes colorAxis fire.
+ */
+function ColorCrossCheckTile({
+  items,
+  onAdd,
+  onDismiss,
+}: {
+  items: InventoryColorCrossCheckItem[];
+  onAdd: (color: string) => void;
+  onDismiss: () => void;
+}): JSX.Element {
+  // The names the buyer has tapped this view — immediate feedback + no double-add
+  // (the next ranker refetch drops a reconciled name from the suggestions anyway).
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const handleAdd = (color: string): void => {
+    setAdded((prev) => new Set(prev).add(color));
+    onAdd(color);
+  };
+  return (
+    <div className="color-crosscheck" role="note" data-testid="inventory-color-crosscheck">
+      <strong>Color names don’t match what dealers stock</strong>
+      <p>
+        These color preferences don’t match the exact names dealers list, so
+        matching listings may rank lower. Add a real stocked name to fix the ranking.
+      </p>
+      <ul>
+        {items.map((it) => (
+          <li key={it.requested}>
+            <span className="cc-req">You said “{it.requested}”. Dealers stock:</span>
+            <span className="cc-suggestions">
+              {it.suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="cc-add mini-chip"
+                  data-testid="inventory-color-add"
+                  disabled={added.has(s)}
+                  onClick={() => handleAdd(s)}
+                >
+                  {added.has(s) ? `Added ✓ ${s}` : `Add “${s}” to my colors`}
+                </button>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="cc-dismiss"
+        data-testid="inventory-color-crosscheck-dismiss"
+        onClick={onDismiss}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 export interface InventoryCandidatesProps {
   /** The profile's ranked candidates (the host wires this from the ranker route). */
   inventory: AsyncState<InventoryCompareResult>;
+  /** The CANVAS-BOUND (already-pinned) profile id — keys the dismissed-set so a
+   *  profile switch re-shows its own advisory. The one-tap add targets THIS id
+   *  (the host's onAddPreferredColor closes over it), never a re-resolved
+   *  newest-active (inv #6). */
+  profileId?: string | null;
+  /** Append a real stocked color name to the bound profile's preferred exterior
+   *  colors via the existing PATCH path (the host wires client.patchProfile +
+   *  query invalidation). Absent → the cross-check tile is not shown. */
+  onAddPreferredColor?: (color: string) => Promise<void>;
 }
 
 const PAGE_SIZE = 12;
 
-export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JSX.Element {
+export function InventoryCandidates({
+  inventory,
+  profileId = null,
+  onAddPreferredColor,
+}: InventoryCandidatesProps): JSX.Element {
   const allCandidates =
     inventory.kind === "ok" ? (inventory.data.candidates as InventoryCandidate[]) : [];
   const recommendedCount = inventory.kind === "ok" ? inventory.data.recommendedCount : 0;
@@ -207,6 +284,18 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
   // The candidate whose read-only detail modal is open (null = closed).
   const [detail, setDetail] = useState<InventoryCandidate | null>(null);
 
+  // Color cross-check advisory — actionable rows from the ranker result. A simple
+  // per-profile dismissed-set suppresses the tile once dismissed (don't nag);
+  // reconciled colors drop out at the data level on the next ranker refetch.
+  const colorCrossCheck: InventoryColorCrossCheckItem[] =
+    inventory.kind === "ok" ? (inventory.data.colorCrossCheck ?? []) : [];
+  const [dismissedFor, setDismissedFor] = useState<Set<string>>(new Set());
+  const ccKey = profileId ?? "";
+  const showCrossCheck =
+    onAddPreferredColor !== undefined &&
+    colorCrossCheck.length > 0 &&
+    !dismissedFor.has(ccKey);
+
   // Re-compute the filtered list. A new array identity on every filter/candidate change
   // ensures the pager auto-resets to page 1 (usePagedList watches the items reference).
   const filtered = useMemo(() => {
@@ -223,6 +312,13 @@ export function InventoryCandidates({ inventory }: InventoryCandidatesProps): JS
   return (
     <section data-testid="canvas-inventory-candidates">
       <h2>Inventory candidates</h2>
+      {showCrossCheck && (
+        <ColorCrossCheckTile
+          items={colorCrossCheck}
+          onAdd={(color) => void onAddPreferredColor?.(color)}
+          onDismiss={() => setDismissedFor((prev) => new Set(prev).add(ccKey))}
+        />
+      )}
       {inventory.kind === "loading" && <p className="muted">Loading inventory…</p>}
       {inventory.kind === "error" && (
         <p className="danger-text" role="alert">

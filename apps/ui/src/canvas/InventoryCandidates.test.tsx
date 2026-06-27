@@ -97,6 +97,7 @@ function makeResult(
     recommendedCount: number;
     totalListings: number;
     scannedAtMax: string | null;
+    colorCrossCheck: { requested: string; suggestions: string[] }[];
   }> = {},
 ): InventoryCompareResult {
   return {
@@ -478,6 +479,81 @@ describe("InventoryCandidates — pagination", () => {
     expect(all("inventory-candidate-row")).toHaveLength(12);
     // Pager still visible (15 > 12).
     expect(get("canvas-pager")).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Color config cross-check advisory tile
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — color config cross-check", () => {
+  const cc = [{ requested: "red", suggestions: ["Radiant Red Metallic II", "Rallye Red"] }];
+
+  it("renders the advisory tile with the real stocked names when there are suggestions", () => {
+    const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
+    const { query, all } = render(
+      <InventoryCandidates
+        inventory={ok(result)}
+        profileId="prof-1"
+        onAddPreferredColor={async () => {}}
+      />,
+    );
+    expect(query("inventory-color-crosscheck")).not.toBeNull();
+    const adds = all("inventory-color-add");
+    expect(adds).toHaveLength(2);
+    expect(adds[0]!.textContent).toContain("Radiant Red Metallic II");
+    expect(adds[1]!.textContent).toContain("Rallye Red");
+  });
+
+  it("Add calls onAddPreferredColor with the canonical stocked name", () => {
+    const calls: string[] = [];
+    const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
+    const { all } = render(
+      <InventoryCandidates
+        inventory={ok(result)}
+        profileId="prof-1"
+        onAddPreferredColor={async (c) => {
+          calls.push(c);
+        }}
+      />,
+    );
+    click(all("inventory-color-add")[0]!);
+    expect(calls).toEqual(["Radiant Red Metallic II"]);
+    // The tapped suggestion shows immediate feedback + disables (no double-add).
+    expect((all("inventory-color-add")[0]! as HTMLButtonElement).disabled).toBe(true);
+    expect(all("inventory-color-add")[0]!.textContent).toContain("Added");
+  });
+
+  it("dismiss hides the tile", () => {
+    const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
+    const { query, get } = render(
+      <InventoryCandidates
+        inventory={ok(result)}
+        profileId="prof-1"
+        onAddPreferredColor={async () => {}}
+      />,
+    );
+    expect(query("inventory-color-crosscheck")).not.toBeNull();
+    click(get("inventory-color-crosscheck-dismiss"));
+    expect(query("inventory-color-crosscheck")).toBeNull();
+  });
+
+  it("is absent when there are no cross-check suggestions", () => {
+    const result = makeResult([makeCandidate()]); // no colorCrossCheck
+    const { query } = render(
+      <InventoryCandidates
+        inventory={ok(result)}
+        profileId="prof-1"
+        onAddPreferredColor={async () => {}}
+      />,
+    );
+    expect(query("inventory-color-crosscheck")).toBeNull();
+  });
+
+  it("is absent when no add handler is wired (nothing to act on)", () => {
+    const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
+    const { query } = render(<InventoryCandidates inventory={ok(result)} profileId="prof-1" />);
+    expect(query("inventory-color-crosscheck")).toBeNull();
   });
 });
 

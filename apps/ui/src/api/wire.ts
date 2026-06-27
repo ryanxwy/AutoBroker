@@ -512,6 +512,15 @@ export const InventoryCandidateRowSchema = z
   .passthrough();
 export type InventoryCandidateRow = z.infer<typeof InventoryCandidateRowSchema>;
 
+/** One color-config cross-check advisory row — a loose preferred color the
+ *  ranker's exact colorAxis won't match, plus the REAL stocked names to offer
+ *  the buyer as a one-tap add (assist-not-autofill). compute.ts colorCrossCheck. */
+export const InventoryColorCrossCheckItemSchema = z.object({
+  requested: z.string(),
+  suggestions: z.array(z.string()),
+});
+export type InventoryColorCrossCheckItem = z.infer<typeof InventoryColorCrossCheckItemSchema>;
+
 export const InventoryCompareResultSchema = z
   .object({
     candidates: z.array(InventoryCandidateRowSchema),
@@ -522,6 +531,10 @@ export const InventoryCompareResultSchema = z
     // vs blocked. Drives the "scanned, found 0" vs "never scanned" empty-state.
     sourcesScanned: z.number().optional(),
     sourcesBlocked: z.number().optional(),
+    // Color config cross-check advisory: per loose preferred color the ranker's
+    // EXACT colorAxis won't match, the real stocked names to offer (one-tap add).
+    // Optional for tolerance of older payloads.
+    colorCrossCheck: z.array(InventoryColorCrossCheckItemSchema).optional(),
   })
   .passthrough();
 export type InventoryCompareResult = z.infer<typeof InventoryCompareResultSchema>;

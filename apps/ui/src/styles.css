@@ -1243,6 +1243,37 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .rail-pin-unpin:hover:not(:disabled) { opacity: 1; color: var(--stop); box-shadow: none; }
 
+/* color config cross-check — a dismissable wash-tinted advisory slip on the
+   Inventory tab. Reuses the run-wash tokens (no new visual language); the
+   one-tap-add chips are quiet mini-chip buttons. */
+.color-crosscheck {
+  background: var(--run-wash);
+  border: 1px solid var(--run-line);
+  border-left: 3px solid var(--run);
+  border-radius: 5px;
+  padding: 10px 13px;
+  margin-bottom: 12px;
+}
+.color-crosscheck strong {
+  display: block;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--run);
+  margin-bottom: 4px;
+}
+.color-crosscheck > p { font-family: var(--serif); font-size: 12.5px; line-height: 1.5; color: var(--ink); margin: 0 0 8px; }
+.color-crosscheck ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.color-crosscheck li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.color-crosscheck .cc-req { font-family: var(--serif); font-size: 12.5px; color: var(--ink); }
+.color-crosscheck .cc-suggestions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.color-crosscheck .cc-add { cursor: pointer; background: var(--panel); }
+.color-crosscheck .cc-add:hover:not(:disabled) { box-shadow: var(--shadow-mid); }
+.color-crosscheck .cc-add:disabled { opacity: 0.6; cursor: default; color: var(--go); border-color: var(--go-line); }
+.color-crosscheck .cc-dismiss { margin-top: 9px; font-size: 11px; padding: 4px 10px; }
+
 /* scope notice — non-dismissable wash-tinted slip (graphite blue) */
 .scope-notice {
   background: var(--run-wash);

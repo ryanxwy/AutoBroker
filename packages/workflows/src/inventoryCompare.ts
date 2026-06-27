@@ -42,6 +42,7 @@ import {
 } from "@autobroker/tools";
 
 import {
+  ColorCrossCheckItemSchema,
   InventoryCompareInputSchema,
   InventoryCompareOutputSchema,
   InventoryCompareStopError,
@@ -131,6 +132,10 @@ const InventoryCompareStateSchema = z.object({
    *  the budget/availability hard-filter), the ground-truth set for the trim
    *  cross-check. */
   allInventoryTrims: z.array(z.string()),
+  /** Color config cross-check advisory — loose preferred colors the EXACT
+   *  colorAxis won't match, with the real stocked names to offer (assist-only;
+   *  surfaced on the result, mirroring the trim grounding surfacing). */
+  colorCrossCheck: z.array(ColorCrossCheckItemSchema),
 });
 type InventoryCompareState = z.infer<typeof InventoryCompareStateSchema>;
 
@@ -207,6 +212,7 @@ const resolveProfileStep = createStep({
       sourcesScanned: 0,
       sourcesBlocked: 0,
       allInventoryTrims: [],
+      colorCrossCheck: [],
     };
   },
 });
@@ -231,6 +237,7 @@ const computeRankingStep = createStep({
       sourcesScanned: ranked.sourcesScanned,
       sourcesBlocked: ranked.sourcesBlocked,
       allInventoryTrims: ranked.allInventoryTrims,
+      colorCrossCheck: ranked.colorCrossCheck,
     };
   },
 });
@@ -300,6 +307,7 @@ const renderStep = createStep({
       totalListings: state.totalListings,
       recommendedCount: state.recommendedCount,
       candidates,
+      colorCrossCheck: state.colorCrossCheck,
       summary,
     };
   },

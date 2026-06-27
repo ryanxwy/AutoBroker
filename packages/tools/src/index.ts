@@ -291,6 +291,12 @@ export {
   type TrimAvailability,
 } from "./inventory/trimMatch.js";
 export {
+  classifyColorAvailability,
+  normalizeColor,
+  colorTokenMatch,
+  type ColorAvailability,
+} from "./inventory/colorMatch.js";
+export {
   harvestBreakdownFromSnapshot,
   type HarvestedBreakdown,
 } from "./inventory/inventoryBreakdownHarvest.js";

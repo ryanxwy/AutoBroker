@@ -19,7 +19,7 @@ import { useState } from "react";
 
 import { ApiClient } from "../api/client.js";
 import { useAsync, type AsyncState } from "../api/useApi.js";
-import { useDataRefetch } from "../api/useDataChanged.js";
+import { invalidate, useDataRefetch } from "../api/useDataChanged.js";
 import type {
   DealerList,
   DigestView,
@@ -74,6 +74,21 @@ const INCENTIVE_KINDS = ["incentives"] as const;
 /** The summary header refetches on a digest pulse (the daily_digest skill
  *  writes that family; the read projection itself writes nothing). */
 const DIGEST_KINDS = ["digest"] as const;
+
+/** Parse a profile row's `preferred_exterior_colors_json` (a JSON string column)
+ *  into a string[] — tolerant of null/garbage (→ []). The append path reads the
+ *  current list so a one-tap add never clobbers existing colors. */
+function parsePreferredColors(row: ProfileRow | null): string[] {
+  if (row === null) return [];
+  const raw = row["preferred_exterior_colors_json"];
+  if (typeof raw !== "string" || raw.trim() === "") return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export interface CanvasProps {
   client: ApiClient;
@@ -373,12 +388,13 @@ export function Canvas({
     (explicitStatus === "active" || explicitStatus === null || explicitStatus === undefined)
       ? explicit.data
       : null;
-  const active: ProfileSnapshot | null =
+  const activeRow: ProfileRow | null =
     explicitActive !== null
-      ? toSnapshot(explicitActive)
+      ? explicitActive
       : profiles.kind === "ok" && profiles.data.length > 0
-        ? toSnapshot(profiles.data[0]!)
+        ? profiles.data[0]!
         : null;
+  const active: ProfileSnapshot | null = activeRow !== null ? toSnapshot(activeRow) : null;
   const activeId = active?.id ?? null;
   const dealers = useAsync<DealerList>(
     () => client.listProfileDealers(activeId ?? ""),
@@ -454,6 +470,21 @@ export function Canvas({
     (active !== null ? vehicleLabel(active) : "") ||
     (runStatus.kind === "ok" ? prettifySkill(runStatus.data.skill) : "") ||
     "Your search";
+
+  // Color cross-check one-tap add: APPEND a real stocked color name to the
+  // CANVAS-BOUND profile's preferred exterior colors via the existing PATCH path
+  // (never re-resolving newest-active — inv #6). Read the current colors so the
+  // add never clobbers; skip a duplicate. Invalidate listings (the ranker
+  // recomputes colorAxis + the cross-check) and profiles (the chips refresh).
+  const addPreferredColor = async (color: string): Promise<void> => {
+    if (activeId === null) return;
+    const current = parsePreferredColors(activeRow);
+    if (current.some((c) => c.toLowerCase() === color.toLowerCase())) return;
+    await client.patchProfile(activeId, {
+      preferredExteriorColorsJson: JSON.stringify([...current, color]),
+    });
+    invalidate(["listings", "profiles"], activeId);
+  };
 
   return (
     <div className="canvas" data-testid="canvas">
@@ -536,7 +567,13 @@ export function Canvas({
               />
             )}
             {tab === "dealers" && <DealerTiles dealers={dealers} />}
-            {tab === "inventory" && <InventoryCandidates inventory={inventory} />}
+            {tab === "inventory" && (
+              <InventoryCandidates
+                inventory={inventory}
+                profileId={activeId}
+                {...(activeId !== null ? { onAddPreferredColor: addPreferredColor } : {})}
+              />
+            )}
             {tab === "quotes" && (
               <QuotesPanel
                 quotes={quotes}
