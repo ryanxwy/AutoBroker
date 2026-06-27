@@ -199,6 +199,9 @@ export { classifyBlockSignature } from "./blockSignature.js";
 // US-dealer gate — hard filter lives in code, not in any prompt.
 export { isUsDealer, type IsUsDealerOptions } from "./geo.js";
 
+// Pure dealer-contact role parser — canonical job title from a signature tail.
+export { parseContactRole } from "./inbox/contactRole.js";
+
 // dealer_geosearch deterministic core — viewport math + candidate filter
 // chain (pure), the Maps feed extractor (page-side) with its snapshot-fallback
 // decision, and the single dealers/profile_dealers write path (US gate inlined).
