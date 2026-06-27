@@ -498,6 +498,8 @@ export const inventoryListings = sqliteTable("inventory_listings", {
 	msrp: real(),
 	listedPrice: real("listed_price"),
 	dealerDiscount: real("dealer_discount"),
+	dealerMarkup: real("dealer_markup"),
+	pricingBreakdownJson: text("pricing_breakdown_json"),
 	incentivesText: text("incentives_text"),
 	inventoryStatus: text("inventory_status").notNull(),
 	listingUrl: text("listing_url"),

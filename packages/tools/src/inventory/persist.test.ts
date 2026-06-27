@@ -109,6 +109,8 @@ beforeAll(() => {
   db = openDb();
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0001_redundant_ozymandias.sql"), "utf8"));
+  // 0004 adds dealer_markup + pricing_breakdown_json (ALTER TABLE ADD COLUMN).
+  db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0004_empty_celestials.sql"), "utf8"));
 });
 
 afterAll(() => {
@@ -671,5 +673,134 @@ describe("persistScanResults — price change trail", () => {
     const changes = readInventoryChangesSince(db, PROFILE_ID, T0);
     expect(changes).toHaveLength(1);
     expect(changes[0]!.dropUsd).toBe(1500);
+  });
+});
+
+describe("persistScanResults — dealer_markup + pricing_breakdown_json (harvest-aware merge)", () => {
+  // The empty-breakdown sentinel the caller passes for "VDP visited, nothing found".
+  const EMPTY_BLOB = '{"addOns":[],"addonsTotal":null,"priceGated":false,"breakdownParsed":true}';
+  const REAL_BLOB = '{"addOns":[{"label":"nitrogen","amount":299}],"addonsTotal":299,"priceGated":false,"breakdownParsed":true}';
+
+  /** A ClassifiedListingRow carrying the tools-layer pricing siblings. Omitting
+   *  a pricing key (undefined) is the "VDP not harvested → PRESERVE" sentinel. */
+  function pricedRow(
+    listingOverrides: Partial<InventoryListing>,
+    pricing: { dealerMarkup?: number | null; pricingBreakdownJson?: string | null },
+  ): ClassifiedListingRow {
+    return { listing: listing(listingOverrides), matchStatus: "exact", raw: { via: "test" }, ...pricing };
+  }
+
+  it("round-trips dealer_markup + pricing_breakdown_json through INSERT", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, { dealerMarkup: 4995, pricingBreakdownJson: REAL_BLOB })])],
+      db,
+      now: T1,
+    });
+    const rows = allListings();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dealer_markup).toBe(4995);
+    expect(rows[0]!.pricing_breakdown_json).toBe(REAL_BLOB);
+  });
+
+  it("FOOTGUN: the URL-orphan UPDATE_LIVE_ROW path lands each value in its OWN column", () => {
+    // SQLite loose typing won't throw on a positional swap, so DISTINCT-TYPED
+    // sentinels (number markup vs string blob) are the only thing catching a
+    // mis-ordered UPDATE_LIVE_ROW / run() arg sequence.
+    const URL = "https://alpha-hyundai.example/vdp/footgun-stock-9";
+    const MARKUP_SENTINEL = 1234; // a number
+    const BLOB_SENTINEL = '{"marker":"footgun-blob"}'; // a recognizable string
+
+    // run 1: a VIN-bearing row OWNS this URL.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN, listing_url: URL })])],
+      db,
+      now: T1,
+    });
+    // run 2: a VIN-ABSENT row at the same URL → selectLiveUrlRow hits the live
+    // VIN row → the UPDATE_LIVE_ROW (positional) arm fires, not an INSERT.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ listing_url: URL }, { dealerMarkup: MARKUP_SENTINEL, pricingBreakdownJson: BLOB_SENTINEL })])],
+      db,
+      now: T3,
+    });
+
+    const live = liveListings();
+    expect(live).toHaveLength(1); // updated in place, not shadowed
+    const r = live[0]!;
+    expect(r.vin).toBe(VIN); // proves we took the UPDATE_LIVE_ROW (orphan) path
+    expect(r.dealer_markup).toBe(MARKUP_SENTINEL); // number in the markup column
+    expect(typeof r.dealer_markup).toBe("number");
+    expect(r.pricing_breakdown_json).toBe(BLOB_SENTINEL); // string in the json column
+    expect(typeof r.pricing_breakdown_json).toBe("string");
+  });
+
+  it("merge (i) APPEAR: a re-scan that newly harvests markup/breakdown writes them over a prior null", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, { dealerMarkup: null, pricingBreakdownJson: null })])],
+      db,
+      now: T1,
+    });
+    expect(allListings()[0]!.dealer_markup).toBeNull();
+
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, { dealerMarkup: 3000, pricingBreakdownJson: REAL_BLOB })])],
+      db,
+      now: T3,
+    });
+    const r = allListings()[0]!;
+    expect(r.dealer_markup).toBe(3000);
+    expect(r.pricing_breakdown_json).toBe(REAL_BLOB);
+  });
+
+  it("merge (ii) CLEAR-ON-REVISIT: a 0 / empty-blob sentinel CLEARS a prior value (COALESCE(0, old)=0)", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, { dealerMarkup: 3000, pricingBreakdownJson: REAL_BLOB })])],
+      db,
+      now: T1,
+    });
+    // VDP revisited, markup removed → caller carries 0 / empty-blob (NOT null).
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, { dealerMarkup: 0, pricingBreakdownJson: EMPTY_BLOB })])],
+      db,
+      now: T3,
+    });
+    const r = allListings()[0]!;
+    expect(r.dealer_markup).toBe(0); // ratchet broken — the red flag honestly clears
+    expect(r.pricing_breakdown_json).toBe(EMPTY_BLOB);
+  });
+
+  it("merge (iii) PRESERVE-ON-MISS: a re-scan that did NOT harvest (null/undefined) keeps the prior value", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, { dealerMarkup: 3000, pricingBreakdownJson: REAL_BLOB })])],
+      db,
+      now: T1,
+    });
+    // VDP not visited this scan → no pricing keys set (undefined → null carry).
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, {})])],
+      db,
+      now: T3,
+    });
+    const r = allListings()[0]!;
+    expect(r.dealer_markup).toBe(3000); // preserved (COALESCE(null, old)=old)
+    expect(r.pricing_breakdown_json).toBe(REAL_BLOB);
   });
 });

@@ -9,7 +9,8 @@
  * (or rebuilt) in code: boot can instantiate the schema on a fresh install, and
  * the destructive reset can recreate every table after deleting the file.
  *
- * The committed migrations (0000 → 0001 → 0002, ordered by the drizzle journal)
+ * The committed migrations (0000 → 0001 → 0002 → 0003 → 0004, ordered by the
+ * drizzle journal)
  * together produce the complete current schema; running them against an empty
  * better-sqlite3 DB yields every table. The migrator stamps a
  * `__drizzle_migrations` bookkeeping table and is idempotent — re-running it on

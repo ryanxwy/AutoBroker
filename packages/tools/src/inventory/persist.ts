@@ -54,6 +54,17 @@ export interface ClassifiedListingRow {
   /** MSRP harvested off the VDP (a tools-layer derived field, NOT part of the
    *  frozen 11-field LLM emit shape); null when no MSRP label resolved. */
   msrp?: number | null;
+  /** LABELED dealer market-adjustment (markup) harvested off the VDP — a
+   *  tools-layer derived sibling like `msrp`. The 0-vs-null sentinel is
+   *  load-bearing for the harvest-aware merge (see the persist COALESCE notes):
+   *  the caller passes `0` to mean "VDP harvested, no markup → CLEAR a prior
+   *  value", `null`/undefined to mean "VDP not harvested → PRESERVE". */
+  dealerMarkup?: number | null;
+  /** Pricing-breakdown blob (add-ons / parse-coverage) for the
+   *  pricing_breakdown_json column. Same sentinel discipline: an explicit
+   *  non-null empty-breakdown string CLEARS a prior blob; null/undefined
+   *  PRESERVES it. Kept in sync with dealerMarkup by the caller. */
+  pricingBreakdownJson?: string | null;
   /** Provenance blob for raw_listing_json (32 KB cap applied at write). */
   raw: string | Record<string, unknown> | null;
 }
@@ -151,8 +162,9 @@ const LISTING_INSERT_COLS = `(
   listing_id, search_profile_id, dealer_id, source_id, vin, stock_number,
   year, make, model, trim, exterior_color, interior_color, listed_price,
   inventory_status, listing_url, normalized_listing_url, match_status,
-  raw_listing_json, first_seen_at, last_seen_at, observed_at, msrp
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  raw_listing_json, first_seen_at, last_seen_at, observed_at, msrp,
+  dealer_markup, pricing_breakdown_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 /** Refresh semantics on conflict: identity fields merge null-preserving
  *  (a sparser re-scan never blanks a known value); status/match/raw and the
@@ -168,6 +180,19 @@ const LISTING_ON_CONFLICT_BODY = `
   interior_color         = COALESCE(excluded.interior_color, inventory_listings.interior_color),
   listed_price           = COALESCE(excluded.listed_price, inventory_listings.listed_price),
   msrp                   = COALESCE(excluded.msrp, inventory_listings.msrp),
+  -- Harvest-aware merge for the VDP-only markup/breakdown fields. These are
+  -- harvested for only a budget-bounded SUBSET of listings per scan, so the
+  -- carried value is a 0-vs-null SENTINEL set by the CALLER (not by persist):
+  --   value 0 / explicit empty-breakdown string = "VDP visited, none found" → CLEAR
+  --     (COALESCE(0, old) = 0, COALESCE('{}', old) = '{}'),
+  --   NULL                                       = "VDP not visited"         → PRESERVE
+  --     (COALESCE(NULL, old) = old).
+  -- COALESCE is therefore correct in BOTH directions: it clears on an explicit
+  -- non-null carry yet preserves a prior value on a not-harvested re-scan — so a
+  -- red-flag markup never ratchets (a removed markup honestly clears) while a
+  -- sparse re-scan never blanks a known one.
+  dealer_markup          = COALESCE(excluded.dealer_markup, inventory_listings.dealer_markup),
+  pricing_breakdown_json = COALESCE(excluded.pricing_breakdown_json, inventory_listings.pricing_breakdown_json),
   inventory_status       = excluded.inventory_status,
   listing_url            = COALESCE(excluded.listing_url, inventory_listings.listing_url),
   normalized_listing_url = COALESCE(excluded.normalized_listing_url, inventory_listings.normalized_listing_url),
@@ -208,6 +233,10 @@ UPDATE inventory_listings SET
   interior_color         = COALESCE(?, interior_color),
   listed_price           = COALESCE(?, listed_price),
   msrp                   = COALESCE(?, msrp),
+  -- Same 0-vs-null sentinel COALESCE as LISTING_ON_CONFLICT_BODY (positional ?):
+  -- an explicit 0 / empty-breakdown carry CLEARS, NULL PRESERVES.
+  dealer_markup          = COALESCE(?, dealer_markup),
+  pricing_breakdown_json = COALESCE(?, pricing_breakdown_json),
   inventory_status       = ?,
   listing_url            = COALESCE(?, listing_url),
   normalized_listing_url = COALESCE(?, normalized_listing_url),
@@ -447,6 +476,10 @@ export function persistScanResults(opts: {
           now,
           now,
           row.msrp ?? null,
+          // Harvest-aware sentinel (caller-supplied): 0 / empty-blob string =
+          // "VDP visited, none" → CLEAR; null = "not harvested" → PRESERVE.
+          row.dealerMarkup ?? null,
+          row.pricingBreakdownJson ?? null,
         ];
 
         if (vin !== null) {
@@ -486,6 +519,10 @@ export function persistScanResults(opts: {
               row.listing.interior_color,
               row.listing.price,
               row.msrp ?? null,
+              // Harvest-aware sentinel (same order as UPDATE_LIVE_ROW's new ?s,
+              // BEFORE the trailing listing_id): 0/empty-blob CLEARS, null PRESERVES.
+              row.dealerMarkup ?? null,
+              row.pricingBreakdownJson ?? null,
               row.listing.inventory_status,
               listingUrl,
               nlurl,
