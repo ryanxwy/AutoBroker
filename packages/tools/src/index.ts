@@ -545,6 +545,11 @@ export {
   listProfileThreadRowsWithStatus,
   type ThreadStatusRow,
 } from "./inbox/negotiationStatusProjection.js";
+export {
+  listProfileDealerNegotiations,
+  NEGOTIATION_STATUS_RANK,
+  type DealerNegotiationRow,
+} from "./inbox/negotiationProjection.js";
 
 // dealer_closeout_email (X3) — the closeout target assembler (open threads minus
 // closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)
