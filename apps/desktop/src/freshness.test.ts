@@ -10,12 +10,27 @@
 
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { computeSourceStamp, ForceRebuild, resolveGit, EMPTY_TREE } from "./freshness.js";
+import {
+  computeBuiltStamp,
+  computeFrameworkStamp,
+  computeSourceStamp,
+  EMPTY_TREE,
+  ForceRebuild,
+  resolveGit,
+} from "./freshness.js";
 import type { SourceStamp } from "./freshness.js";
+
+// The real worktree repo root, derived from this test file's own location:
+// apps/desktop/src/freshness.test.ts → up three dirs. The framework + built
+// stamp tests run against it because that is where the resolved Electron /
+// native-dep versions actually exist.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 // ---------------------------------------------------------------------------
 // Fixture setup
@@ -224,6 +239,60 @@ describe("computeSourceStamp", () => {
     );
 
     const result = computeSourceStamp(dir, opts);
+    expect(result).toEqual({ state: "in-progress" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeFrameworkStamp / computeBuiltStamp
+//
+// These resolve the installed Electron + native-dep versions, so they run
+// against the real worktree repo root (REPO_ROOT) where those packages exist —
+// a synthetic git fixture has no node_modules to resolve.
+// ---------------------------------------------------------------------------
+
+describe("computeFrameworkStamp", () => {
+  it("is deterministic — same inputs → same 64-hex stamp", () => {
+    const a = computeFrameworkStamp(REPO_ROOT);
+    const b = computeFrameworkStamp(REPO_ROOT);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(a).toBe(b);
+  });
+});
+
+describe("computeBuiltStamp", () => {
+  it("folds builtStamp = sha256(frameworkStamp + '\\n' + source) and matches the parts", () => {
+    const result = computeBuiltStamp(REPO_ROOT);
+    expect(result.state).toBe("ok");
+    if (result.state !== "ok") throw new Error("expected ok state");
+
+    // The folded stamp is exactly sha256 of the two parts joined by a newline.
+    const expected = createHash("sha256")
+      .update(result.frameworkStamp + "\n" + result.source)
+      .digest("hex");
+    expect(result.builtStamp).toBe(expected);
+    expect(result.builtStamp).toMatch(/^[0-9a-f]{64}$/);
+
+    // source agrees with computeSourceStamp on the same root, and
+    // frameworkStamp agrees with computeFrameworkStamp.
+    const src = computeSourceStamp(REPO_ROOT);
+    expect(src.state).toBe("ok");
+    if (src.state === "ok") expect(result.source).toBe(src.source);
+    expect(result.frameworkStamp).toBe(computeFrameworkStamp(REPO_ROOT));
+  });
+
+  it("returns {state:'in-progress'} mid-op (MERGE_HEAD present)", () => {
+    const dir = copyFixture();
+
+    // The fixture has packages/core, which is in computeBuiltStamp's default
+    // roots, so the source step would otherwise succeed. The in-progress
+    // marker must short-circuit before any framework resolution.
+    writeFileSync(
+      join(dir, ".git", "MERGE_HEAD"),
+      "0000000000000000000000000000000000000000\n",
+    );
+
+    const result = computeBuiltStamp(dir, { git });
     expect(result).toEqual({ state: "in-progress" });
   });
 });

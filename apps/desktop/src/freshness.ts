@@ -12,12 +12,14 @@
  * ForceRebuild — callers rebuild rather than run stale code.
  *
  * Imports: node built-ins only — node:child_process, node:crypto, node:fs,
- * node:path, node:os. No cross-package imports (layer rule, apps/desktop = L5).
+ * node:module, node:path, node:os. No cross-package imports (layer rule,
+ * apps/desktop = L5).
  */
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -146,10 +148,13 @@ function runGit(
 export function resolveGit(extraCandidates?: string[]): string {
   const candidates = [...(extraCandidates ?? []), ...GIT_ALLOWLIST];
   for (const c of candidates) {
-    if (existsSync(c)) {
-      // existsSync is a fast existence probe; an executable file exists if
-      // the FS sees it. For the fixed allowlist paths this is sufficient.
+    try {
+      // Probe the execute bit, not mere existence: a present-but-non-executable
+      // candidate (e.g. a directory or a file without +x) is skipped.
+      accessSync(c, constants.X_OK);
       return c;
+    } catch {
+      // not executable / not present — try the next candidate
     }
   }
   throw new GitUnavailable(`no executable git found; tried: ${candidates.join(", ")}`);
@@ -207,9 +212,13 @@ export function computeSourceStamp(
     const env: NodeJS.ProcessEnv = { ...process.env, GIT_INDEX_FILE: tmpIndex };
 
     // Step 1: populate the temp index with all files in the filtered roots.
-    // Excludes are applied separately (step 2) to avoid a git 2.36 bug where
-    // passing multiple :(exclude,glob) pathspecs to git add -A on an empty
-    // index silently produces the empty-tree SHA.
+    // Excludes MUST be applied separately (step 2), NOT folded into this add.
+    // Passing :(exclude,glob) pathspecs to `git add -A` against an empty index
+    // silently produces the empty-tree SHA — reproduced on multiple git
+    // versions, so this is a property of the single-pass shape itself, not a
+    // bug in one release. The two-step (add roots, then rm --cached the
+    // excludes) is therefore REQUIRED unconditionally — do not "simplify" it
+    // back to a single add with exclude pathspecs on a newer git.
     runGit(git, ["-C", repoRoot, "add", "-A", "--", ...existingRoots], { cwd: repoRoot, env });
 
     // Step 2: remove excluded files from the temp index. Convert each
@@ -244,43 +253,47 @@ export function computeSourceStamp(
 }
 
 // ---------------------------------------------------------------------------
-// Framework stamp helpers (node:fs + node:path walk-up resolver)
+// Framework stamp helpers
 // ---------------------------------------------------------------------------
 
-/** Walk up from startDir to find node_modules/<pkgName>/package.json.
- *  Returns the package directory (the dir that contains package.json). */
-function findPkgDir(startDir: string, pkgName: string): string {
-  let dir = startDir;
-  for (;;) {
-    const candidate = join(dir, "node_modules", pkgName, "package.json");
-    if (existsSync(candidate)) return join(dir, "node_modules", pkgName);
-    const parent = dirname(dir);
-    if (parent === dir) throw new ForceRebuild(`package "${pkgName}" not found from ${startDir}`);
-    dir = parent;
-  }
-}
-
-/** Read version field from <pkgDir>/package.json. */
-function pkgVersion(pkgDir: string): string {
-  const raw = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")) as Record<string, unknown>;
-  const v = String(raw["version"] ?? "");
-  if (!v) throw new ForceRebuild(`no version in ${pkgDir}/package.json`);
+/** Read and return the `version` field of a package.json on disk. */
+function readVersion(pkgJsonPath: string): string {
+  const pj = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as { version?: string };
+  const v = String(pj.version ?? "");
+  if (!v) throw new ForceRebuild(`no version in ${pkgJsonPath}`);
   return v;
 }
 
-/** Resolve the last dep in a chain, where each dep is found relative to the
- *  previous one's package dir. This mirrors pnpm's hoisted resolution without
- *  requiring node:module's createRequire. */
-function resolveChainVersion(startDir: string, chain: [string, ...string[]]): string {
-  let dir = startDir;
-  for (let i = 0; i < chain.length - 1; i++) {
-    const dep = chain[i];
-    if (dep === undefined) throw new ForceRebuild("unexpected undefined in dep chain");
-    dir = findPkgDir(dir, dep);
+/**
+ * Resolve the installed version of the LAST dep in `chain`, resolving each hop
+ * relative to the previous package's own dir. Each hop uses node module
+ * resolution (createRequire) so it follows pnpm's symlinked store correctly —
+ * a hand-rolled node_modules walk-up misses pnpm's nested/symlinked deps.
+ * Resolves a dep's entry file, then walks up to the package.json whose `name`
+ * matches the dep (some packages do not export ./package.json).
+ */
+function chainVersion(fromPkgDir: string, chain: [string, ...string[]]): string {
+  let pkgDir = fromPkgDir;
+  let version = "";
+  for (const dep of chain) {
+    const req = createRequire(join(pkgDir, "package.json"));
+    let dir = dirname(req.resolve(dep));
+    for (;;) {
+      const candidate = join(dir, "package.json");
+      if (existsSync(candidate)) {
+        const pj = JSON.parse(readFileSync(candidate, "utf8")) as { name?: string; version?: string };
+        if (pj.name === dep) {
+          version = String(pj.version ?? "");
+          pkgDir = dir;
+          break;
+        }
+      }
+      if (dir === dirname(dir)) throw new ForceRebuild(`package root for ${dep} not found`);
+      dir = dirname(dir);
+    }
   }
-  const last = chain[chain.length - 1];
-  if (last === undefined) throw new ForceRebuild("empty dep chain");
-  return pkgVersion(findPkgDir(dir, last));
+  if (!version) throw new ForceRebuild(`no version resolved for ${chain[chain.length - 1]}`);
+  return version;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,17 +311,20 @@ export function computeFrameworkStamp(repoRoot: string): string {
   try {
     const desktopDir = join(repoRoot, "apps", "desktop");
 
-    const electronVersion = pkgVersion(findPkgDir(desktopDir, "electron"));
+    // Electron version: resolve apps/desktop's installed electron/package.json
+    // through node module resolution, then read .version.
+    const desktopRequire = createRequire(join(desktopDir, "package.json"));
+    const electronVersion = readVersion(desktopRequire.resolve("electron/package.json"));
     const builderYml = readFileSync(join(desktopDir, "electron-builder.yml"));
     const bundleMjs = readFileSync(join(desktopDir, "scripts", "bundle.mjs"));
 
-    const bsqliteVersion = resolveChainVersion(join(repoRoot, "packages", "db"), ["better-sqlite3"]);
-    const libsqlVersion = resolveChainVersion(join(repoRoot, "packages", "workflows"), [
+    const bsqliteVersion = chainVersion(join(repoRoot, "packages", "db"), ["better-sqlite3"]);
+    const libsqlVersion = chainVersion(join(repoRoot, "packages", "workflows"), [
       "@mastra/libsql",
       "@libsql/client",
       "libsql",
     ]);
-    const playwrightVersion = resolveChainVersion(join(repoRoot, "packages", "tools"), ["playwright"]);
+    const playwrightVersion = chainVersion(join(repoRoot, "packages", "tools"), ["playwright"]);
 
     return sha256(
       [
