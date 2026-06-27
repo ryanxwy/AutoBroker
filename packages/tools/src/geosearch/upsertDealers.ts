@@ -97,9 +97,10 @@ export function upsertDealers(
     };
 
     for (const c of candidates) {
-      // Inline US hard gate (the filter chain only marked these rows).
-      // Website + name are the only geography signals the candidate carries.
-      if (!isUsDealer({ website: c.website, name: c.name })) {
+      // Inline US hard gate — a defense-in-depth backstop (the filter chain
+      // already drops non-US rows before they reach this write). Website +
+      // name + address are the geography signals the candidate carries.
+      if (!isUsDealer({ website: c.website, name: c.name, address: c.address })) {
         result.nonUsSkipped += 1;
         continue;
       }

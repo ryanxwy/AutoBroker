@@ -179,12 +179,20 @@ describe("dedupByPlaceId", () => {
 });
 
 describe("rejectNonCandidate", () => {
-  it("marks non-US rows WITHOUT dropping them (hard gate is at upsert)", () => {
+  it("drops non-US (cross-border) rows so they never enter the ranked set", () => {
     const canadian = candidate({ website: "https://example.ca", google_place_id: "0xc:0x1" });
+    // The live San Diego/Tijuana case: a Mexican border dealer with a .com site
+    // — caught by the name token, dropped before ranking.
+    const tijuana = candidate({
+      website: "https://hyundaipremiertijuana.com",
+      name: "Hyundai Premier Tijuana",
+      google_place_id: "0xc:0x3",
+    });
     const us = candidate({ google_place_id: "0xc:0x2" });
-    const result = rejectNonCandidate([canadian, us]);
-    expect(result.nonUsMarked).toBe(1);
-    expect(result.kept).toHaveLength(2);
+    const result = rejectNonCandidate([canadian, tijuana, us]);
+    expect(result.nonUsDropped).toBe(2);
+    expect(result.kept).toHaveLength(1);
+    expect(result.kept[0]!.google_place_id).toBe("0xc:0x2");
   });
 
   it("drops sponsored rows", () => {

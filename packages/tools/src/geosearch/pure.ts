@@ -139,12 +139,13 @@ export function dedupByPlaceId(candidates: readonly DealerCandidate[]): DealerCa
   return kept;
 }
 
-/** Outcome of the candidate filter chain — every removal/mark is counted so
+/** Outcome of the candidate filter chain — every removal is counted so
  *  nothing is dropped silently. */
 export interface CandidateFilterResult {
   kept: DealerCandidate[];
-  /** Marked only — the hard US gate re-checks (and skips) at upsert time. */
-  nonUsMarked: number;
+  /** Non-US (cross-border) rows dropped here so they never enter the ranked /
+   *  discovered set; the upsert tool re-checks as a defense-in-depth backstop. */
+  nonUsDropped: number;
   sponsoredDropped: number;
   serviceOnlyDropped: number;
   placeIdCollisionsDropped: number;
@@ -152,8 +153,10 @@ export interface CandidateFilterResult {
 
 /**
  * The candidate filter chain, in order:
- *   1. non-US → MARK (count surfaces to the narration; rows are NOT dropped
- *      here — the upsert tool is the hard gate and re-checks every row);
+ *   1. non-US (cross-border) → DROP. A foreign dealer is non-transactable for a
+ *      US buyer, so it must never enter the ranked/discovered set; the count
+ *      surfaces to the narration ("N cross-border dealer(s) excluded"). The
+ *      upsert tool re-checks every surviving row as a defense-in-depth backstop.
  *   2. sponsored → drop; a surviving /aclk website (ad-click redirect) →
  *      website nulled, row kept;
  *   3. service-only (service_center true) → drop;
@@ -164,16 +167,18 @@ export interface CandidateFilterResult {
 export function rejectNonCandidate(
   candidates: readonly DealerCandidate[],
 ): CandidateFilterResult {
-  // 1. Mark non-US rows. The 12-field shape carries only website + name as
-  //    geography signals; the other isUsDealer inputs are absent by design.
-  const nonUsMarked = candidates.filter(
-    (c) => !isUsDealer({ website: c.website, name: c.name }),
-  ).length;
+  // 1. Drop non-US (cross-border) rows up front so they never reach the ranked
+  //    / discovered set. The candidate carries website + name + address as
+  //    geography signals (the other isUsDealer inputs are absent by design).
+  const usCandidates = candidates.filter((c) =>
+    isUsDealer({ website: c.website, name: c.name, address: c.address }),
+  );
+  const nonUsDropped = candidates.length - usCandidates.length;
 
   // 2. Drop sponsored placements; scrub any ad-click website that survived
   //    extraction (snapshot-parsed rows may carry one without the flag).
   const unsponsored: DealerCandidate[] = [];
-  for (const c of candidates) {
+  for (const c of usCandidates) {
     if (c.sponsored) continue;
     if (c.website !== null && c.website.includes("/aclk")) {
       unsponsored.push({ ...c, website: null });
@@ -191,8 +196,8 @@ export function rejectNonCandidate(
 
   return {
     kept,
-    nonUsMarked,
-    sponsoredDropped: candidates.length - unsponsored.length,
+    nonUsDropped,
+    sponsoredDropped: usCandidates.length - unsponsored.length,
     serviceOnlyDropped: unsponsored.length - dealersOnly.length,
     placeIdCollisionsDropped: dealersOnly.length - kept.length,
   };

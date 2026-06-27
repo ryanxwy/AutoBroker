@@ -278,6 +278,84 @@ describe("TestNameCityHeuristic", () => {
   });
 });
 
+// Rule 5 — unambiguous Mexican border-city tokens / trailing ", Mexico" word.
+describe("TestMexicoHeuristic", () => {
+  it("test_name_tijuana_returns_false", () => {
+    // The live San Diego case: a Mexican border dealer with a .com site and no
+    // country/state — caught only by the name token.
+    expect(
+      isUsDealer({
+        country: null,
+        website: "https://hyundaipremiertijuana.com",
+        name: "Hyundai Premier Tijuana",
+      }),
+    ).toBe(false);
+  });
+
+  it("test_address_mexico_country_word_returns_false", () => {
+    // Name carries no city, but the address ends in the country word.
+    expect(
+      isUsDealer({
+        country: null,
+        name: "Hyundai Premier",
+        address: "Blvd. Insurgentes 1810, Tijuana, B.C., México",
+      }),
+    ).toBe(false);
+  });
+
+  it("test_multiword_border_city_in_name", () => {
+    expect(isUsDealer({ country: null, name: "Toyota Ciudad Juarez" })).toBe(false);
+  });
+
+  it("test_nuevo_laredo_returns_false_but_laredo_tx_stays_us", () => {
+    // "Nuevo Laredo" (MX) is unambiguous; bare "Laredo" (Laredo TX) must NOT match.
+    expect(isUsDealer({ country: null, name: "Honda Nuevo Laredo" })).toBe(false);
+    expect(isUsDealer({ country: null, name: "Laredo Toyota", state: "TX" })).toBe(true);
+  });
+
+  it("test_new_mexico_address_stays_us", () => {
+    // "New Mexico" must NOT trip the country-word check (token before "Mexico"
+    // is "New", not a comma).
+    expect(
+      isUsDealer({ country: null, address: "1 New Mexico Ave, Las Cruces, NM 88001" }),
+    ).toBe(true);
+  });
+
+  it("test_mexico_missouri_town_stays_us", () => {
+    // Mexico, MO is a real US town; its address ends in the US state/ZIP, not
+    // ", Mexico", and bare "Mexico" is not a city token.
+    expect(
+      isUsDealer({ country: null, name: "Mexico Motors", address: "123 Main St, Mexico, MO 65265" }),
+    ).toBe(true);
+  });
+
+  it("test_nogales_az_stays_us", () => {
+    // Bare "Nogales" is omitted from the token list (Nogales AZ is US).
+    expect(isUsDealer({ country: null, name: "Nogales Ford", state: "AZ" })).toBe(true);
+  });
+
+  it("test_token_inside_word_does_not_trigger", () => {
+    // Word-boundary guard: "Tijuanaesque Motors" must not match "Tijuana".
+    expect(isUsDealer({ country: null, name: "Tijuanaesque Motors" })).toBe(true);
+  });
+
+  it("test_us_dealer_with_mexican_street_name_stays_us", () => {
+    // City tokens are NOT scanned in the free-form address: a US dealer on a
+    // Spanish-named street (Ensenada Dr, Matamoros St — real US streets) must
+    // not be dropped. Only name/city tokens + the anchored country word apply.
+    expect(
+      isUsDealer({ country: null, name: "San Diego Hyundai", address: "1234 Ensenada Dr, San Diego, CA 92101" }),
+    ).toBe(true);
+    expect(
+      isUsDealer({ country: null, name: "Alamo Toyota", address: "501 Matamoros St, San Antonio, TX 78207" }),
+    ).toBe(true);
+  });
+
+  it("test_explicit_us_country_overrides_mexican_name", () => {
+    expect(isUsDealer({ country: "US", name: "Hyundai Premier Tijuana" })).toBe(true);
+  });
+});
+
 describe("TestCombinedSignals", () => {
   it("test_canadian_dealer_full_signals", () => {
     // A realistic Canadian Kia dealer: .ca TLD, BC state, V-prefix

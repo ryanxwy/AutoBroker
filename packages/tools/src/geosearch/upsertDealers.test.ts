@@ -232,6 +232,17 @@ describe("upsertDealers — inline US hard gate", () => {
     expect(result.nonUsSkipped).toBe(1);
     expect(dealerRow(dealerId(c))).toBeUndefined();
   });
+
+  it("skips + counts a Mexican border-city dealer name (defense-in-depth backstop)", () => {
+    const c = rankedCandidate({
+      name: "Hyundai Premier Tijuana",
+      website: "https://hyundaipremiertijuana.com",
+      google_place_id: "0xmx:0x1",
+    });
+    const result = upsertDealers([c], PROFILE_ID, db);
+    expect(result.nonUsSkipped).toBe(1);
+    expect(dealerRow(dealerId(c))).toBeUndefined();
+  });
 });
 
 describe("upsertDealers — unnamed rows", () => {

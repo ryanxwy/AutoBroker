@@ -416,7 +416,7 @@ const GeosearchStateSchema = z.object({
   /** Filtered + distance-ranked candidates (after step 3); null until then. */
   ranked: z.array(RankedCandidateSchema).nullable(),
   /** Filter-chain counters (after step 3). */
-  nonUsMarked: z.number().int(),
+  nonUsDropped: z.number().int(),
   sponsoredDropped: z.number().int(),
   serviceOnlyDropped: z.number().int(),
   placeIdCollisionsDropped: z.number().int(),
@@ -444,7 +444,8 @@ const GeosearchOutputSchema = z.object({
   dealersUpserted: z.number().int(),
   /** NEW profile_dealers candidate rows (existing rows of any status no-op). */
   candidatesRegistered: z.number().int(),
-  /** Rows the inline US hard gate skipped at the upsert. */
+  /** Cross-border (non-US) dealers excluded from the search (dropped in the
+   *  pure filter before ranking; the upsert gate is a defense-in-depth backstop). */
   nonUsSkipped: z.number().int(),
   /** Viewports that produced nothing (blocked + errored). */
   viewportsFailed: z.number().int(),
@@ -549,7 +550,7 @@ const resolveProfileStep = createStep({
       viewportsErrored: 0,
       usedSnapshotFallback: false,
       ranked: null,
-      nonUsMarked: 0,
+      nonUsDropped: 0,
       sponsoredDropped: 0,
       serviceOnlyDropped: 0,
       placeIdCollisionsDropped: 0,
@@ -698,7 +699,7 @@ const dedupFilterStep = createStep({
     return {
       ...state,
       ranked,
-      nonUsMarked: filter.nonUsMarked,
+      nonUsDropped: filter.nonUsDropped,
       sponsoredDropped: filter.sponsoredDropped,
       serviceOnlyDropped: filter.serviceOnlyDropped,
       placeIdCollisionsDropped: crossViewportDropped + filter.placeIdCollisionsDropped,
@@ -760,6 +761,12 @@ const confirmStep = createStep({
     const dealersDiscovered = ranked.length;
     const dealersUpserted = upsert.inserted + upsert.updated;
     const viewportsFailed = state.viewportsBlocked + state.viewportsErrored;
+    // Cross-border (non-US) rows are dropped in the pure filter (step 3) before
+    // they enter `ranked`; the upsert US gate is now only a defense-in-depth
+    // backstop. Surface both counts so a backstop-only catch (a future signal
+    // the filter misses) can never be silently skipped — no double-count, since
+    // a filter-dropped row never reaches the upsert.
+    const nonUsExcluded = state.nonUsDropped + upsert.nonUsSkipped;
 
     // ranked is already ascending by distance — the head IS the nearest set.
     const nearestLines = ranked.slice(0, 5).map((c) => {
@@ -771,7 +778,7 @@ const confirmStep = createStep({
       `Registered ${upsert.candidatesRegistered} new dealer candidate(s) for this ` +
       `profile — ${dealersDiscovered} dealer(s) discovered in radius, ` +
       `${dealersUpserted} saved/refreshed` +
-      (upsert.nonUsSkipped > 0 ? `, ${upsert.nonUsSkipped} non-US skipped` : "") +
+      (nonUsExcluded > 0 ? `, ${nonUsExcluded} cross-border dealer(s) excluded` : "") +
       (upsert.unnamedSkipped > 0 ? `, ${upsert.unnamedSkipped} unnamed skipped` : "") +
       (viewportsFailed > 0 ? `, ${viewportsFailed} viewport(s) failed` : "") +
       ".";
@@ -788,7 +795,7 @@ const confirmStep = createStep({
       dealersDiscovered,
       dealersUpserted,
       candidatesRegistered: upsert.candidatesRegistered,
-      nonUsSkipped: upsert.nonUsSkipped,
+      nonUsSkipped: nonUsExcluded,
       viewportsFailed,
       usedSnapshotFallback: state.usedSnapshotFallback,
       summary,
