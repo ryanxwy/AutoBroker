@@ -222,8 +222,11 @@ export function buildIncentiveExtractPrompt(
 ): string {
   return (
     "The fenced text below is a rendered current-offers page scanned for " +
-    `new ${make} ${model} manufacturer incentives. Extract EVERY distinct ` +
-    "offer into the incentives array (one entry per offer). Classify each " +
+    `new ${make} ${model} manufacturer incentives. The page may also list ` +
+    `offers for OTHER ${make} models — extract ONLY offers that apply to the ` +
+    `${model} or apply brand-wide to every ${make} model, and SKIP any offer ` +
+    "that names a different model. Add one entry per qualifying offer. " +
+    "Classify each " +
     "offer's type; an APR / lease-payment / payment-deferral offer is type " +
     '"other". Fill amount with the offer\'s dollar amount (0 when the offer ' +
     "shows no dollar amount). Set eligibility to the offer's stated audience: " +
