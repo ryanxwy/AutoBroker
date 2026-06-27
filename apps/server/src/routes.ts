@@ -45,6 +45,8 @@ import {
   listProfileRows,
   listProfileDealerRowsWithVerdicts,
   listProfileThreadRowsWithStatus,
+  listProfileDealerNegotiations,
+  readDealerNegotiationDetail,
   listProfileMessageRows,
   buildDigestView,
   profileHealth,
@@ -94,6 +96,7 @@ import {
 import {
   DuplicateRunIdError,
   classifySkillFromText,
+  getOrGenerateDealerNegotiationSummary,
   suggestNextSkills,
   type RouteDecision,
   type RouterContext,
@@ -937,6 +940,61 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // stalled / dormant / …) and re-ordered by the honest last_activity_at.
     return withDb((db) => listProfileThreadRowsWithStatus(db, id));
   });
+
+  // ---- GET /api/profiles/:id/dealer-negotiations — per-dealer negotiation grid
+  // The Negotiation cards canvas reads this. Delegates DOWN into the tools-layer
+  // closure (routes never open the product DB directly — the SQLite invariant).
+  // Budget-free (only $ dealer-quote figures + batna scalars; inv #9).
+  app.get(
+    "/api/profiles/:id/dealer-negotiations",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id } = req.params as { id: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      return withDb((db) => listProfileDealerNegotiations(db, id));
+    },
+  );
+
+  // ---- GET /api/profiles/:id/dealer-negotiations/:dealerId — one dealer detail
+  // A foreign / unbound dealer projects null → 404. Read-only, delegates DOWN.
+  app.get(
+    "/api/profiles/:id/dealer-negotiations/:dealerId",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id, dealerId } = req.params as { id: string; dealerId: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      const detail = withDb((db) =>
+        readDealerNegotiationDetail(db, { profileId: id, dealerId }),
+      );
+      if (detail === null) {
+        throw new RouteError("not_found", 404, `dealer ${dealerId} not found`);
+      }
+      return detail;
+    },
+  );
+
+  // ---- GET /api/profiles/:id/dealer-negotiations/:dealerId/summary ----------
+  // The LLM negotiation-state summary. Delegates DOWN to the workflows layer (the
+  // ONLY caller that may invoke the LLM; tools never do). Returns {summary} and
+  // NEVER 404s on generation failure — the workflow fn degrades to null (#1244 /
+  // budget-belt / transport all resolve {summary:null}).
+  app.get(
+    "/api/profiles/:id/dealer-negotiations/:dealerId/summary",
+    async (req: FastifyRequest, _reply: FastifyReply) => {
+      const { id, dealerId } = req.params as { id: string; dealerId: string };
+      const profile = withDb((db) => readProfileRow(db, id));
+      if (profile === null) {
+        throw new RouteError("not_found", 404, `profile ${id} not found`);
+      }
+      return withDb((db) =>
+        getOrGenerateDealerNegotiationSummary(db, { profileId: id, dealerId }),
+      );
+    },
+  );
 
   // ---- GET /api/profiles/:id/messages — read-only ingested-message projection
   app.get("/api/profiles/:id/messages", async (req: FastifyRequest, _reply: FastifyReply) => {

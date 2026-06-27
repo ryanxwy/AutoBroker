@@ -44,6 +44,8 @@ import type { SearchProfileIntakeInput } from "@autobroker/core";
 import {
   __resetIntakeDepsForTests,
   __setIntakeDepsForTests,
+  __resetNegotiationSummaryDepsForTests,
+  __setNegotiationSummaryDepsForTests,
   resetMastraForTests,
   resetRuntimeGlueForTests,
   type IntakeWorkflowDeps,
@@ -625,6 +627,111 @@ describe("GET /api/profiles/:id/dealers", () => {
     expect(rows.map((row) => row["dealer_id"])).toEqual(["d-near", "d-far", "d-unknown"]);
     expect(rows[0]!["candidate_status"]).toBe("candidate");
     expect(rows[0]!["name"]).toBe("Dealer d-near");
+  });
+});
+
+describe("GET /api/profiles/:id/dealer-negotiations", () => {
+  it("404 for a missing profile; [] for a profile with no dealers", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const missing = await s.app.inject({
+      method: "GET",
+      url: "/api/profiles/nope/dealer-negotiations",
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const id = seedProfileRow();
+    const empty = await s.app.inject({
+      method: "GET",
+      url: `/api/profiles/${id}/dealer-negotiations`,
+    });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json<unknown[]>()).toEqual([]);
+  });
+
+  it("returns the per-dealer negotiation grid rows (budget-free)", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    seedDealerForProfile(id, "d-near", 6.4);
+
+    const r = await s.app.inject({
+      method: "GET",
+      url: `/api/profiles/${id}/dealer-negotiations`,
+    });
+    expect(r.statusCode).toBe(200);
+    const rows = r.json<Array<Record<string, unknown>>>();
+    expect(rows.map((row) => row["dealer_id"])).toEqual(["d-near"]);
+    expect(rows[0]!["name"]).toBe("Dealer d-near");
+    expect(rows[0]!["email_count"]).toBe(0);
+    expect(rows[0]!["quote_sent"]).toBe(false);
+    expect("budget_max" in rows[0]!).toBe(false);
+  });
+});
+
+describe("GET /api/profiles/:id/dealer-negotiations/:dealerId", () => {
+  it("404 for a missing profile and 404 for a foreign dealer", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const missingProfile = await s.app.inject({
+      method: "GET",
+      url: "/api/profiles/nope/dealer-negotiations/d-x",
+    });
+    expect(missingProfile.statusCode).toBe(404);
+
+    const id = seedProfileRow();
+    const foreignDealer = await s.app.inject({
+      method: "GET",
+      url: `/api/profiles/${id}/dealer-negotiations/d-unbound`,
+    });
+    expect(foreignDealer.statusCode).toBe(404);
+  });
+
+  it("returns the one-dealer negotiation detail (200)", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    seedDealerForProfile(id, "d-near", 6.4);
+
+    const r = await s.app.inject({
+      method: "GET",
+      url: `/api/profiles/${id}/dealer-negotiations/d-near`,
+    });
+    expect(r.statusCode).toBe(200);
+    const detail = r.json<Record<string, unknown>>();
+    expect(detail["name"]).toBe("Dealer d-near");
+  });
+});
+
+describe("GET /api/profiles/:id/dealer-negotiations/:dealerId/summary", () => {
+  afterEach(() => {
+    __resetNegotiationSummaryDepsForTests();
+  });
+
+  it("404 for a missing profile", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const r = await s.app.inject({
+      method: "GET",
+      url: "/api/profiles/nope/dealer-negotiations/d-x/summary",
+    });
+    expect(r.statusCode).toBe(404);
+  });
+
+  it("returns {summary:null} (200, NEVER 404) when generation fails", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const id = seedProfileRow();
+    seedDealerForProfile(id, "d-near", 6.4);
+    // Force the workflow fn down its degrade path: a non-empty body set + a
+    // throwing generate resolves {summary:null} — the route must still answer 200.
+    __setNegotiationSummaryDepsForTests({
+      readBodies: (() => ["A real quote body."]) as never,
+      generate: (async () => {
+        throw new Error("transport boom");
+      }) as never,
+    });
+
+    const r = await s.app.inject({
+      method: "GET",
+      url: `/api/profiles/${id}/dealer-negotiations/d-near/summary`,
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ summary: string | null }>()).toEqual({ summary: null });
   });
 });
 
