@@ -39,6 +39,7 @@ import {
   REPO_ROOT,
   resolveGit,
   resolvePaths,
+  runWorker,
   shouldSkipForGuards,
   verifyInstalledApp,
   writeMarkerAtomic,
@@ -338,5 +339,170 @@ describe("liveInstancePids", () => {
   it("returns an empty array when no process matches the app launcher path", () => {
     const paths = isolatedPaths();
     expect(liveInstancePids(paths.appPath)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runWorker — FIX 1: install/relaunch modes ALWAYS relaunch (even on fresh)
+//
+// runWorker exposes phase seams (computeLiveStamp / phaseBuild / phaseInstall /
+// open / liveInstancePids) purely for deterministic unit drives — no real build
+// and no real macOS `open` is spawned here.
+// ---------------------------------------------------------------------------
+
+describe("runWorker — FIX 1: relaunch fires even on a fresh no-op", () => {
+  it("invokes the env-clean relaunch seam when the install is already fresh", async () => {
+    const paths = isolatedPaths();
+    // Make the install look already-fresh: appPath exists + marker stamp == live.
+    mkdirSync(paths.appPath, { recursive: true });
+    writeMarkerAtomic(paths.markerPath, {
+      schemaVersion: 1,
+      repoPath: "/r",
+      primaryRepoPath: "/r",
+      builtStamp: "STAMP-FRESH",
+      frameworkStamp: "FW",
+      builtAtIso: "2026-06-27T00:00:00.000Z",
+    });
+
+    const opened = [];
+    let buildCalled = false;
+
+    const code = await runWorker({
+      paths,
+      env: {}, // hermetic: no CI / kill-switch
+      repoRoot: mkTmp("dr-repo-"), // throwaway; computeLiveStamp is stubbed
+      allowNoPrimary: true,
+      acquireOrWait: true, // the --install / relaunch mode
+      doOpen: true,
+      computeLiveStamp: async () => ({
+        state: "ok",
+        source: "src",
+        frameworkStamp: "FW",
+        builtStamp: "STAMP-FRESH",
+      }),
+      phaseBuild: () => {
+        buildCalled = true;
+        return { stagedAppPath: "/should/not/build" };
+      },
+      // Stand-in opener + a liveInstancePids that reports the app present so the
+      // relaunch "did it appear" loop resolves immediately (no real open/wait).
+      open: (p) => opened.push(p),
+      liveInstancePids: () => [4321],
+    });
+
+    expect(code).toBe(0);
+    expect(buildCalled).toBe(false); // fresh → no rebuild
+    expect(opened).toEqual([paths.appPath]); // relaunch fired with the absolute path
+  });
+
+  it("does NOT relaunch on a fresh no-op when doOpen is not set (e.g. a hook run)", async () => {
+    const paths = isolatedPaths();
+    mkdirSync(paths.appPath, { recursive: true });
+    writeMarkerAtomic(paths.markerPath, {
+      schemaVersion: 1,
+      repoPath: "/r",
+      primaryRepoPath: "/r",
+      builtStamp: "STAMP-FRESH",
+      frameworkStamp: "FW",
+      builtAtIso: "2026-06-27T00:00:00.000Z",
+    });
+
+    const opened = [];
+    const code = await runWorker({
+      paths,
+      env: {},
+      repoRoot: mkTmp("dr-repo-"),
+      allowNoPrimary: true,
+      coalesce: true,
+      doOpen: false, // hook/worker path — no relaunch
+      computeLiveStamp: async () => ({ state: "ok", source: "src", frameworkStamp: "FW", builtStamp: "STAMP-FRESH" }),
+      phaseBuild: () => ({ stagedAppPath: "/should/not/build" }),
+      open: (p) => opened.push(p),
+      liveInstancePids: () => [4321],
+    });
+
+    expect(code).toBe(0);
+    expect(opened).toEqual([]); // nothing relaunched
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runWorker — FIX 2: a matching staged build is consumed, not rebuilt
+// ---------------------------------------------------------------------------
+
+describe("runWorker — FIX 2: consume the staged build", () => {
+  it("skips phaseBuild and installs the staged app when its builtStamp matches the live stamp", async () => {
+    const paths = isolatedPaths();
+    mkdirSync(paths.refreshDir, { recursive: true });
+    const stagedApp = makeStagedApp(); // a staged .app already on disk
+    writeFileSync(
+      paths.stagedPath,
+      JSON.stringify({
+        stagedAppPath: stagedApp,
+        builtStamp: "STAMP-STAGED",
+        frameworkStamp: "FW",
+        builtAtIso: "2026-06-27T00:00:00.000Z",
+      }),
+    );
+    // No marker → not fresh → stale path → staged-reuse branch.
+
+    let buildCalled = false;
+    const installedWith = [];
+
+    const code = await runWorker({
+      paths,
+      env: {},
+      repoRoot: mkTmp("dr-repo-"),
+      allowNoPrimary: true,
+      computeLiveStamp: async () => ({ state: "ok", source: "src", frameworkStamp: "FW", builtStamp: "STAMP-STAGED" }),
+      phaseBuild: () => {
+        buildCalled = true;
+        return { stagedAppPath: "/should/not/build" };
+      },
+      phaseInstall: (appPath, o) => {
+        installedWith.push({ appPath, builtStamp: o.builtStamp });
+        return { installed: true };
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(buildCalled).toBe(false); // no rebuild
+    expect(installedWith).toHaveLength(1);
+    expect(installedWith[0].appPath).toBe(stagedApp); // installed the staged build
+    expect(installedWith[0].builtStamp).toBe("STAMP-STAGED");
+  });
+
+  it("rebuilds when the staged build's stamp does NOT match the live stamp", async () => {
+    const paths = isolatedPaths();
+    mkdirSync(paths.refreshDir, { recursive: true });
+    const stagedApp = makeStagedApp();
+    writeFileSync(
+      paths.stagedPath,
+      JSON.stringify({ stagedAppPath: stagedApp, builtStamp: "STAMP-OLD", frameworkStamp: "FW", builtAtIso: "x" }),
+    );
+
+    let buildCalled = false;
+    const builtApp = makeStagedApp(); // what phaseBuild "produces"
+    const installedWith = [];
+
+    const code = await runWorker({
+      paths,
+      env: {},
+      repoRoot: mkTmp("dr-repo-"),
+      allowNoPrimary: true,
+      computeLiveStamp: async () => ({ state: "ok", source: "src", frameworkStamp: "FW", builtStamp: "STAMP-NEW" }),
+      phaseBuild: () => {
+        buildCalled = true;
+        return { stagedAppPath: builtApp };
+      },
+      phaseInstall: (appPath) => {
+        installedWith.push(appPath);
+        return { installed: true };
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(buildCalled).toBe(true); // stamp mismatch → rebuild
+    expect(installedWith).toEqual([builtApp]);
   });
 });

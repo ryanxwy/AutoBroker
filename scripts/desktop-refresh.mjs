@@ -552,6 +552,39 @@ function launchEnv() {
 }
 
 /**
+ * Env-clean relaunch of the installed app by ABSOLUTE path: `open <appPath>`
+ * only (never `open -a`, never spawning the binary with an inherited env).
+ * Verifies a fresh instance actually appears and retries the open once if it
+ * does not. The opener is injectable so the relaunch seam is assertable in unit
+ * tests without spawning the real macOS `open`. Returns true if an instance was
+ * observed, false otherwise (best-effort — a relaunch failure is logged, never
+ * thrown).
+ */
+function relaunchApp(appPath, opts = {}) {
+  const log = opts.log ?? (() => {});
+  const liveFn = opts.liveInstancePids ?? liveInstancePids;
+  const opener = opts.open ?? ((p) => execFileSync(OPEN, [p], { env: launchEnv() }));
+  const appeared = () => liveFn(appPath, { quittingPid: opts.quittingPid }).length > 0;
+  try {
+    opener(appPath);
+    let ok = false;
+    for (let i = 0; i < 20 && !ok; i++) {
+      if (appeared()) ok = true;
+      else sleepSync(250);
+    }
+    if (!ok) {
+      log("relaunch: new instance did not appear — retrying open once");
+      opener(appPath);
+      ok = appeared();
+    }
+    return ok;
+  } catch (err) {
+    log(`relaunch: open failed: ${String(err)}`);
+    return false;
+  }
+}
+
+/**
  * Install a staged .app into the apps dir and write the marker LAST.
  *
  * opts:
@@ -563,6 +596,7 @@ function launchEnv() {
  *   builtAtIso         — defaults to now
  *   quittingPid        — an instance we are deliberately replacing; waited out
  *   doOpen             — relaunch `open <appPath>` after install
+ *   open               — injectable opener (tests assert the relaunch seam)
  *   liveInstancePids   — override for tests
  *   log
  *
@@ -643,22 +677,12 @@ export function phaseInstall(stagedAppPath, opts = {}) {
   }
 
   if (opts.doOpen) {
-    try {
-      execFileSync(OPEN, [paths.appPath], { env: launchEnv() });
-      // Verify a new instance actually appeared; retry once.
-      const appeared = () => liveFn(paths.appPath, { quittingPid: opts.quittingPid }).length > 0;
-      let ok = false;
-      for (let i = 0; i < 20 && !ok; i++) {
-        if (appeared()) ok = true;
-        else sleepSync(250);
-      }
-      if (!ok) {
-        log("phaseInstall: relaunch did not appear — retrying open once");
-        execFileSync(OPEN, [paths.appPath], { env: launchEnv() });
-      }
-    } catch (err) {
-      log(`phaseInstall: open failed: ${String(err)}`);
-    }
+    relaunchApp(paths.appPath, {
+      liveInstancePids: liveFn,
+      quittingPid: opts.quittingPid,
+      open: opts.open,
+      log,
+    });
   }
 
   return { installed: true };
@@ -826,15 +850,23 @@ function readdirRecursiveApps(releaseDir) {
 // Worker — guards → lock → stamp → build → install
 // ---------------------------------------------------------------------------
 
-async function runWorker(opts) {
+export async function runWorker(opts) {
   const paths = opts.paths ?? resolvePaths();
   const repoRoot = opts.repoRoot ?? REPO_ROOT;
+  const env = opts.env ?? process.env;
+  // Phase seams default to the real implementations; tests inject deterministic
+  // stand-ins so the worker's control flow can be exercised without a real build
+  // or a real macOS `open`.
+  const computeStamp = opts.computeLiveStamp ?? computeLiveStamp;
+  const buildPhase = opts.phaseBuild ?? phaseBuild;
+  const installPhase = opts.phaseInstall ?? phaseInstall;
   const log = (m) => {
     appendLog(paths.logPath, m);
     if (opts.verbose) console.log(m);
   };
 
   const skip = shouldSkipForGuards({
+    env,
     repoRoot,
     primaryJsonPath: paths.primaryJsonPath,
     allowNoPrimary: opts.allowNoPrimary,
@@ -876,7 +908,7 @@ async function runWorker(opts) {
       let live = null;
       let stale = false;
       try {
-        live = await computeLiveStamp(repoRoot, { log });
+        live = await computeStamp(repoRoot, { log });
       } catch (err) {
         log(`stamp threw (${err?.name ?? "error"}: ${err?.message ?? err}) → treat as stale`);
         stale = true;
@@ -896,35 +928,69 @@ async function runWorker(opts) {
         !existsSync(paths.pendingPath);
       if (fresh) {
         log("up to date — no-op");
+        // The install/relaunch modes must STILL bring the app back even on a
+        // fresh no-op — the user quit the running instance and is waiting for it
+        // to reopen. Relaunch is env-clean by absolute path; if a quitting pid
+        // was given, wait for it to fully exit first.
+        if (opts.doOpen) {
+          if (opts.quittingPid) waitForPidExit(opts.quittingPid, 30_000);
+          relaunchApp(paths.appPath, {
+            liveInstancePids: opts.liveInstancePids,
+            quittingPid: opts.quittingPid,
+            open: opts.open,
+            log,
+          });
+        }
         break;
       }
 
-      log("stale → building");
-      const built = phaseBuild({ paths, repoRoot, log });
+      // Stale → install. Reuse an already-staged build when its stamp matches the
+      // current live stamp and its .app is still on disk (the "build+stage while a
+      // live instance blocks the install → install the staged build on the next
+      // trigger / on cold start" flow). Otherwise build fresh.
+      let stagedAppPath;
+      let builtStamp;
+      let frameworkStamp;
+      let builtAtIso;
 
-      // Authoritative marker stamp = the stamp of exactly what was built
-      // (computed on the worktree, whose dist/freshness.js phaseBuild just made
-      // current — no second build needed).
-      let builtStamp = null;
-      let frameworkStamp = null;
-      try {
-        const wtStamp = await computeLiveStamp(paths.buildWt, { skipBuild: true, log });
-        if (wtStamp.state === "ok") {
-          builtStamp = wtStamp.builtStamp;
-          frameworkStamp = wtStamp.frameworkStamp;
+      const staged = readStaged(paths.stagedPath);
+      if (
+        staged &&
+        liveBuilt &&
+        staged.builtStamp === liveBuilt &&
+        typeof staged.stagedAppPath === "string" &&
+        existsSync(staged.stagedAppPath)
+      ) {
+        log("reusing staged build (builtStamp matches live) — skipping rebuild");
+        ({ stagedAppPath, builtStamp, frameworkStamp, builtAtIso } = staged);
+      } else {
+        log("stale → building");
+        const built = buildPhase({ paths, repoRoot, log });
+        stagedAppPath = built.stagedAppPath;
+
+        // Authoritative marker stamp = the stamp of exactly what was built
+        // (computed on the worktree, whose dist/freshness.js phaseBuild just made
+        // current — no second build needed).
+        builtStamp = null;
+        frameworkStamp = null;
+        try {
+          const wtStamp = await computeStamp(paths.buildWt, { skipBuild: true, log });
+          if (wtStamp.state === "ok") {
+            builtStamp = wtStamp.builtStamp;
+            frameworkStamp = wtStamp.frameworkStamp;
+          }
+        } catch (err) {
+          log(`worktree stamp failed (${err?.message ?? err}) — marker stamps null`);
         }
-      } catch (err) {
-        log(`worktree stamp failed (${err?.message ?? err}) — marker stamps null`);
+        builtAtIso = new Date().toISOString();
+        writeFileSync(
+          paths.stagedPath,
+          JSON.stringify({ stagedAppPath, builtStamp, frameworkStamp, builtAtIso }, null, 2),
+        );
       }
 
-      const builtAtIso = new Date().toISOString();
-      writeFileSync(
-        paths.stagedPath,
-        JSON.stringify({ stagedAppPath: built.stagedAppPath, builtStamp, frameworkStamp, builtAtIso }, null, 2),
-      );
-
       const primaryRepoPath = readPrimaryRepoPath(paths.primaryJsonPath, repoRoot);
-      const res = phaseInstall(built.stagedAppPath, {
+      const res = installPhase(stagedAppPath, {
         paths,
         repoPath: repoRoot,
         primaryRepoPath,
@@ -933,6 +999,8 @@ async function runWorker(opts) {
         builtAtIso,
         quittingPid: opts.quittingPid,
         doOpen: opts.doOpen,
+        open: opts.open,
+        liveInstancePids: opts.liveInstancePids,
         log,
       });
       log(`install result: ${JSON.stringify(res)}`);
@@ -949,6 +1017,17 @@ async function runWorker(opts) {
     return 1;
   } finally {
     releaseLock(paths.lockDir);
+  }
+}
+
+/** Parse the staged-build signal `{stagedAppPath, builtStamp, frameworkStamp,
+ *  builtAtIso}`; any error → null (fail-soft, rebuild). */
+function readStaged(stagedPath) {
+  try {
+    const data = JSON.parse(readFileSync(stagedPath, "utf8"));
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
   }
 }
 
