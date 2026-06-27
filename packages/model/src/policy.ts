@@ -103,7 +103,7 @@ export const USE_CASES = [
   /**
    * Negotiation-state SUMMARY for the dealer-negotiation detail modal: a single
    * emit_result structured generation over the dealer's already-stored
-   * substantive reply bodies (flat .strict() {summary, headline}). An advisory,
+   * substantive reply bodies (flat .strict() {summary}). An advisory,
    * read-only projection — ANY failure degrades to null. Routes to deepseek.chat,
    * mirroring intake_freeform_prefill (emit_result discipline; never Output.object
    * + tools on DeepSeek).
