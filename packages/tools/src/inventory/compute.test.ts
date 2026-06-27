@@ -78,8 +78,11 @@ function insertListing(opts: {
   model?: string | null;
   trim?: string | null;
   exteriorColor?: string | null;
+  interiorColor?: string | null;
   msrp?: number | null;
   listedPrice?: number | null;
+  dealerMarkup?: number | null;
+  pricingBreakdownJson?: string | null;
   inventoryStatus?: string;
   lastSeenAt?: string;
 }): void {
@@ -87,9 +90,9 @@ function insertListing(opts: {
     .prepare(
       "INSERT INTO inventory_listings " +
         "(listing_id, search_profile_id, dealer_id, vin, stock_number, year, make, model, trim, " +
-        "exterior_color, msrp, listed_price, inventory_status, match_status, raw_listing_json, " +
-        "first_seen_at, last_seen_at, observed_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'exact', '{}', '2026-06-01', ?, '2026-06-01')",
+        "exterior_color, interior_color, msrp, listed_price, dealer_markup, pricing_breakdown_json, " +
+        "inventory_status, match_status, raw_listing_json, first_seen_at, last_seen_at, observed_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'exact', '{}', '2026-06-01', ?, '2026-06-01')",
     )
     .run(
       opts.listingId,
@@ -102,8 +105,11 @@ function insertListing(opts: {
       opts.model ?? "Tucson",
       opts.trim ?? "Limited",
       opts.exteriorColor ?? null,
+      opts.interiorColor ?? null,
       opts.msrp ?? null,
       opts.listedPrice ?? null,
+      opts.dealerMarkup ?? null,
+      opts.pricingBreakdownJson ?? null,
       opts.inventoryStatus ?? "in_stock",
       opts.lastSeenAt ?? "2026-06-01",
     );
@@ -117,6 +123,9 @@ beforeAll(() => {
   db = openDb();
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
   db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0001_redundant_ozymandias.sql"), "utf8"));
+  // 0004 adds inventory_listings.dealer_markup + pricing_breakdown_json — needed
+  // for the new pricing-projection rows.
+  db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0004_empty_celestials.sql"), "utf8"));
 });
 
 afterAll(() => {
@@ -280,6 +289,88 @@ describe("rankInventoryForProfile", () => {
 
     const { scannedAtMax } = rankInventoryForProfile(db, PROFILE_ID);
     expect(scannedAtMax).toBe("2026-06-10T00:00:00Z");
+  });
+
+  it("projects dealer_markup and interior_color from the listing row", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_markup",
+      vin: FULL_VIN,
+      interiorColor: "Gray Cloth",
+      msrp: 38000,
+      listedPrice: 41000,
+      dealerMarkup: 3000,
+    });
+
+    const { candidates } = rankInventoryForProfile(db, PROFILE_ID);
+    const row = candidates.find((c) => c.listing_id === "lst_markup")!;
+    expect(row.dealer_markup).toBe(3000);
+    expect(row.interior_color).toBe("Gray Cloth");
+  });
+
+  it("parses a populated pricing_breakdown_json into add_ons/addons_total/price_gated/breakdown_parsed and drops malformed entries", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_breakdown",
+      vin: FULL_VIN,
+      listedPrice: 36000,
+      pricingBreakdownJson: JSON.stringify({
+        addOns: [
+          { label: "Nitrogen tires", amount: 299 },
+          { label: "Paint protection", amount: 1295 },
+          // malformed entries (missing/typed-wrong amount/label) are dropped:
+          { label: "No amount" },
+          { amount: 500 },
+          { label: 7, amount: 100 },
+        ],
+        addonsTotal: 1594,
+        priceGated: true,
+        breakdownParsed: true,
+      }),
+    });
+
+    const { candidates } = rankInventoryForProfile(db, PROFILE_ID);
+    const row = candidates.find((c) => c.listing_id === "lst_breakdown")!;
+    expect(row.add_ons).toEqual([
+      { label: "Nitrogen tires", amount: 299 },
+      { label: "Paint protection", amount: 1295 },
+    ]);
+    expect(row.addons_total).toBe(1594);
+    expect(row.price_gated).toBe(true);
+    expect(row.breakdown_parsed).toBe(true);
+  });
+
+  it("treats a null pricing_breakdown_json as the honest 'not captured' default", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({ listingId: "lst_nobreakdown", vin: FULL_VIN, listedPrice: 36000 });
+
+    const { candidates } = rankInventoryForProfile(db, PROFILE_ID);
+    const row = candidates.find((c) => c.listing_id === "lst_nobreakdown")!;
+    expect(row.add_ons).toEqual([]);
+    expect(row.addons_total).toBeNull();
+    expect(row.price_gated).toBe(false);
+    expect(row.breakdown_parsed).toBe(false);
+    expect(row.dealer_markup).toBeNull();
+  });
+
+  it("does not throw on a malformed pricing_breakdown_json, falling back to the not-captured default", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_badjson",
+      vin: FULL_VIN,
+      listedPrice: 36000,
+      pricingBreakdownJson: "{not valid json",
+    });
+
+    expect(() => rankInventoryForProfile(db, PROFILE_ID)).not.toThrow();
+    const { candidates } = rankInventoryForProfile(db, PROFILE_ID);
+    const row = candidates.find((c) => c.listing_id === "lst_badjson")!;
+    expect(row.add_ons).toEqual([]);
+    expect(row.breakdown_parsed).toBe(false);
   });
 
   it("returns an empty result for a missing profile", () => {

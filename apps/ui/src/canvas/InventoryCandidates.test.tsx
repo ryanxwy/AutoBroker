@@ -42,9 +42,15 @@ function makeCandidate(
     model: string | null;
     trim: string | null;
     exterior_color: string | null;
+    interior_color: string | null;
     listing_url: string | null;
     listed_price: number | null;
     msrp: number | null;
+    dealer_markup: number | null;
+    add_ons: { label: string; amount: number }[];
+    addons_total: number | null;
+    price_gated: boolean;
+    breakdown_parsed: boolean;
     inventory_status: string;
     dealer_id: string;
     dealer_name: string | null;
@@ -64,9 +70,15 @@ function makeCandidate(
     model: "Tucson Hybrid",
     trim: "Limited",
     exterior_color: "Shimmering Silver",
+    interior_color: "Gray Cloth",
     listing_url: "https://dealer.example.com/vdp/lst-1",
     listed_price: 44175,
     msrp: 46500,
+    dealer_markup: null,
+    add_ons: [],
+    addons_total: null,
+    price_gated: false,
+    breakdown_parsed: false,
     inventory_status: "in_stock",
     dealer_id: "dealer-1",
     dealer_name: "Jim Click Hyundai",

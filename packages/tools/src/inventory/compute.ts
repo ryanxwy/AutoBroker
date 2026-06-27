@@ -44,11 +44,27 @@ export interface RankedCandidate {
   model: string | null;
   trim: string | null;
   exterior_color: string | null;
+  interior_color: string | null;
   /** The listing's own vehicle-detail-page (VDP) href, or null — lets the card
    *  click through to the dealer's public stock page. A public URL, never budget. */
   listing_url: string | null;
   listed_price: number | null;
   msrp: number | null;
+  /** The dealer's own LABELED market adjustment (markup) in dollars, or null when
+   *  none was harvested. Only a labeled ADM line is ever stored — never a
+   *  selling>MSRP inference. */
+  dealer_markup: number | null;
+  /** Dealer add-on line items (the junk buyers hate), parsed from the
+   *  pricing_breakdown_json blob; [] when none were captured. */
+  add_ons: { label: string; amount: number }[];
+  /** Sum of the add-on amounts in dollars, or null. */
+  addons_total: number | null;
+  /** true when the listing price was hidden behind a "Get your price" CTA. */
+  price_gated: boolean;
+  /** true ⇔ a price-stack region was actually read on the VDP. false means "no
+   *  breakdown captured" (a null/absent/unparseable blob) — the UI renders this
+   *  as "couldn't read", distinct from "harvested, found nothing". */
+  breakdown_parsed: boolean;
   inventory_status: string;
   dealer_id: string;
   dealer_name: string | null;
@@ -113,6 +129,62 @@ function parseJsonStringArray(raw: unknown): string[] | null {
   }
 }
 
+/** The structured pricing breakdown projected from a listing's
+ *  `pricing_breakdown_json` text column. */
+interface ParsedBreakdown {
+  add_ons: { label: string; amount: number }[];
+  addons_total: number | null;
+  price_gated: boolean;
+  breakdown_parsed: boolean;
+}
+
+/** The honest "no breakdown captured" default — used when the column is
+ *  null/absent/unparseable. breakdown_parsed false means "couldn't read", which
+ *  the UI distinguishes from a parsed-but-empty breakdown (breakdownParsed true,
+ *  no add-ons). */
+const EMPTY_BREAKDOWN: ParsedBreakdown = {
+  add_ons: [],
+  addons_total: null,
+  price_gated: false,
+  breakdown_parsed: false,
+};
+
+/** Defensively parse the `pricing_breakdown_json` blob
+ *  (`{addOns, addonsTotal, priceGated, breakdownParsed}`, camelCase). NEVER
+ *  throws: a null/absent column, malformed JSON, or a non-object payload all
+ *  yield EMPTY_BREAKDOWN. Add-on entries that aren't {label:string,
+ *  amount:finite-number} are dropped. */
+function parseBreakdown(raw: unknown): ParsedBreakdown {
+  if (typeof raw !== "string" || raw.trim() === "") return EMPTY_BREAKDOWN;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return EMPTY_BREAKDOWN;
+  }
+  if (typeof parsed !== "object" || parsed === null) return EMPTY_BREAKDOWN;
+  const blob = parsed as Record<string, unknown>;
+  const add_ons: { label: string; amount: number }[] = [];
+  const rawAddOns = blob["addOns"];
+  if (Array.isArray(rawAddOns)) {
+    for (const entry of rawAddOns) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const e = entry as Record<string, unknown>;
+      const label = e["label"];
+      const amount = e["amount"];
+      if (typeof label === "string" && typeof amount === "number" && Number.isFinite(amount)) {
+        add_ons.push({ label, amount });
+      }
+    }
+  }
+  return {
+    add_ons,
+    addons_total: asNumber(blob["addonsTotal"]),
+    price_gated: blob["priceGated"] === true,
+    breakdown_parsed: blob["breakdownParsed"] === true,
+  };
+}
+
 /** Build the ranker's profile context from a raw search_profiles row. Radius
  *  defaults to 25 when null (the schema default); budget null disables the
  *  over-budget filter. */
@@ -142,6 +214,7 @@ function toCandidate(ranked: RankedRow): RankedCandidate {
     RECOMMENDED_MATCH_STATUSES.has(match_status) &&
     RECOMMENDED_INVENTORY_STATUSES.has(inventory_status) &&
     score >= RECOMMENDED_MIN_SCORE;
+  const breakdown = parseBreakdown(listing["pricing_breakdown_json"]);
   return {
     listing_id: ranked.listing_id,
     vin: asString(listing["vin"]),
@@ -151,9 +224,15 @@ function toCandidate(ranked: RankedRow): RankedCandidate {
     model: asString(listing["model"]),
     trim: asString(listing["trim"]),
     exterior_color: asString(listing["exterior_color"]),
+    interior_color: asString(listing["interior_color"]),
     listing_url: asString(listing["listing_url"]),
     listed_price: asNumber(listing["listed_price"]),
     msrp: asNumber(listing["msrp"]),
+    dealer_markup: asNumber(listing["dealer_markup"]),
+    add_ons: breakdown.add_ons,
+    addons_total: breakdown.addons_total,
+    price_gated: breakdown.price_gated,
+    breakdown_parsed: breakdown.breakdown_parsed,
     // inventory_status / dealer_id are NOT NULL columns; default to "" defensively.
     inventory_status,
     dealer_id: asString(listing["dealer_id"]) ?? "",

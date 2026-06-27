@@ -54,10 +54,21 @@ export const RankedCandidateSchema = z
     model: z.string().nullable(),
     trim: z.string().nullable(),
     exterior_color: z.string().nullable(),
+    interior_color: z.string().nullable(),
     /** Public VDP href (or null) — the card's "View listing" click-through target. */
     listing_url: z.string().nullable(),
     listed_price: z.number().nullable(),
     msrp: z.number().nullable(),
+    /** Dealer's own LABELED market adjustment (markup) in dollars, or null. */
+    dealer_markup: z.number().nullable(),
+    /** Dealer add-on line items, parsed from pricing_breakdown_json; [] when none. */
+    add_ons: z.array(z.object({ label: z.string(), amount: z.number() })),
+    /** Sum of the add-on amounts in dollars, or null. */
+    addons_total: z.number().nullable(),
+    /** true when the price was hidden behind a "Get your price" CTA. */
+    price_gated: z.boolean(),
+    /** true ⇔ a price-stack region was actually read; false = "no breakdown captured". */
+    breakdown_parsed: z.boolean(),
     inventory_status: z.string(),
     dealer_id: z.string(),
     dealer_name: z.string().nullable(),
