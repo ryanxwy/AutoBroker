@@ -60,8 +60,10 @@
  *                      auto-allowed, never silent). Then per scanned link ONE
  *                      separate NO-TOOLS structured `inventory_extract` call
  *                      (emit_result discipline; hitlAvailable=false → a
- *                      malformed tool call hard-aborts as a typed
- *                      MalformedToolCallAbort, never a prose fallthrough).
+ *                      malformed first hop is retried ONCE on the
+ *                      inventory_extract_retry lane via recoverEmitWithRetry,
+ *                      else fail-closes as a typed MalformedToolCallAbort,
+ *                      never a prose fallthrough).
  *                      Zod re-validates every row; an LLM-emitted VIN must
  *                      appear verbatim in the link's snapshot or the row drops
  *                      + counts; an emitted listing_url must normalize into
@@ -108,11 +110,17 @@
  *                                        retried harder, never escalated;
  *                                        surfaced in the confirm counts.
  *   - malformed structured call (#1244)→ hitlAvailable=false on every extract
- *                                        call: the harness facade's armed
- *                                        detector hard-aborts with the typed
- *                                        MalformedToolCallAbort — the run
- *                                        FAILS (zero writes; persist is never
- *                                        reached), never a prose fallthrough.
+ *                                        call: a malformed first hop is retried
+ *                                        ONCE on the inventory_extract_retry
+ *                                        (v4-pro+thinking) lane via
+ *                                        recoverEmitWithRetry and persist IS
+ *                                        reached on a clean retry; only a SECOND
+ *                                        malformed / blob-only / budget-
+ *                                        exhausted failure reaches the fail-
+ *                                        closed MalformedToolCallAbort terminus
+ *                                        where the run FAILS (zero writes;
+ *                                        persist never reached), never a prose
+ *                                        fallthrough.
  *   - unrenderable suspend payload     → the suspend payload is schema-bound
  *                                        (LinkScanReviewSuspendSchema) and the
  *                                        card host falls back to its
@@ -122,18 +130,18 @@
  *                                        without a decision on THIS suspend.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
- * (InventoryListing), @autobroker/model (typed abort + suspend type),
- * @autobroker/tools (resolver + source loader + browser session + pure
- * helpers + the persist writer — the ONLY DB/side-effect paths), the sibling
- * skill module (shared capture/extract helpers + the batch_review resume
- * contract), and this layer's harness facade.
+ * (InventoryListing), @autobroker/tools (resolver + source loader + browser
+ * session + pure helpers + the persist writer — the ONLY DB/side-effect
+ * paths), the sibling skill module (shared capture/extract helpers + the
+ * batch_review resume contract), this layer's harness facade, and the
+ * recoverEmitWithRetry recovery helper (which owns the @autobroker/model
+ * contact for the malformed-class retry hop).
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
 import { InventoryListingSchema, type InventoryListing } from "@autobroker/core";
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
 import {
   capSnapshot,
   classifyMatchStatus,
@@ -167,6 +175,7 @@ import {
   weaveCardsForExtraction,
 } from "./inventorySiteScan.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 /** A page handle as the browser session mints it (no direct playwright import
  *  here — the type flows off the tools session surface). */
@@ -825,11 +834,6 @@ function asState(inputData: unknown): LinkScanState {
   return LinkScanStateSchema.parse(inputData);
 }
 
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
 /** Run `fn` against the SHARED tools-layer DB connection. */
 function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
@@ -1160,22 +1164,20 @@ const visitExtractStep = createStep({
         const capture = carry.captures.get(row.source_id);
         if (capture === undefined) throw new InventoryLinkScanCaptureLostError();
 
-        const result = await deps().harnessGenerate(
-          {
+        const result = await recoverEmitWithRetry({
+          harnessGenerate: deps().harnessGenerate,
+          input: {
             useCase: "inventory_extract",
             schema: InventoryExtractSchema,
             prompt: buildInventoryExtractPrompt(state.make, state.model, capture.snapshotText),
-            // A malformed tool call hard-aborts (fail-closed) — never a prose
-            // fallthrough, never a regexed-out tool call.
+            // A malformed tool call retries ONCE on the strong+thinking lane,
+            // else fail-closes — never a prose fallthrough, never a regexed-out
+            // tool call.
             hitlAvailable: false,
           },
-          linkScanLedger(runId),
-        );
-        if (isHarnessSuspend(result)) {
-          // Defensive: with hitlAvailable=false the harness throws rather than
-          // suspends; a suspend-shaped return still fail-closes identically.
-          throw new MalformedToolCallAbort(result.signals);
-        }
+          retryUseCase: "inventory_extract_retry",
+          ledger: linkScanLedger(runId),
+        });
 
         // URL-provenance set: the collected card hrefs PLUS the link itself
         // (a card-less VDP capture has no hrefs, but the page's own URL is

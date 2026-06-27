@@ -88,9 +88,28 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   cross-border dealer(s) excluded"). A US dealer on a Spanish-named street ("Ensenada Dr")
   correctly stays. Re-flag ONLY if a non-US dealer reaches the scan/lead/ranked set.
   Shipped 2026-06-27 (`phase2/dealer_geosearch`).
+- HTML-only dealer email body is recovered to text via `stripHtmlToText` (the frozen Python
+  oracle silently dropped it — this is a deliberate, beneficial oracle-superseding fix).
+  Re-flag ONLY if a genuine quote-bearing dealer email still persists an empty `body_text`
+  after the mapping step. Honest cost to watch: an HTML-only marketing blast can now yield a
+  deterministic quote-signal/intent where it previously produced none — file as backlog if it
+  materially misleads, not as a blocker.
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
+
+---
+
+### Buyer-email probe findings
+
+When the optional buyer-email probe ran this session, record its findings in a
+**"Buyer-email probe"** sub-section inside **本轮发现**, separate from the 17-skill
+逐技能表. Apply the same three-bucket rules: a broken real-read capability is a
+blocker or backlog; a low coverage ratio is backlog with a falsifiable fix idea;
+cosmetic oddities are polish. Mirror backlog items to `harvest-register.md`
+(semantic dedup, bump recurrence on re-discovery) using `probe-<YYYY-MM-DD>` as the
+`evidence_ref` plus the JSON coverage object as the snapshot. `e2e-evolve` drains
+this section the same way it drains any other backlog entry.
 
 ---
 

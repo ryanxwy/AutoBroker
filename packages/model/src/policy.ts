@@ -93,6 +93,38 @@ export const USE_CASES = [
    */
   "lead_form_map",
   /**
+   * AUTOMATIC same-provider malformed-class recovery hop for geosearch_extract —
+   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
+   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
+   * serialization defect, not a reasoning-difficulty one). Same provider →
+   * privacy-clean, no cross-provider egress.
+   */
+  "geosearch_extract_retry",
+  /**
+   * AUTOMATIC same-provider malformed-class recovery hop for inventory_extract —
+   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
+   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
+   * serialization defect, not a reasoning-difficulty one). Same provider →
+   * privacy-clean, no cross-provider egress.
+   */
+  "inventory_extract_retry",
+  /**
+   * AUTOMATIC same-provider malformed-class recovery hop for incentive_extract —
+   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
+   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
+   * serialization defect, not a reasoning-difficulty one). Same provider →
+   * privacy-clean, no cross-provider egress.
+   */
+  "incentive_extract_retry",
+  /**
+   * AUTOMATIC same-provider malformed-class recovery hop for lead_form_map —
+   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
+   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
+   * serialization defect, not a reasoning-difficulty one). Same provider →
+   * privacy-clean, no cross-provider egress.
+   */
+  "lead_form_map_retry",
+  /**
    * Negotiation follow-up PROSE drafting for the negotiation_followup skill: a
    * plain text generation (NO tools, NO structured output) — the tone is chosen
    * in CODE and the model only writes the chosen register's prose. Because there
@@ -168,6 +200,16 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Custom lead-form field map (single emit_result tool over the fenced form
   // DOM); same DeepSeek discipline as inventory_extract / incentive_extract.
   lead_form_map: "deepseek.chat",
+  // The four AUTOMATIC malformed-class recovery hops (shared recoverEmitWithRetry
+  // helper). Each retries its primary emit_result useCase ONCE on deepseek-v4-pro
+  // WITH thinking — the `strong` tier, same provider (privacy-clean, no egress).
+  // The harness runs these on the emit_result tool with tool_choice:"auto" +
+  // thinking ON (a forced/named tool_choice is rejected in DeepSeek thinking
+  // mode); the emit schema, #1244 fail-closed and Zod belt are identical.
+  geosearch_extract_retry: "deepseek.strong",
+  inventory_extract_retry: "deepseek.strong",
+  incentive_extract_retry: "deepseek.strong",
+  lead_form_map_retry: "deepseek.strong",
   // Negotiation follow-up PROSE draft (NO tools, NO structured output — the
   // draftProse facade). #1244 is structurally inapplicable; deepseek.chat.
   negotiation_followup: "deepseek.chat",

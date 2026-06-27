@@ -50,10 +50,12 @@
  *                       (`oem_source_fallback`, transient/equivalent class).
  *                       Then per captured source ONE separate NO-TOOLS
  *                       structured `incentive_extract` call (emit_result
- *                       discipline; hitlAvailable=false → a malformed tool
- *                       call hard-aborts as a typed MalformedToolCallAbort,
- *                       never a prose fallthrough); Zod re-validates every
- *                       row (drop + count); program-identity dedupe.
+ *                       discipline; hitlAvailable=false → a malformed first
+ *                       hop is retried ONCE on the incentive_extract_retry
+ *                       lane via recoverEmitWithRetry, else fail-closes as a
+ *                       typed MalformedToolCallAbort, never a prose
+ *                       fallthrough); Zod re-validates every row (drop +
+ *                       count); program-identity dedupe.
  *                       Snapshots never leave this step.
  *   4 filterCashTypes — the deterministic 5-class cash whitelist (drop +
  *                       count; the LLM never sees this gate), then the
@@ -97,22 +99,28 @@
  *   - cross-verify mismatch          → AUTO (read-only disagreement), voiced
  *                                      `source_discrepancy` + summarized.
  *   - malformed structured call      → hitlAvailable=false on every extract
- *                                      call: typed MalformedToolCallAbort —
- *                                      the run FAILS (persist never reached).
+ *                                      call: a malformed first hop is retried
+ *                                      ONCE on the incentive_extract_retry
+ *                                      (v4-pro+thinking) lane via
+ *                                      recoverEmitWithRetry and persist IS
+ *                                      reached on a clean retry; only a SECOND
+ *                                      malformed / blob-only / budget-exhausted
+ *                                      failure reaches the fail-closed
+ *                                      MalformedToolCallAbort terminus where the
+ *                                      run FAILS (persist never reached).
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
- * (Incentive), @autobroker/model (typed abort + suspend type),
- * @autobroker/tools (resolver + registry + cache + persist + browser session
- * + pure gates — the ONLY DB/side-effect paths), the sibling scan module
- * (host helpers), the skill contracts module, and this layer's harness
- * facade.
+ * (Incentive), @autobroker/tools (resolver + registry + cache + persist +
+ * browser session + pure gates — the ONLY DB/side-effect paths), the sibling
+ * scan module (host helpers), the skill contracts module, this layer's harness
+ * facade, and the recoverEmitWithRetry recovery helper (which owns the
+ * @autobroker/model contact for the malformed-class retry hop).
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
 import { IncentiveSchema, type Incentive } from "@autobroker/core";
-import { MalformedToolCallAbort, type HarnessSuspend } from "@autobroker/model";
 import {
   cacheGateDecision,
   capSnapshot,
@@ -149,6 +157,7 @@ import {
 } from "./incentiveScrapeContracts.js";
 import { isDeniedScanHost, scanHostnameOf } from "./inventorySiteScan.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 // ---------------------------------------------------------------------------
 // tunables (module constants, not env knobs)
@@ -590,11 +599,6 @@ function asState(inputData: unknown): IncentiveScrapeState {
   return IncentiveScrapeStateSchema.parse(inputData);
 }
 
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
 function failTarget(t: IncentiveTargetState, reason: IncentiveFailReason): IncentiveTargetState {
   return { ...t, status: "failed", fail_reason: reason };
 }
@@ -840,22 +844,19 @@ async function extractIncentiveRows(args: {
   model: string;
   snapshotText: string;
 }): Promise<{ rows: Incentive[]; invalidDropped: number }> {
-  const result = await deps().harnessGenerate(
-    {
+  const result = await recoverEmitWithRetry({
+    harnessGenerate: deps().harnessGenerate,
+    input: {
       useCase: "incentive_extract",
       schema: IncentiveExtractSchema,
       prompt: buildIncentiveExtractPrompt(args.make, args.model, capSnapshot(args.snapshotText)),
-      // A malformed tool call hard-aborts (fail-closed) — never a prose
-      // fallthrough, never a regexed-out tool call.
+      // A malformed tool call retries ONCE on the strong+thinking lane, else
+      // fail-closes — never a prose fallthrough, never a regexed-out tool call.
       hitlAvailable: false,
     },
-    incentiveLedger(args.runId),
-  );
-  if (isHarnessSuspend(result)) {
-    // Defensive: with hitlAvailable=false the harness throws rather than
-    // suspends; a suspend-shaped return still fail-closes identically.
-    throw new MalformedToolCallAbort(result.signals);
-  }
+    retryUseCase: "incentive_extract_retry",
+    ledger: incentiveLedger(args.runId),
+  });
 
   const scrapedAt = new Date().toISOString();
   const valid: Incentive[] = [];

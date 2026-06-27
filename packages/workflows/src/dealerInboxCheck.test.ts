@@ -37,7 +37,16 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { closeDb, openDb, type Db, type GmailAdapter, type Thread, type ThreadRef } from "@autobroker/tools";
+import {
+  closeDb,
+  openDb,
+  RealGmailAdapter,
+  type Db,
+  type GmailAdapter,
+  type GmailApiClient,
+  type Thread,
+  type ThreadRef,
+} from "@autobroker/tools";
 
 import { createMastraInstance } from "./mastra.js";
 import {
@@ -675,5 +684,77 @@ describe("dealer_inbox_check — re-run dedup", () => {
     if (second.result.status !== "success") return;
     expect((second.result.result as { outcome: string }).outcome).toBe("no_replies");
     expect(count("messages")).toBe(2); // unchanged
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case — HTML-only dealer reply recovers its body through to the product DB
+// ---------------------------------------------------------------------------
+
+function b64url(text: string): string {
+  return Buffer.from(text, "utf8").toString("base64url");
+}
+
+/** A GmailApiClient stub whose single dealer reply is an HTML-ONLY message (a
+ *  text/html part with NO text/plain part). Driving it through the REAL
+ *  RealGmailAdapter exercises mapMessage's html→text recovery end to end — the
+ *  fix that stops an HTML-only quote being silently persisted as a NULL body. */
+function htmlOnlyGmailClient(): GmailApiClient {
+  const html = "<html><body><p>Your out-the-door price is $31,250.</p></body></html>";
+  const wireMessage = {
+    id: "g-msg-html",
+    threadId: "g-thread-html",
+    internalDate: "1711900000000",
+    labelIds: ["INBOX"],
+    payload: {
+      mimeType: "text/html",
+      headers: [
+        { name: "From", value: "Sam <sam@dealer-a.com>" },
+        { name: "To", value: "buyer@example.com" },
+        { name: "Subject", value: "Re: 2026 Tucson quote" },
+      ],
+      body: { data: b64url(html) },
+    },
+  };
+  return {
+    users: {
+      getProfile: async () => ({ data: { historyId: "1", messagesTotal: 1 } }),
+      messages: {
+        list: async () => ({ data: { messages: [{ id: "g-msg-html", threadId: "g-thread-html" }] } }),
+        get: async () => ({ data: wireMessage }),
+        send: async () => ({ data: { id: "x" } }),
+        attachments: { get: async () => ({ data: { data: "" } }) },
+      },
+      threads: { get: async () => ({ data: { messages: [wireMessage] } }) },
+      history: { list: async () => ({ data: { historyId: "1", history: [] } }) },
+    },
+  } as unknown as GmailApiClient;
+}
+
+describe("dealer_inbox_check — HTML-only body recovery (end to end)", () => {
+  it("persists a NON-empty body_text for an HTML-only dealer reply (no silent data loss)", async () => {
+    seedProfile();
+    seedDealerWithContact({ dealerId: DEALER_A, name: "Dealer A", email: "sam@dealer-a.com" });
+    seedLeadSubmission({ dealerId: DEALER_A, submittedAtMs: Date.now() - 3 * DAY_MS });
+    // Inject the REAL adapter so mapMessage (and its html→text fallback) runs.
+    __setDealerInboxCheckDepsForTests({
+      createAdapter: () => new RealGmailAdapter({ client: htmlOnlyGmailClient() }),
+    });
+
+    const { run, result } = await startRun("inbox-htmlonly-1", PROFILE_ID);
+    expect(result.status).toBe("suspended");
+    const final = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [DEALER_A] },
+    });
+    expect(final.status).toBe("success");
+
+    const row = db.$client
+      .prepare("SELECT body_text FROM messages WHERE gmail_message_id = ?")
+      .get("g-msg-html") as { body_text: string | null } | undefined;
+    expect(row).toBeDefined();
+    expect(row?.body_text).not.toBeNull();
+    expect(row?.body_text ?? "").toContain("31,250");
+    expect(row?.body_text ?? "").toContain("out-the-door");
   });
 });

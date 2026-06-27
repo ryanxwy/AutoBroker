@@ -45,7 +45,11 @@ const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQL = join(here, "..", "..", "db", "drizzle", "0000_military_red_skull.sql");
+// 0000 creates test_run_records; 0005 adds the #1244 malformed-evidence columns
+// the ledger writer (reached here via the LLM router) now always emits.
+const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql"].map((f) =>
+  join(here, "..", "..", "db", "drizzle", f),
+);
 
 let tmpDir: string;
 let db: Db;
@@ -55,7 +59,7 @@ beforeAll(() => {
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
   db = openDb(); // resolves <tmpDir>/autobroker.db
-  db.$client.exec(readFileSync(MIGRATION_SQL, "utf8"));
+  for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
 
 afterAll(() => {

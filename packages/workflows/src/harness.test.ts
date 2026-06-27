@@ -47,7 +47,12 @@ import {
 } from "@autobroker/model";
 import { openDb, type Db } from "@autobroker/tools";
 
-import { harness, type HarnessLedgerContext } from "./harness.js";
+import {
+  harness,
+  THINKING_AUTO_EMIT_USE_CASES,
+  THINKING_EMIT_EFFORT,
+  type HarnessLedgerContext,
+} from "./harness.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -55,7 +60,11 @@ const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQL = join(here, "..", "..", "db", "drizzle", "0000_military_red_skull.sql");
+// 0000 creates test_run_records; 0005 adds the #1244 malformed-evidence columns
+// the ledger writer now always emits.
+const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql"].map((f) =>
+  join(here, "..", "..", "db", "drizzle", f),
+);
 
 let tmpDir: string;
 let db: Db;
@@ -65,7 +74,7 @@ beforeAll(() => {
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
   db = openDb(); // resolves <tmpDir>/autobroker.db
-  db.$client.exec(readFileSync(MIGRATION_SQL, "utf8"));
+  for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
 
 afterAll(() => {
@@ -116,10 +125,12 @@ function ledgerRows(): Array<{
   price_input_per_mtok: unknown;
   fail_reason: string | null;
   latency_ms: unknown;
+  malformed_signals: string | null;
+  malformed_sample: string | null;
 }> {
   return db.$client
     .prepare(
-      "SELECT provider, model_alias, cost_usd, input_tokens, output_tokens, pricing_source, price_input_per_mtok, fail_reason, latency_ms FROM test_run_records",
+      "SELECT provider, model_alias, cost_usd, input_tokens, output_tokens, pricing_source, price_input_per_mtok, fail_reason, latency_ms, malformed_signals, malformed_sample FROM test_run_records",
     )
     .all() as ReturnType<typeof ledgerRows>;
 }
@@ -157,9 +168,14 @@ describe("harness.generate — clean emit_result path", () => {
 });
 
 describe("harness.generate — in-stack #1244 fail-closed", () => {
+  // A tool-shaped blob carrying a SECRET number (selling_price) + email — it both
+  // trips the #1244 detector AND gives the capture layer something to redact, so
+  // the malformed_sample assertions prove redaction ran before persist (inv #9).
+  const SECRET_BLOB = '{"name":"emit_result","arguments":{"selling_price":34250,"contact":"a@b.com"}}';
+
   it("no HITL: a tool-shaped prose dump throws MalformedToolCallAbort + ledger 'malformed_tool_call'", async () => {
     const model = makeProseDumpModel({
-      text: '{"name":"emit_result","arguments":{"city":"Tucson"}}',
+      text: SECRET_BLOB,
       modelId: "deepseek-v4-flash",
     });
 
@@ -170,11 +186,18 @@ describe("harness.generate — in-stack #1244 fail-closed", () => {
     const rows = ledgerRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.fail_reason).toBe("malformed_tool_call");
+    // Evidence captured: the joined signal names...
+    expect(typeof rows[0]?.malformed_signals).toBe("string");
+    expect(rows[0]?.malformed_signals).toContain("tool_shaped_blob_in_content");
+    // ...and a non-empty, REDACTED sample (no raw budget number, no raw email).
+    expect(rows[0]?.malformed_sample).toBeTruthy();
+    expect(rows[0]?.malformed_sample).not.toContain("34250");
+    expect(rows[0]?.malformed_sample).not.toContain("a@b.com");
   });
 
   it("HITL: the same dump resolves to a HarnessSuspend + ledger 'malformed_tool_call'", async () => {
     const model = makeProseDumpModel({
-      text: '{"name":"emit_result","arguments":{"city":"Tucson"}}',
+      text: SECRET_BLOB,
       modelId: "deepseek-v4-flash",
     });
 
@@ -189,6 +212,11 @@ describe("harness.generate — in-stack #1244 fail-closed", () => {
     const rows = ledgerRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.fail_reason).toBe("malformed_tool_call");
+    expect(typeof rows[0]?.malformed_signals).toBe("string");
+    expect(rows[0]?.malformed_signals).toContain("tool_shaped_blob_in_content");
+    expect(rows[0]?.malformed_sample).toBeTruthy();
+    expect(rows[0]?.malformed_sample).not.toContain("34250");
+    expect(rows[0]?.malformed_sample).not.toContain("a@b.com");
   });
 });
 
@@ -552,5 +580,35 @@ describe("harness.generate — transport throw (injected llm fault) fails CLOSED
     expect(rows[0]?.fail_reason).not.toBeNull(); // Error.name recorded on the throw.
     expect(rows[0]?.cost_usd).toBeNull(); // NULL-not-$0 (no usage on a failed call).
     expect(rows[0]?.pricing_source).toBe("unavailable");
+  });
+});
+
+describe("thinking-emit lane — recovery-hop membership + per-useCase effort", () => {
+  const RECOVERY_HOPS = [
+    "dealer_reply_extract_retry",
+    "geosearch_extract_retry",
+    "inventory_extract_retry",
+    "incentive_extract_retry",
+    "lead_form_map_retry",
+  ] as const;
+
+  it("all five *_retry hops run on the thinking-auto-emit lane", () => {
+    for (const uc of RECOVERY_HOPS) {
+      expect(THINKING_AUTO_EMIT_USE_CASES.has(uc)).toBe(true);
+    }
+  });
+
+  it("dealer_reply_extract_retry stays 'high'; the four shared hops fall through to 'medium'", () => {
+    expect(THINKING_EMIT_EFFORT["dealer_reply_extract_retry"]).toBe("high");
+    // The shared-helper hops are NOT in the map → `?? \"medium\"` resolves them.
+    for (const uc of [
+      "geosearch_extract_retry",
+      "inventory_extract_retry",
+      "incentive_extract_retry",
+      "lead_form_map_retry",
+    ] as const) {
+      expect(THINKING_EMIT_EFFORT[uc]).toBeUndefined();
+      expect(THINKING_EMIT_EFFORT[uc] ?? "medium").toBe("medium");
+    }
   });
 });

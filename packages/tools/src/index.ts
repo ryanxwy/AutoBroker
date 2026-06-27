@@ -376,6 +376,15 @@ export {
   type FakeMailboxPreflightDeps,
 } from "./gmail/sendPreflight.js";
 
+// Read-probe helpers — the structurally send-blocked facade + the fail-closed
+// pre-flight envelope guard for buyer-mode read-only diagnostics. The facade's
+// send() always throws; the envelope guard refuses harness/test/CI contexts and
+// the production data dir before any read proceeds.
+export {
+  assertReadProbeEnvelope,
+  ReadOnlyGmailAdapter,
+} from "./gmail/readProbe.js";
+
 // Outbound send+record writer — the single skill-facing draft-then-promote
 // send path (preflight → draft row → fuse → fake send → promote, all inside one
 // gated commit). Four discriminated outcomes (sent/declined/blocked/partial) +

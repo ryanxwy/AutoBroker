@@ -79,6 +79,7 @@ import {
   detectMalformedToolCall,
   MalformedToolCallAbort,
   policy,
+  redactMalformedSample,
   resolveModel,
   toModelMessages,
   type HarnessGenerateInput,
@@ -130,8 +131,8 @@ const EMIT_RESULT_TOOL = "emit_result" as const;
 /**
  * The useCases that run the emit_result tool on the THINKING lane instead of the
  * default forced-emit lane: thinking ON + tool_choice:"auto" rather than thinking
- * DISABLED + a named/forced tool_choice. The only member is the malformed-class
- * recovery hop (dealer_reply_extract_retry → deepseek-v4-pro WITH thinking).
+ * DISABLED + a named/forced tool_choice. The members are the malformed-class
+ * recovery hops (the *_retry useCases → deepseek-v4-pro WITH thinking).
  *
  * Why a separate lane: DeepSeek thinking mode REJECTS a named/forced tool_choice
  * ("Thinking mode does not support this tool_choice"), so an emit_result step
@@ -142,9 +143,25 @@ const EMIT_RESULT_TOOL = "emit_result" as const;
  * the Zod post-validation belt are IDENTICAL on both lanes; ONLY the toolChoice
  * + thinking switch differ.
  */
-const THINKING_AUTO_EMIT_USE_CASES: ReadonlySet<UseCase> = new Set<UseCase>([
+export const THINKING_AUTO_EMIT_USE_CASES: ReadonlySet<UseCase> = new Set<UseCase>([
   "dealer_reply_extract_retry",
+  "geosearch_extract_retry",
+  "inventory_extract_retry",
+  "incentive_extract_retry",
+  "lead_form_map_retry",
 ]);
+
+/**
+ * Per-useCase reasoning effort on the thinking-emit lane. The original
+ * dealer_reply_extract_retry hop stays "high" (its dealer-reply extraction is the
+ * heaviest schema). The shared-helper hops recover a SERIALIZATION defect, not a
+ * reasoning-difficulty one, so they fall through to "medium" (the `?? "medium"`
+ * at the call site). Adding a member here is the only way to raise a hop above
+ * "medium".
+ */
+export const THINKING_EMIT_EFFORT: Partial<Record<UseCase, "high" | "medium">> = {
+  dealer_reply_extract_retry: "high",
+};
 
 /**
  * Input to the PROSE facade `draftProse` — a strict subset of
@@ -330,10 +347,23 @@ async function generate<TSchema extends z.ZodTypeAny>(
       // (deepseekLanguageModelOptions: thinking.type + reasoningEffort). Harmless
       // on providers that ignore an unknown providerOptions namespace. The
       // recovery hop turns thinking ON (its whole point is to reason past the
-      // serialization defect that failed the thinking-OFF first hop), pairing the
-      // documented chat-lane reasoning_effort:"high".
+      // serialization defect that failed the thinking-OFF first hop). reasoningEffort
+      // is per-useCase via THINKING_EMIT_EFFORT (dealer_reply_extract_retry stays
+      // "high"; the other recovery hops fall through to "medium").
+      //
+      // Cast note: Mastra vendors a NARROWER `@ai-sdk_deepseek-v5` provider-options
+      // type (reasoningEffort only "high"|"max") than the RESOLVED runtime provider
+      // @ai-sdk/deepseek@2.0.x, whose schema is the full low|medium|high|xhigh|max
+      // scale. "medium" is therefore runtime-valid (the resolved provider executes
+      // the call) but rejected by Mastra's stale compile-time slot — bridge the
+      // effort literal across that single stale union here.
       providerOptions: thinkingLane
-        ? { deepseek: { thinking: { type: "enabled" }, reasoningEffort: "high" } }
+        ? {
+            deepseek: {
+              thinking: { type: "enabled" },
+              reasoningEffort: (THINKING_EMIT_EFFORT[input.useCase] ?? "medium") as "high" | "max",
+            },
+          }
         : { deepseek: { thinking: { type: "disabled" } } },
       modelSettings: { temperature: 0 },
     })
@@ -375,7 +405,10 @@ async function generate<TSchema extends z.ZodTypeAny>(
   /** Write the one ledger row for this run with the given verdict. The route
    *  identity (provider + alias) is the policy() resolution, never a caller
    *  string. */
-  const writeLedger = (failReason: string | null): void => {
+  const writeLedger = (
+    failReason: string | null,
+    malformed?: { signals: ReadonlyArray<string>; text: string },
+  ): void => {
     writeTestRunRecord(
       {
         runId: ledger.runId,
@@ -394,6 +427,12 @@ async function generate<TSchema extends z.ZodTypeAny>(
         promptVersion: ledger.promptVersion,
         schemaVersion: ledger.schemaVersion,
         failReason,
+        // #1244 evidence — ONLY the malformed branch passes a payload. The
+        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
+        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
+        // both columns NULL.
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       },
       ..._dbArg(_testOverrides),
     );
@@ -404,7 +443,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // metadata IS our MalformedToolCallTripMetadata.
   const trip = readMalformedTrip(result.tripwire);
   if (trip !== null) {
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals: trip.signals, text: result.text ?? "" });
     if (input.hitlAvailable) {
       return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
     }
@@ -449,7 +488,7 @@ async function generate<TSchema extends z.ZodTypeAny>(
       writeLedger("empty_tool_call_no_signal");
       throw new MalformedToolCallAbort(["empty_tool_calls"]);
     }
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals, text: result.text ?? "" });
     if (input.hitlAvailable) {
       return { suspended: true, reason: "malformed_tool_call", signals };
     }
@@ -595,7 +634,10 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  const writeLedger = (failReason: string | null): void => {
+  const writeLedger = (
+    failReason: string | null,
+    malformed?: { signals: ReadonlyArray<string>; text: string },
+  ): void => {
     writeTestRunRecord(
       {
         runId: ledger.runId,
@@ -614,6 +656,12 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
         promptVersion: ledger.promptVersion,
         schemaVersion: ledger.schemaVersion,
         failReason,
+        // #1244 evidence — ONLY the malformed branch passes a payload. The
+        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
+        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
+        // both columns NULL.
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       },
       ..._dbArg(_testOverrides),
     );
@@ -623,7 +671,7 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   // processor RESOLVES with result.tripwire populated (live-probed; not a throw).
   const trip = readMalformedTrip(result.tripwire);
   if (trip !== null) {
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals: trip.signals, text: result.text ?? "" });
     if (input.hitlAvailable) {
       return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
     }
@@ -878,7 +926,10 @@ async function draftProse(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  const writeLedger = (failReason: string | null): void => {
+  const writeLedger = (
+    failReason: string | null,
+    malformed?: { signals: ReadonlyArray<string>; text: string },
+  ): void => {
     writeTestRunRecord(
       {
         runId: ledger.runId,
@@ -897,6 +948,12 @@ async function draftProse(
         promptVersion: ledger.promptVersion,
         schemaVersion: ledger.schemaVersion,
         failReason,
+        // #1244 evidence — ONLY the malformed branch passes a payload. The
+        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
+        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
+        // both columns NULL.
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       },
       ..._dbArg(_testOverrides),
     );
@@ -915,7 +972,7 @@ async function draftProse(
     content: text,
   });
   if (signals.length > 0) {
-    writeLedger("malformed_tool_call");
+    writeLedger("malformed_tool_call", { signals, text });
     throw new MalformedToolCallAbort(signals);
   }
 

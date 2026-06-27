@@ -29,6 +29,7 @@
  * injected fetch. No model/workflows/app import.
  */
 
+import { stripHtmlToText } from "../html/htmlToText.js";
 import { validateSourceUrl } from "../ssrf.js";
 
 export type FetchLike = typeof fetch;
@@ -147,24 +148,13 @@ function harvestStructuredNames(html: string): string[] {
   return names;
 }
 
-/** Strip an HTML document to readable text (drop script/style, tags, entities,
- *  collapse whitespace) PLUS a harvested structured-data name list, capped. Good-
- *  enough grounding text for the downstream LLM extraction — not a parser. */
+/** Strip an HTML document to readable text PLUS a harvested structured-data
+ *  name list, capped. The plain strip is delegated to the shared util;
+ *  the STRUCTURED-DATA NAMES block is appended here before the final cap. */
 function htmlToText(html: string, cap: number): string {
-  const visible = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&#x27;|&#39;|&apos;/gi, "'")
-    .replace(/&quot;/gi, '"')
-    .replace(/&[a-z]+;/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
   const names = harvestStructuredNames(html);
   const namesBlock = names.length > 0 ? `\nSTRUCTURED-DATA NAMES: ${names.join(", ")}` : "";
-  return (visible + namesBlock).slice(0, cap);
+  return (stripHtmlToText(html, cap) + namesBlock).slice(0, cap);
 }
 
 /**
