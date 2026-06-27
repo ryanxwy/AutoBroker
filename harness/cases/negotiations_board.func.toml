@@ -1,0 +1,140 @@
+# harness/cases/negotiations_board.func.toml — FUNCTIONAL lane: the
+# dealer-negotiation cards board→modal interaction proof. The Canvas
+# "Negotiations" tab renders ONE read-only card per bound dealer
+# (NegotiationsBoard, sorted most-actionable first); each whole card is a
+# ClickableTile (role=button) that opens the read-only NegotiationDetailModal.
+# This case proves the click-through end-to-end on the offline lane over a
+# realistic two-dealer world: open the Negotiations tab, click the top
+# (most-actionable) card, and assert the board + the detail modal's sections.
+#
+# WHY A DEDICATED CASE (not a 2nd step on another case): a kind="ui" step needs
+# its own fixture_state OR a prior RUN's DOM. A fixture-backed ui step does NOT
+# satisfy a next step's prior-DOM requirement, and apply-fixture seeds
+# ADDITIVELY (re-applying the same world double-seeds). A standalone case boots a
+# fresh server+DB, applies negotiations_board ONCE, and does the whole
+# click-through as a single DOM-mutation chain (open the tab, then click the
+# card; the board grid stays mounted behind the portal modal, so both anchor in
+# one step — no mid-step ui_action/anchor interleaving).
+#
+# WHAT THE WORLD PROVES (negotiationsBoard fixture):
+#   - the grid renders 2 cards (Alpha + Bravo, both bound);
+#   - Alpha (the only dealer with a thread → a derived negotiation_status) sorts
+#     FIRST, so the top-card click opens Alpha's modal;
+#   - the modal shows the contact-with-a-role, the deterministic status line
+#     (the LLM "AI summary" degrades silently under the keyless func lane), the
+#     strategy + next steps, and the competing-offer scalars (Bravo is cheaper —
+#     only the OTD scalar crosses, never Bravo's name);
+#   - exactly 3 substantive reply rows render (the out-of-office auto-reply + the
+#     marketing blast are FILTERED by the T2 non-substantive predicate);
+#   - newest-first: the FIRST reply row carries the latest-seeded message's marker.
+#
+# The field-by-field modal content (budget redaction, null-row omission, mailto,
+# absolute timestamps) is covered exhaustively by the NegotiationsBoard +
+# NegotiationDetailModal vitest component tests; the func lane's job here is the
+# representative "click the top card → the right dialog opens with its sections"
+# proof.
+#
+# Δ=0 BY CONSTRUCTION: the board + modal are read-only projections with no run
+# between the before/after snapshots — a pure read panel reaches no side effect.
+
+[meta]
+id = "negotiations_board_func"
+archetype = "B"
+skills = ["dealer_reply_extract"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: open the Negotiations tab → click the top card → its modal --------
+
+[[steps]]
+id = "negotiation_board_modal"
+kind = "ui"
+fixture_state = "negotiations_board"
+purpose = "Open the Negotiations tab over the two-dealer world, click the top (most-actionable) card, and prove the read-only board + the detail modal's sections (contact-with-role, status summary, strategy, next steps, competing scalars, exactly 3 newest-first reply rows)."
+
+# Open the Negotiations tab (panel key "replies"), then click the first
+# negotiation card (Alpha, the most-actionable). Two sequential clicks in one
+# ui_actions chain — the dialog anchors are scored after both; the grid stays
+# mounted behind the portal modal.
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-replies"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-negotiation-card"
+
+# The board grid rendered and carries exactly 2 dealer cards (Alpha + Bravo).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-negotiation-grid"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "canvas-negotiation-card"
+expect = "count"
+count = 2
+
+# The detail modal opened (the whole-card click reached the read-only detail view).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-detail-modal"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-detail-title"
+expect = "visible"
+
+# (2) who's contacting — Alpha's contact row (it carries a role).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-contact-row"
+expect = "visible"
+
+# (3) status summary — the deterministic status line is the always-present floor
+# (the lazy LLM summary degrades silently under the keyless func lane).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-status-summary"
+expect = "visible"
+
+# (4) suggested approach (strategy) + (5) next steps.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-strategy"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-next-steps"
+expect = "visible"
+
+# (6) competing offer — Bravo is cheaper; the section renders the scalar OTD/gap
+# (never Bravo's name).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-competing-quote"
+expect = "visible"
+
+# (7) replies — exactly 3 SUBSTANTIVE rows (the out-of-office auto-reply + the
+# marketing blast are filtered out).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-reply-row"
+expect = "count"
+count = 3
+
+# newest-first DOM-order: the FIRST reply row is the latest-seeded message (it
+# carries the unique marker). dom_state text reads .first().textContent().
+[[steps.anchors]]
+kind = "dom_state"
+testid = "negotiation-reply-row"
+expect = "text"
+value = "NEWEST-REPLY-MARKER-Z7Q"

@@ -55,6 +55,7 @@ import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { leadSubmitReady } from "./leadSubmitReady.js";
 import { multiActive } from "./multiActive.js";
+import { negotiationsBoard } from "./negotiationsBoard.js";
 import { quoteAuditWorld } from "./quoteAuditWorld.js";
 import { quoteCompareCashWorld, quoteCompareWorld } from "./quoteCompareWorld.js";
 import { quotePipelineReady } from "./quotePipelineReady.js";
@@ -79,6 +80,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [emptyHome.id]: emptyHome,
   [activeSearch.id]: activeSearch,
   [multiActive.id]: multiActive,
+  [negotiationsBoard.id]: negotiationsBoard,
   [closedProfile.id]: closedProfile,
   [closedOnly.id]: closedOnly,
   [dataArriving.id]: dataArriving,
