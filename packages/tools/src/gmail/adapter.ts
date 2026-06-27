@@ -25,6 +25,7 @@
 
 import { gmail as gmailApi, type gmail_v1 } from "@googleapis/gmail";
 
+import { stripHtmlToText } from "../html/htmlToText.js";
 import { loadAuthorizedClient } from "./auth.js";
 import { walkParts } from "./mime.js";
 import type {
@@ -116,6 +117,11 @@ function readHeader(payload: gmail_v1.Schema$MessagePart | undefined, name: stri
 function mapMessage(wire: gmail_v1.Schema$Message): Message {
   const payload = wire.payload ?? undefined;
   const { bodyText, bodyHtml, attachments } = walkParts(payload);
+  // HTML-only dealer emails carry a text/html part with NO text/plain part, so
+  // walkParts returns an empty bodyText and the quote text would be silently
+  // lost downstream. When bodyText is blank (or whitespace-only), recover the
+  // readable text from the HTML so consumers still see the quote.
+  const effectiveBodyText = bodyText.trim() !== "" ? bodyText : stripHtmlToText(bodyHtml);
   const labels = wire.labelIds ?? [];
   const direction: MessageDirection = labels.includes("SENT") ? "outbound" : "inbound";
   const internalDateMs = Number.parseInt(wire.internalDate ?? "0", 10);
@@ -126,7 +132,7 @@ function mapMessage(wire: gmail_v1.Schema$Message): Message {
     from: readHeader(payload, "From"),
     to: readHeader(payload, "To"),
     subject: readHeader(payload, "Subject"),
-    bodyText,
+    bodyText: effectiveBodyText,
     bodyHtml,
     internalDateMs: Number.isFinite(internalDateMs) ? internalDateMs : 0,
     attachments,
