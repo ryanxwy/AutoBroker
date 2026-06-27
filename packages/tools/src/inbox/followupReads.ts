@@ -411,16 +411,37 @@ export function readThreadSnapshotForDraft(db: Db, threadId: string): ThreadSnap
 // the reply-target ladder inputs — the 4 rungs' rows for resolveReplyTarget
 // ---------------------------------------------------------------------------
 
+/** One dealer-scoped contact row (id is a key only; carries the role + the
+ *  primary-reply-target flag). Shared by the reply-target ladder and the
+ *  negotiation detail read — one SELECT, no near-duplicate. */
+export interface DealerContactRead {
+  contactId: string;
+  email: string | null;
+  displayName: string | null;
+  role: string | null;
+  isPrimaryReplyTarget: number | null;
+}
+
+/**
+ * The dealer's contacts (id key + email + display name + role + the primary-
+ * reply-target flag), dealer-scoped. The single contact SELECT both the reply-
+ * target ladder (readReplyTargetInputs) and the negotiation detail read share.
+ * Read-only.
+ */
+export function readDealerContacts(db: Db, dealerId: string): DealerContactRead[] {
+  return db.$client
+    .prepare(
+      "SELECT contact_id AS contactId, email, display_name AS displayName, role, " +
+        "is_primary_reply_target AS isPrimaryReplyTarget " +
+        "FROM dealer_contacts WHERE dealer_id = ?",
+    )
+    .all(dealerId) as DealerContactRead[];
+}
+
 /** The already-fetched rows the 4-rung reply-target ladder considers, in the
  *  exact shape resolveReplyTarget's ReplyTargetInputs expects. */
 export interface ReplyTargetInputsRead {
-  contacts: Array<{
-    contactId: string;
-    email: string | null;
-    displayName: string | null;
-    role: string | null;
-    isPrimaryReplyTarget: number | null;
-  }>;
+  contacts: DealerContactRead[];
   inboundMessages: Array<{
     contactId: string | null;
     senderEmail: string | null;
@@ -443,13 +464,7 @@ export function readReplyTargetInputs(
   db: Db,
   args: { profileId: string; dealerId: string; threadId: string },
 ): ReplyTargetInputsRead {
-  const contacts = db.$client
-    .prepare(
-      "SELECT contact_id AS contactId, email, display_name AS displayName, role, " +
-        "is_primary_reply_target AS isPrimaryReplyTarget " +
-        "FROM dealer_contacts WHERE dealer_id = ?",
-    )
-    .all(args.dealerId) as ReplyTargetInputsRead["contacts"];
+  const contacts = readDealerContacts(db, args.dealerId);
 
   const inboundRows = db.$client
     .prepare(

@@ -526,11 +526,13 @@ export { setPrimaryReplyTarget } from "./dealerComm/contactFlip.js";
 export {
   readQuoteSituationForThread,
   readDealerGiveUpInputs,
+  readDealerContacts,
   listFollowupCandidateThreads,
   readThreadSnapshotForDraft,
   readReplyTargetInputs,
   type QuoteSituationRead,
   type DealerGiveUpInputsRead,
+  type DealerContactRead,
   type FollowupCandidateThread,
   type ThreadSnapshotRead,
   type ReplyTargetInputsRead,
@@ -547,8 +549,13 @@ export {
 } from "./inbox/negotiationStatusProjection.js";
 export {
   listProfileDealerNegotiations,
+  readDealerNegotiationDetail,
+  readDealerSubstantiveReplyBodies,
   NEGOTIATION_STATUS_RANK,
   type DealerNegotiationRow,
+  type DealerNegotiationDetail,
+  type NegotiationReplyRow,
+  type NegotiationContactRow,
 } from "./inbox/negotiationProjection.js";
 
 // dealer_closeout_email (X3) — the closeout target assembler (open threads minus
@@ -846,7 +853,7 @@ export {
   type UpsertAuditArgs,
   type UpsertAuditOutcome,
 } from "./quotes/auditPersist.js";
-export { flagCodesFromJson } from "./quotes/flags.js";
+export { flagCodesFromJson, flagSuggestionsFromJson } from "./quotes/flags.js";
 export {
   rankQuotesForProfile,
   type QuoteRanking,

@@ -17,7 +17,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDb, openDb, type Db } from "../db.js";
-import { listProfileDealerNegotiations } from "./negotiationProjection.js";
+import {
+  listProfileDealerNegotiations,
+  readDealerNegotiationDetail,
+  readDealerSubstantiveReplyBodies,
+} from "./negotiationProjection.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -191,5 +195,132 @@ describe("listProfileDealerNegotiations", () => {
     expect(rows.map((r) => r.dealer_id)).toEqual(["d-countered", "d-replied", "d-bare"]);
     expect(rows[0]!.negotiation_status).toBe("countered");
     expect(rows[2]!.negotiation_status).toBeUndefined(); // zero-thread last
+  });
+});
+
+/** Insert an inbound message with sender/subject/body + extraction intent. The
+ *  check constraint requires intent NULL ⇔ status 'pending'. */
+function richInbound(
+  c: Db["$client"],
+  a: {
+    id: string;
+    threadId: string;
+    receivedAt: number;
+    senderEmail: string;
+    subject: string;
+    body: string;
+    intent?: string | null;
+  },
+): void {
+  const intent = a.intent ?? null;
+  const status = intent === null ? "pending" : "succeeded";
+  c.prepare(
+    "INSERT INTO messages (message_id, thread_id, direction, sender_email, subject, body_text, received_at, " +
+      "search_profile_id, quote_extraction_status, quote_extraction_intent) " +
+      "VALUES (?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?)",
+  ).run(a.id, a.threadId, a.senderEmail, a.subject, a.body, a.receivedAt, PROFILE, status, intent);
+}
+
+describe("readDealerNegotiationDetail", () => {
+  it("returns redacted newest-first substantive replies, competing scalars without a name, and the computed BATNA gap", () => {
+    const c = db.$client;
+    dealer(c, "d-x", "Detail Hyundai");
+    dealer(c, "d-rival", "Rival Hyundai");
+    bind(c, "d-x");
+    bind(c, "d-rival");
+
+    thread(c, "t-x", "d-x");
+    // Two SUBSTANTIVE replies (carry a quote signal) — shown, newest first.
+    richInbound(c, {
+      id: "in-old",
+      threadId: "t-x",
+      receivedAt: NOW - 3 * DAY,
+      senderEmail: "sales@detailhyundai.com",
+      subject: "Quote",
+      body: "Thanks for the OTD request — here is $41,000 out-the-door.",
+    });
+    richInbound(c, {
+      id: "in-good",
+      threadId: "t-x",
+      receivedAt: NOW - 1 * DAY,
+      senderEmail: "sales@detailhyundai.com",
+      subject: "Re: Your quote",
+      body: "Out-the-door is $40,000 and your budget of $35,000 is noted on file.",
+    });
+    // Auto-reply (subject) and a marketing blast — both HIDDEN.
+    richInbound(c, {
+      id: "in-auto",
+      threadId: "t-x",
+      receivedAt: NOW - 2 * DAY,
+      senderEmail: "sales@detailhyundai.com",
+      subject: "Automatic reply: out of office",
+      body: "I am away until Monday.",
+    });
+    richInbound(c, {
+      id: "in-mktg",
+      threadId: "t-x",
+      receivedAt: NOW - 2 * DAY,
+      senderEmail: "promos@detailhyundai.com",
+      subject: "Year-end event — manager's special!",
+      body: "Visit us this weekend only. unsubscribe here.",
+    });
+
+    // d-x: an itemized open quote at 40000. d-rival: a cheaper itemized open quote
+    // at 37000 (the competing BATNA). batna_gap = 40000 - 37000 = 3000.
+    quote(c, { quoteId: "q-x", dealerId: "d-x", otd: 40000, discount: 2000, vin: "VX", receivedAt: NOW - 1 * DAY });
+    quote(c, { quoteId: "q-rival", dealerId: "d-rival", otd: 37000, discount: 3000, vin: "VR", receivedAt: NOW - 1 * DAY });
+
+    const detail = readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-x", nowMs: NOW })!;
+    expect(detail).not.toBeNull();
+    expect(detail.name).toBe("Detail Hyundai");
+
+    // newest-first, auto-reply + marketing hidden.
+    expect(detail.replies.map((r) => r.message_id)).toEqual(["in-good", "in-old"]);
+
+    // budget redacted in the body excerpt (the $35,000 budget phrase is gone).
+    const goodExcerpt = detail.replies[0]!.body_excerpt!;
+    expect(goodExcerpt).toContain("[redacted]");
+    expect(goodExcerpt).not.toContain("35,000");
+    expect(goodExcerpt).toContain("40,000"); // the dealer's own OTD stays
+
+    // competing figure present, computed gap, NO competitor name anywhere.
+    expect(detail.best_competing_otd).toBe(37000);
+    expect(detail.batna_gap_usd).toBe(3000);
+    expect(JSON.stringify(detail)).not.toContain("Rival");
+  });
+
+  it("returns null for a dealer not bound to the profile", () => {
+    const c = db.$client;
+    dealer(c, "d-unbound", "Unbound Hyundai"); // exists but never bound to PROFILE
+    expect(readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-unbound", nowMs: NOW })).toBeNull();
+    expect(readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-missing", nowMs: NOW })).toBeNull();
+  });
+
+  it("readDealerSubstantiveReplyBodies returns the SAME T2-filtered set, redacted (for T8)", () => {
+    const c = db.$client;
+    dealer(c, "d-x", "Detail Hyundai");
+    bind(c, "d-x");
+    thread(c, "t-x", "d-x");
+    richInbound(c, {
+      id: "in-good",
+      threadId: "t-x",
+      receivedAt: NOW - 1 * DAY,
+      senderEmail: "sales@detailhyundai.com",
+      subject: "Re: Your quote",
+      body: "Out-the-door is $40,000 and your budget of $35,000 is noted.",
+    });
+    richInbound(c, {
+      id: "in-auto",
+      threadId: "t-x",
+      receivedAt: NOW - 2 * DAY,
+      senderEmail: "sales@detailhyundai.com",
+      subject: "Automatic reply: out of office",
+      body: "Away until Monday.",
+    });
+
+    const bodies = readDealerSubstantiveReplyBodies(db, { profileId: PROFILE, dealerId: "d-x" });
+    expect(bodies).toHaveLength(1); // only the substantive reply
+    expect(bodies[0]).toContain("[redacted]");
+    expect(bodies[0]).not.toContain("35,000");
   });
 });

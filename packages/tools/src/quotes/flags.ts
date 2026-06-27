@@ -33,3 +33,31 @@ export function flagCodesFromJson(blob: unknown): string[] {
   }
   return out;
 }
+
+/** Extract the ordered list of non-empty string `suggestion`s from a flags_json
+ *  blob (the concrete next steps the audit findings carry). Same defensive
+ *  parse as flagCodesFromJson: any malformed shape degrades to an empty list. */
+export function flagSuggestionsFromJson(blob: unknown): string[] {
+  if (blob === null || blob === undefined || blob === "") return [];
+
+  let parsed: unknown;
+  if (typeof blob === "string") {
+    try {
+      parsed = JSON.parse(blob);
+    } catch {
+      return [];
+    }
+  } else {
+    parsed = blob;
+  }
+
+  if (!Array.isArray(parsed)) return [];
+
+  const out: string[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const suggestion = (entry as { suggestion?: unknown }).suggestion;
+    if (typeof suggestion === "string" && suggestion) out.push(suggestion);
+  }
+  return out;
+}
