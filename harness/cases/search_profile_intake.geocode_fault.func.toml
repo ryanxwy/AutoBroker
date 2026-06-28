@@ -3,7 +3,7 @@
 # A transient TOOL fault (geocode) injected deterministically via the
 # intake_geocode_fault fixture (scenario.fault="tool_timeout" → resolveLocationStub
 # rejects on the next tick). The intake reaches the resolveLocation step after a
-# clean data_collection accept + trim_verify, and that step throws. The resolve
+# clean data_collection accept, and that step throws. The resolve
 # step has no try/catch and persist independently fail-louds on null coords, so the
 # run fails CLOSED — it terminates `error` with ZERO search_profiles rows, never a
 # hallucinated "resolved" success or a NULL-coords profile (inv #4 fail-closed, inv
@@ -49,7 +49,7 @@ fixture_state = "intake_geocode_fault"
 purpose = "Transient geocode tool fault -> the resolveLocation step fails CLOSED; run errors, zero writes."
 gate_policy = "approve_safe"
 
-# Submit the intake form; trim_verify runs clean, then the geocode step throws.
+# Submit the intake form; the geocode (resolveLocation) step throws before confirmVehicle is reached.
 [[steps.resume]]
 on = "data_collection"
 action = "accept"

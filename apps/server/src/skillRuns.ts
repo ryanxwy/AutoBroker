@@ -95,7 +95,6 @@ import {
   QUOTE_PIPELINE_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
-  IntakeConfirmResumeSchema,
   AmbiguousLocationResumeSchema,
   TrimSuggestionResumeSchema,
   MalformedRetryResumeSchema,
@@ -233,8 +232,6 @@ interface IntakeStartInput {
 /** The exported resume schema for a non-collect intake suspend step. */
 function intakeResumeSchemaFor(step: string): z.ZodTypeAny {
   switch (step) {
-    case "confirmVehicle":
-      return IntakeConfirmResumeSchema;
     case "resolveLocation":
       return AmbiguousLocationResumeSchema;
     case "trimSuggestion":
