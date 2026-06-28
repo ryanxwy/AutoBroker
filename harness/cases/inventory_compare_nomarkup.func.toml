@@ -1,0 +1,70 @@
+# harness/cases/inventory_compare_nomarkup.func.toml — FUNCTIONAL lane: the
+# Canvas Inventory candidates "no-markup" curated filter over the SAME populated
+# inventory_listings world the inventory_compare_func case ranks.
+#
+# WHY A SIBLING CASE (not a second step on inventory_compare.func.toml): the
+# no-markup proof is a SECOND pure-UI assertion on the same seeded world, but the
+# harness forbids two steps sharing a fixture_state within one case (cases.ts
+# "duplicate fixture_state") and a runless ui step has no prior run to inherit —
+# so a second step there can neither re-install nor reuse inventory_listings.
+# A sibling case reuses the EXISTING fixture (zero new data) and is the standard
+# pattern (cf. inventory_compare_empty.func.toml owning the empty rail).
+#
+# FIXTURE COUNTS (inventoryListings fixture, authoritative): 5 seeded listings →
+# 2 dropped by hard filters (ordered + over-budget) = 3 surviving candidates. Of
+# the 3, ONLY lst_strong carries a LABELED dealer markup ($2,500); lst_incomplete
+# and lst_nostock carry none. So in the All scope the no-markup filter drops
+# lst_strong → exactly 2 rows remain.
+#
+# ONE meaningful click (the no-markup toggle) → ONE row-count assert. Opening the
+# Inventory tab and switching to the All scope are plain setup (the All scope
+# surfaces all 3 candidates so the drop-from-3-to-2 is observable; the default
+# Recommended scope holds only lst_strong, which no-markup would empty). The func
+# runner scores every anchor AFTER replaying every ui_action, so there is no
+# mid-step interleaving — the sort orderings, the max-price filter and the
+# inventory-filters-empty guard are pinned in the InventoryCandidates unit tests.
+
+[meta]
+id = "inventory_compare_nomarkup_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the no-markup curated filter drops the labeled-markup row ----------
+
+[[steps]]
+id = "nomarkup_filter"
+kind = "ui"
+fixture_state = "inventory_listings"
+purpose = "Inventory tab → All scope (3 candidates) → toggle no-markup: lst_strong (+$2,500 labeled markup) is hidden, leaving exactly 2 markup-free rows."
+
+# Open the Inventory tab — the candidates section (and its control strip) mounts
+# behind it (the click both navigates AND waits for the section to mount).
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-inventory"
+
+# Switch to the All scope so all 3 surviving candidates are in view (the default
+# Recommended scope holds only lst_strong).
+[[steps.ui_actions]]
+verb = "click"
+testid = "inventory-filter-all"
+
+# Toggle the no-markup curated filter — the one meaningful action under test.
+[[steps.ui_actions]]
+verb = "click"
+testid = "inventory-filter-nomarkup"
+
+# 3 surviving candidates minus the single labeled-markup row (lst_strong) = 2.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-candidate-row"
+expect = "count"
+count = 2
+match = "exact"

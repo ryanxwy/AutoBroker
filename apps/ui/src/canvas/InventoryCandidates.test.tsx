@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 
 import type { AsyncState } from "../api/useApi.js";
 import type { InventoryCompareResult } from "../api/wire.js";
-import { click, render } from "../test/render.js";
-import { InventoryCandidates } from "./InventoryCandidates.js";
+import { change, click, render } from "../test/render.js";
+import { InventoryCandidates, sortCandidates } from "./InventoryCandidates.js";
 
 /** The detail modal portals to document.body — query it off the document. */
 const docQuery = (testId: string): HTMLElement | null =>
@@ -577,6 +577,178 @@ describe("InventoryCandidates — color config cross-check", () => {
     const result = makeResult([makeCandidate()], { colorCrossCheck: cc });
     const { query } = render(<InventoryCandidates inventory={ok(result)} profileId="prof-1" />);
     expect(query("inventory-color-crosscheck")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sort — pure sortCandidates (server-order no-op + copy-before-sort + nulls last)
+// ---------------------------------------------------------------------------
+
+describe("sortCandidates (pure)", () => {
+  it("best-match is a SERVER-ORDER no-op — returns the SAME array, never re-sorted", () => {
+    const rows = [
+      makeCandidate({ listing_id: "a", listed_price: 50000 }),
+      makeCandidate({ listing_id: "b", listed_price: 10000 }),
+      makeCandidate({ listing_id: "c", listed_price: 30000 }),
+    ];
+    const out = sortCandidates(rows, "bestmatch");
+    // Identity pass-through: no copy, no reorder (the server's match-tier order stands).
+    expect(out).toBe(rows);
+    expect(out.map((r) => r.listing_id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("price sort COPIES (input unmutated), ascending, with price_gated/null sinking last", () => {
+    const a = makeCandidate({ listing_id: "a", listed_price: 50000 });
+    const b = makeCandidate({ listing_id: "b", listed_price: 10000 });
+    const cNull = makeCandidate({ listing_id: "c", listed_price: null });
+    const dGated = makeCandidate({ listing_id: "d", listed_price: 1, price_gated: true });
+    const rows = [a, b, cNull, dGated];
+    const out = sortCandidates(rows, "price");
+    // A copy — the prop array is never mutated by .sort().
+    expect(out).not.toBe(rows);
+    expect(rows.map((r) => r.listing_id)).toEqual(["a", "b", "c", "d"]);
+    // 10k < 50k, then the null-price and the price_gated (never sorted as $0/$1) last.
+    expect(out.map((r) => r.listing_id)).toEqual(["b", "a", "c", "d"]);
+  });
+
+  it("distance sort COPIES (input unmutated), ascending, with null distance last", () => {
+    const a = makeCandidate({ listing_id: "a", distance_miles: 9 });
+    const b = makeCandidate({ listing_id: "b", distance_miles: 2 });
+    const cNull = makeCandidate({ listing_id: "c", distance_miles: null });
+    const rows = [a, b, cNull];
+    const out = sortCandidates(rows, "distance");
+    expect(out).not.toBe(rows);
+    expect(rows.map((r) => r.listing_id)).toEqual(["a", "b", "c"]);
+    expect(out.map((r) => r.listing_id)).toEqual(["b", "a", "c"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sort — segmented control (rendered row order)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — sort control", () => {
+  const vinOrder = (all: (t: string) => HTMLElement[]): (string | null)[] =>
+    all("inventory-candidate-vin").map((n) => n.textContent);
+
+  // All three recommended so they all render under the default Recommended filter
+  // (<=12 → no pager). Server order is [A(50k/9mi), B(10k/2mi), C(null/null)].
+  const cands = (): ReturnType<typeof makeCandidate>[] => [
+    makeCandidate({ listing_id: "a", vin: "VINAAAAAAAAAAAAA1", listed_price: 50000, distance_miles: 9, recommended: true }),
+    makeCandidate({ listing_id: "b", vin: "VINBBBBBBBBBBBBB2", listed_price: 10000, distance_miles: 2, recommended: true }),
+    makeCandidate({ listing_id: "c", vin: "VINCCCCCCCCCCCCC3", listed_price: null, distance_miles: null, recommended: true }),
+  ];
+
+  it("defaults to best-match and preserves the server order byte-for-byte", () => {
+    const { all, get } = render(<InventoryCandidates inventory={ok(makeResult(cands()))} />);
+    expect(get("inventory-sort-bestmatch").getAttribute("aria-pressed")).toBe("true");
+    expect(vinOrder(all)).toEqual(["VINAAAAAAAAAAAAA1", "VINBBBBBBBBBBBBB2", "VINCCCCCCCCCCCCC3"]);
+  });
+
+  it("lowest-price sorts ascending with the null-price row last", () => {
+    const { all, get } = render(<InventoryCandidates inventory={ok(makeResult(cands()))} />);
+    click(get("inventory-sort-price"));
+    expect(get("inventory-sort-price").getAttribute("aria-pressed")).toBe("true");
+    expect(vinOrder(all)).toEqual(["VINBBBBBBBBBBBBB2", "VINAAAAAAAAAAAAA1", "VINCCCCCCCCCCCCC3"]);
+  });
+
+  it("nearest sorts ascending with the null-distance row last", () => {
+    const { all, get } = render(<InventoryCandidates inventory={ok(makeResult(cands()))} />);
+    click(get("inventory-sort-distance"));
+    expect(vinOrder(all)).toEqual(["VINBBBBBBBBBBBBB2", "VINAAAAAAAAAAAAA1", "VINCCCCCCCCCCCCC3"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Curated filters (no-markup + max-price) + empty-state guard
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — curated filters", () => {
+  it("no-markup drops rows carrying a labeled dealer markup (>0)", () => {
+    const withMarkup = makeCandidate({ listing_id: "m", vin: "VIN-MARKUP-0000001", dealer_markup: 2500, recommended: false });
+    const clean = makeCandidate({ listing_id: "c", vin: "VIN-CLEAN-00000002", dealer_markup: null, recommended: false });
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult([withMarkup, clean], { recommendedCount: 0 }))} />,
+    );
+    expect(all("inventory-candidate-row")).toHaveLength(2);
+    click(get("inventory-filter-nomarkup"));
+    expect(all("inventory-candidate-row")).toHaveLength(1);
+    expect(get("inventory-candidate-vin").textContent).toBe("VIN-CLEAN-00000002");
+    expect(get("inventory-filter-nomarkup").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("no-markup KEEPS rows with dealer_markup 0 (scanned, none — never a flag)", () => {
+    const zero = makeCandidate({ listing_id: "z", dealer_markup: 0, recommended: false });
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult([zero], { recommendedCount: 0 }))} />,
+    );
+    click(get("inventory-filter-nomarkup"));
+    expect(all("inventory-candidate-row")).toHaveLength(1);
+  });
+
+  it("max-price filters out rows above the max and excludes null-price rows", () => {
+    const cheap = makeCandidate({ listing_id: "cheap", vin: "VIN-CHEAP-00000001", listed_price: 30000, recommended: false });
+    const pricey = makeCandidate({ listing_id: "pricey", vin: "VIN-PRICEY-0000002", listed_price: 60000, recommended: false });
+    const noPrice = makeCandidate({ listing_id: "np", vin: "VIN-NOPRICE-000003", listed_price: null, recommended: false });
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult([cheap, pricey, noPrice], { recommendedCount: 0 }))} />,
+    );
+    expect(all("inventory-candidate-row")).toHaveLength(3);
+    change(get("inventory-filter-maxprice") as HTMLInputElement, "40000");
+    expect(all("inventory-candidate-vin").map((n) => n.textContent)).toEqual(["VIN-CHEAP-00000001"]);
+  });
+
+  it("no-markup composes with the Recommended/All scope toggle", () => {
+    const recMarkup = makeCandidate({ listing_id: "rm", dealer_markup: 2500, recommended: true });
+    const recClean = makeCandidate({ listing_id: "rc", dealer_markup: null, recommended: true });
+    const allOnly = makeCandidate({ listing_id: "ao", dealer_markup: null, recommended: false });
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult([recMarkup, recClean, allOnly]))} />,
+    );
+    // Default Recommended → 2 recommended rows.
+    expect(all("inventory-candidate-row")).toHaveLength(2);
+    click(get("inventory-filter-nomarkup")); // drops recMarkup → 1.
+    expect(all("inventory-candidate-row")).toHaveLength(1);
+    click(get("inventory-filter-all")); // all minus markup → recClean + allOnly = 2.
+    expect(all("inventory-candidate-row")).toHaveLength(2);
+  });
+
+  it("renders the inventory-filters-empty guard (no grid, no pager) when filters empty the set", () => {
+    const pricey = makeCandidate({ listing_id: "p", listed_price: 99999, recommended: false });
+    const { all, get, query } = render(
+      <InventoryCandidates inventory={ok(makeResult([pricey], { recommendedCount: 0 }))} />,
+    );
+    change(get("inventory-filter-maxprice") as HTMLInputElement, "1000");
+    expect(query("inventory-filters-empty")).not.toBeNull();
+    expect(all("inventory-candidate-row")).toHaveLength(0);
+    expect(query("canvas-pager")).toBeNull();
+  });
+
+  it("resets to page 1 when the sort changes", () => {
+    const candidates = Array.from({ length: 15 }, (_, i) =>
+      makeCandidate({ listing_id: `lst-${i}`, recommended: true, listed_price: 10000 + i }),
+    );
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult(candidates, { totalListings: 15 }))} />,
+    );
+    expect(all("inventory-candidate-row")).toHaveLength(12);
+    click(get("canvas-pager-next"));
+    expect(all("inventory-candidate-row")).toHaveLength(3);
+    click(get("inventory-sort-price")); // new array identity → pager back to page 1.
+    expect(all("inventory-candidate-row")).toHaveLength(12);
+  });
+
+  it("resets to page 1 when a curated filter toggles", () => {
+    const candidates = Array.from({ length: 15 }, (_, i) =>
+      makeCandidate({ listing_id: `lst-${i}`, recommended: true, dealer_markup: null }),
+    );
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult(candidates, { totalListings: 15 }))} />,
+    );
+    click(get("canvas-pager-next"));
+    expect(all("inventory-candidate-row")).toHaveLength(3);
+    click(get("inventory-filter-nomarkup")); // none have markup → still 15, new identity → page 1.
+    expect(all("inventory-candidate-row")).toHaveLength(12);
   });
 });
 

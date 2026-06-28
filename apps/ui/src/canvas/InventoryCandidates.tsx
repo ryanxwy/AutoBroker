@@ -72,6 +72,49 @@ export interface InventoryCandidate {
   [key: string]: unknown;
 }
 
+/** The three dealership-style orderings the segmented sort control offers. */
+export type InventorySort = "bestmatch" | "price" | "distance";
+
+/** The price the lowest-price sort keys on, or null when there is no honest
+ *  price to rank: a price-gated ("Get your price") listing or a null
+ *  listed_price never sorts as $0 — both sink to the bottom (nulls-last). */
+function priceSortKey(c: InventoryCandidate): number | null {
+  return c.price_gated ? null : c.listed_price;
+}
+
+/**
+ * Order the candidates for the chosen sort. `bestmatch` is a SERVER-ORDER
+ * NO-OP: the rows arrive in the ranker's match-tier→score→id order (the order
+ * `recommended`/`reasons` were computed against), so it passes the SAME array
+ * straight through — never re-sorted, never keyed off the index-signature
+ * `score`. The price/distance branches COPY first (`.sort()` mutates in place;
+ * sorting the prop array would corrupt it) and put nulls LAST on both axes
+ * (the canonical nulls-last comparator), so a gated/unknown row never floats to
+ * the top as a fake cheapest/nearest.
+ */
+export function sortCandidates(rows: InventoryCandidate[], sort: InventorySort): InventoryCandidate[] {
+  if (sort === "bestmatch") return rows;
+  const copy = [...rows];
+  if (sort === "price") {
+    copy.sort((a, b) => {
+      const av = priceSortKey(a);
+      const bv = priceSortKey(b);
+      if (av === null) return bv === null ? 0 : 1;
+      if (bv === null) return -1;
+      return av - bv;
+    });
+  } else {
+    copy.sort((a, b) => {
+      const av = a.distance_miles;
+      const bv = b.distance_miles;
+      if (av === null) return bv === null ? 0 : 1;
+      if (bv === null) return -1;
+      return av - bv;
+    });
+  }
+  return copy;
+}
+
 /** "2026 Hyundai Tucson Limited"-style label from the candidate's identity
  *  fields (any null/empty part is dropped). */
 export function vehicleHeader(c: InventoryCandidate): string {
@@ -291,6 +334,17 @@ export function InventoryCandidates({
     () => (recommendedCount > 0 ? "recommended" : "all"),
   );
 
+  // Dealership-style sort (default best-match = the ranker's server order) +
+  // curated filters: hide labeled-markup rows, cap the listed price.
+  const [sort, setSort] = useState<InventorySort>("bestmatch");
+  const [noMarkup, setNoMarkup] = useState(false);
+  const [maxPriceText, setMaxPriceText] = useState("");
+  // The active price cap, or null when the input is blank/zero/garbage (no cap).
+  const maxPrice = useMemo(() => {
+    const n = Number(maxPriceText);
+    return maxPriceText.trim() !== "" && Number.isFinite(n) && n > 0 ? n : null;
+  }, [maxPriceText]);
+
   // The candidate whose read-only detail modal is open (null = closed).
   const [detail, setDetail] = useState<InventoryCandidate | null>(null);
 
@@ -306,14 +360,23 @@ export function InventoryCandidates({
     colorCrossCheck.length > 0 &&
     !dismissedFor.has(ccKey);
 
-  // Re-compute the filtered list. A new array identity on every filter/candidate change
-  // ensures the pager auto-resets to page 1 (usePagedList watches the items reference).
+  // Re-compute the visible list in one pass: scope filter → curated filters →
+  // sort. A new array identity on every control/candidate change resets the
+  // pager to page 1 (usePagedList watches the items reference); best-match with
+  // no active filter passes `allCandidates` straight through (no needless copy).
   const filtered = useMemo(() => {
-    if (filter === "recommended") {
-      return allCandidates.filter((c) => c.recommended);
+    let rows = filter === "recommended" ? allCandidates.filter((c) => c.recommended) : allCandidates;
+    if (noMarkup) {
+      // Drop exactly the rows that render the red dealer-markup flag (>0; a 0 is
+      // "scanned, none" and stays).
+      rows = rows.filter((c) => !(typeof c.dealer_markup === "number" && c.dealer_markup > 0));
     }
-    return allCandidates;
-  }, [allCandidates, filter]);
+    if (maxPrice !== null) {
+      // A capped price excludes null-price rows (no honest price to compare).
+      rows = rows.filter((c) => c.listed_price !== null && c.listed_price <= maxPrice);
+    }
+    return sortCandidates(rows, sort);
+  }, [allCandidates, filter, noMarkup, maxPrice, sort]);
 
   const pager = usePagedList(filtered, PAGE_SIZE);
 
@@ -354,7 +417,8 @@ export function InventoryCandidates({
       {inventory.kind === "ok" && totalListings > 0 && (
         <>
           <div className="inventory-controls">
-            <div className="modeswitch">
+            {/* SCOPE — the existing Recommended/All segmented control. */}
+            <div className="modeswitch" role="group" aria-label="Scope">
               <button
                 type="button"
                 className={filter === "recommended" ? "on" : undefined}
@@ -375,6 +439,77 @@ export function InventoryCandidates({
                 All {totalListings}
               </button>
             </div>
+            {/* SORT — a sibling segmented control, labeled so the two groups read
+                distinctly. Best-match is the ranker's order; the others re-rank. */}
+            <div className="inventory-sortgroup">
+              <span className="control-label" id="inventory-sort-label">
+                Sort
+              </span>
+              <div className="modeswitch" role="group" aria-labelledby="inventory-sort-label">
+                <button
+                  type="button"
+                  className={sort === "bestmatch" ? "on" : undefined}
+                  aria-pressed={sort === "bestmatch"}
+                  data-testid="inventory-sort-bestmatch"
+                  onClick={() => setSort("bestmatch")}
+                >
+                  Best match
+                </button>
+                <button
+                  type="button"
+                  className={sort === "price" ? "on" : undefined}
+                  aria-pressed={sort === "price"}
+                  data-testid="inventory-sort-price"
+                  onClick={() => setSort("price")}
+                >
+                  Lowest price
+                </button>
+                <button
+                  type="button"
+                  className={sort === "distance" ? "on" : undefined}
+                  aria-pressed={sort === "distance"}
+                  data-testid="inventory-sort-distance"
+                  onClick={() => setSort("distance")}
+                >
+                  Nearest
+                </button>
+              </div>
+            </div>
+            {/* FILTERS — curated, distinct from the scope/sort segments. The
+                no-markup chip echoes the red dealer-markup flag (⚑) to keep the
+                association legible; state rides aria-pressed (not colour alone). */}
+            <div className="inventory-filtergroup" role="group" aria-label="Filters">
+              <button
+                type="button"
+                className={`filter-chip${noMarkup ? " on" : ""}`}
+                aria-pressed={noMarkup}
+                data-testid="inventory-filter-nomarkup"
+                onClick={() => setNoMarkup((v) => !v)}
+              >
+                <span className="chip-flag" aria-hidden="true">
+                  ⚑
+                </span>{" "}
+                No markup
+              </button>
+              <label className="filter-maxprice">
+                <span className="control-label">Max</span>
+                <span className="maxprice-affix" aria-hidden="true">
+                  $
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={500}
+                  placeholder="any"
+                  className="maxprice-input"
+                  data-testid="inventory-filter-maxprice"
+                  aria-label="Maximum listed price"
+                  value={maxPriceText}
+                  onChange={(e) => setMaxPriceText(e.target.value)}
+                />
+              </label>
+            </div>
             <p className="inventory-tally" data-testid="inventory-tally">
               {recommendedCount} recommended of {totalListings} listings
               {scannedWhen !== "" && (
@@ -382,31 +517,37 @@ export function InventoryCandidates({
               )}
             </p>
           </div>
-          {filter === "recommended" && recommendedCount === 0 ? (
-            <p className="muted">No recommended candidates — showing all</p>
+          {filtered.length === 0 ? (
+            // Over-restrictive filters empty the set — say so plainly instead of a
+            // blank tile-grid + a "0 listings" pager.
+            <p className="muted" data-testid="inventory-filters-empty">
+              No listings match these filters.
+            </p>
           ) : (
-            <div className="tile-grid">
-              {pager.pageItems.map((row) => (
-                <CandidateRow
-                  key={row.listing_id}
-                  row={row}
-                  onActivate={() => setDetail(row)}
-                />
-              ))}
-            </div>
+            <>
+              <div className="tile-grid">
+                {pager.pageItems.map((row) => (
+                  <CandidateRow
+                    key={row.listing_id}
+                    row={row}
+                    onActivate={() => setDetail(row)}
+                  />
+                ))}
+              </div>
+              <Pager
+                page={pager.page}
+                pageCount={pager.pageCount}
+                total={pager.total}
+                rangeStart={pager.rangeStart}
+                rangeEnd={pager.rangeEnd}
+                onPrev={pager.prev}
+                onNext={pager.next}
+                canPrev={pager.canPrev}
+                canNext={pager.canNext}
+                noun="listings"
+              />
+            </>
           )}
-          <Pager
-            page={pager.page}
-            pageCount={pager.pageCount}
-            total={pager.total}
-            rangeStart={pager.rangeStart}
-            rangeEnd={pager.rangeEnd}
-            onPrev={pager.prev}
-            onNext={pager.next}
-            canPrev={pager.canPrev}
-            canNext={pager.canNext}
-            noun="listings"
-          />
         </>
       )}
       <InventoryDetailModal row={detail} onClose={() => setDetail(null)} />

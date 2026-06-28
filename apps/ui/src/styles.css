@@ -1042,15 +1042,19 @@ body.resizing { cursor: col-resize; user-select: none; }
   margin-top: 8px;
 }
 
-/* ---- inventory panel controls (filter segmented control + tally line) ------- */
+/* ---- inventory panel controls (scope + sort segments, curated filters, tally) -
+   A dealership-grade control strip: two sibling segmented controls (scope, sort)
+   and a curated filter cluster, wrapping gracefully at narrow widths. The tally
+   takes a full row of its own (flex-basis:100%) so the controls never crowd it. */
 .inventory-controls {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 4px;
+  align-items: center;
+  gap: 10px 18px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 .inventory-tally {
+  flex-basis: 100%;
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.06em;
@@ -1058,6 +1062,75 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--ink-mute);
   margin: 0;
 }
+/* A grouping for a labeled segmented control / filter cluster. */
+.inventory-sortgroup,
+.inventory-filtergroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* A small mono micro-label that names a control group ("Sort", "Max"). */
+.control-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+/* No-markup toggle — a pill that echoes the red dealer-markup flag chip. State
+   rides aria-pressed + the .on treatment (never colour alone): inactive reads as
+   a neutral pill with a red flag glyph; active fills the red wash with high-ink
+   text so it stays ≥AA legible. */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  box-shadow: var(--shadow);
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+.filter-chip .chip-flag { color: var(--stop); }
+.filter-chip:hover:not(.on) { color: var(--ink); border-color: var(--ink-mute); }
+.filter-chip.on {
+  background: var(--stop-wash);
+  border-color: var(--stop-line);
+  color: var(--ink);
+}
+/* Max-price — a number field aligned to the money formatting ($ affix), sized to
+   sit quietly beside the chip. */
+.filter-maxprice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 4px 9px;
+  box-shadow: var(--shadow);
+}
+.filter-maxprice .maxprice-affix {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+.maxprice-input {
+  width: 64px;
+  border: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  padding: 1px 0;
+}
+.maxprice-input:focus-visible { outline: 2px solid var(--gate); outline-offset: 2px; }
 .tile {
   background: var(--panel);
   border: 1px solid var(--rule);
