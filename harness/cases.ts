@@ -715,10 +715,12 @@ export function toCase(raw: TomlTable): Case {
         throw new Error(`step "${step.id}": kind="ui" must declare at least one dom_state anchor`);
       }
     }
-    // A drag verb needs its pointer delta (a drag with no dx is a case bug).
+    // A drag verb needs a non-zero pointer delta (dx:0 is a vacuous no-op — a case bug).
     for (const a of step.uiActions ?? []) {
-      if (a.verb === "drag" && a.dx === undefined) {
-        throw new Error(`step "${step.id}": a drag ui_action needs dx=<px> (the horizontal pointer delta)`);
+      if (a.verb === "drag" && (a.dx === undefined || a.dx === 0)) {
+        throw new Error(
+          `step "${step.id}": a drag ui_action needs dx=<non-zero px> (the horizontal pointer delta); dx:0 is a vacuous no-op`,
+        );
       }
     }
     // data_arriving is the realtime-reactivity proof — it grows data + emits a

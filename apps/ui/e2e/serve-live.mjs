@@ -695,6 +695,7 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
       //   are informational counters only, never a fail criterion.
       //   addons_present uses LIKE '%"addOns":[{%': the blob stores camelCase addOns; the
       //   pattern requires at least one array element ('{'), so "addOns":[] never matches.
+      // NOTE: this SQL is mirrored in packages/tools/src/inventoryDataquality.test.ts — update both.
       const where = profileId
         ? "WHERE superseded_at IS NULL AND search_profile_id = ?"
         : "WHERE superseded_at IS NULL";
@@ -706,7 +707,7 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
              SUM(CASE WHEN listed_price IS NOT NULL OR msrp IS NOT NULL THEN 1 ELSE 0 END) AS covered,
              SUM(CASE WHEN listing_url IS NOT NULL THEN 1 ELSE 0 END) AS vdp_linked,
              SUM(CASE WHEN pricing_breakdown_json IS NOT NULL THEN 1 ELSE 0 END) AS breakdown_parsed,
-             SUM(CASE WHEN dealer_markup IS NOT NULL THEN 1 ELSE 0 END) AS markup_present,
+             SUM(CASE WHEN dealer_markup IS NOT NULL AND dealer_markup <> 0 THEN 1 ELSE 0 END) AS markup_present,
              SUM(CASE WHEN pricing_breakdown_json LIKE '%"addOns":[{%' THEN 1 ELSE 0 END) AS addons_present
            FROM inventory_listings ${where}`,
         )
