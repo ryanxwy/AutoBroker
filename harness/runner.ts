@@ -1392,6 +1392,15 @@ async function driveUiOnlyStep(args: {
         fail(`step "${step.id}": a navigate ui_action needs value=<path> (the route to push)`);
       }
       await driver.navigateTo(action.value, action.testid, stepMaxMs);
+    } else if (action.verb === "drag") {
+      // dx is required (the case parser already fails loud when it's absent).
+      await driver.drag(
+        action.testid,
+        action.dx ?? 0,
+        action.expect ?? "delta",
+        action.container ?? "app-body",
+        stepMaxMs,
+      );
     } else {
       await driver.reloadBrowser(stepMaxMs);
     }

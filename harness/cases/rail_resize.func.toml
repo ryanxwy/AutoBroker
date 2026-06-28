@@ -1,0 +1,60 @@
+# harness/cases/rail_resize.func.toml — the FUNCTIONAL-lane rail-drag regression.
+#
+# Run via `pnpm ui:functional` (--fixture): the host boots the REAL built
+# dashboard with deterministic DI stubs (NO live LLM). This case is a real-
+# chromium proof the jsdom unit test (RailResizer.test.tsx, happy-dom, no layout
+# engine) cannot give: it DRAGS the rail-resizer seam and asserts the rail width
+# actually moved.
+#
+# Why a real browser: the seam regressed once to `.rail-resizer{flex:0 0 0px}`,
+# collapsing the 10px grab strip to a 0px-wide, ungrabbable target. jsdom has no
+# layout so it never saw it; real chromium does — with a 0px strip the pointer
+# drag misses the seam and the width never changes, so the drag's self-asserting
+# width check fails. The correct CSS is `flex:0 0 10px` (a grabbable strip).
+#
+# The empty_home fixture is enough — the resizer is always present in the
+# one-layout workbench. Two drags: a normal leftward widen (~120px), and a far-
+# past-max drag that must re-clamp to the layout max. No seeded skill data.
+
+[meta]
+id = "rail_resize_func"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "rail_drag"
+kind = "ui"
+fixture_state = "empty_home"
+purpose = "Dragging the rail-resizer left widens --rail-width by ~|dx| and persists; a far-past-max drag re-clamps to the layout max (the proof a collapsed 0px grab strip would break)."
+
+# Leftward 120px → the rail (on the right) WIDENS by ~120px. With the correct
+# 10px grab strip the pointer lands on the seam and the width tracks the drag;
+# with a 0px strip the drag misses and Δ stays 0 → fail.
+[[steps.ui_actions]]
+verb = "drag"
+testid = "rail-resizer"
+dx = -120
+expect = "delta"
+
+# Leftward 300px from the now-wider rail → the requested widen exceeds the
+# headroom to the max, so the width grows but is CAPPED (re-clamped). The check
+# asserts 0 < Δ < 300 (it moved, but less than requested).
+[[steps.ui_actions]]
+verb = "drag"
+testid = "rail-resizer"
+dx = -300
+expect = "clamp"
+
+# kind="ui" requires at least one dom_state anchor: the seam itself must render
+# (a brand-agnostic presence proof alongside the self-asserting drag checks).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "rail-resizer"
+expect = "visible"

@@ -94,6 +94,23 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   after the mapping step. Honest cost to watch: an HTML-only marketing blast can now yield a
   deterministic quote-signal/intent where it previously produced none — file as backlog if it
   materially misleads, not as a blocker.
+- (F1) `inventory_site_scan` listings with **no labeled dealer markup / no add-ons** —
+  `markup_present==0` / `addons_present==0` on `/__e2e/dataquality` is the HEALTHY norm (most
+  honest listings carry neither), NOT data loss. Re-flag ONLY the breakdown total-loss
+  (`vdp_linked>0 AND breakdown_parsed==0`). The labeled-markup detection is conservative (it
+  records only a dealer-LABELED markup, never an inferred selling>MSRP delta).
+- (F2) `dealer_reply_extract` **#1244 fail-closed-THEN-auto-recover**: a malformed hop that
+  fails closed (ledgers `malformed_tool_call`) and then AUTO-RECOVERS via one fresh
+  same-provider deepseek hop (2 `provider=deepseek` ledger rows, redacted `malformed_sample`,
+  NO user-surfaced retry button) is the correct inv #4 bounded recovery — NOT a blocker.
+  Re-flag ONLY a silent tool-SKIP, a regex-executed tool name, a fabricated result, or a
+  recovery that egressed to a non-deepseek provider.
+- (F4) the give-up/switch advisory (`dealer-verdict-hold` "paused"/"gone quiet"/"not moving",
+  `dealer-verdict-switch` "consider switching · $N cheaper elsewhere") + the per-thread
+  `thread-class-chip` negotiation-status overlay firing on a ghosted/retraded dealer is the
+  decision engine doing its job (derived-on-read), NOT a bug. Re-flag ONLY if it leaks a
+  competing dealer NAME or a budget number (inv #9), or advises switching when no cheaper
+  same-mode quote exists.
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
@@ -157,7 +174,8 @@ DB="<dataDir>/autobroker.db"
   "SELECT skill, COUNT(*) calls, SUM(cost_usd) cost_usd, SUM(latency_ms) latency_ms,
           AVG(latency_ms) mean_ms, SUM(input_tokens) input_tok,
           SUM(output_tokens) output_tok,
-          SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) fails
+          SUM(CASE WHEN fail_reason IS NOT NULL THEN 1 ELSE 0 END) fails,
+          SUM(CASE WHEN fail_reason='malformed_tool_call' THEN 1 ELSE 0 END) malformed
    FROM test_run_records GROUP BY skill ORDER BY cost_usd DESC"
 "$SQ" "$DB" "SELECT printf('\$%.4f',SUM(cost_usd)), SUM(latency_ms) FROM test_run_records"
 ```

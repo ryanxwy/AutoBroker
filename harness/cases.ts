@@ -177,9 +177,19 @@ const EdgeSchema = z.enum(["reload_mid_form", "double_click_submit", "sse_break"
  *  signal); for fill/press `value` is the fill text or key name; it is unused
  *  for click/reload. */
 const RawUiActionSchema = z.object({
-  verb: z.enum(["click", "fill", "press", "reload", "navigate"]),
+  verb: z.enum(["click", "fill", "press", "reload", "navigate", "drag"]),
   testid: z.string(),
   value: z.string().optional(),
+  /** drag only: the horizontal pointer delta in CSS px (negative = leftward).
+   *  The driver grabs `testid` at its center and sweeps the pointer by `dx`. */
+  dx: z.number().optional(),
+  /** drag only: how to assert the container's --rail-width after the drag —
+   *  "delta" (default) = it changed by ≈|dx| in the widen direction; "clamp" =
+   *  it changed but was capped below |dx| (re-clamped to the layout max). */
+  expect: z.enum(["delta", "clamp"]).optional(),
+  /** drag only: the testid of the element whose --rail-width the drag reads
+   *  before/after (default "app-body" — the .app-body host). */
+  container: z.string().optional(),
 });
 
 const RawStepSchema = z.object({
@@ -355,9 +365,15 @@ export type StepEdge = z.infer<typeof EdgeSchema>;
 
 /** One generic DOM verb a pure-UI step drives (see RawUiActionSchema). */
 export interface CaseUiAction {
-  verb: "click" | "fill" | "press" | "reload" | "navigate";
+  verb: "click" | "fill" | "press" | "reload" | "navigate" | "drag";
   testid: string;
   value?: string;
+  /** drag only: horizontal pointer delta (px, negative = leftward). */
+  dx?: number;
+  /** drag only: post-drag --rail-width assertion mode (default "delta"). */
+  expect?: "delta" | "clamp";
+  /** drag only: testid of the element holding --rail-width (default "app-body"). */
+  container?: string;
 }
 
 export interface CaseStep {
@@ -618,6 +634,9 @@ export function toCase(raw: TomlTable): Case {
             verb: a.verb,
             testid: a.testid,
             ...(a.value !== undefined ? { value: a.value } : {}),
+            ...(a.dx !== undefined ? { dx: a.dx } : {}),
+            ...(a.expect !== undefined ? { expect: a.expect } : {}),
+            ...(a.container !== undefined ? { container: a.container } : {}),
           }))
         : null,
     dataArriving:
@@ -694,6 +713,12 @@ export function toCase(raw: TomlTable): Case {
       // non-vacuous guard, but no DOM was actually asserted) — reject it.
       if (!step.anchors.some((a) => a.kind === "dom_state")) {
         throw new Error(`step "${step.id}": kind="ui" must declare at least one dom_state anchor`);
+      }
+    }
+    // A drag verb needs its pointer delta (a drag with no dx is a case bug).
+    for (const a of step.uiActions ?? []) {
+      if (a.verb === "drag" && a.dx === undefined) {
+        throw new Error(`step "${step.id}": a drag ui_action needs dx=<px> (the horizontal pointer delta)`);
       }
     }
     // data_arriving is the realtime-reactivity proof — it grows data + emits a

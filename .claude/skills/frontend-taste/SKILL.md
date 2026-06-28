@@ -35,11 +35,19 @@ Owner's hard checks (these are the load-bearing ones — a miss here is at least
 2. **Long lists paginate.** Any list that can exceed ~12 items (inventory, dealers,
    quotes, replies, incentives) must paginate or virtualize, not dump 30+ rows.
    Confirm a `canvas-pager` appears past one page and the range label is honest
-   ("13–24 of 47"). An un-paginated long list is HIGH (it buries the content).
+   ("13–24 of 47"). An un-paginated long list is HIGH (it buries the content). When
+   a list naturally exceeds one page, **actually CLICK `canvas-pager-next` once** and
+   assert the `canvas-pager-range` advances + the first row id changes — a read-only
+   "the pager exists" is not proof it works.
 3. **Chat rail is resizable and the layout reflows.** The buyer should be able to
    widen/narrow the conversation rail (drag handle), the width should persist, and
-   the Canvas should reflow — not clip or overlap. If the handle is invisible or
-   the layout breaks at narrow/wide widths, that's MED–HIGH.
+   the Canvas should reflow — not clip or overlap. **Perform a REAL drag** (a
+   Playwright `browser_drag` of `rail-resizer`, not just a read): confirm the
+   `--rail-width` actually changes by ~the drag delta, persists across reload, and
+   re-clamps at min/max. A drag that moves the width by ~0 is the `flex:0 0 0px`
+   regression (the 10px grab strip collapsed) — that's HIGH, not MED, and jsdom unit
+   tests cannot see it. If the handle is invisible or the layout breaks at
+   narrow/wide widths, that's MED–HIGH.
 4. **Destructive/irreversible actions are unmistakable.** Delete/reset/closeout and
    the 3 irreversible sends must show their gate card BEFORE any prose, name the
    blast radius in plain words, and never hide the approve/decline. A buried or
@@ -81,8 +89,13 @@ Negotiation board + detail-modal soft content (judge the `negotiation-detail-mod
 LLM-written prose against the visible replies/quotes — open a `canvas-negotiation-card`
 and read the modal regions):
 
-14. **Status-summary coherence.** The across-emails summary
-    (`negotiation-status-summary`) must read as a coherent, non-contradictory account
+14. **Status-summary coherence.** FIRST confirm the summary actually RENDERED: the
+    `negotiation-status-summary` WRAPPER is always present (it holds the deterministic
+    `status_line` floor), but the lazy LLM "AI summary" is the SEPARATE element
+    `negotiation-ai-summary` — judge coherence only once its RESOLVED `<p>` is present
+    and its text ≠ "summarizing…" (a permanently-"summarizing…" or absent AI summary on
+    a live run is its own MED finding: the lazy summary silently failed). Then: the
+    across-emails AI summary must read as a coherent, non-contradictory account
     of the thread — it must NOT contradict the visible `negotiation-reply-row`s, the
     `negotiation-competing-quote`, or the grid status chip. A summary that says
     "no quote yet" while a quote is shown, or claims progress the replies don't

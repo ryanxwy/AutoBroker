@@ -155,7 +155,7 @@ export function NegotiationDetailModal({
           <p>{detail.status_line}</p>
           {summaryLoading && <p className="muted negotiation-ai-summary">summarizing…</p>}
           {summary !== null && summary !== "" && (
-            <p className="muted negotiation-ai-summary">
+            <p className="muted negotiation-ai-summary" data-testid="negotiation-ai-summary">
               <span className="negotiation-ai-tag">AI summary</span> {summary}
             </p>
           )}

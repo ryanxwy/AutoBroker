@@ -767,7 +767,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           the single-active path stays byte-identical. Reports by COUNTS. */}
       <PortfolioStatusBar cards={portfolioCards} items={inboxItems} />
 
-      <div className="app-body" ref={appBodyRef}>
+      <div className="app-body" data-testid="app-body" ref={appBodyRef}>
         <main className="app-main" data-testid="app-main">
           {launchError !== null && (
             <p className="danger-text" role="alert" data-testid="launch-error">

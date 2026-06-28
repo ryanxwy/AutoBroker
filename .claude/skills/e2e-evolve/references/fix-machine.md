@@ -44,6 +44,28 @@ up the new `pnpm -r build`, reusing the worktree's `node_modules` + prebuilt
 is a `/__e2e/rows` / `/__e2e/audit` delta, **not** a screenshot. "Needs live verify" is
 never a defer reason — a fresh run is.
 
+### The fix → seasoned-case PAIRING rule (deterministic-AND-seasoned, never OR)
+
+Every shipped fix produces **two** artifacts, not one:
+
+1. The **deterministic regression** — a `*.func.toml` under `RUN_UI_FUNCTIONAL=1 green.sh`
+   and/or a planted-input integration test (a real DB → real workflow test). This is the
+   **merge gate** and is **never weakened**. It is necessary.
+2. **ON TOP**, register **one LLM-seasoned case** into the runner library: a behavior-axis
+   on a persona (`ui-lane-personas.md` persona/behavior-axis vector), a new `J##` journey
+   variation, an `E##` router edge, or a dealer archetype (`dealer-brain.md`). Tag it with
+   the spawning PIC/commit + a falsifiable live `/__e2e` or DOM expected-outcome contract.
+   It runs **ADVISORY** in the next `/e2e-loop` (it never blocks CI).
+
+**The directive:** for any fix whose realistic trigger a planted input CANNOT reproduce —
+a live LLM page, a live dealer reply, a messy real buyer phrasing, a same-source routing
+collision — the planted-input test is **necessary but NOT sufficient**: you MUST also
+register the seasoned case. The 2026-06-27 round is the worked example: Probe-7 (multi-model
+incentive mis-attribution) and the Tijuana cross-border case both shipped a planted-input
+integration test, but the realistic trigger — a live OEM offers page / a live border-metro
+geosearch — is only ever reproduced by a seasoned live probe. Generate/triage the seasoned
+cases via `references/seasoning.md` (step 6.5).
+
 ## Commit + integrate (step 5)
 
 1. Commit with the `phaseN/<skill>:` prefix (or `phase0/live_e2e:` for a runner/harness
