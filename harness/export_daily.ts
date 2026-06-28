@@ -79,7 +79,7 @@ export interface DailyHarnessCase {
   cell_id: string;
   /** The case TOML [meta].id. Newer verdicts carry it inline; for older ones
    *  it is recovered from the sibling narrative.json ("" if neither has it).
-   *  Distinguishes cases sharing one cell_id (decline vs force_override). */
+   *  Distinguishes cases sharing one cell_id (decline vs slash). */
   case_id: string;
   run_id: string;
   layer: string;

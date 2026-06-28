@@ -69,6 +69,10 @@ on = "data_collection"
 action = "accept"
 content_from = "narrative.profile"
 
+[[steps.resume]]
+on = "intake_confirm"
+action = "accept"
+
 [[steps.anchors]]
 kind = "run_status"
 expect = ["done"]
@@ -125,6 +129,10 @@ feature_preferences_json = null
 trade_in_description = null
 military_first_responder = 0
 current_brand_owner = 0
+
+[[steps.resume]]
+on = "intake_confirm"
+action = "accept"
 
 [[steps.anchors]]
 kind = "run_status"

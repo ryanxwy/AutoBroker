@@ -93,12 +93,9 @@ const RESOLVED: GoplacesResult = {
   traceSpans: [],
 };
 
-/** A harness stub: trim-verify always-valid, prefill a fixed seed. */
+/** A harness stub: prefill a fixed seed (intake's only slash-path useCase set). */
 function harnessStub(): IntakeWorkflowDeps["harnessGenerate"] {
-  const fn = async (input: { useCase: string }) => {
-    if (input.useCase === "intake_trim_verify") {
-      return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
-    }
+  const fn = async (_input: { useCase: string }) => {
     return {
       object: {
         make: "Hyundai",
@@ -229,6 +226,21 @@ async function startSlashToCollect(s: BuiltServer): Promise<{ runId: string; dec
   return { runId, decisionId: summary.pending!.decision_id };
 }
 
+/** Answer the unconditional confirmVehicle suspend with accept (the happy-path
+ *  tail after a form submit). Reads the current pending decision_id off the status
+ *  route, asserts it is the confirm card, then POSTs accept. */
+async function acceptConfirm(s: BuiltServer, runId: string): Promise<void> {
+  const status = await s.app.inject({ method: "GET", url: `/api/skill-runs/${runId}` });
+  const summary = status.json<{ pending: { step: string; decision_id: string } | null }>();
+  expect(summary.pending?.step).toBe("confirmVehicle");
+  const res = await s.app.inject({
+    method: "POST",
+    url: `/api/skill-runs/${runId}/form-decision`,
+    payload: { decision_id: summary.pending!.decision_id, decision: { action: "accept", content: { action: "accept" } } },
+  });
+  expect(res.statusCode).toBe(200);
+}
+
 // ---------------------------------------------------------------------------
 // (a) start → submit → done → exactly 1 profile + 1 audit
 // ---------------------------------------------------------------------------
@@ -265,6 +277,10 @@ describe("headless intake GREEN", () => {
     });
     expect(submit.statusCode).toBe(200);
     expect(submit.json<{ action: string }>().action).toBe("accept");
+
+    // The unconditional buyer-confirmation suspends before persist — accept it.
+    expect(rowCount("search_profiles")).toBe(0);
+    await acceptConfirm(s, runId);
 
     // Exactly 1 profile row + 1 audit row.
     expect(rowCount("search_profiles")).toBe(1);
@@ -366,6 +382,9 @@ describe("ambiguous location ask-pick", () => {
     });
     expect(pick.statusCode).toBe(200);
 
+    // The buyer-confirmation suspends after the location resolves — accept it.
+    await acceptConfirm(s, runId);
+
     expect(rowCount("search_profiles")).toBe(1);
     const row = db.$client
       .prepare("SELECT latitude, longitude FROM search_profiles LIMIT 1")
@@ -393,7 +412,7 @@ describe("form-decision idempotency (three-phase claim)", () => {
       payload: { decision_id: decisionId, decision: { action: "accept", content: validFields() } },
     });
     expect(first.statusCode).toBe(200);
-    expect(rowCount("search_profiles")).toBe(1);
+    expect(rowCount("search_profiles")).toBe(0); // suspended at confirmVehicle, not persisted.
 
     // Re-POST the SAME decision_id + SAME body → idempotent replay of the prior
     // ack (NOT a second Mastra resume, which would throw "not suspended").
@@ -405,7 +424,8 @@ describe("form-decision idempotency (three-phase claim)", () => {
     expect(second.statusCode).toBe(200);
     expect(second.json()).toEqual(first.json());
 
-    // Still exactly one row — no second persist.
+    // Accept the confirmation → exactly one row, no double persist.
+    await acceptConfirm(s, runId);
     expect(rowCount("search_profiles")).toBe(1);
     expect(auditCount("search_profile_intake")).toBe(1);
   });
@@ -464,6 +484,7 @@ describe("SSE replay-on-subscribe", () => {
       url: `/api/skill-runs/${runId}/form-decision`,
       payload: { decision_id: decisionId, decision: { action: "accept", content: validFields() } },
     });
+    await acceptConfirm(s, runId); // confirm before the run reaches done.
 
     const stream = await s.app.inject({ method: "GET", url: `/api/skill-runs/${runId}/stream` });
     expect(stream.statusCode).toBe(200);

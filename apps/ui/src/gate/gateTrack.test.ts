@@ -12,7 +12,7 @@ describe("gateTrack — kind → surface routing", () => {
   it("routes the rail wire kinds (and the client-side split) to the rail", () => {
     for (const kind of [
       "data_collection",
-      "force_override",
+      "intake_confirm",
       "ambiguous_location",
       "location_failure",
       "malformed_tool_call",

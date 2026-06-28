@@ -532,11 +532,10 @@ function pendingKind(step: string): string {
   switch (step) {
     case "collect":
       return "data_collection";
-    case "forceOverrideGate":
-      return "force_override";
+    case "confirmVehicle":
+      return "intake_confirm";
     case "resolveLocation":
       return "ambiguous_location";
-    case "trimVerify":
     case "prefill":
       return "malformed_tool_call";
     case "batchReview":
@@ -1200,14 +1199,15 @@ async function driveResumeScriptDom(
       } else {
         await driver.clickDecline();
       }
-    } else if (resume.on === "force_override") {
-      await driver.waitForForceOverrideGate(maxMs);
+    } else if (resume.on === "intake_confirm") {
+      // The unconditional end-of-intake buyer confirmation (rail track). accept →
+      // persist; decline → terminal, zero write. (edit is not driven in the lane.)
+      await driver.waitForIntakeConfirmGate(maxMs);
       await driver.checkGateBeforeProse();
       if (resume.action === "accept") {
-        const reason = String((resume.content ?? {})["reason"] ?? "confirmed by user");
-        await driver.clickForceOverrideConfirm(reason);
+        await driver.clickIntakeConfirmAccept();
       } else {
-        await driver.clickForceOverrideDecline();
+        await driver.clickIntakeConfirmDecline();
       }
     } else if (resume.on === "malformed_tool_call") {
       // The #1244 fail-closed gate (rail track). The case only DECLINES it — a

@@ -2,15 +2,15 @@
 /**
  * IntakeGates.test — the semantic gate components. Covers
  * the ambiguous-location candidate radio list + pick dispatch, the location
- * failure banner (flagged field + reason + retry dispatch), and the force-override
- * confirm bar (reason required → force_override resume).
+ * failure banner (flagged field + reason + retry dispatch), and the buyer
+ * confirmation card (accept/edit/decline dispatch; vehicle-only display).
  */
 
 import { describe, expect, it, vi } from "vitest";
 
 import {
   AmbiguousLocationPicker,
-  ForceOverrideBar,
+  IntakeConfirmCard,
   LocationFailureBanner,
   TrimSuggestionPicker,
 } from "./IntakeGates.js";
@@ -123,19 +123,30 @@ describe("LocationFailureBanner (coordinate-resolution invariant)", () => {
   });
 });
 
-describe("ForceOverrideBar", () => {
-  it("requires a reason; confirm dispatches force_override with the reason (audited)", () => {
+describe("IntakeConfirmCard", () => {
+  const gate = { kind: "intake_confirm" as const, year: 2026, make: "Hyundai", model: "Tucson", trim: "SEL" };
+
+  it("shows the resolved vehicle and dispatches accept", () => {
     const onResume = vi.fn();
-    const gate = { kind: "force_override" as const, question: "Keep it?", trim: "GT-X", reason: "" };
     const r = render(
-      <ForceOverrideBar gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
+      <IntakeConfirmCard gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
     );
-    const confirm = r.get("gate-force-override-confirm") as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true); // empty reason blocks.
-    change(r.get("gate-force-override-reason") as HTMLInputElement, "I know this trim exists");
-    expect((r.get("gate-force-override-confirm") as HTMLButtonElement).disabled).toBe(false);
-    click(r.get("gate-force-override-confirm"));
-    expect(onResume).toHaveBeenCalledWith({ action: "force_override", reason: "I know this trim exists" });
+    expect(r.get("gate-intake-confirm-vehicle").textContent).toContain("2026 Hyundai Tucson SEL");
+    click(r.get("gate-intake-confirm-accept"));
+    expect(onResume).toHaveBeenCalledWith({ action: "accept" });
+    r.unmount();
+  });
+
+  it("dispatches edit and decline", () => {
+    const onResume = vi.fn();
+    const onDecline = vi.fn();
+    const r = render(
+      <IntakeConfirmCard gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={onDecline} />,
+    );
+    click(r.get("gate-intake-confirm-edit"));
+    expect(onResume).toHaveBeenCalledWith({ action: "edit" });
+    click(r.get("gate-intake-confirm-decline"));
+    expect(onDecline).toHaveBeenCalled();
     r.unmount();
   });
 });

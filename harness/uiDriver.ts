@@ -18,7 +18,7 @@
  *
  * Selector surface: the committed stable data-testid set only
  * (chat-input-textarea / chat-send / intake-form / intake-field-<name> /
- * intake-submit / intake-decline / gate-force-override-* / rail-skills-toggle /
+ * intake-submit / intake-decline / gate-intake-confirm-* / rail-skills-toggle /
  * skills-list / ledger-run-<skill> (the rail Skills-tray row's Run button) /
  * gate-banner / assistant-turn[data-status] / turn-zone-* / turn-declined /
  * turn-error / stop-card[data-stop-code] / stop-intake-cta / stop-pick-option /
@@ -509,20 +509,19 @@ export class UiDriver {
     await this.page.click(tid("intake-decline"));
   }
 
-  /** Wait for the force-override gate card to render. */
-  async waitForForceOverrideGate(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
-    await this.page.waitForSelector(tid("gate-force-override"), { timeout: timeoutMs });
+  /** Wait for the end-of-intake buyer confirmation card to render. */
+  async waitForIntakeConfirmGate(timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid("gate-intake-confirm"), { timeout: timeoutMs });
   }
 
-  /** Confirm the force-override gate: fill the audited reason, click confirm. */
-  async clickForceOverrideConfirm(reason: string): Promise<void> {
-    await this.page.fill(tid("gate-force-override-reason"), reason);
-    await this.page.click(tid("gate-force-override-confirm"));
+  /** Accept at the buyer confirmation card → continue to persist. */
+  async clickIntakeConfirmAccept(): Promise<void> {
+    await this.page.click(tid("gate-intake-confirm-accept"));
   }
 
-  /** Decline at the force-override gate. */
-  async clickForceOverrideDecline(): Promise<void> {
-    await this.page.click(tid("gate-force-override-decline"));
+  /** Decline at the buyer confirmation card → terminal, zero write. */
+  async clickIntakeConfirmDecline(): Promise<void> {
+    await this.page.click(tid("gate-intake-confirm-decline"));
   }
 
   /** Wait for the #1244 malformed_tool_call gate card (rail track). */

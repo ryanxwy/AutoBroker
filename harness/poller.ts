@@ -150,7 +150,7 @@ export function startPoller(
       }
 
       // Answer an APPROVAL gate (mutation skills). intake never reaches this branch
-      // (its suspends are data_collection/force_override forms, not approval gates,
+      // (its suspends are data_collection/intake_confirm forms, not approval gates,
       // and they resume via /form-decision driven by the case resume[] script).
       if (
         pending !== null &&

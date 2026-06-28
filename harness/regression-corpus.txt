@@ -8,7 +8,6 @@
 search_profile_intake.slash.toml
 search_profile_intake.freeform.toml
 search_profile_intake.decline.toml
-search_profile_intake.force_override.toml
 search_profile_intake.ui_slash.toml
 search_profile_intake.ui_freeform.toml
 search_profile_intake.ui_decline.toml

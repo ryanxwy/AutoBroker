@@ -9,9 +9,10 @@
  * up front (not as a buried anchor false-PASS/FAIL).
  *
  * COST: the probe starts a run and reads ONLY the init frame, then DECLINES the
- * first (data_collection) suspend so NO LLM call fires (the first harness.generate
- * is at trimVerify, AFTER collect — a decline at collect short-circuits to a
- * zero-write declined terminal). So the self-check is FREE of provider spend.
+ * first (data_collection) suspend so NO LLM call fires. On a slash launch intake
+ * has no LLM step before collect (prefill + trimSuggestion are freeform-only), and
+ * a decline at collect short-circuits to a zero-write declined terminal anyway. So
+ * the self-check is FREE of provider spend.
  *
  * Dependency wall: harness layer. Uses fetch + the detail SSE drain only. No DB, no
  * provider call, no @mastra/@ai-sdk/playwright.

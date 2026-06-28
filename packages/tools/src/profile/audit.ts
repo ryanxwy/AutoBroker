@@ -3,10 +3,9 @@
  * in the SAME synchronous transaction as the profile write so the audit log can
  * never lag the row it records.
  *
- * ACTION VOCABULARY (frozen) — the only actions intake emits today:
+ * ACTION VOCABULARY (frozen) — the only action intake emits today:
  *   - 'search_profile_intake'      — persist step wrote a profile (payload =
  *                                     full intake input JSON).
- *   - 'intake_verification_forced' — user force-overrode an invalid trim.
  * Other actions (intake_verification_passed/failed, profile_replace) are
  * declared in the vocabulary const for downstream steps but not all emitted here.
  *
@@ -23,7 +22,6 @@ export const AUDIT_ACTIONS = {
   searchProfileIntake: "search_profile_intake",
   intakeVerificationPassed: "intake_verification_passed",
   intakeVerificationFailed: "intake_verification_failed",
-  intakeVerificationForced: "intake_verification_forced",
   profileReplace: "profile_replace",
   /** Soft-delete: the profile moved to status='closed' (recoverable; frees the
    *  active (account, brand) slot). */

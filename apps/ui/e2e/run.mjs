@@ -12,11 +12,11 @@
  *
  * Scenarios:
  *   A — core happy path: slash → 18-field form → fill 6 required → submit
- *       [stub resolved] → run done → confirmation visible → exactly-1 profile.
- *   B — gate-before-prose: trim invalid (stub) → force-override card renders
- *       STRUCTURALLY BEFORE the prose text zone → confirm w/ reason → done;
- *       a forced-audit row exists (read through the real DB via /api/profiles +
- *       the audit assertion below).
+ *       [stub resolved] → buyer-confirmation card → accept → run done →
+ *       confirmation visible → exactly-1 profile.
+ *   B — gate-before-prose: submit → the unconditional buyer-confirmation card
+ *       renders STRUCTURALLY BEFORE the prose text zone → accept → done →
+ *       exactly-1 profile (read through the real DB via /api/profiles).
  *   C — reconnect/refresh: fill HALF the form → reload → draft restored (PII
  *       cleared w/ hint, others intact) → SSE re-subscribed (awaiting from
  *       replay) → finish → submit → done.
@@ -111,13 +111,6 @@ async function getProfiles(base) {
   return res.json();
 }
 
-/** Count REAL audit_log rows for an action (the test-only harness read). */
-async function getAuditCount(base, action) {
-  const res = await fetch(`${base}/__e2e/audit?action=${encodeURIComponent(action)}`);
-  if (!res.ok) throw new Error(`/__e2e/audit failed: ${res.status}`);
-  return (await res.json()).count;
-}
-
 // ---------------------------------------------------------------------------
 // page helpers — the committed UI testid surface
 // ---------------------------------------------------------------------------
@@ -166,8 +159,8 @@ async function launchSlashIntake(page) {
 // ---------------------------------------------------------------------------
 
 async function scenarioA(browser, base) {
-  scenario("A — core flow (slash → form → submit → done → 1 profile)");
-  await setScenario(base, { location: "resolved", trimValid: true });
+  scenario("A — core flow (slash → form → submit → confirm → done → 1 profile)");
+  await setScenario(base, { location: "resolved" });
   const before = (await getProfiles(base)).length;
 
   const ctx = await browser.newContext();
@@ -199,6 +192,11 @@ async function scenarioA(browser, base) {
 
   await page.click(T("intake-submit"));
 
+  // The unconditional buyer-confirmation card renders before persist — accept it.
+  await page.waitForSelector(T("gate-intake-confirm"), { timeout: 15000 });
+  check("buyer-confirmation card renders before persist", true);
+  await page.click(T("gate-intake-confirm-accept"));
+
   // The run completes — the assistant turn reaches status done + a confirmation
   // prose zone with the created summary.
   await page.waitForSelector(`${T("assistant-turn")}[data-status="done"]`, { timeout: 15000 });
@@ -221,10 +219,9 @@ async function scenarioA(browser, base) {
 }
 
 async function scenarioB(browser, base) {
-  scenario("B — gate-before-prose (force-override card BEFORE prose; audit row)");
-  await setScenario(base, { location: "resolved", trimValid: false }); // trim invalid → gate
+  scenario("B — gate-before-prose (buyer-confirmation card BEFORE prose; accept → 1 profile)");
+  await setScenario(base, { location: "resolved" });
   const beforeProfiles = (await getProfiles(base)).length;
-  const beforeAudit = await getAuditCount(base, "intake_verification_forced");
 
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
@@ -233,18 +230,18 @@ async function scenarioB(browser, base) {
   await launchSlashIntake(page);
   await page.waitForSelector(T("intake-form"), { timeout: 10000 });
 
-  // Fill required + a TRIM (so trimVerify runs and the stub returns invalid). A
-  // DISTINCT make (Toyota) avoids the real (account, brand) active-slot guard that
-  // scenario A's Hyundai row holds — the guard firing is the real invariant; we
-  // simply give each scenario its own brand slot.
+  // Fill required + a TRIM. A DISTINCT make (Toyota) avoids the real (account,
+  // brand) active-slot guard that scenario A's Hyundai row holds — the guard
+  // firing is the real invariant; we simply give each scenario its own brand slot.
   await fillRequired(page, { make: "Toyota" });
   await page.fill(T("intake-field-trim"), "SuperSport");
   await page.waitForSelector(`${T("intake-submit")}:not([disabled])`, { timeout: 5000 });
   await page.click(T("intake-submit"));
 
-  // The force-override gate card renders.
-  await page.waitForSelector(T("gate-force-override"), { timeout: 15000 });
-  check("force-override gate renders", true);
+  // The unconditional buyer-confirmation card renders (every intake path is
+  // confirmed before persist).
+  await page.waitForSelector(T("gate-intake-confirm"), { timeout: 15000 });
+  check("buyer-confirmation gate renders", true);
 
   // GATE-BEFORE-PROSE (structural, in the REAL browser DOM). At gate time the
   // prose text zone is empty (it streams at done), so we prove the load-bearing
@@ -270,30 +267,21 @@ async function scenarioB(browser, base) {
     `gateBeforeMeta=${order.gateBeforeMeta} hasText=${order.hasText} gateBeforeText=${order.gateBeforeText}`,
   );
 
-  // Confirm the override with a REQUIRED reason → resumes the same run → done.
-  await page.fill(T("gate-force-override-reason"), "Dealer confirmed this trim exists on the lot");
-  await page.click(T("gate-force-override-confirm"));
+  // Accept the confirmation → resumes the same run → done.
+  await page.click(T("gate-intake-confirm-accept"));
   await page.waitForSelector(`${T("assistant-turn")}[data-status="done"]`, { timeout: 15000 });
-  check("run completes after force-override confirm", true);
+  check("run completes after buyer confirmation", true);
 
-  // A profile was created (the override let the run proceed).
+  // A profile was created (the confirmation let the run proceed).
   const afterProfiles = await getProfiles(base);
-  check("profile created after override", afterProfiles.length === beforeProfiles + 1, `+${afterProfiles.length - beforeProfiles}`);
-
-  // The forced-audit row physically landed in the REAL product DB (audit_log).
-  const afterAudit = await getAuditCount(base, "intake_verification_forced");
-  check(
-    "forced-override audit row written (intake_verification_forced +1)",
-    afterAudit === beforeAudit + 1,
-    `before=${beforeAudit} after=${afterAudit}`,
-  );
+  check("profile created after confirmation", afterProfiles.length === beforeProfiles + 1, `+${afterProfiles.length - beforeProfiles}`);
 
   await ctx.close();
 }
 
 async function scenarioC(browser, base) {
   scenario("C — reconnect/refresh (half-fill → reload → draft restored → finish)");
-  await setScenario(base, { location: "resolved", trimValid: true });
+  await setScenario(base, { location: "resolved" });
   const before = (await getProfiles(base)).length;
 
   const ctx = await browser.newContext();
@@ -350,7 +338,7 @@ async function scenarioC(browser, base) {
 
 async function scenarioD(browser, base) {
   scenario("D — location failure (failed geocode → banner + retry → created)");
-  await setScenario(base, { location: "failed", trimValid: true });
+  await setScenario(base, { location: "failed" });
   const before = (await getProfiles(base)).length;
 
   const ctx = await browser.newContext();
@@ -377,7 +365,7 @@ async function scenarioD(browser, base) {
   check("retry input renders", retryCount === 1, `inputs=${retryCount}`);
 
   // Flip the stub to resolved, then retry with a good query → created.
-  await setScenario(base, { location: "resolved", trimValid: true });
+  await setScenario(base, { location: "resolved" });
   await page.fill(T("gate-location-failure-input"), "Irvine, CA 92602");
   await page.click(T("gate-location-failure-retry"));
   await page.waitForSelector(`${T("assistant-turn")}[data-status="done"]`, { timeout: 15000 });

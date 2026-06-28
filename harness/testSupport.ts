@@ -78,7 +78,7 @@ export function insertProfile(db: Db, id: string, opts: { brand?: string; status
 }
 
 /** Insert an audit_log row (e.g. action='search_profile_intake' for the created
- *  profile, or action='intake_verification_forced' with a null search_profile_id). */
+ *  profile). */
 export function insertAudit(db: Db, opts: { auditId: string; action: string; profileId?: string | null }): void {
   db.$client
     .prepare(
@@ -202,19 +202,20 @@ export function declinedRunFrames(): FixtureFrame[] {
   return [initFrame(), awaitingUserFrame(), abortedDeclineFrame()];
 }
 
-/** A force-override run: init → awaiting_user(collect) → awaiting_user(force_override)
+/** A buyer-confirmation run: init → awaiting_user(collect) → awaiting_user(intake_confirm)
  *  → text → done. The gate frame precedes prose. */
-export function forceOverrideRunFrames(): FixtureFrame[] {
+export function confirmVehicleRunFrames(): FixtureFrame[] {
   return [
     initFrame(),
     awaitingUserFrame("data_collection", "dc-1", "collect"),
-    awaitingUserFrame("force_override", "fo-1", "forceOverrideGate"),
+    awaitingUserFrame("intake_confirm", "cv-1", "confirmVehicle"),
     textFrame(),
     doneFrame(),
   ];
 }
 
-/** A #1244 fail-closed run: init → awaiting_user(malformed) → error (no prose-fall). */
+/** A #1244 fail-closed run: init → awaiting_user(malformed) → error (no prose-fall).
+ *  prefill is intake's fail-closed LLM surface (a freeform launch). */
 export function malformedFailClosedFrames(): FixtureFrame[] {
-  return [initFrame(), awaitingUserFrame("malformed_tool_call", "mf-1", "trimVerify"), errorFrame("malformed_tool_call")];
+  return [initFrame(), awaitingUserFrame("malformed_tool_call", "mf-1", "prefill"), errorFrame("malformed_tool_call")];
 }

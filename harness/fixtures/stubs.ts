@@ -6,8 +6,8 @@
  *
  *   - resolveLocation — the geocoder. Returns one of three fixed outcomes
  *     (resolved / ambiguous / failed) selected by the mutable scenario.
- *   - harnessGenerate — the model harness. Returns a fixed trim_verify verdict
- *     (driven by scenario.trimValid) or a fixed freeform-prefill seed.
+ *   - harnessGenerate — the model harness. Returns a fixed freeform-prefill seed
+ *     (or, when scenario.llmMalformed, a #1244 fail-closed suspend on the prefill).
  *
  * A single mutable `scenario` drives both stubs; the stubs read it per-call, so
  * one long-lived host process serves every functional case deterministically (a
@@ -24,12 +24,11 @@ export type ScenarioLocation = "resolved" | "ambiguous" | "failed";
 export interface Scenario {
   /** Which geocode outcome resolveLocationStub returns. */
   location: ScenarioLocation;
-  /** The trim_verify verdict harnessGenerateStub returns. */
-  trimValid: boolean;
-  /** When true, the intake_trim_verify generate call fail-closes with a #1244
+  /** When true, the intake_freeform_prefill generate call fail-closes with a #1244
    *  malformed_tool_call HarnessSuspend (the deterministic twin of a real DeepSeek
-   *  malformed/text-dumped tool call that the LIVE lane cannot stage). Default
-   *  false — every other case runs clean. */
+   *  malformed/text-dumped tool call that the LIVE lane cannot stage). prefill is
+   *  intake's fail-closed LLM surface (trim lookup degrades gracefully, never
+   *  gates). Default false — every other case runs clean. */
   llmMalformed: boolean;
   /** A deterministic injectable fault for the func lane (T4-U2). "tool_timeout"
    *  makes resolveLocationStub reject on the NEXT TICK (not a wall-clock hang →
@@ -39,14 +38,13 @@ export interface Scenario {
 }
 
 /** The single mutable scenario (flipped by setScenario / a fixture state). */
-export const scenario: Scenario = { location: "resolved", trimValid: true, llmMalformed: false, fault: "none" };
+export const scenario: Scenario = { location: "resolved", llmMalformed: false, fault: "none" };
 
 /** Apply a partial scenario (a fixture state's `scenario` block, or a control
  *  route flip). Unspecified fields keep their current value. */
 export function setScenario(partial: Partial<Scenario> | undefined | null): void {
   if (partial == null) return;
   if (partial.location !== undefined) scenario.location = partial.location;
-  if (partial.trimValid !== undefined) scenario.trimValid = partial.trimValid;
   if (partial.llmMalformed !== undefined) scenario.llmMalformed = partial.llmMalformed;
   if (partial.fault !== undefined) scenario.fault = partial.fault;
 }
@@ -112,25 +110,16 @@ export const resolveLocationStub = async (): Promise<unknown> => {
  *  (no trim_suggestion suspend), so the existing intake func cases stay identical. */
 export const fetchTrimSourcesStub = async (): Promise<unknown> => ({ kind: "none" });
 
-/** harnessGenerate stub: a trim_verify verdict from scenario.trimValid; a fixed
- *  freeform-prefill seed otherwise (NO live LLM). */
+/** harnessGenerate stub: a fixed freeform-prefill seed (NO live LLM), or a #1244
+ *  fail-closed suspend on the prefill when scenario.llmMalformed. */
 export const harnessGenerateStub = async (input: { useCase: string }): Promise<unknown> => {
   // #1244 fail-closed injection: the deterministic twin of a real DeepSeek
-  // malformed/text-dumped tool call. The intake LLM step (trimVerify) treats a
-  // HarnessSuspend as a malformed_tool_call suspend (fail-closed to the human) —
-  // signals member of MalformedSignal[] (model/malformedToolCall.ts).
-  if (scenario.llmMalformed && input.useCase === "intake_trim_verify") {
+  // malformed/text-dumped tool call. The prefill LLM step treats a HarnessSuspend
+  // as a malformed_tool_call suspend (fail-closed to the human) — signals member of
+  // MalformedSignal[] (model/malformedToolCall.ts). prefill is intake's fail-closed
+  // LLM surface (the trim lookup is a non-authoritative helper that degrades).
+  if (scenario.llmMalformed && input.useCase === "intake_freeform_prefill") {
     return { suspended: true, reason: "malformed_tool_call", signals: ["finish_reason_not_tool_calls"] };
-  }
-  if (input.useCase === "intake_trim_verify") {
-    return {
-      object: {
-        valid: scenario.trimValid,
-        attestation: scenario.trimValid ? "trim exists" : "trim not found in catalog",
-        suggested_trims: scenario.trimValid ? [] : ["SE", "Limited"],
-      },
-      usage: NO_USAGE,
-    };
   }
   // intake_trim_lookup — defensive: with fetchTrimSourcesStub returning {none} the
   // trimSuggestion step never reaches this call, but keep a valid empty extraction

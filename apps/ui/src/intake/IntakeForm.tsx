@@ -16,7 +16,7 @@ import { classifyGate } from "./gateModel.js";
 import { SchemaForm } from "./SchemaForm.js";
 import {
   AmbiguousLocationPicker,
-  ForceOverrideBar,
+  IntakeConfirmCard,
   LocationFailureBanner,
   MalformedRetryGate,
   TrimSuggestionPicker,
@@ -54,9 +54,9 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
           />
         </FormBoundary>
       );
-    case "force_override":
+    case "intake_confirm":
       return (
-        <ForceOverrideBar
+        <IntakeConfirmCard
           gate={gate}
           decisionId={decisionId}
           submitting={submitting}

@@ -42,13 +42,6 @@ export const USE_CASES = [
   /** Render a Telegram headline from already-computed audit flags (Phase 1). */
   "quote_audit_headline",
   /**
-   * Intake trim-verify: LLM checks whether `trim` truly exists for the
-   * make/model/year and, when not, suggests real alternatives. Its {valid,...}
-   * output drives the force-override audit branch. Both intake useCases route to
-   * deepseek.chat (they replaced an earlier single intake stub useCase).
-   */
-  "intake_trim_verify",
-  /**
    * Intake freeform prefill: an EXTRACTION pass over a user's one-liner that
    * pre-seeds the intake form. All-nullable subset; never extracts PII/budget.
    * Prefill only seeds the form — it never persists.
@@ -180,12 +173,11 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // chat/rail thinking-ON + auto lane that runs clean.
   dealer_reply_extract_retry: "deepseek.strong",
   quote_audit_headline: "deepseek.cheap",
-  // Both intake LLM passes route to deepseek.chat (deepseek-v4-flash, temp 0,
-  // per-step thinking:disabled + named tool_choice — emit_result hard constraint:
-  // DeepSeek thinking mode rejects a named/forced tool_choice). emit_result
-  // strategy (supportsOutputObjectWithTools false) is shared with every DeepSeek
-  // alias — no Output.object + tools mix.
-  intake_trim_verify: "deepseek.chat",
+  // Both intake LLM passes (prefill + trim lookup) route to deepseek.chat
+  // (deepseek-v4-flash, temp 0, per-step thinking:disabled + named tool_choice —
+  // emit_result hard constraint: DeepSeek thinking mode rejects a named/forced
+  // tool_choice). emit_result strategy (supportsOutputObjectWithTools false) is
+  // shared with every DeepSeek alias — no Output.object + tools mix.
   intake_freeform_prefill: "deepseek.chat",
   intake_trim_lookup: "deepseek.chat",
   // Snapshot-fallback parsing only; single emit_result tool; never

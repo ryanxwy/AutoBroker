@@ -309,12 +309,11 @@ function evalTableMinRows(
   db: Db,
   ctx: EvalContext,
 ): AnchorResult {
-  // audit_log with an action filter is computed live against the DB. The forced-
-  // audit row ('intake_verification_forced') is written with search_profile_id=NULL
-  // (the profile does not exist yet at force-override time), so an action like that
-  // MUST be counted UNSCOPED. The intake-persist audit ('search_profile_intake') IS
-  // profile-scoped. The case picks via `scope`: scope="global" → unscoped action
-  // count; scope="profile" → search_profile_id-filtered.
+  // audit_log with an action filter is computed live against the DB. Some audit
+  // rows carry search_profile_id=NULL (account-level / pre-profile actions), so
+  // such an action MUST be counted UNSCOPED. The intake-persist audit
+  // ('search_profile_intake') IS profile-scoped. The case picks via `scope`:
+  // scope="global" → unscoped action count; scope="profile" → search_profile_id-filtered.
   if (spec.table === "audit_log" && spec.action !== undefined) {
     const useProfile = spec.scope === "profile" && ctx.profileId !== null;
     const observed = countAuditRows(db, {
@@ -576,7 +575,7 @@ export interface VerdictDoc {
   schema_version: 1;
   cell_id: string;
   /** The case TOML [meta].id — distinguishes cases that share one cell_id
-   *  (e.g. decline vs force_override both run skill/provider/B/slash). */
+   *  (e.g. decline vs slash both run skill/provider/B). */
   case_id: string;
   layer: string;
   /** The user-action driver lane: "ui" = real dashboard DOM via Playwright;

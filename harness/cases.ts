@@ -16,7 +16,7 @@
  * The case grammar maps onto the committed wire contract:
  *   - [narrative.profile]  → the form content the collect-step resume submits.
  *   - [[steps.resume]]     → an ordered suspend-answer script. Each entry's `on`
- *     names the suspend kind (data_collection / force_override / ambiguous_location /
+ *     names the suspend kind (data_collection / intake_confirm / ambiguous_location /
  *     malformed_tool_call / batch_review); `action` is the form-decision action;
  *     `content_from` = "narrative.profile" pulls the form content from the
  *     profile table ("suspend.targets" resolves at DRIVE time — approve all ids
@@ -94,8 +94,8 @@ const RawBatchRowSchema = z.object({
 });
 
 // .passthrough() keeps inline typed-resume keys authored as siblings of the resume
-// entry (e.g. reason for force_override, picked_index for pick, retry_query for
-// retry) so the loader can fold them into the form-decision content.
+// entry (e.g. picked_index for pick, retry_query for retry) so the loader can fold
+// them into the form-decision content.
 const RawResumeSchema = z
   .object({
     on: z.string(),
@@ -603,8 +603,8 @@ function resolveResumeContent(raw: RawResume, profile: Record<string, unknown> |
     if (profile === null) throw new Error(`resume content_from=narrative.profile but [narrative.profile] is missing`);
     return profile;
   }
-  // accept with no content (e.g. force_override carries content inline, location
-  // pick, or a drive-time content_from source).
+  // accept with no content (e.g. intake_confirm accept, a location pick that
+  // carries its index inline, or a drive-time content_from source).
   return raw.content ?? null;
 }
 
@@ -612,8 +612,8 @@ function resolveResumeContent(raw: RawResume, profile: Record<string, unknown> |
  *  form-decision action (accept|decline|cancel). */
 function coerceAction(action: string): "accept" | "decline" | "cancel" {
   if (action === "accept" || action === "decline" || action === "cancel") return action;
-  // Some cases author the inner typed action (force_override/pick/retry) directly on
-  // the resume entry for readability; treat any non-decline/cancel as an accept whose
+  // Some cases author the inner typed action (pick/retry/edit) directly on the
+  // resume entry for readability; treat any non-decline/cancel as an accept whose
   // content carries the typed action. This keeps the TOML terse.
   return "accept";
 }
@@ -658,9 +658,9 @@ export function toCase(raw: TomlTable): Case {
     resume: (s.resume ?? []).map((r) => {
       const action = coerceAction(r.action);
       // When the case authored an inner typed action on the resume entry (e.g.
-      // action="force_override" with a sibling reason="…"), fold the inner action +
+      // action="pick" with a sibling picked_index=0), fold the inner action +
       // its sibling keys into content so the form-decision body is
-      // {action:"accept", content:{action:"force_override", reason:"…"}}.
+      // {action:"accept", content:{action:"pick", picked_index:0}}.
       let content = resolveResumeContent(r, profile);
       if (action === "accept" && r.action !== "accept") {
         const inlineKeys: Record<string, unknown> = {};

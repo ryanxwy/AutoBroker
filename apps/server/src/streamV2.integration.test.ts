@@ -77,10 +77,7 @@ const RESOLVED: GoplacesResult = {
 };
 
 function harnessStub(): IntakeWorkflowDeps["harnessGenerate"] {
-  const fn = async (input: { useCase: string }) => {
-    if (input.useCase === "intake_trim_verify") {
-      return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
-    }
+  const fn = async (_input: { useCase: string }) => {
     return {
       object: {
         make: "Hyundai",
@@ -200,6 +197,15 @@ describe("GET /api/skill-runs/:id/stream-v2 — accept path", () => {
       method: "POST",
       url: `/api/skill-runs/${runId}/form-decision`,
       payload: { decision_id: decisionId, decision: { action: "accept", content: validFields() } },
+    });
+    // The unconditional buyer-confirmation suspends before persist — accept it so
+    // the run reaches done before the stream is read.
+    const cv = await s.app.inject({ method: "GET", url: `/api/skill-runs/${runId}` });
+    const cvPending = cv.json<{ pending: { decision_id: string } | null }>().pending!;
+    await s.app.inject({
+      method: "POST",
+      url: `/api/skill-runs/${runId}/form-decision`,
+      payload: { decision_id: cvPending.decision_id, decision: { action: "accept", content: { action: "accept" } } },
     });
 
     const res = await s.app.inject({ method: "GET", url: `/api/skill-runs/${runId}/stream-v2` });

@@ -104,18 +104,17 @@ export {
 // co-located with the skill (skill-local, single-use; see header rationale).
 export {
   IntakePrefillSchema,
-  TrimVerifyResultSchema,
   TrimSuggestionSchema,
   CollectResumeSchema,
-  ForceOverrideResumeSchema,
+  IntakeConfirmSuspendSchema,
+  IntakeConfirmResumeSchema,
   AmbiguousLocationResumeSchema,
   TrimSuggestionResumeSchema,
   MalformedRetryResumeSchema,
   buildPrefillPrompt,
-  buildTrimVerifyPrompt,
   buildTrimSuggestionPrompt,
   type IntakePrefill,
-  type TrimVerifyResult,
+  type IntakeConfirmResume,
   type TrimSuggestion,
   type TrimSuggestionResume,
 } from "./intakeContracts.js";

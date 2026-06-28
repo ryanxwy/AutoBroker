@@ -80,10 +80,7 @@ const RESOLVED: GoplacesResult = {
 /** A harness stub: trim-verify always-valid, prefill a fixed seed (so the intake
  *  freeform run reaches the `collect` suspend deterministically). */
 function harnessStub(): IntakeWorkflowDeps["harnessGenerate"] {
-  const fn = async (input: { useCase: string }) => {
-    if (input.useCase === "intake_trim_verify") {
-      return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
-    }
+  const fn = async (_input: { useCase: string }) => {
     return {
       object: {
         make: "Hyundai",

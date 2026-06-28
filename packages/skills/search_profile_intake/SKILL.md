@@ -21,21 +21,21 @@ The runtime flow, grounded in the 8-step workflow
    or cancels the form. Decline/cancel terminates the run as `declined`, and every
    later step short-circuits to zero writes.
 4. **Validate** — pure parse of the submitted form against the strict input schema.
-5. **Trim-verify (LLM)** — trim is required at the form (owner-directed), so this
-   runs on every intake: an LLM call
-   (`intake_trim_verify` useCase) checks the trim is real for the make/model.
-   If invalid → suspend ② (`force_override` gate): the user force-overrides
-   (audited), revises (re-verify), or declines. A revise that still verifies
-   invalid re-suspends the gate (fail-closed) — it never proceeds unaudited.
-6. **Geocode resolve** — `goplaces.resolveLocation` turns the location text into
-   coordinates. Resolved → carry coords forward. Ambiguous/failed → suspend ③:
+5. **Geocode resolve** — `goplaces.resolveLocation` turns the location text into
+   coordinates. Resolved → carry coords forward. Ambiguous/failed → suspend ②:
    the user picks a candidate, retries with a new query, or declines. The shown
    candidate list and effective query ride the suspend payload so a `pick`
    indexes the exact list shown.
-7. **Persist** — `profileService.create` is the only DB write (the user
-   confirmation gate is the form submit at phase 3, suspend ①); it returns
-   `{ profileId, auditId }`. A confirmed force-override has already written its
-   `intake_verification_forced` audit row at step 5.
+6. **Confirm (confirmVehicle)** — suspend ③ (`intake_confirm`), UNCONDITIONAL on
+   every path: the buyer affirms the resolved `{ year, make, model, trim }` before
+   the only DB write. `accept` → persist as-is; `edit` → re-open the collect form
+   (the one editing surface); the re-submitted form is the affirmation and carries
+   EVERY edited field forward (no field is silently dropped), re-geocoding when the
+   location text changed so coords never go stale (an empty trim re-suspends — trim
+   is required); `decline` → terminal, zero writes. The display card is vehicle-only
+   (no email/phone/budget, inv #9) and never re-validates the trim with an LLM.
+7. **Persist** — `profileService.create` is the only DB write; it returns
+   `{ profileId, auditId }`.
 8. **Handoff** — emit the structured created summary plus redactions; the run
    ends and the profile is available to downstream skills.
 
@@ -61,13 +61,14 @@ The runtime flow, grounded in the 8-step workflow
   text.
 - **Budget internal-only** — `budget_max` is internal and never dealer-facing;
   it is redacted from any communication surface in code, not by prompt.
-- **Decline path** — decline/cancel at any suspend (form, force-override gate,
-  geocode resolve) terminates the run `declined` with zero `search_profiles`
-  writes. A previously-confirmed force-override audit row stays (an audited
-  decision genuinely happened); it is not linked to a profile id.
-- **force_override** — overriding an LLM-flagged-invalid trim is an explicit,
-  audited human decision: it writes an `intake_verification_forced` audit row
-  immediately at the force-override gate, before any profile exists.
+- **Decline path** — decline/cancel at any suspend (form, geocode resolve, the
+  buyer confirmation) terminates the run `declined` with zero `search_profiles`
+  AND zero `audit_log` writes.
+- **Trim is buyer-confirmed, never LLM-judged** — trim is required info the buyer
+  must provide and confirm on every path. There is no LLM trim-verify and no
+  audited override branch (a prior LLM trim-verify false-rejected valid trims and
+  was removed). The unconditional `intake_confirm` suspend is the buyer-affirmation
+  floor before the only DB write.
 
 ## References
 

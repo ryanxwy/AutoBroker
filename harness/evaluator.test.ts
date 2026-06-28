@@ -20,7 +20,7 @@ import {
 import {
   createdRunFrames,
   declinedRunFrames,
-  forceOverrideRunFrames,
+  confirmVehicleRunFrames,
   malformedFailClosedFrames,
   insertAudit,
   insertLedgerRow,
@@ -119,12 +119,13 @@ describe("table_min_rows anchor (profile-scoped delta)", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("forced-audit row (null profile id) is counted UNSCOPED via scope=global", () => {
-    // The forced-audit row has search_profile_id=NULL — a profile-scoped count would
-    // miss it; scope=global counts by action.
-    insertAudit(tmp.db, { auditId: "a-f", action: "intake_verification_forced", profileId: null });
+  it("a null-profile-id audit row is counted UNSCOPED via scope=global", () => {
+    // A scope=global audit count is by action regardless of search_profile_id — a
+    // profile-scoped count would miss a NULL-profile row. (Generic feature still
+    // used by skills that write account-level / null-profile audit rows.)
+    insertAudit(tmp.db, { auditId: "a-f", action: "profile_purge", profileId: null });
     const ctx = ctxFor("p-3");
-    const r = evalAnchor({ kind: "table_min_rows", table: "audit_log", scope: "global", action: "intake_verification_forced", deltaMin: 1 }, detailDone("p-3"), tmp.db, ctx);
+    const r = evalAnchor({ kind: "table_min_rows", table: "audit_log", scope: "global", action: "profile_purge", deltaMin: 1 }, detailDone("p-3"), tmp.db, ctx);
     expect(r.ok).toBe(true);
     expect(r.observed).toBe(1);
   });
@@ -281,8 +282,8 @@ describe("latency_budget anchor (max per-call wall-clock)", () => {
 });
 
 describe("approval_gate anchor (gate-before-prose)", () => {
-  it("force-override run: gate frame precedes the first prose text → PASS", () => {
-    const detail = buildRunDetailFromEvents("r-fo", forceOverrideRunFrames(), "done");
+  it("buyer-confirmation run: gate frame precedes the first prose text → PASS", () => {
+    const detail = buildRunDetailFromEvents("r-cv", confirmVehicleRunFrames(), "done");
     const r = evalAnchor({ kind: "approval_gate", gateBeforeProse: true }, detail, tmp.db, ctxFor("p-1"));
     expect(r.ok).toBe(true);
   });
@@ -291,7 +292,7 @@ describe("approval_gate anchor (gate-before-prose)", () => {
     const frames = [
       { ts: "2026-06-05T00:00:01.000Z", kind: "init", payload: { driver_kind: "deepseek_apikey" } },
       { ts: "2026-06-05T00:00:02.000Z", kind: "text", payload: { text: "thinking…" } },
-      { ts: "2026-06-05T00:00:03.000Z", kind: "awaiting_user", payload: { form_kind: "force_override", decision_id: "x" } },
+      { ts: "2026-06-05T00:00:03.000Z", kind: "awaiting_user", payload: { form_kind: "intake_confirm", decision_id: "x" } },
       { ts: "2026-06-05T00:00:04.000Z", kind: "done", payload: {} },
     ];
     const detail = buildRunDetailFromEvents("r-bad", frames, "done");
@@ -311,7 +312,7 @@ describe("approval_gate anchor (gate-before-prose)", () => {
   });
 
   it("expect='absent' FAILS when a gate rendered (the run asked again)", () => {
-    const detail = buildRunDetailFromEvents("r-asked", forceOverrideRunFrames(), "done");
+    const detail = buildRunDetailFromEvents("r-asked", confirmVehicleRunFrames(), "done");
     const r = evalAnchor({ kind: "approval_gate", expect: "absent" }, detail, tmp.db, ctxFor("p-1"));
     expect(r.ok).toBe(false);
     expect(r.detail).toContain("must never ask");

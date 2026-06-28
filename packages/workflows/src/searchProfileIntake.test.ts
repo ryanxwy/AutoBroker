@@ -12,14 +12,18 @@
  * row, the Zod validate step) is genuinely exercised.
  *
  * Coverage:
- *   - slash happy path           → exactly 1 profile row + 1 audit row, success.
+ *   - slash happy path           → confirm → exactly 1 profile + 1 audit, success.
  *   - freeform path              → prefill seeds; PII/budget absent by schema.
  *   - decline at collect         → zero rows anywhere, terminal declined.
- *   - force-override             → audit 'intake_verification_forced' + created.
- *   - force-override decline     → zero profile rows.
- *   - ambiguous location         → suspend → pick(1) → created with picked coords.
- *   - geocode failure            → suspend (NOT null coords) → retry → created;
+ *   - confirmVehicle             → unconditional suspend on all four launch/resume
+ *                                   paths; accept → created; decline → zero rows;
+ *                                   edit → re-collect → re-confirm → persists new trim;
+ *                                   the card carries year/make/model/trim and NO
+ *                                   budget/email/phone (inv #9).
+ *   - ambiguous location         → suspend → pick(1) → confirm → created.
+ *   - geocode failure            → suspend (NOT null coords) → retry → confirm;
  *                                   and decline → zero rows.
+ *   - #1244 fail-closed          → freeform prefill malformed → suspend → decline.
  *   - flat-shape structural check (no nested workflow step).
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
@@ -153,23 +157,14 @@ const NO_USAGE = {
 };
 
 /**
- * A harness.generate stub. Returns the trim-verify verdict for the trim_verify
- * useCase and a fixed prefill seed for the prefill useCase. Cast to the deps
- * type: the real signature is generic over the caller's Zod schema, so a stub
- * that branches on useCase must be typed loosely and asserted at the boundary.
+ * A harness.generate stub. Intake's only remaining LLM useCases are
+ * intake_freeform_prefill (returns a fixed seed) and intake_trim_lookup (the
+ * trim-suggestion describe overrides this). Cast to the deps type: the real
+ * signature is generic over the caller's Zod schema, so a stub that branches on
+ * useCase must be typed loosely and asserted at the boundary.
  */
-function harnessStub(verdict: { valid: boolean; attestation?: string; suggested_trims?: string[] }) {
-  const fn = async (input: { useCase: string }) => {
-    if (input.useCase === "intake_trim_verify") {
-      return {
-        object: {
-          valid: verdict.valid,
-          attestation: verdict.attestation ?? (verdict.valid ? "trim exists" : "trim not found"),
-          suggested_trims: verdict.suggested_trims ?? [],
-        },
-        usage: NO_USAGE,
-      };
-    }
+function harnessStub() {
+  const fn = async (_input: { useCase: string }) => {
     // intake_freeform_prefill — a partial seed (PII/budget absent by schema).
     return {
       object: IntakePrefillSchema.parse({
@@ -210,26 +205,15 @@ function trimSourcesStub(text: string): IntakeWorkflowDeps["fetchTrimSources"] {
 }
 
 /** harnessGenerate stub for the trim-suggestion path: intake_trim_lookup → the
- *  given parallel arrays; intake_trim_verify → the given verdict (proves grounded
- *  pick SKIPS verify even when verify would say invalid). */
+ *  given parallel arrays; intake_freeform_prefill → a fixed Civic seed (trim null
+ *  so the picker fires). */
 function trimLookupStub(args: {
   names: string[];
   summaries: string[];
-  verifyValid?: boolean;
 }): IntakeWorkflowDeps["harnessGenerate"] {
   const fn = async (input: { useCase: string }) => {
     if (input.useCase === "intake_trim_lookup") {
       return { object: { trim_names: args.names, trim_summaries: args.summaries }, usage: NO_USAGE };
-    }
-    if (input.useCase === "intake_trim_verify") {
-      return {
-        object: {
-          valid: args.verifyValid ?? true,
-          attestation: "from stub",
-          suggested_trims: [],
-        },
-        usage: NO_USAGE,
-      };
     }
     return {
       object: IntakePrefillSchema.parse({
@@ -240,6 +224,11 @@ function trimLookupStub(args: {
     };
   };
   return fn as unknown as IntakeWorkflowDeps["harnessGenerate"];
+}
+
+/** Resume the confirmVehicle suspend with accept (the common happy-path tail). */
+async function acceptConfirm(run: { resume: (a: { step: string; resumeData: unknown }) => Promise<{ status: string; result?: { outcome: string } }> }) {
+  return run.resume({ step: "confirmVehicle", resumeData: { action: "accept" } });
 }
 
 /** Wire deps with the real createProfile/openDb (writes the tmp DB). A {none}
@@ -262,9 +251,9 @@ function intakeWorkflow() {
 // ---------------------------------------------------------------------------
 
 describe("search_profile_intake — slash happy path", () => {
-  it("start → suspend at collect → submit → trimVerify ok → resolved → persist → created (1 row + 1 audit)", async () => {
+  it("start → suspend at collect → submit → resolved → confirm → persist → created (1 row + 1 audit)", async () => {
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       resolveLocation: locationStub([RESOLVED]),
     });
 
@@ -277,14 +266,21 @@ describe("search_profile_intake — slash happy path", () => {
     // First suspend is the collect form.
     expect(started.status).toBe("suspended");
 
-    const resumed = await run.resume({
+    // submit → resolveLocation resolves → the buyer-confirmation card suspends.
+    const afterSubmit = await run.resume({
       step: "collect",
       resumeData: { action: "submit", fields: validFields() },
     });
+    expect(afterSubmit.status).toBe("suspended");
+    if (afterSubmit.status !== "suspended") return;
+    const card = suspendPayloadOf(afterSubmit, "confirmVehicle");
+    expect(card["kind"]).toBe("intake_confirm");
+    expect(rowCount("search_profiles")).toBe(0); // nothing persisted before accept.
 
+    const resumed = await acceptConfirm(run);
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
-    expect(resumed.result.outcome).toBe("created");
+    expect(resumed.result?.outcome).toBe("created");
 
     expect(rowCount("search_profiles")).toBe(1);
     expect(auditCount("search_profile_intake")).toBe(1);
@@ -305,7 +301,7 @@ describe("search_profile_intake — freeform path", () => {
 
   it("freeform → prefill runs and seeds → collect suspends → submit → created", async () => {
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       resolveLocation: locationStub([RESOLVED]),
     });
 
@@ -328,10 +324,12 @@ describe("search_profile_intake — freeform path", () => {
     expect(seed["make"]).toBe("Hyundai");
     expect(seed).not.toHaveProperty("follow_up_email");
 
-    const resumed = await run.resume({
+    const afterSubmit = await run.resume({
       step: "collect",
       resumeData: { action: "submit", fields: validFields() },
     });
+    expect(afterSubmit.status).toBe("suspended"); // confirmVehicle card.
+    const resumed = await acceptConfirm(run);
     expect(resumed.status).toBe("success");
     expect(rowCount("search_profiles")).toBe(1);
   });
@@ -344,7 +342,7 @@ describe("search_profile_intake — freeform path", () => {
 describe("search_profile_intake — decline at collect", () => {
   it("decline → terminal declined, ZERO rows in search_profiles AND audit_log", async () => {
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       resolveLocation: locationStub([RESOLVED]),
     });
 
@@ -364,203 +362,170 @@ describe("search_profile_intake — decline at collect", () => {
 });
 
 // ---------------------------------------------------------------------------
-// force-override
+// confirmVehicle — unconditional buyer confirmation (the only DB write follows it)
 // ---------------------------------------------------------------------------
 
-describe("search_profile_intake — force-override", () => {
-  it("invalid trim → suspend at force gate → force_override(reason) → audit forced row + created", async () => {
-    wireDeps({
-      harnessGenerate: harnessStub({ valid: false, suggested_trims: ["SE", "Limited"] }),
-      resolveLocation: locationStub([RESOLVED]),
-    });
-
+describe("search_profile_intake — confirmVehicle (unconditional buyer confirmation)", () => {
+  it("the confirm card carries year/make/model/trim and NO budget/email/phone (inv #9)", async () => {
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
     const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-force-1" });
+    const run = await wf.createRun({ runId: "intake-confirm-card-1" });
     await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-
-    // collect → submit
     const afterSubmit = await run.resume({
       step: "collect",
-      resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) },
+      resumeData: { action: "submit", fields: validFields({ trim: "SEL", budget_max: 45000, follow_up_email: "x@y.com", follow_up_phone: "949-555-0100" }) },
     });
-    // Now suspended at the force-override gate.
     expect(afterSubmit.status).toBe("suspended");
     if (afterSubmit.status !== "suspended") return;
-    const gate = suspendPayloadOf(afterSubmit, "forceOverrideGate");
-    expect(gate["kind"]).toBe("force_override");
-
-    const resumed = await run.resume({
-      step: "forceOverrideGate",
-      resumeData: { action: "force_override", reason: "I know this trim exists" },
-    });
-    expect(resumed.status).toBe("success");
-    if (resumed.status !== "success") return;
-    expect(resumed.result.outcome).toBe("created");
-
-    expect(auditCount("intake_verification_forced")).toBe(1);
-    expect(rowCount("search_profiles")).toBe(1);
+    const card = suspendPayloadOf(afterSubmit, "confirmVehicle");
+    expect(card).toEqual({ kind: "intake_confirm", year: 2026, make: "Hyundai", model: "Tucson", trim: "SEL" });
+    // PII / budget never ride the confirm card.
+    expect(card).not.toHaveProperty("budget_max");
+    expect(card).not.toHaveProperty("follow_up_email");
+    expect(card).not.toHaveProperty("follow_up_phone");
   });
 
-  it("force-override decline → zero profile rows", async () => {
-    wireDeps({
-      harnessGenerate: harnessStub({ valid: false }),
-      resolveLocation: locationStub([RESOLVED]),
-    });
-
+  it("accept → created with the confirmed trim", async () => {
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
     const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-force-decline-1" });
+    const run = await wf.createRun({ runId: "intake-confirm-accept-1" });
     await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) } });
+    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "SEL" }) } });
+    const resumed = await acceptConfirm(run);
+    expect(resumed.status).toBe("success");
+    if (resumed.status !== "success") return;
+    expect(resumed.result?.outcome).toBe("created");
+    expect(rowCount("search_profiles")).toBe(1);
+    const row = db.$client.prepare("SELECT trim FROM search_profiles LIMIT 1").get() as { trim: string };
+    expect(row.trim).toBe("SEL");
+  });
 
-    const resumed = await run.resume({ step: "forceOverrideGate", resumeData: { action: "decline" } });
+  it("decline → terminal declined, ZERO rows (search_profiles AND audit_log)", async () => {
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-confirm-decline-1" });
+    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
+    const afterSubmit = await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields() } });
+    expect(afterSubmit.status).toBe("suspended");
+    const resumed = await run.resume({ step: "confirmVehicle", resumeData: { action: "decline" } });
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
     expect(resumed.result.outcome).toBe("declined");
     expect(rowCount("search_profiles")).toBe(0);
-    expect(auditCount("intake_verification_forced")).toBe(0);
+    expect(rowCount("audit_log")).toBe(0);
   });
 
-  // FIX A — a revise whose re-verify is STILL invalid must RE-SUSPEND the gate
-  // (never proceed unaudited). The trim_verify stub here always returns invalid,
-  // so the revise re-verify is invalid too.
-  it("revise → still invalid → re-suspend → force_override(reason) → created WITH forced-audit row", async () => {
-    wireDeps({
-      harnessGenerate: harnessStub({ valid: false }),
-      resolveLocation: locationStub([RESOLVED]),
-    });
-
+  it("edit → re-open the collect form → change the trim → submit → persists the NEW trim", async () => {
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
     const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-revise-still-invalid-force-1" });
+    const run = await wf.createRun({ runId: "intake-confirm-edit-1" });
     await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) } });
+    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "SEL" }) } });
 
-    // revise to another (still unverifiable) trim → re-verify still invalid →
-    // the gate RE-SUSPENDS rather than proceeding.
-    const afterRevise = await run.resume({
-      step: "forceOverrideGate",
-      resumeData: { action: "revise", trim: "AlsoBogus" },
-    });
-    expect(afterRevise.status).toBe("suspended");
-    if (afterRevise.status !== "suspended") return;
-    const gate = suspendPayloadOf(afterRevise, "forceOverrideGate");
-    expect(gate["kind"]).toBe("force_override");
-    expect(gate["trim"]).toBe("AlsoBogus"); // the NEW trim is on the fresh card.
-    expect(rowCount("search_profiles")).toBe(0); // nothing persisted yet.
+    // edit → the collect form re-renders (the ONE editing surface), seeded.
+    const afterEdit = await run.resume({ step: "confirmVehicle", resumeData: { action: "edit" } });
+    expect(afterEdit.status).toBe("suspended");
+    if (afterEdit.status !== "suspended") return;
+    expect(suspendPayloadOf(afterEdit, "confirmVehicle")["kind"]).toBe("data_collection");
 
-    // Now the user forces the revised trim → audited + created with the revised trim.
+    // submit a NEW trim → the re-submitted form IS the affirmation → persist.
     const resumed = await run.resume({
-      step: "forceOverrideGate",
-      resumeData: { action: "force_override", reason: "I checked the dealer site" },
+      step: "confirmVehicle",
+      resumeData: { action: "submit", fields: validFields({ trim: "Limited" }) },
     });
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
     expect(resumed.result.outcome).toBe("created");
-    expect(auditCount("intake_verification_forced")).toBe(1);
     expect(rowCount("search_profiles")).toBe(1);
-    // The persisted profile carries the REVISED trim (not the original "Bogus").
+    const row = db.$client.prepare("SELECT trim FROM search_profiles LIMIT 1").get() as { trim: string };
+    expect(row.trim).toBe("Limited");
+  });
+
+  it("edit → change a NON-vehicle field (follow_up_email) → submit → the edit is PERSISTED, never silently dropped", async () => {
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-confirm-edit-nonvehicle-1" });
+    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
+    await run.resume({
+      step: "collect",
+      resumeData: { action: "submit", fields: validFields({ follow_up_email: "old@example.com" }) },
+    });
+    await run.resume({ step: "confirmVehicle", resumeData: { action: "edit" } });
+
+    // Fix a typo'd email (a NON-vehicle field) in the edit form → submit.
+    const resumed = await run.resume({
+      step: "confirmVehicle",
+      resumeData: { action: "submit", fields: validFields({ follow_up_email: "fixed@example.com" }) },
+    });
+    expect(resumed.status).toBe("success");
+    expect(rowCount("search_profiles")).toBe(1);
     const row = db.$client
-      .prepare("SELECT trim FROM search_profiles LIMIT 1")
-      .get() as { trim: string };
-    expect(row.trim).toBe("AlsoBogus");
+      .prepare("SELECT follow_up_email FROM search_profiles LIMIT 1")
+      .get() as { follow_up_email: string };
+    expect(row.follow_up_email).toBe("fixed@example.com"); // the edit reached persist.
   });
 
-  it("revise → still invalid → re-suspend → decline → zero profile rows", async () => {
-    wireDeps({
-      harnessGenerate: harnessStub({ valid: false }),
-      resolveLocation: locationStub([RESOLVED]),
-    });
-
-    const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-revise-still-invalid-decline-1" });
-    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) } });
-
-    const afterRevise = await run.resume({
-      step: "forceOverrideGate",
-      resumeData: { action: "revise", trim: "AlsoBogus" },
-    });
-    expect(afterRevise.status).toBe("suspended");
-    if (afterRevise.status !== "suspended") return;
-    expect(suspendPayloadOf(afterRevise, "forceOverrideGate")["kind"]).toBe("force_override");
-
-    const resumed = await run.resume({ step: "forceOverrideGate", resumeData: { action: "decline" } });
-    expect(resumed.status).toBe("success");
-    if (resumed.status !== "success") return;
-    expect(resumed.result.outcome).toBe("declined");
-    expect(rowCount("search_profiles")).toBe(0);
-    expect(auditCount("intake_verification_forced")).toBe(0);
-  });
-
-  it("revise → clear (trim:null) → re-suspends the gate (trim is required), never a null-trim profile, no crash", async () => {
-    // Trim is required at the form, so the gate's clear/empty-revise can no longer
-    // proceed to persist (which would fail-loud late). It must re-suspend instead.
-    wireDeps({
-      harnessGenerate: harnessStub({ valid: false }),
-      resolveLocation: locationStub([RESOLVED]),
-    });
-
-    const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-revise-clear-resuspend-1" });
-    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) } });
-
-    const afterClear = await run.resume({
-      step: "forceOverrideGate",
-      resumeData: { action: "revise", trim: null },
-    });
-    expect(afterClear.status).toBe("suspended"); // re-suspended, NOT proceeded/crashed.
-    if (afterClear.status !== "suspended") return;
-    expect(suspendPayloadOf(afterClear, "forceOverrideGate")["kind"]).toBe("force_override");
-    expect(rowCount("search_profiles")).toBe(0); // nothing persisted.
-
-    // The user can still decline out cleanly (fail-closed).
-    const resumed = await run.resume({ step: "forceOverrideGate", resumeData: { action: "decline" } });
-    expect(resumed.status).toBe("success");
-    if (resumed.status !== "success") return;
-    expect(resumed.result.outcome).toBe("declined");
-    expect(rowCount("search_profiles")).toBe(0);
-  });
-
-  // FIX D — a confirmed force_override writes its forced-audit row immediately; a
-  // LATER decline (at resolveLocation) terminates the run declined with ZERO
-  // search_profiles writes but the forced-audit row REMAINS (intended).
-  it("force_override(reason) → later decline at resolveLocation → declined, 0 profiles, 1 forced-audit row", async () => {
-    const failed: GoplacesResult = {
-      kind: "failed",
-      reason: "no_result",
-      detail: "ZERO_RESULTS",
+  it("edit → change the LOCATION → submit → re-geocodes so persisted coords match the new location", async () => {
+    const FIRST: GoplacesResult = RESOLVED; // Irvine (33.6695, -117.7669) for the initial resolve.
+    const REGEOCODED: GoplacesResult = {
+      kind: "resolved",
+      location: { lat: 40.7128, lng: -74.006, formattedAddress: "New York, NY, USA", postalCode: "10001" },
       traceSpans: [],
     };
-    wireDeps({
-      harnessGenerate: harnessStub({ valid: false }),
-      resolveLocation: locationStub([failed]),
-    });
-
+    // First resolve (collect) → Irvine; the re-geocode after the location edit → NYC.
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([FIRST, REGEOCODED]) });
     const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-force-then-decline-1" });
+    const run = await wf.createRun({ runId: "intake-confirm-edit-location-1" });
     await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Bogus" }) } });
-
-    // Force the unverified trim → forced-audit row written immediately.
-    const afterForce = await run.resume({
-      step: "forceOverrideGate",
-      resumeData: { action: "force_override", reason: "I know it exists" },
+    await run.resume({
+      step: "collect",
+      resumeData: { action: "submit", fields: validFields({ location_query: "Irvine, CA 92602" }) },
     });
-    // Now suspended at resolveLocation (the geocode failed).
-    expect(afterForce.status).toBe("suspended");
-    if (afterForce.status !== "suspended") return;
-    expect(suspendPayloadOf(afterForce, "resolveLocation")["kind"]).toBe("ambiguous_location");
-    expect(auditCount("intake_verification_forced")).toBe(1); // already written.
+    await run.resume({ step: "confirmVehicle", resumeData: { action: "edit" } });
 
-    // The user declines at the location gate → terminal declined, zero profiles.
-    const resumed = await run.resume({ step: "resolveLocation", resumeData: { action: "decline" } });
+    const resumed = await run.resume({
+      step: "confirmVehicle",
+      resumeData: { action: "submit", fields: validFields({ location_query: "New York, NY" }) },
+    });
+    expect(resumed.status).toBe("success");
+    expect(rowCount("search_profiles")).toBe(1);
+    const row = db.$client
+      .prepare("SELECT latitude, longitude, location_query FROM search_profiles LIMIT 1")
+      .get() as { latitude: number; longitude: number; location_query: string };
+    expect(row.location_query).toBe("New York, NY");
+    expect(row.latitude).toBe(40.7128); // coords match the EDITED location, not the stale Irvine ones.
+    expect(row.longitude).toBe(-74.006);
+  });
+
+  it("edit → submit a blank (whitespace) trim → re-suspends the form (trim required), never persists", async () => {
+    wireDeps({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const wf = intakeWorkflow();
+    const run = await wf.createRun({ runId: "intake-confirm-edit-empty-1" });
+    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
+    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "SEL" }) } });
+    await run.resume({ step: "confirmVehicle", resumeData: { action: "edit" } });
+
+    // A blank (whitespace-only) trim re-suspends the edit form (trim is required) —
+    // no crash, no null-trim profile. (The form min(1) blocks a truly empty string;
+    // a whitespace value exercises the step's own required-trim guard.)
+    const afterEmpty = await run.resume({
+      step: "confirmVehicle",
+      resumeData: { action: "submit", fields: validFields({ trim: " " }) },
+    });
+    expect(afterEmpty.status).toBe("suspended");
+    if (afterEmpty.status !== "suspended") return;
+    expect(suspendPayloadOf(afterEmpty, "confirmVehicle")["kind"]).toBe("data_collection");
+    expect(rowCount("search_profiles")).toBe(0);
+
+    // The buyer can still decline out cleanly.
+    const resumed = await run.resume({ step: "confirmVehicle", resumeData: { action: "decline" } });
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
     expect(resumed.result.outcome).toBe("declined");
-    expect(rowCount("search_profiles")).toBe(0); // decline writes zero search_profiles rows.
-    expect(auditCount("intake_verification_forced")).toBe(1); // force always writes the forced-audit row.
+    expect(rowCount("search_profiles")).toBe(0);
   });
 });
+
 
 // ---------------------------------------------------------------------------
 // ambiguous location
@@ -577,7 +542,7 @@ describe("search_profile_intake — ambiguous location", () => {
       traceSpans: [],
     };
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       // ambiguous on the first resolve, ambiguous again on the pick-resume re-resolve.
       resolveLocation: locationStub([ambiguous, ambiguous]),
     });
@@ -596,10 +561,12 @@ describe("search_profile_intake — ambiguous location", () => {
     expect(payload["kind"]).toBe("ambiguous_location");
     expect((payload["candidates"] as unknown[]).length).toBe(2);
 
-    const resumed = await run.resume({
+    const afterPick = await run.resume({
       step: "resolveLocation",
       resumeData: { action: "pick", picked_index: 1 },
     });
+    expect(afterPick.status).toBe("suspended"); // confirmVehicle card.
+    const resumed = await acceptConfirm(run);
     expect(resumed.status).toBe("success");
     expect(rowCount("search_profiles")).toBe(1);
     // The picked candidate (index 1) coords landed.
@@ -631,7 +598,7 @@ describe("search_profile_intake — ambiguous location", () => {
       traceSpans: [],
     };
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       // First resolve → listA; the retry's re-resolve → listB. No further resolves
       // (pick indexes the stored list directly — FIX B).
       resolveLocation: locationStub([listA, listB]),
@@ -662,10 +629,12 @@ describe("search_profile_intake — ambiguous location", () => {
     expect((payloadB["candidates"] as Array<{ label: string }>)[0]!.label).toBe("Portland, OR, USA");
 
     // pick(1) → must land listB[1] (Portland, ME: 21,21), NOT listA[1] (11,11).
-    const resumed = await run.resume({
+    const afterPick = await run.resume({
       step: "resolveLocation",
       resumeData: { action: "pick", picked_index: 1 },
     });
+    expect(afterPick.status).toBe("suspended"); // confirmVehicle card.
+    const resumed = await acceptConfirm(run);
     expect(resumed.status).toBe("success");
     expect(rowCount("search_profiles")).toBe(1);
     const row = db.$client
@@ -689,7 +658,7 @@ describe("search_profile_intake — geocode failure (never null coords)", () => 
       traceSpans: [],
     };
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       resolveLocation: locationStub([failed, RESOLVED]),
     });
 
@@ -709,10 +678,12 @@ describe("search_profile_intake — geocode failure (never null coords)", () => 
     expect(payload["failure_reason"]).toBe("no_result");
     expect(rowCount("search_profiles")).toBe(0); // nothing persisted yet.
 
-    const resumed = await run.resume({
+    const afterRetry = await run.resume({
       step: "resolveLocation",
       resumeData: { action: "retry", retry_query: "Irvine, CA 92602" },
     });
+    expect(afterRetry.status).toBe("suspended"); // confirmVehicle card.
+    const resumed = await acceptConfirm(run);
     expect(resumed.status).toBe("success");
     expect(rowCount("search_profiles")).toBe(1);
   });
@@ -725,7 +696,7 @@ describe("search_profile_intake — geocode failure (never null coords)", () => 
       traceSpans: [],
     };
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       resolveLocation: locationStub([failed]),
     });
 
@@ -748,20 +719,22 @@ describe("search_profile_intake — geocode failure (never null coords)", () => 
 // ---------------------------------------------------------------------------
 
 describe("search_profile_intake — #1244 malformed_tool_call → suspend", () => {
-  it("trimVerify malformed → suspend → retry_step → re-verify ok → created", async () => {
-    // First trim_verify call fail-closed-suspends (HarnessSuspend, hitlAvailable
-    // true); the retry_step re-runs trimVerify and the second call returns a
-    // verdict. The harness itself returns the suspend (suspend not thrown);
-    // the workflow maps it to a malformed_tool_call Mastra suspend.
+  it("freeform prefill malformed → suspend → retry_step → prefill ok → collect → confirm → created", async () => {
+    // The freeform prefill LLM call fail-closed-suspends on the FIRST call
+    // (HarnessSuspend, hitlAvailable true); the retry_step re-runs prefill and the
+    // second call returns a seed. prefill is intake's fail-closed LLM surface.
     let calls = 0;
     const harnessGenerate = (async (input: { useCase: string }) => {
-      if (input.useCase === "intake_trim_verify") {
+      if (input.useCase === "intake_freeform_prefill") {
         calls += 1;
         if (calls === 1) {
           return { suspended: true, reason: "malformed_tool_call", signals: ["empty_tool_calls"] };
         }
         return {
-          object: { valid: true, attestation: "ok", suggested_trims: [] },
+          object: IntakePrefillSchema.parse({
+            make: "Hyundai", model: "Tucson", year: 2026, trim: null,
+            location_query: "Irvine, CA", search_radius_miles: null, financing_preference: "finance",
+          }),
           usage: NO_USAGE,
         };
       }
@@ -772,29 +745,34 @@ describe("search_profile_intake — #1244 malformed_tool_call → suspend", () =
 
     const wf = intakeWorkflow();
     const run = await wf.createRun({ runId: "intake-1244-1" });
-    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    const afterSubmit = await run.resume({
-      step: "collect",
-      resumeData: { action: "submit", fields: validFields() },
+    const started = await run.start({
+      inputData: { input_mode: "freeform", freeform_text: "2026 Tucson in Irvine", seed_fields: null },
     });
 
-    // Suspended at trimVerify with a malformed_tool_call payload (NOT thrown).
-    expect(afterSubmit.status).toBe("suspended");
-    if (afterSubmit.status !== "suspended") return;
-    const payload = suspendPayloadOf(afterSubmit, "trimVerify");
-    expect(payload["kind"]).toBe("malformed_tool_call");
+    // Suspended at prefill with a malformed_tool_call payload (NOT thrown).
+    expect(started.status).toBe("suspended");
+    if (started.status !== "suspended") return;
+    expect(suspendPayloadOf(started, "prefill")["kind"]).toBe("malformed_tool_call");
     expect(rowCount("search_profiles")).toBe(0);
 
-    const resumed = await run.resume({ step: "trimVerify", resumeData: { action: "retry_step" } });
+    // retry_step → prefill re-runs, seeds, collect form suspends.
+    const afterRetry = await run.resume({ step: "prefill", resumeData: { action: "retry_step" } });
+    expect(afterRetry.status).toBe("suspended");
+    const afterSubmit = await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields() } });
+    expect(afterSubmit.status).toBe("suspended"); // confirmVehicle card.
+    const resumed = await acceptConfirm(run);
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
-    expect(resumed.result.outcome).toBe("created");
+    expect(resumed.result?.outcome).toBe("created");
     expect(rowCount("search_profiles")).toBe(1);
   });
 
-  it("trimVerify malformed → suspend → decline → zero rows", async () => {
+  it("freeform prefill malformed → suspend → decline → proceeds to the empty form (recoverable), zero rows until the buyer acts", async () => {
+    // prefill is a SEED helper: a #1244 decline abandons the auto-fill and proceeds
+    // to the EMPTY collect form (the buyer fills it by hand) — it never fabricates a
+    // seed and never persists. Declining the form then ends the run zero-write.
     const harnessGenerate = (async (input: { useCase: string }) => {
-      if (input.useCase === "intake_trim_verify") {
+      if (input.useCase === "intake_freeform_prefill") {
         return { suspended: true, reason: "malformed_tool_call", signals: ["empty_tool_calls"] };
       }
       throw new Error("unexpected useCase");
@@ -804,10 +782,21 @@ describe("search_profile_intake — #1244 malformed_tool_call → suspend", () =
 
     const wf = intakeWorkflow();
     const run = await wf.createRun({ runId: "intake-1244-decline-1" });
-    await run.start({ inputData: { input_mode: "slash", freeform_text: null, seed_fields: null } });
-    await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields() } });
+    const started = await run.start({
+      inputData: { input_mode: "freeform", freeform_text: "2026 Tucson in Irvine", seed_fields: null },
+    });
+    expect(started.status).toBe("suspended");
+    expect(suspendPayloadOf(started, "prefill")["kind"]).toBe("malformed_tool_call");
 
-    const resumed = await run.resume({ step: "trimVerify", resumeData: { action: "decline" } });
+    // decline the malformed prefill → proceeds to the EMPTY collect form (no seed
+    // fabricated, nothing persisted).
+    const afterDecline = await run.resume({ step: "prefill", resumeData: { action: "decline" } });
+    expect(afterDecline.status).toBe("suspended");
+    expect(suspendPayloadOf(afterDecline, "collect")["kind"]).toBe("data_collection");
+    expect(rowCount("search_profiles")).toBe(0);
+
+    // declining the form ends the run zero-write.
+    const resumed = await run.resume({ step: "collect", resumeData: { action: "decline" } });
     expect(resumed.status).toBe("success");
     if (resumed.status !== "success") return;
     expect(resumed.result.outcome).toBe("declined");
@@ -861,11 +850,9 @@ describe("search_profile_intake — trim suggestion", () => {
     expect((payload["candidates"] as unknown[]).length).toBe(3);
   });
 
-  it("pick → the chosen trim seeds the form AND trimVerify is SKIPPED (grounded), even when verify would say invalid → created", async () => {
+  it("pick → the chosen trim seeds the form → submit → confirm → created (freeform-picker-pick path)", async () => {
     wireDeps({
-      // verifyValid:false would normally force the force_override gate — but a
-      // grounded pick must SKIP trimVerify entirely.
-      harnessGenerate: trimLookupStub({ names: ["LX", "Sport"], summaries: ["base", "sporty"], verifyValid: false }),
+      harnessGenerate: trimLookupStub({ names: ["LX", "Sport"], summaries: ["base", "sporty"] }),
       fetchTrimSources: trimSourcesStub(TRIM_TEXT),
       resolveLocation: locationStub([RESOLVED]),
     });
@@ -878,10 +865,13 @@ describe("search_profile_intake — trim suggestion", () => {
     expect(collect["kind"]).toBe("data_collection");
     expect((collect["seed_fields"] as Record<string, unknown>)["trim"]).toBe("Sport");
 
-    const created = await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Sport" }) } });
+    const afterSubmit = await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields({ trim: "Sport" }) } });
+    expect(afterSubmit.status).toBe("suspended"); // the buyer STILL confirms the picked trim.
+    expect(suspendPayloadOf(afterSubmit, "confirmVehicle")).toMatchObject({ kind: "intake_confirm", trim: "Sport" });
+    const created = await acceptConfirm(run);
     expect(created.status).toBe("success");
     if (created.status !== "success") return;
-    expect(created.result.outcome).toBe("created"); // NOT a force_override suspend → grounded skipped verify
+    expect(created.result?.outcome).toBe("created");
     expect(rowCount("search_profiles")).toBe(1);
   });
 
@@ -934,7 +924,7 @@ describe("search_profile_intake — trim suggestion", () => {
 
   it("fetchTrimSources {none} → NO trim_suggestion suspend, straight to the collect form (existing freeform behavior preserved)", async () => {
     wireDeps({
-      harnessGenerate: harnessStub({ valid: true }),
+      harnessGenerate: harnessStub(),
       resolveLocation: locationStub([RESOLVED]),
       // fetchTrimSources defaults to {none}
     });
@@ -964,9 +954,6 @@ describe("search_profile_intake — trim suggestion", () => {
       if (input.useCase === "intake_trim_lookup") {
         return { object: { trim_names: ["LX"], trim_summaries: ["base"] }, usage: NO_USAGE };
       }
-      if (input.useCase === "intake_trim_verify") {
-        return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
-      }
       return {
         object: IntakePrefillSchema.parse({
           make: "Honda", model: "Civic", year: 2026, trim: "Sport",
@@ -993,9 +980,6 @@ describe("search_profile_intake — trim suggestion", () => {
     const prefillSuperlative = (async (input: { useCase: string }) => {
       if (input.useCase === "intake_trim_lookup") {
         return { object: { trim_names: ["LX", "Sport", "Sport Touring"], trim_summaries: ["base", "sporty", "loaded"] }, usage: NO_USAGE };
-      }
-      if (input.useCase === "intake_trim_verify") {
-        return { object: { valid: true, attestation: "ok", suggested_trims: [] }, usage: NO_USAGE };
       }
       return {
         object: IntakePrefillSchema.parse({
@@ -1065,19 +1049,18 @@ describe("search_profile_intake — trim suggestion", () => {
 // ---------------------------------------------------------------------------
 
 describe("search_profile_intake — flat shape (design convention)", () => {
-  it("the workflow registers exactly the 9 named steps, none of them a nested workflow", () => {
+  it("the workflow registers exactly the 8 named steps, none of them a nested workflow", () => {
     const wf = intakeWorkflow();
     const stepIds = Object.keys(wf.steps);
     expect(stepIds.sort()).toEqual(
       [
         "collect",
         "confirm",
-        "forceOverrideGate",
+        "confirmVehicle",
         "persist",
         "prefill",
         "resolveLocation",
         "trimSuggestion",
-        "trimVerify",
         "validate",
       ].sort(),
     );

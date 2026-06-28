@@ -19,12 +19,14 @@ describe("gateModel — classification", () => {
     if (g.kind === "data_collection") expect(g.seedFields).toEqual({ make: "Hyundai" });
   });
 
-  it("force_override → question/trim/reason", () => {
-    const g = classifyGate({ kind: "force_override", question: "Keep it?", trim: "GT-X", reason: "unverified" });
-    expect(g.kind).toBe("force_override");
-    if (g.kind === "force_override") {
-      expect(g.trim).toBe("GT-X");
-      expect(g.reason).toBe("unverified");
+  it("intake_confirm → year/make/model/trim", () => {
+    const g = classifyGate({ kind: "intake_confirm", year: 2026, make: "Hyundai", model: "Tucson", trim: "SEL" });
+    expect(g.kind).toBe("intake_confirm");
+    if (g.kind === "intake_confirm") {
+      expect(g.year).toBe(2026);
+      expect(g.make).toBe("Hyundai");
+      expect(g.model).toBe("Tucson");
+      expect(g.trim).toBe("SEL");
     }
   });
 

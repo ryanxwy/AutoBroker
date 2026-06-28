@@ -1,6 +1,6 @@
 /**
  * search_profile_intake — the first skill workflow. ONE flat linear Mastra
- * `createWorkflow`: 9 named steps chained with
+ * `createWorkflow`: 8 named steps chained with
  * `.then()`, no nested workflow (flatness is the design convention — the old
  * nested-resume defect cluster #4630/#5650/#6065 is fixed in 1.x, but flatness
  * stays the rule; a structural test asserts no nested step here).
@@ -8,27 +8,21 @@
  * STEP MAP:
  *   0 prefill           — conditional (freeform launch only): harness.generate
  *                         (intake_freeform_prefill) seeds the form. Slash launch
- *                         passes through. Prefill OUTPUT NEVER PERSISTS.
+ *                         passes through. Prefill OUTPUT NEVER PERSISTS. #1244 on
+ *                         this call fails CLOSED to a malformed_tool_call suspend.
  *   0.5 trimSuggestion  — conditional (freeform + make/model/year present + trim
  *                         null): fetchTrimSources (tools, web) → intake_trim_lookup
  *                         extraction → suspend a trim_suggestion picker. resume
- *                         pick (seeds trim, marks trimGrounded) | skip (manual) |
- *                         retry (re-lookup) | decline (terminal). Web/LLM failure
- *                         or 0 trims passes through → blank-trim form (never blocks).
+ *                         pick (seeds trim) | skip (manual) | retry (re-lookup) |
+ *                         decline (terminal). Web/LLM failure or 0 trims passes
+ *                         through → blank-trim form (never blocks; non-authoritative
+ *                         helper, so a #1244 here degrades, never gates).
  *   1 collect           — suspend ① (data_collection). resume submit|decline|cancel.
  *                         decline/cancel → terminal {outcome:'declined'}, and every
  *                         later step short-circuits → ZERO writes.
  *   2 validate          — pure: SearchProfileIntakeInputSchema.strict().parse.
- *   3 trimVerify        — skip when trim null OR trimGrounded (a web-grounded
- *                         pick from step 0.5); else harness.generate
- *                         (intake_trim_verify).
- *   4 forceOverrideGate — suspend ② only when trimVerify said invalid. resume
- *                         force_override (audited) | revise (re-verify) | decline.
- *                         A `revise` whose re-verify STILL returns invalid
- *                         RE-SUSPENDS the gate with the new trim + new attestation
- *                         (fail-closed) — it NEVER proceeds unaudited.
- *   5 resolveLocation   — goplaces.resolveLocation. resolved → carry coords;
- *                         ambiguous/failed → suspend ③ (same channel);
+ *   3 resolveLocation   — goplaces.resolveLocation. resolved → carry coords;
+ *                         ambiguous/failed → suspend ② (same channel);
  *                         resume pick | retry (re-resolve) | decline. NEVER carries
  *                         NULL coords forward (coordinate-resolution invariant).
  *                         The shown candidate list + effective
@@ -36,9 +30,22 @@
  *                         so a `pick` indexes the SAME list shown (no re-resolution,
  *                         no Google re-order nondeterminism); a `retry`'s new list
  *                         REPLACES the stored one.
- *   6 persist           — profileService.create (the ONLY DB write); returns
+ *   4 confirmVehicle    — suspend ③ (intake_confirm), UNCONDITIONAL: the buyer
+ *                         affirms the resolved {year, make, model, trim} before the
+ *                         only DB write. resume accept (→ persist as-is) | edit (→
+ *                         re-open the collect form, the ONE editing surface; the
+ *                         re-submitted form carries EVERY edited field forward and
+ *                         re-geocodes when the location text changed — the submit IS
+ *                         the affirmation, so no field is ever dropped; an empty trim
+ *                         re-suspends, trim is required) | decline (terminal, zero
+ *                         write). Because the chain is linear and persist has no
+ *                         independent suspend, unconditionality is what guarantees
+ *                         EVERY launch/resume path is confirmed. The DISPLAY card is
+ *                         DUMB — vehicle-only (no email/phone/budget, inv #9), never
+ *                         re-validates the trim with an LLM.
+ *   5 persist           — profileService.create (the ONLY DB write); returns
  *                         {profileId, auditId}. ActiveSlotConflict propagates typed.
- *   7 confirm           — structured created summary + redactions + handoff.
+ *   6 confirm           — structured created summary + redactions + handoff.
  *
  * STATE THREADING: Mastra feeds each step the prior step's OUTPUT as `inputData`.
  * We thread one accumulating `IntakeState` object through every step so each step
@@ -55,27 +62,25 @@
  * each harness.generate call.
  *
  * #1244: harness.generate returns a HarnessSuspend (not a throw) when a
- * malformed tool call is detected and hitlAvailable=true; the LLM steps map that
- * to a malformed_tool_call suspend with a {retry_step|decline} resume. With no
+ * malformed tool call is detected and hitlAvailable=true; the prefill LLM step maps
+ * that to a malformed_tool_call suspend with a {retry_step|decline} resume. With no
  * HITL it throws MalformedToolCallAbort and the run fails — but intake always runs
- * with hitlAvailable=true (the rail/form is the human).
+ * with hitlAvailable=true (the rail/form is the human). The trimSuggestion LLM step
+ * is a non-authoritative helper, so a #1244 there degrades to the blank-trim form
+ * (never gates).
  *
- * FORCED-AUDIT PERSISTENCE (product ruling 2026-06-04): a
- * confirmed `force_override` writes its 'intake_verification_forced' audit row
- * IMMEDIATELY at step 4. If the user LATER declines (e.g. at resolveLocation), the
- * run terminates declined with ZERO search_profiles writes — but the forced-audit
- * row REMAINS. This is INTENDED, not a leak: a decision that genuinely happened
- * (the user forced an unverified trim) stays audited even when the surrounding run
- * later aborts. Invariant: decline writes zero search_profiles rows; a confirmed
- * force always writes the forced-audit row. The forced-audit row is NOT linked to a profile id
- * (searchProfileId: null) — the profile does not exist yet at force-override time
- * (persist is step 6), so there is nothing to point at.
+ * CONFIRMATION (owner ruling): trim is required info the buyer must PROVIDE AND
+ * CONFIRM on every path. The single unconditional confirmVehicle suspend (step 4)
+ * is the buyer-affirmation floor before persist; there is no LLM trim-verify and no
+ * audited override branch (a prior LLM trim-verify false-rejected valid trims — it
+ * was removed). decline at the confirmation writes ZERO rows (inv #11); the only DB
+ * write is persist (step 5).
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core (types),
  * @autobroker/model (HarnessSuspend type), @autobroker/tools (goplaces +
- * profileService + writeAuditLog + getDb — the ONLY DB path), and this layer's
+ * profileService + getDb — the ONLY DB path), and this layer's
  * harness facade + intake contracts. NEVER opens the product DB directly: the
- * tools closures (create / resolveLocation / writeAuditLog) own every side effect.
+ * tools closures (create / resolveLocation) own every side effect.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -87,11 +92,9 @@ import {
 } from "@autobroker/core";
 import type { HarnessSuspend } from "@autobroker/model";
 import {
-  AUDIT_ACTIONS,
   create as createProfileImpl,
   resolveLocation as resolveLocationImpl,
   fetchTrimSources as fetchTrimSourcesImpl,
-  writeAuditLog,
   getDb,
   type CreateResult,
   type ResolvedCoordinates,
@@ -102,18 +105,17 @@ import {
   AmbiguousLocationResumeSchema,
   buildPrefillPrompt,
   buildTrimSuggestionPrompt,
-  buildTrimVerifyPrompt,
   CollectResumeSchema,
-  ForceOverrideResumeSchema,
+  IntakeConfirmSuspendSchema,
   IntakePrefillSchema,
   MalformedRetryResumeSchema,
+  PartialIntakeSchema,
   sanitizePrefillTrim,
   TrimSuggestionResumeSchema,
   TrimSuggestionSchema,
-  TrimVerifyResultSchema,
+  type IntakeConfirmSuspend,
   type IntakePrefill,
   type TrimSuggestion,
-  type TrimVerifyResult,
 } from "./intakeContracts.js";
 
 // ---------------------------------------------------------------------------
@@ -231,11 +233,6 @@ const IntakeStateSchema = z.object({
   freeformText: z.string().nullable(),
   /** Form seed (prefill output or caller seed); NEVER persisted directly. */
   seed: z.record(z.string(), z.unknown()).nullable(),
-  /** True once the buyer PICKED a web-grounded trim suggestion. trimVerify skips
-   *  when set — re-verifying a freshly web-grounded trim with the conservative
-   *  ungrounded LLM only risks a needless force-override on a real trim. Defaulted
-   *  so a run snapshot taken before this field existed still parses on resume. */
-  trimGrounded: z.boolean().default(false),
   /** Terminal-declined flag: once true, every later step passes through. */
   declined: z.boolean(),
   /** Validated form fields (after step 2); null until then. */
@@ -313,7 +310,6 @@ const prefillStep = createStep({
       inputMode: inputData.input_mode,
       freeformText: inputData.freeform_text,
       seed: inputData.seed_fields,
-      trimGrounded: false,
       declined: false,
       fields: null,
       coordinates: null,
@@ -431,12 +427,11 @@ const trimSuggestionStep = createStep({
             candidates: suspendData?.candidates ?? [],
           })) as never;
         }
-        // Seed the form's trim field with the web-grounded pick; mark grounded so
-        // trimVerify (step 3) does not re-distrust it.
+        // Seed the form's trim field with the web-grounded pick. The buyer still
+        // confirms the final vehicle at the confirmVehicle suspend before persist.
         return {
           ...state,
           seed: { ...(state.seed ?? {}), trim: chosen.name },
-          trimGrounded: true,
         };
       }
       // retry falls through to a fresh lookup (optionally refined).
@@ -560,221 +555,7 @@ const validateStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 3 — trimVerify (LLM): skip when trim null
-// ---------------------------------------------------------------------------
-
-/**
- * Run the trim-verify LLM call for a given trim. Returns the verdict, or a
- * {malformed, signals} sentinel when harness.generate fail-closed-suspended on a
- * #1244 malformed tool call (the CALLER performs the actual Mastra suspend with
- * its own correctly-typed `suspend`, since each step's suspend is narrowed to its
- * own suspendSchema).
- */
-async function runTrimVerify(
-  fields: SearchProfileIntakeInput,
-  runId: string,
-): Promise<{ verdict: TrimVerifyResult } | { malformed: true; signals: string[] }> {
-  const result = await deps().harnessGenerate(
-    {
-      useCase: "intake_trim_verify",
-      schema: TrimVerifyResultSchema,
-      prompt: buildTrimVerifyPrompt({
-        year: fields.year,
-        make: fields.make,
-        model: fields.model,
-        trim: fields.trim ?? "",
-      }),
-      hitlAvailable: true,
-    },
-    intakeLedger(runId),
-  );
-  if (isHarnessSuspend(result)) {
-    return { malformed: true, signals: result.signals };
-  }
-  return { verdict: result.object };
-}
-
-/** The malformed_tool_call suspend payload shape (shared by the LLM steps). */
-const MalformedSuspendSchema = z.object({
-  kind: z.literal("malformed_tool_call"),
-  signals: z.array(z.string()),
-});
-
-/** trimVerify carries its verdict forward in a side field of the state so the
- *  force-override gate (step 4) can read it. */
-const TrimVerdictSchema = TrimVerifyResultSchema.nullable();
-
-const trimVerifyStep = createStep({
-  id: "trimVerify",
-  inputSchema: IntakeStateSchema,
-  outputSchema: IntakeStateSchema.extend({ trimVerdict: TrimVerdictSchema }),
-  resumeSchema: MalformedRetryResumeSchema,
-  suspendSchema: MalformedSuspendSchema,
-  execute: async ({ inputData, runId, resumeData, suspend }) => {
-    const state = asState(inputData);
-    if (state.declined) return { ...state, trimVerdict: null };
-
-    const fields = state.fields as SearchProfileIntakeInput;
-    // No trim to verify → skip straight to resolveLocation (verdict null).
-    if (fields.trim === null) return { ...state, trimVerdict: null };
-    // A web-grounded picked trim is already grounded against current web data —
-    // re-verifying with the conservative ungrounded LLM only risks a needless
-    // force-override on a real trim. Skip (the post-scan inventory check still
-    // grounds it). The form is the source of truth: if the user EDITED the trim
-    // away from the pick, trimGrounded still holds — acceptable, the edited value
-    // is still a buyer-typed string the inventory cross-check grounds downstream.
-    if (state.trimGrounded) return { ...state, trimVerdict: null };
-
-    if (resumeData !== undefined && resumeData.action === "decline") {
-      return { ...state, declined: true, trimVerdict: null };
-    }
-
-    const r = await runTrimVerify(fields, runId);
-    if ("malformed" in r) {
-      // #1244 fail-closed: suspend to the human (retry_step | decline).
-      return (await suspend({ kind: "malformed_tool_call", signals: r.signals })) as never;
-    }
-    return { ...state, trimVerdict: r.verdict };
-  },
-});
-
-const TrimStateSchema = IntakeStateSchema.extend({ trimVerdict: TrimVerdictSchema });
-type TrimState = z.infer<typeof TrimStateSchema>;
-
-// ---------------------------------------------------------------------------
-// step 4 — forceOverrideGate (suspend ②, conditional on invalid trim)
-// ---------------------------------------------------------------------------
-
-/**
- * The force-override gate can suspend two ways: the force_override approval card,
- * OR a malformed_tool_call (when the `revise` re-verify itself trips #1244). Both
- * resume paths are folded into the exported ForceOverrideResumeSchema (single
- * `decline` member so the discriminated union stays valid).
- */
-const ForceOverrideStepSuspendSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("force_override"),
-    question: z.string(),
-    trim: z.string(),
-    reason: z.string(),
-  }),
-  MalformedSuspendSchema,
-]);
-
-const forceOverrideStep = createStep({
-  id: "forceOverrideGate",
-  inputSchema: TrimStateSchema,
-  outputSchema: IntakeStateSchema,
-  resumeSchema: ForceOverrideResumeSchema,
-  suspendSchema: ForceOverrideStepSuspendSchema,
-  execute: async ({ inputData, runId, resumeData, suspendData, suspend }) => {
-    const state = TrimStateSchema.parse(inputData) as TrimState;
-    const { trimVerdict, ...rest } = state;
-    const base: IntakeState = rest;
-    if (base.declined) return base;
-
-    // No verdict, or trim is valid → no gate, pass through.
-    if (trimVerdict === null || trimVerdict.valid) return base;
-
-    const fields = base.fields as SearchProfileIntakeInput;
-
-    // The force_override card the user is responding to (suspendData) holds the
-    // trim + attestation actually shown — which is the REVISED trim/attestation
-    // after a still-invalid revise re-suspend, or the original on the first card.
-    // Audit and persist the trim the user actually approved (not the stale input).
-    const carded =
-      suspendData !== undefined && suspendData.kind === "force_override" ? suspendData : null;
-    const approvedTrim = carded ? carded.trim : (fields.trim ?? "");
-    const approvedAttestation = carded ? carded.reason : trimVerdict.attestation;
-
-    // First pass: render the approval card (gate before prose).
-    if (resumeData === undefined) {
-      return (await suspend({
-        kind: "force_override",
-        question:
-          "We couldn't verify this trim from our records — we'll cross-check it against " +
-          "real dealer inventory after the search. Keep it, revise it, or cancel?",
-        trim: fields.trim ?? "",
-        reason: trimVerdict.attestation,
-      })) as never;
-    }
-
-    if (resumeData.action === "decline") {
-      return { ...base, declined: true };
-    }
-
-    if (resumeData.action === "force_override") {
-      // Audited: the user knowingly kept an unverified trim (reason REQUIRED). The
-      // forced-audit row writes IMMEDIATELY and is NOT linked to a profile id (the
-      // profile does not exist yet — see the forced-audit persistence note in the
-      // file header).
-      withDb((db) =>
-        writeAuditLog(db, {
-          action: AUDIT_ACTIONS.intakeVerificationForced,
-          actor: null,
-          targetTable: "search_profiles",
-          searchProfileId: null,
-          reason: resumeData.reason,
-          payloadJson: JSON.stringify({ trim: approvedTrim, attestation: approvedAttestation }),
-        }),
-      );
-      // Continue with the now-audited approved trim (revised, if the user revised).
-      return { ...base, fields: { ...fields, trim: approvedTrim } };
-    }
-
-    // retry_step → re-run the re-verify (the malformed suspend was on a revise);
-    // we cannot reconstruct the revised trim from a bare retry, so fall back to
-    // re-rendering the approval card (fail-closed; the user re-chooses).
-    if (resumeData.action === "retry_step") {
-      return (await suspend({
-        kind: "force_override",
-        question: "Re-verify failed earlier. Keep the trim, revise it, or cancel?",
-        trim: fields.trim ?? "",
-        reason: trimVerdict.attestation,
-      })) as never;
-    }
-
-    // revise → change the trim and re-verify once. Trim is now REQUIRED at the
-    // form contract (owner-directed, 2026-06-22), so a cleared/empty trim can no
-    // longer proceed — it would fail the required-form persist late. Re-suspend the
-    // gate so the user provides a trim, forces the current one, or cancels:
-    // fail-closed, never a null-trim profile, never a late crash.
-    if (resumeData.trim === null || resumeData.trim.trim() === "") {
-      return (await suspend({
-        kind: "force_override",
-        question: "A trim is required — keep the current trim, revise it, or cancel.",
-        trim: fields.trim ?? "",
-        reason: trimVerdict.attestation,
-      })) as never;
-    }
-    const revisedFields: SearchProfileIntakeInput = { ...fields, trim: resumeData.trim };
-    const revised: IntakeState = { ...base, fields: revisedFields };
-
-    const r = await runTrimVerify(revisedFields, runId);
-    if ("malformed" in r) {
-      // #1244 on the re-verify → suspend (retry_step | decline | revise again).
-      return (await suspend({ kind: "malformed_tool_call", signals: r.signals })) as never;
-    }
-    if (r.verdict.valid) {
-      // Re-verify confirmed the revised trim → no gate needed, continue.
-      return revised;
-    }
-    // STILL invalid after revise → never proceed unaudited. Re-suspend the gate
-    // with the NEW trim + NEW attestation so the user must force_override (which
-    // writes the forced-audit row), revise again, or decline (fail-closed).
-    return (await suspend({
-      kind: "force_override",
-      question:
-        "The revised trim also couldn't be verified from our records — we'll cross-check it " +
-        "against dealer inventory after the search. Keep it, revise it again, or cancel?",
-      trim: resumeData.trim,
-      reason: r.verdict.attestation,
-    })) as never;
-  },
-});
-
-// ---------------------------------------------------------------------------
-// step 5 — resolveLocation (tools/goplaces, suspend ③: ambiguous + geocode fail)
+// step 3 — resolveLocation (tools/goplaces, suspend ②: ambiguous + geocode fail)
 // ---------------------------------------------------------------------------
 
 /** Map a goplaces GeoLocation to the persist-layer ResolvedCoordinates shape. */
@@ -905,7 +686,121 @@ const resolveLocationStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 6 — persist (tools closure, the ONLY DB write)
+// step 4 — confirmVehicle (suspend ③, UNCONDITIONAL buyer confirmation)
+// ---------------------------------------------------------------------------
+
+/** The confirmVehicle suspend payload: the buyer-confirmation card
+ *  (intake_confirm) OR, while the buyer is editing, the re-rendered collect form
+ *  (data_collection). One step, two cards — the discriminator is `kind`. */
+const ConfirmVehicleSuspendSchema = z.discriminatedUnion("kind", [
+  IntakeConfirmSuspendSchema,
+  z.object({
+    kind: z.literal("data_collection"),
+    form_kind: z.literal("intake"),
+    spec_hint: z.string(),
+    seed_fields: z.record(z.string(), z.unknown()).nullable(),
+  }),
+]);
+
+/** The confirmVehicle resume payload. accept/edit/decline answer the confirmation
+ *  card; submit/decline answer the re-rendered collect form (the edit surface). */
+const ConfirmVehicleResumeSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("accept") }),
+  z.object({ action: z.literal("edit") }),
+  z.object({ action: z.literal("submit"), fields: PartialIntakeSchema }),
+  z.object({ action: z.literal("decline") }),
+]);
+
+/** The buyer-confirmation card payload for a (resolved + validated) vehicle. */
+function confirmCardPayload(fields: SearchProfileIntakeInput): IntakeConfirmSuspend {
+  return {
+    kind: "intake_confirm",
+    year: fields.year,
+    make: fields.make,
+    model: fields.model,
+    trim: fields.trim,
+  };
+}
+
+/** The re-rendered collect form payload (the ONE editing surface) — seeded with
+ *  the current fields so the buyer fixes them in place. */
+function editFormPayload(seed: Record<string, unknown>) {
+  return {
+    kind: "data_collection" as const,
+    form_kind: "intake" as const,
+    spec_hint: "search_profile_intake",
+    seed_fields: seed,
+  };
+}
+
+const confirmVehicleStep = createStep({
+  id: "confirmVehicle",
+  inputSchema: IntakeStateSchema,
+  outputSchema: IntakeStateSchema,
+  resumeSchema: ConfirmVehicleResumeSchema,
+  suspendSchema: ConfirmVehicleSuspendSchema,
+  execute: async ({ inputData, resumeData, suspend }) => {
+    const state = asState(inputData);
+    if (state.declined) return state; // terminal-declined upstream → pass through.
+
+    const fields = state.fields as SearchProfileIntakeInput;
+
+    // First pass: render the buyer-confirmation card (gate before prose). The
+    // suspend is UNCONDITIONAL — every launch/resume path is confirmed here.
+    if (resumeData === undefined) {
+      return (await suspend(confirmCardPayload(fields))) as never;
+    }
+
+    // decline → terminal declined, zero write (mirrors collect / trimSuggestion).
+    if (resumeData.action === "decline") {
+      return { ...state, declined: true };
+    }
+
+    // edit → re-open the collect form (the ONE editing surface), seeded with the
+    // current fields. No new inline editor; the SchemaForm renders the same form.
+    if (resumeData.action === "edit") {
+      return (await suspend(editFormPayload(fields as Record<string, unknown>))) as never;
+    }
+
+    // submit (returned from the edit form) → re-validate the WHOLE form and carry
+    // EVERY edited field forward (the submit IS the buyer's affirmation — the edit
+    // form shows the full vehicle + context, so re-submitting it confirms it; no
+    // separate re-confirm card that could drop a non-vehicle edit). Trim is REQUIRED:
+    // an empty/invalid trim re-suspends the form rather than proceeding.
+    if (resumeData.action === "submit") {
+      const parsed = SearchProfileIntakeInputSchema.safeParse(resumeData.fields);
+      if (!parsed.success || parsed.data.trim.trim() === "") {
+        return (await suspend(
+          editFormPayload((resumeData.fields ?? fields) as Record<string, unknown>),
+        )) as never;
+      }
+      const edited = parsed.data;
+
+      // If the buyer changed the location text, the coords resolved at step 3 are
+      // stale — re-geocode so we never persist a location_query that disagrees with
+      // its coordinates (coordinate-resolution invariant). An ambiguous/failed
+      // re-resolve re-suspends the edit form so the buyer enters a cleaner location
+      // (the edit lane keeps it simple — no candidate-pick card here).
+      let coordinates = state.coordinates;
+      if (edited.location_query !== fields.location_query) {
+        const result = await deps().resolveLocation(edited.location_query);
+        if (result.kind !== "resolved") {
+          return (await suspend(editFormPayload(edited as Record<string, unknown>))) as never;
+        }
+        coordinates = toResolvedCoords(result.location);
+      }
+      return { ...state, fields: edited, coordinates };
+    }
+
+    // accept (no edit) → the displayed vehicle is affirmed as-is; persist the
+    // already-validated, already-resolved fields unchanged. (An edit goes straight
+    // to persist via the submit branch, so a no-edit accept never merges anything.)
+    return state;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// step 5 — persist (tools closure, the ONLY DB write)
 // ---------------------------------------------------------------------------
 
 const persistStep = createStep({
@@ -944,7 +839,7 @@ const persistStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 7 — confirm (pure): the created summary + redactions + handoff pointer
+// step 6 — confirm (pure): the created summary + redactions + handoff pointer
 // ---------------------------------------------------------------------------
 
 const confirmStep = createStep({
@@ -982,9 +877,8 @@ export const searchProfileIntakeWorkflow = createWorkflow({
   .then(trimSuggestionStep)
   .then(collectStep)
   .then(validateStep)
-  .then(trimVerifyStep)
-  .then(forceOverrideStep)
   .then(resolveLocationStep)
+  .then(confirmVehicleStep)
   .then(persistStep)
   .then(confirmStep)
   .commit();

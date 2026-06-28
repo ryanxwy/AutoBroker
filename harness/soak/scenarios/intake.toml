@@ -34,13 +34,14 @@ judge_dims = ["buyer_coherence", "extraction_quality"]
 gate_verbs = []
 
 # --- missing_trim -------------------------------------------------------------
-# Trim stays null in prefill → trimVerify step SKIPPED → no force_override gate.
-# Proves the null-trim skip branch and that prefill never invents a trim.
+# Trim stays null in prefill → the freeform trim-suggestion picker offers real
+# trims (or the form requires one). Proves prefill never invents a trim and the
+# buyer still confirms the final vehicle before persist.
 [[scenarios]]
 id = "intake_missing_trim"
 surface = "search_profile_intake"
 class_name = "intake_missing_trim"
-stresses = "trim unstated — stays null in prefill so trimVerify is skipped (no force_override gate); prefill never invents a trim."
+stresses = "trim unstated — stays null in prefill; the buyer supplies + confirms it; prefill never invents a trim."
 buyer_model = "opus"
 dealer_needed = false
 deterministic_assertions = ["intake_single_new_profile", "intake_prefill_never_persists", "no_external_mutation", "test_mode_armed"]

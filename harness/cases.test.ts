@@ -124,17 +124,12 @@ describe("case loader", () => {
     expect(tmr).toMatchObject({ exact: true, deltaMin: 0 });
   });
 
-  it("loads the force-override case folding force_override into resume content", () => {
-    const c = loadCase(join(CASES, "search_profile_intake.force_override.toml"));
-    const fo = c.steps[0]!.resume.find((r) => r.on === "force_override")!;
-    // The case authored action="force_override"; the loader folds it into content
-    // {action:"force_override", reason} with the outer form action = accept.
-    expect(fo.action).toBe("accept");
-    expect(fo.content).toMatchObject({ action: "force_override", reason: expect.any(String) });
-    const gate = c.steps[0]!.anchors.find((a) => a.kind === "approval_gate");
-    expect(gate).toBeDefined();
-    const audit = c.steps[0]!.anchors.find((a) => a.kind === "table_min_rows" && (a as { table?: string }).table === "audit_log");
-    expect(audit).toMatchObject({ scope: "global", action: "intake_verification_forced" });
+  it("loads the slash case with the unconditional intake_confirm accept resume", () => {
+    const c = loadCase(join(CASES, "search_profile_intake.slash.toml"));
+    const confirm = c.steps[0]!.resume.find((r) => r.on === "intake_confirm")!;
+    // The buyer-confirmation suspend is answered with a plain accept (no content).
+    expect(confirm.action).toBe("accept");
+    expect(confirm.content).toBeNull();
   });
 
   it("loads the (now CI-gated) #1244 func case with the fail_closed anchor", () => {

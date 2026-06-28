@@ -53,6 +53,10 @@ on = "data_collection"
 action = "accept"
 content_from = "narrative.profile"   # human-confirmed final values over the seed.
 
+[[steps.resume]]
+on = "intake_confirm"
+action = "accept"
+
 [[steps.anchors]]
 kind = "run_status"
 expect = ["done"]

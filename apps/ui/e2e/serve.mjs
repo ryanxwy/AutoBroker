@@ -92,11 +92,10 @@ db.$client.close();
 /**
  * @typedef {Object} Scenario
  * @property {"resolved"|"ambiguous"|"failed"} location  geocode outcome
- * @property {boolean} trimValid                          trim_verify verdict
  */
 
 /** @type {Scenario} */
-const scenario = { location: "resolved", trimValid: true };
+const scenario = { location: "resolved" };
 
 const NO_USAGE = {
   costUsd: null,
@@ -145,19 +144,8 @@ const resolveLocationStub = async () => {
   }
 };
 
-/** harnessGenerate stub: trim_verify verdict from scenario.trimValid; a fixed
- *  freeform-prefill seed otherwise (NO live LLM). */
-const harnessGenerateStub = async (input) => {
-  if (input.useCase === "intake_trim_verify") {
-    return {
-      object: {
-        valid: scenario.trimValid,
-        attestation: scenario.trimValid ? "trim exists" : "trim not found in catalog",
-        suggested_trims: scenario.trimValid ? [] : ["SE", "Limited"],
-      },
-      usage: NO_USAGE,
-    };
-  }
+/** harnessGenerate stub: a fixed freeform-prefill seed (NO live LLM). */
+const harnessGenerateStub = async (_input) => {
   // intake_freeform_prefill — a fixed nullable subset seed (PII/budget absent).
   return {
     object: {
@@ -194,18 +182,16 @@ __setIntakeDepsForTests({
 const built = await buildServer({ quiet: true });
 
 // Test-only control route, OUTSIDE /api (the /api wall is untouched). The runner
-// POSTs { location?, trimValid? } to flip the scenario between/within runs.
+// POSTs { location? } to flip the geocode scenario between/within runs.
 built.app.post("/__e2e/scenario", async (req, reply) => {
   const body = (req.body ?? {}) /** @type {Partial<Scenario>} */;
   if (typeof body.location === "string") scenario.location = body.location;
-  if (typeof body.trimValid === "boolean") scenario.trimValid = body.trimValid;
   reply.code(200);
   return { ok: true, scenario };
 });
 
 // Test-only audit read, OUTSIDE /api: count REAL audit_log rows for an action,
-// through the tools openDb closure (the only DB owner). Lets scenario B prove the
-// force-override forced-audit row physically landed in the product DB.
+// through the tools openDb closure (the only DB owner).
 built.app.get("/__e2e/audit", async (req, reply) => {
   const action = (req.query ?? {}).action;
   const adb = openDb();

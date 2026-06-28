@@ -55,6 +55,7 @@ import {
   SearchProfileIntakeInputSchema,
   providerDriverKind,
   type HarnessDriverKind,
+  type SearchProfileIntakeInput,
 } from "@autobroker/core";
 import { policy } from "@autobroker/model";
 import {
@@ -94,7 +95,7 @@ import {
   QUOTE_PIPELINE_WORKFLOW_ID,
   REGISTERED_WORKFLOW_IDS,
   CollectResumeSchema,
-  ForceOverrideResumeSchema,
+  IntakeConfirmResumeSchema,
   AmbiguousLocationResumeSchema,
   TrimSuggestionResumeSchema,
   MalformedRetryResumeSchema,
@@ -232,13 +233,12 @@ interface IntakeStartInput {
 /** The exported resume schema for a non-collect intake suspend step. */
 function intakeResumeSchemaFor(step: string): z.ZodTypeAny {
   switch (step) {
-    case "forceOverrideGate":
-      return ForceOverrideResumeSchema;
+    case "confirmVehicle":
+      return IntakeConfirmResumeSchema;
     case "resolveLocation":
       return AmbiguousLocationResumeSchema;
     case "trimSuggestion":
       return TrimSuggestionResumeSchema;
-    case "trimVerify":
     case "prefill":
       return MalformedRetryResumeSchema;
     default:
@@ -252,20 +252,38 @@ function intakeResumeSchemaFor(step: string): z.ZodTypeAny {
   }
 }
 
+/** Validate a form-content blob against the strict 18-field intake schema or
+ *  throw a 400 content_invalid. Shared by the collect form and the confirmVehicle
+ *  edit form (both render the SAME data_collection form). */
+function parseIntakeFormContent(content: unknown): SearchProfileIntakeInput {
+  const parsed = SearchProfileIntakeInputSchema.safeParse(content ?? {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new FormDecisionError("content_invalid", 400, "form content invalid", {
+      ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+      extra: { issues: parsed.error.issues },
+    });
+  }
+  return parsed.data;
+}
+
 /**
  * The intake resume shaping (the data_collection form handler). accept →
  * validate content against SearchProfileIntakeInputSchema.strict and map to the
  * collect step's submit resumeData; decline/cancel → the step's decline
  * resumeData + a {action, content:null} ack (terminal-non-write).
  *
- * The non-collect suspends (force-override gate, ambiguous-location, malformed)
- * resume with their own typed resume schemas; the form action vocabulary maps:
- * force_override/revise/retry_step (gate), pick/retry (location), retry_step
- * (malformed). Content threads through to the right schema by step.
+ * The non-collect suspends (ambiguous-location, trim-suggestion, malformed,
+ * confirmVehicle) resume with their own typed resume schemas. The confirmVehicle
+ * step renders TWO cards (intake_confirm | the re-rendered data_collection edit
+ * form), disambiguated by the retained suspend payload's `kind`: an edit-form
+ * accept validates the form like collect; the confirmation card maps the
+ * accept/edit verbs straight through.
  */
 function intakeResume(
   step: string,
   decision: FormDecisionBody["decision"],
+  suspendPayload: Record<string, unknown>,
 ): { resumeData: unknown; ackBody: Record<string, unknown> } {
   const { action, content } = decision;
 
@@ -284,16 +302,23 @@ function intakeResume(
   // accept — the content shape depends on the suspended step.
   if (step === "collect") {
     // The intake form: validate against the strict 18-field schema.
-    const parsed = SearchProfileIntakeInputSchema.safeParse(content ?? {});
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "form content invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
+    const fields = parseIntakeFormContent(content);
+    const resume = CollectResumeSchema.parse({ action: "submit", fields });
+    return { resumeData: resume, ackBody: { action: "accept", content: fields } };
+  }
+
+  if (step === "confirmVehicle") {
+    // The edit form re-render (data_collection) carries a full form submit; the
+    // confirmation card (intake_confirm) carries the accept/edit verb.
+    if (suspendPayload["kind"] === "data_collection") {
+      const fields = parseIntakeFormContent(content);
+      return { resumeData: { action: "submit", fields }, ackBody: { action: "accept", content: fields } };
     }
-    const resume = CollectResumeSchema.parse({ action: "submit", fields: parsed.data });
-    return { resumeData: resume, ackBody: { action: "accept", content: parsed.data } };
+    const inner =
+      content !== null && typeof content === "object" && (content as Record<string, unknown>)["action"] === "edit"
+        ? "edit"
+        : "accept";
+    return { resumeData: { action: inner }, ackBody: { action: "accept", content: { action: inner } } };
   }
 
   // The non-collect suspends carry a typed resume in content.action; validate
@@ -316,10 +341,10 @@ export const intakeRunDescriptor: RunDescriptor = {
   workflowId: SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
 
   // DERIVED from the provider policy() routes the skill's LLM useCases to
-  // (intake_trim_verify is the representative — both intake useCases share one
-  // alias), so the wire label flips in lock-step with a registry-string swap.
+  // (intake_freeform_prefill is the representative — both intake useCases share
+  // one alias), so the wire label flips in lock-step with a registry-string swap.
   driverKind(): HarnessDriverKind {
-    return providerDriverKind(policy("intake_trim_verify").provider);
+    return providerDriverKind(policy("intake_freeform_prefill").provider);
   },
 
   buildInput(body: Record<string, unknown>): IntakeStartInput {

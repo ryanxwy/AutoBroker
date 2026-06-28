@@ -52,6 +52,10 @@ on = "data_collection"
 action = "accept"
 content_from = "narrative.profile"   # partial fill → reload → restore → complete.
 
+[[steps.resume]]
+on = "intake_confirm"
+action = "accept"
+
 [[steps.anchors]]
 kind = "run_status"
 expect = ["done"]

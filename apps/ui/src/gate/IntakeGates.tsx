@@ -4,9 +4,8 @@
  * resume dispatcher; the resume content maps to the workflow's exported resume
  * schemas (intakeContracts.ts):
  *
- *   - ForceOverrideBar  → ForceOverrideResumeSchema:
- *       {action:'force_override', reason} | {action:'revise', trim} |
- *       {action:'retry_step'} | {action:'decline'}
+ *   - IntakeConfirmCard → IntakeConfirmResumeSchema:
+ *       {action:'accept'} | {action:'edit'} | {action:'decline'}
  *   - AmbiguousLocationPicker → AmbiguousLocationResumeSchema:
  *       {action:'pick', picked_index} | {action:'retry', retry_query} |
  *       {action:'decline'}
@@ -37,50 +36,43 @@ export interface GateProps {
   onDecline: () => void;
 }
 
-/** force_override: trim invalid but the user insists. reason is REQUIRED (audited). */
-export function ForceOverrideBar({
+/** intake_confirm: the unconditional end-of-intake buyer confirmation. DUMB —
+ *  display the resolved vehicle + human-affirm only (NO LLM re-validation, no
+ *  "did you mean"). Shows the vehicle ONLY — never email/phone/budget (inv #9).
+ *  accept → persist; edit → re-open the collect form; decline → cancel. */
+export function IntakeConfirmCard({
   gate,
   submitting,
   onResume,
   onDecline,
-}: GateProps & { gate: Extract<GateModel, { kind: "force_override" }> }): JSX.Element {
-  const [reason, setReason] = useState(gate.reason);
+}: GateProps & { gate: Extract<GateModel, { kind: "intake_confirm" }> }): JSX.Element {
+  const vehicle = `${gate.year ?? ""} ${gate.make} ${gate.model} ${gate.trim}`.replace(/\s+/g, " ").trim();
   return (
-    <div className="gate-card" data-testid="gate-force-override" role="alertdialog" aria-label="Trim override">
-      <strong>{gate.question}</strong>
-      <p className="muted">
-        Trim <code>{gate.trim}</code> isn&apos;t verified against dealer inventory yet — we&apos;ll
-        cross-check it against the real in-stock cars once we search dealers. Keep it, revise, or cancel.
+    <div className="gate-card" data-testid="gate-intake-confirm" role="alertdialog" aria-label="Confirm vehicle">
+      <strong>Confirm your search</strong>
+      <p className="muted">Please confirm the vehicle we&apos;ll search for:</p>
+      <p data-testid="gate-intake-confirm-vehicle">
+        <code>{vehicle}</code>
       </p>
-      <div className="field">
-        <label htmlFor="force-override-reason">Reason (recorded for audit)</label>
-        <input
-          id="force-override-reason"
-          type="text"
-          data-testid="gate-force-override-reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
-      </div>
       <div className="gate-actions">
         <button
           type="button"
           className="btn-primary"
-          data-testid="gate-force-override-confirm"
-          disabled={submitting || reason.trim() === ""}
-          onClick={() => onResume({ action: "force_override", reason: reason.trim() })}
+          data-testid="gate-intake-confirm-accept"
+          disabled={submitting}
+          onClick={() => onResume({ action: "accept" })}
         >
-          Keep this trim anyway
+          Looks right — start the search
         </button>
         <button
           type="button"
-          data-testid="gate-force-override-revise"
+          data-testid="gate-intake-confirm-edit"
           disabled={submitting}
-          onClick={() => onResume({ action: "revise", trim: null })}
+          onClick={() => onResume({ action: "edit" })}
         >
-          Revise trim
+          Edit
         </button>
-        <button type="button" className="btn-danger" data-testid="gate-force-override-decline" disabled={submitting} onClick={onDecline}>
+        <button type="button" className="btn-danger" data-testid="gate-intake-confirm-decline" disabled={submitting} onClick={onDecline}>
           Cancel search
         </button>
       </div>

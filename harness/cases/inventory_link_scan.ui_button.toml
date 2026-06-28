@@ -98,6 +98,10 @@ on = "data_collection"
 action = "accept"
 content_from = "narrative.profile"
 
+[[steps.resume]]
+on = "intake_confirm"
+action = "accept"
+
 [[steps.anchors]]
 kind = "run_status"
 expect = ["done"]

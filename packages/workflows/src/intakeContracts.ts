@@ -12,9 +12,8 @@
  *     (PII/internal-only fields are NEVER LLM-extracted; the human fills
  *     them in the form). Flat, all-required-with-explicit-null, enum where the
  *     field is an enum. Prefill only SEEDS the form; it never persists.
- *   - TrimVerifyResultSchema (intake_trim_verify): {valid, attestation,
- *     suggested_trims[]}. Flat, all-required, .strict(). suggested_trims is a
- *     possibly-empty array (the key is never absent).
+ *   - TrimSuggestionSchema  (intake_trim_lookup): parallel name/summary arrays
+ *     extracted from web-fetched trim pages (the freeform trim picker).
  *
  * RESUME SCHEMAS — discriminated unions keyed on a literal `action`.
  *
@@ -119,23 +118,6 @@ export function sanitizePrefillTrim(trim: string | null): string | null {
 }
 
 /**
- * intake_trim_verify emit contract. The trim-verifier's structured
- * verdict. `valid` = trim truly exists for the make/model/year; `attestation` =
- * one-line plain-speak reason shown to the user; `suggested_trims` = real-ish
- * alternatives when invalid (possibly empty, never an absent key).
- */
-export const TrimVerifyResultSchema = z
-  .object({
-    valid: z.boolean(),
-    attestation: z.string(),
-    suggested_trims: z.array(z.string()),
-  })
-  .strict()
-  .describe("Trim-verify verdict driving the force-override branch.");
-
-export type TrimVerifyResult = z.infer<typeof TrimVerifyResultSchema>;
-
-/**
  * intake_trim_lookup emit contract. The trim-SUGGESTION extraction over
  * web-fetched trim pages: two PARALLEL string arrays (the i-th name pairs with the
  * i-th summary). Two flat string arrays — not an array of objects — keeps the
@@ -167,36 +149,6 @@ export function buildPrefillPrompt(freeformText: string): string {
     "or superlative word like 'cheapest', 'best', or 'loaded' — leave `trim` null for those. " +
     "Never guess email, phone, or budget. Return via the emit_result tool.\n" +
     `Input: ${JSON.stringify(freeformText)}`
-  );
-}
-
-/** Build the trim-verify prompt from the vehicle identity.
- *
- *  This is a best-effort PRE-FILTER, not the authority — the real trim check is
- *  the dealer-inventory cross-check that runs AFTER the search (inventory_compare
- *  grounds the requested trim against trims dealers actually stock). So the prompt
- *  is deliberately CONSERVATIVE: default valid:true and only flag a trim invalid
- *  when highly confident it does not exist for that vehicle. An LLM second-guessing
- *  a current/recent model year from stale training knowledge used to false-reject
- *  real trims (LX, SE, EX-L, XLE…), forcing a needless force-override gate; deferring
- *  to the post-scan ground truth avoids that while still catching an obviously wrong
- *  trim (one from a different make, or one the model never offered). */
-export function buildTrimVerifyPrompt(args: {
-  year: number;
-  make: string;
-  model: string;
-  trim: string;
-}): string {
-  return (
-    `A buyer is searching for the "${args.trim}" trim of the ${args.year} ${args.make} ` +
-    `${args.model}. The authority on which trims exist is the dealer inventory, ` +
-    "cross-checked AFTER this search — your job is only to catch an OBVIOUSLY wrong trim " +
-    "(e.g. one from a different make, or one this model never offered). " +
-    "Default to valid:true, suggested_trims:[]. Return valid:false ONLY if you are highly " +
-    "confident the trim does not exist for this vehicle; when unsure (a current or recent " +
-    "model year you may not fully know), return valid:true and defer to the post-search " +
-    "inventory check. When invalid: attestation explains why, suggested_trims gives 1-3 " +
-    "real nearby trims. Return via the emit_result tool."
   );
 }
 
@@ -255,26 +207,44 @@ export const CollectResumeSchema = z.discriminatedUnion("action", [
 export type CollectResume = z.infer<typeof CollectResumeSchema>;
 
 /**
- * forceOverrideGate (step 4, suspend ②) resume contract. The gate can suspend two
- * ways — the force_override approval card OR a malformed_tool_call (when the
- * `revise` re-verify itself trips #1244) — so this union folds both resume paths
- * into one schema (single `decline` member keeps the discriminated union valid).
- *   - force_override: keep the invalid trim; `reason` is REQUIRED (audited).
- *   - revise: change the trim (or clear it) and re-verify once.
- *   - retry_step: re-run after a malformed-tool-call suspend on the revise path.
- *   - decline: terminal-declined, zero write.
+ * intake_confirm suspend payload. The UNCONDITIONAL end-of-intake buyer
+ * confirmation card, rendered between resolveLocation and persist on EVERY path.
+ * FLAT {year, make, model, trim} — the resolved vehicle the buyer affirms. PII
+ * (email/phone) and budget are DELIBERATELY ABSENT (inv #9): the confirmation card
+ * shows only the vehicle. The card is DUMB — display + human-affirm only; it NEVER
+ * re-validates the trim with an LLM (a prior LLM trim-verify false-rejected valid
+ * trims, so there is no "did you mean" canonicalization here).
  */
-export const ForceOverrideResumeSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("force_override"), reason: z.string().min(1) }),
-  z.object({ action: z.literal("revise"), trim: z.string().nullable() }),
-  z.object({ action: z.literal("retry_step") }),
-  z.object({ action: z.literal("decline") }),
-]);
-export type ForceOverrideResume = z.infer<typeof ForceOverrideResumeSchema>;
+export const IntakeConfirmSuspendSchema = z
+  .object({
+    kind: z.literal("intake_confirm"),
+    year: z.number().int(),
+    make: z.string(),
+    model: z.string(),
+    trim: z.string(),
+  })
+  .strict()
+  .describe("Buyer-confirmation card payload (resolved vehicle only; no PII/budget).");
+
+export type IntakeConfirmSuspend = z.infer<typeof IntakeConfirmSuspendSchema>;
 
 /**
- * resolveLocation (step 5, suspend ③) resume contract — shared by the ambiguous
- * and the geocode-failure branches (same suspend channel).
+ * intake_confirm (the new end-of-intake confirmation, suspend) resume contract.
+ *   - accept: affirm the resolved vehicle → continue to persist.
+ *   - edit: re-open the collect form to fix the vehicle (the ONE editing surface).
+ *   - decline: terminal-declined, zero write (cancel the whole search).
+ */
+export const IntakeConfirmResumeSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("accept") }),
+  z.object({ action: z.literal("edit") }),
+  z.object({ action: z.literal("decline") }),
+]);
+export type IntakeConfirmResume = z.infer<typeof IntakeConfirmResumeSchema>;
+
+/**
+ * resolveLocation (suspend ②) resume contract — shared by the ambiguous
+ * and the geocode-failure branches (same suspend channel). (The buyer-confirmation
+ * suspend ③ is confirmVehicle / intake_confirm.)
  *   - pick: the chosen candidate index (ambiguous branch).
  *   - retry: a better query string → re-resolve (bounded by the human round-trip).
  *   - decline: terminal-declined, zero write.

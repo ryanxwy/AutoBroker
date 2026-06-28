@@ -18,8 +18,8 @@ async function main() {
   // Ephemeral port on 127.0.0.1 (trust boundary; never an external interface).
   await built.app.listen({ host: "127.0.0.1", port: 0 });
 
-  // Start a slash intake (no trim → trimVerify skipped; no geocode/LLM needed to
-  // reach the collect suspend). inject() drives the in-process route.
+  // Start a slash intake (no LLM step before collect; no geocode needed to reach
+  // the collect suspend). inject() drives the in-process route.
   const start = await built.app.inject({
     method: "POST",
     url: "/api/skill-runs",
