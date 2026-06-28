@@ -907,6 +907,38 @@ describe("B4 incentive_scrape cases (first-encounter auto-record, no gate)", () 
     });
   });
 
+  it("fails LOUD on a drag ui_action with dx:0 (vacuous no-op — must be non-zero)", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "B"
+      skills = ["search_profile_intake"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      lane = "ui"
+      [[steps]]
+      id = "create"
+      skill = "search_profile_intake"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+      [[steps]]
+      id = "drag_zero"
+      kind = "ui"
+      [[steps.ui_actions]]
+      verb = "drag"
+      testid = "rail-resizer"
+      dx = 0
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "app-body"
+      expect = "visible"
+    `;
+    expect(() => parseCase(src)).toThrow(/dx:0 is a vacuous no-op/);
+  });
+
   it("fails LOUD on an approval_gate anchor with a bad expect", () => {
     const src = `
       [meta]
