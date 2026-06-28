@@ -838,4 +838,43 @@ describe("persistScanResults — dealer_markup + pricing_breakdown_json (harvest
     expect(blob.dealerDiscount).toBe(1500);
     expect(blob.incentivesText).toBe("$500 military rebate");
   });
+
+  it("PARTIAL-RECOVERY: a folded discount-only carry (markup=null) PRESERVES a prior deterministic markup", () => {
+    // The resolveBreakdownCarry sentinel for an UNREADABLE region with an LLM
+    // discount-only recovery: dealerMarkup=null (PRESERVE, NOT the 0 CLEAR), a
+    // non-null blob carrying the discount + breakdownParsed:false. This must NEVER
+    // zero a prior (deterministic) markup on evidence that never confirmed absence.
+    const FOLDED_FALSE_BLOB =
+      '{"addOns":[],"addonsTotal":null,"dealerDiscount":1500,"incentivesText":null,"priceGated":false,"breakdownParsed":false,"llmRecovered":true}';
+    // Scan 1: deterministic read of a labeled markup.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [
+        scanned(DEALER_A, SRP_A, [
+          pricedRow({ vin: VIN }, { dealerMarkup: 2000, pricingBreakdownJson: REAL_BLOB }),
+        ]),
+      ],
+      db,
+      now: T1,
+    });
+    // Scan 2: region UNREADABLE this run, LLM recovered ONLY a discount → carry a
+    // null markup (preserve) + the discount blob (overwrite).
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [
+        scanned(DEALER_A, SRP_A, [
+          pricedRow({ vin: VIN }, { dealerMarkup: null, pricingBreakdownJson: FOLDED_FALSE_BLOB }),
+        ]),
+      ],
+      db,
+      now: T3,
+    });
+    const r = allListings()[0]!;
+    expect(r.dealer_markup).toBe(2000); // PRESERVED — a discount-only recovery never zeroes it
+    // The blob is overwritten with the discount + the honest breakdownParsed:false.
+    expect(JSON.parse(r.pricing_breakdown_json as string).breakdownParsed).toBe(false);
+    expect(JSON.parse(r.pricing_breakdown_json as string).dealerDiscount).toBe(1500);
+  });
 });

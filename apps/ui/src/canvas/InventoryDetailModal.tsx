@@ -172,8 +172,12 @@ export function InventoryDetailModal({
             couldn't-read (conspicuous) vs none-detected vs the itemized list. */}
         {row.breakdown_parsed === false ? (
           <p className="breakdown-unknown" data-testid="inventory-detail-breakdown-unknown">
-            Couldn&apos;t read a price breakdown: markup and add-ons UNKNOWN. Verify on
-            the dealer&apos;s site.
+            {markup !== null
+              ? // A LABELED markup was captured for THIS row but the add-on region
+                // itself couldn't be read — don't claim the markup is unknown when
+                // one is shown above; only the add-ons are genuinely unknown.
+                "Couldn't read the full price breakdown: dealer add-ons UNKNOWN. Verify on the dealer's site."
+              : "Couldn't read a price breakdown: markup and add-ons UNKNOWN. Verify on the dealer's site."}
           </p>
         ) : addOns.length === 0 ? (
           <p className="breakdown-note muted" data-testid="inventory-detail-no-addons">

@@ -156,6 +156,24 @@ describe("InventoryDetailModal — folded price-block (discount / incentives)", 
     expect(doc("inventory-detail-discount")).not.toBeNull();
     close();
   });
+
+  it("PARTIAL RECOVERY (breakdown_parsed=false + a preserved markup + a recovered discount): stays honest", () => {
+    // The augment-record state: the add-on region couldn't be read (breakdown_parsed
+    // false) but a markup was preserved and a discount recovered. The modal must
+    // NOT claim "no add-ons detected", must keep the couldn't-read note, show the
+    // discount, AND not call the SHOWN markup "unknown".
+    const close = open(
+      makeRow({ breakdown_parsed: false, dealer_markup: 2000, dealer_discount: 1500 }),
+    );
+    expect(doc("inventory-detail-no-addons")).toBeNull(); // never the confident "no add-ons" claim
+    const unknown = doc("inventory-detail-breakdown-unknown");
+    expect(unknown).not.toBeNull(); // the honest couldn't-read note persists
+    expect(unknown!.textContent).toContain("add-ons UNKNOWN");
+    expect(unknown!.textContent).not.toContain("markup and add-ons"); // markup is shown → not "unknown"
+    expect(doc("inventory-detail-markup")).not.toBeNull(); // the preserved markup is shown
+    expect(doc("inventory-detail-discount")).not.toBeNull(); // the recovered discount is shown
+    close();
+  });
 });
 
 // ---------------------------------------------------------------------------

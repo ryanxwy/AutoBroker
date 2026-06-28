@@ -466,6 +466,70 @@ export async function llmExtractVdpPrice(args: {
   }
 }
 
+/** The harvest-aware breakdown carry persist consumes: an OMITTED / null key is
+ *  the PRESERVE sentinel (COALESCE keeps the prior value); an explicit 0 / blob
+ *  string records. dealer_markup scalar and the JSON blob move in LOCKSTEP. */
+export interface BreakdownCarry {
+  dealerMarkup?: number | null;
+  pricingBreakdownJson?: string | null;
+}
+
+/**
+ * Resolve the breakdown carry for one classified row from the VDP fact's
+ * deterministic breakdown plus any folded LLM recovery (`llm` is null when the
+ * LLM did not run). PURE (exported for unit tests). Three regimes:
+ *   1. Region READABLE (breakdownParsed) — deterministic is AUTHORITATIVE: the
+ *      labeled markup or 0 ("read, no markup" → CLEAR), and the deterministic
+ *      add-on blob (breakdownParsed:true). Byte-identical to the prior inline
+ *      blob so persisted rows are unchanged.
+ *   2. Region UNREADABLE but a folded LLM recovered ≥1 scalar — record the
+ *      recovered discount/incentives in the blob and the recovered markup in the
+ *      scalar, but (a) NEVER write the 0 CLEAR sentinel for a markup the LLM did
+ *      not confirm (a null LLM markup → PRESERVE the prior, possibly-deterministic
+ *      value), and (b) keep breakdownParsed FALSE so the add-on coverage state
+ *      stays the honest "couldn't read → add-ons UNKNOWN" (add-ons are NOT in the
+ *      flat LLM emit and were never read — never flip to "no add-ons detected").
+ *   3. Region UNREADABLE, no recovery — PRESERVE both (UNKNOWN).
+ */
+export function resolveBreakdownCarry(args: {
+  breakdown: HarvestedBreakdown;
+  priceGated: boolean;
+  llm: VdpBreakdownExtract | null;
+}): BreakdownCarry {
+  const { breakdown, priceGated, llm } = args;
+  if (breakdown.breakdownParsed) {
+    return {
+      dealerMarkup: breakdown.dealerMarkup ?? 0,
+      pricingBreakdownJson: JSON.stringify({
+        addOns: breakdown.addOns,
+        addonsTotal: breakdown.addonsTotal,
+        priceGated,
+        breakdownParsed: true,
+      }),
+    };
+  }
+  if (
+    llm !== null &&
+    (llm.dealerMarkup !== null || llm.dealerDiscount !== null || llm.incentivesText !== null)
+  ) {
+    return {
+      // number → SET; null → PRESERVE (never the 0 CLEAR sentinel for an
+      // unconfirmed markup — a null LLM markup is "didn't read one", not "none").
+      dealerMarkup: llm.dealerMarkup,
+      pricingBreakdownJson: JSON.stringify({
+        addOns: breakdown.addOns, // [] — region was unreadable deterministically
+        addonsTotal: breakdown.addonsTotal, // null
+        dealerDiscount: llm.dealerDiscount,
+        incentivesText: llm.incentivesText,
+        priceGated,
+        breakdownParsed: false, // add-ons stay UNKNOWN — never "no add-ons detected"
+        llmRecovered: true,
+      }),
+    };
+  }
+  return {};
+}
+
 // ---------------------------------------------------------------------------
 // buildTargets — the pure target computation (exported for direct unit tests)
 // ---------------------------------------------------------------------------
@@ -2175,39 +2239,18 @@ const extractStep = createStep({
             if (fact !== undefined) {
               if (price === null) price = fact.listedPrice;
               msrp = fact.msrp;
-              // This row's VDP was harvested AND its pricing text was READABLE
-              // (breakdownParsed===true): a labeled market adjustment → its
-              // amount; no labeled markup → 0 ("harvested, no markup", clears a
-              // stale value via COALESCE(0, old)=0). The blob is always an
-              // explicit non-null string so scalar + JSON overwrite in lockstep.
-              //
-              // breakdownParsed===false means the pricing text could NOT be read
-              // (a VIN/price-only VDP whose fact survives on its VIN) — that is
-              // UNKNOWN, not "none". Emitting the 0 sentinel here would silently
-              // DESTROY a previously-harvested markup. So leave BOTH keys
-              // undefined → persist passes null → COALESCE PRESERVES the prior
-              // markup + blob (scalar and JSON stay in lockstep, both preserved).
-              if (fact.breakdown.breakdownParsed) {
-                dealerMarkup = fact.breakdown.dealerMarkup ?? 0;
-                pricingBreakdownJson = JSON.stringify({
-                  addOns: fact.breakdown.addOns,
-                  addonsTotal: fact.breakdown.addonsTotal,
-                  priceGated: fact.priceGated,
-                  breakdownParsed: fact.breakdown.breakdownParsed,
-                });
-              }
-
-              // Deterministic-first, folded LLM recovery. The carried snapshot
-              // is non-null ONLY on a real deterministic MISS that is not a gate:
-              // (a) no selling price was read (unknown price-label vocabulary), or
-              // (b) the price-stack region was unreadable (breakdownParsed===false)
-              // on a VDP that DID yield a price. ONE no-tools structured emit over
-              // the snapshot recovers price AND the folded price-block scalars
-              // (Zod + per-field band guarded, #1244 fail-closed-to-null). Bounded
-              // to the long tail: a regex HIT with a readable region carries no
-              // snapshot, so this never fires on the common path.
+              // Deterministic-first, folded LLM recovery. The carried snapshot is
+              // non-null ONLY on a real deterministic MISS that is not a gate:
+              // either no selling price was read (unknown price-label vocabulary)
+              // OR the price-stack region was unreadable (breakdownParsed===false).
+              // ONE no-tools structured emit recovers price AND the folded
+              // price-block scalars (Zod + per-field band guarded, #1244
+              // fail-closed-to-null). Bounded to the long tail: a regex HIT with a
+              // readable region carries no snapshot, so this never fires on the
+              // common path.
+              let llm: VdpBreakdownExtract | null = null;
               if (!fact.priceGated && fact.recoverSnapshot !== null) {
-                const llm = await llmExtractVdpPrice({
+                const r = await llmExtractVdpPrice({
                   harnessGenerate: deps().harnessGenerate,
                   year: state.year,
                   make: state.make,
@@ -2215,33 +2258,23 @@ const extractStep = createStep({
                   snapshotText: fact.recoverSnapshot,
                   ledger: inventoryScanLedger(runId),
                 });
-                if (price === null && llm.listedPrice !== null) price = llm.listedPrice;
-                if (msrp === null && llm.msrp !== null) msrp = llm.msrp;
-                // Breakdown augment: ONLY when the deterministic harvest could NOT
-                // read the price region (breakdownParsed===false). Record the
-                // LLM-recovered scalars into the SAME blob + dealer_markup column
-                // in lockstep — but ONLY when the LLM affirmatively recovered a
-                // scalar. If it recovered nothing, the region stays UNKNOWN: leave
-                // BOTH keys undefined → persist PRESERVES any prior value (never a
-                // false-"none" 0-sentinel that would destroy a prior markup).
-                if (
-                  !fact.breakdown.breakdownParsed &&
-                  (llm.dealerMarkup !== null ||
-                    llm.dealerDiscount !== null ||
-                    llm.incentivesText !== null)
-                ) {
-                  dealerMarkup = llm.dealerMarkup ?? 0;
-                  pricingBreakdownJson = JSON.stringify({
-                    addOns: fact.breakdown.addOns,
-                    addonsTotal: fact.breakdown.addonsTotal,
-                    dealerDiscount: llm.dealerDiscount,
-                    incentivesText: llm.incentivesText,
-                    priceGated: fact.priceGated,
-                    breakdownParsed: true,
-                    llmRecovered: true,
-                  });
-                }
+                if (price === null && r.listedPrice !== null) price = r.listedPrice;
+                if (msrp === null && r.msrp !== null) msrp = r.msrp;
+                llm = r;
               }
+              // Harvest-aware breakdown carry (scalar + blob in LOCKSTEP). The
+              // deterministic read is authoritative; on an UNREADABLE region a
+              // folded LLM-only recovery records the recovered scalar(s) WITHOUT
+              // zeroing an unconfirmed markup or flipping the add-on coverage state
+              // (see resolveBreakdownCarry). A not-harvested re-scan reaches none
+              // of this (no fact) → both keys absent → PRESERVE.
+              const carry = resolveBreakdownCarry({
+                breakdown: fact.breakdown,
+                priceGated: fact.priceGated,
+                llm,
+              });
+              dealerMarkup = carry.dealerMarkup;
+              pricingBreakdownJson = carry.pricingBreakdownJson;
             }
           }
 

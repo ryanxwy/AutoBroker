@@ -3,9 +3,68 @@ import { describe, expect, it } from "vitest";
 import {
   VdpPriceExtractSchema,
   buildVdpPricePrompt,
+  resolveBreakdownCarry,
   validateVdpBreakdown,
   validateVdpPrice,
 } from "./inventorySiteScan.js";
+
+const READABLE = { dealerMarkup: 1995, addOns: [], addonsTotal: null, breakdownParsed: true };
+const UNREADABLE = { dealerMarkup: null, addOns: [], addonsTotal: null, breakdownParsed: false };
+const NO_LLM = { dealerMarkup: null, dealerDiscount: null, incentivesText: null };
+
+describe("resolveBreakdownCarry — lockstep markup-preserve + add-on honesty", () => {
+  it("READABLE region: deterministic is authoritative (markup + breakdownParsed:true blob)", () => {
+    const carry = resolveBreakdownCarry({ breakdown: READABLE, priceGated: false, llm: null });
+    expect(carry.dealerMarkup).toBe(1995);
+    const blob = JSON.parse(carry.pricingBreakdownJson as string);
+    expect(blob.breakdownParsed).toBe(true);
+  });
+
+  it("READABLE region, no labeled markup: writes the 0 CLEAR sentinel (read, none)", () => {
+    const carry = resolveBreakdownCarry({
+      breakdown: { ...READABLE, dealerMarkup: null },
+      priceGated: false,
+      llm: null,
+    });
+    expect(carry.dealerMarkup).toBe(0);
+  });
+
+  it("UNREADABLE + LLM recovered ONLY a discount (markup=null): NEVER zeroes the markup", () => {
+    const carry = resolveBreakdownCarry({
+      breakdown: UNREADABLE,
+      priceGated: false,
+      llm: { dealerMarkup: null, dealerDiscount: 1500, incentivesText: "$500 military rebate" },
+    });
+    // The CORE fix: a null LLM markup must PRESERVE (null), NOT clear via 0.
+    expect(carry.dealerMarkup).toBeNull();
+    expect(carry.dealerMarkup).not.toBe(0);
+    const blob = JSON.parse(carry.pricingBreakdownJson as string);
+    expect(blob.dealerDiscount).toBe(1500);
+    expect(blob.incentivesText).toBe("$500 military rebate");
+    // The add-on coverage state stays UNKNOWN — never flips to "no add-ons detected".
+    expect(blob.breakdownParsed).toBe(false);
+    expect(blob.addOns).toEqual([]);
+  });
+
+  it("UNREADABLE + LLM recovered a markup: records it, add-on state stays UNKNOWN", () => {
+    const carry = resolveBreakdownCarry({
+      breakdown: UNREADABLE,
+      priceGated: false,
+      llm: { dealerMarkup: 3000, dealerDiscount: null, incentivesText: null },
+    });
+    expect(carry.dealerMarkup).toBe(3000);
+    expect(JSON.parse(carry.pricingBreakdownJson as string).breakdownParsed).toBe(false);
+  });
+
+  it("UNREADABLE + no recovery (LLM did not run, or ran and found nothing): PRESERVE both", () => {
+    expect(resolveBreakdownCarry({ breakdown: UNREADABLE, priceGated: false, llm: null })).toEqual(
+      {},
+    );
+    expect(resolveBreakdownCarry({ breakdown: UNREADABLE, priceGated: false, llm: NO_LLM })).toEqual(
+      {},
+    );
+  });
+});
 
 describe("validateVdpPrice — LLM-fallback guard discipline", () => {
   it("keeps an in-band MSRP + selling price", () => {
