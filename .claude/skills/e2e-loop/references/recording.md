@@ -88,6 +88,11 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   cross-border dealer(s) excluded"). A US dealer on a Spanish-named street ("Ensenada Dr")
   correctly stays. Re-flag ONLY if a non-US dealer reaches the scan/lead/ranked set.
   Shipped 2026-06-27 (`phase2/dealer_geosearch`).
+- The `negotiation-detail-modal` closing on Close / Escape / backdrop-click and STAYING
+  closed across a `data.changed` refresh is the now-correct baseline: visibility is gated on
+  `openId` (user intent), not the `useAsync` detail fetch cache. DISMISS-VERIFY it every run
+  (above). Re-flag ONLY if the modal won't dismiss OR auto-reopens with no card re-click —
+  that is a NEW HIGH workbench-blocking regression. Shipped 2026-06-28 (`phase0/ui`, `52d1648`).
 - HTML-only dealer email body is recovered to text via `stripHtmlToText` (the frozen Python
   oracle silently dropped it — this is a deliberate, beneficial oracle-superseding fix).
   Re-flag ONLY if a genuine quote-bearing dealer email still persists an empty `body_text`
