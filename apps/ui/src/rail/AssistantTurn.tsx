@@ -8,19 +8,27 @@
  * gate still renders above the prose because the zones are fixed JSX positions.
  *
  * The gate zone hosts either the IntakeForm (data_collection or a semantic gate)
- * or — when a future gated tool lands — an ApprovalPrompt. intake in
- * this slice only produces awaiting_user, so the form/gate is the gate zone.
+ * or the shared GateCardSwitch (the per-item batch-review family —
+ * dealer_web_lead_submit's "Submit lead inquiries?" card and its inbox/hygiene
+ * shapes), so a batch approval reads inline as part of the conversation.
  *
  * Presentational w.r.t. I/O: it takes the AssistantTurn store shape + an
- * onDecision dispatcher (the parent posts form-decision). Stable data-testid.
+ * onDecision dispatcher (the parent posts form-decision) + the active run's
+ * decide() controller (used only for the live gate). Stable data-testid.
  */
 
 import type { ApiClient } from "../api/client.js";
+import { GateCardSwitch } from "../gate/GateCardSwitch.js";
 import { gateTrack } from "../gate/gateTrack.js";
 import { IntakeForm, type DecisionAction } from "../intake/IntakeForm.js";
 import type { BrowserView } from "../chat/browserView.js";
 import { profileStopCode, type AssistantTurnView } from "../chat/messageModel.js";
+import type { DecisionController } from "../chat/useDecision.js";
 import { StopCard } from "./StopCard.js";
+
+/** An inert controller for non-active turns — a stale turn's gate is never live.
+ *  The active turn receives the real decide() controller from the rail. */
+const INERT_DECISION: DecisionController = { submitting: false, decisionError: null, decide: () => {} };
 
 export interface AssistantTurnProps {
   turn: AssistantTurnView;
@@ -28,6 +36,9 @@ export interface AssistantTurnProps {
   submitting: boolean;
   /** Post a form-decision for this turn's run (accept|decline|cancel). */
   onDecision: (action: DecisionAction, content?: Record<string, unknown>) => void;
+  /** The decide() controller for the batch-review family card (active turn only;
+   *  the rail passes undefined for stale turns → the inert default). */
+  decision?: DecisionController | undefined;
   /** The typed client (the STOP picker fetches active profiles live). */
   client: ApiClient;
   /** Start a fresh intake (the 0-active STOP card's CTA). */
@@ -57,6 +68,7 @@ export function AssistantTurn({
   turn,
   submitting,
   onDecision,
+  decision = INERT_DECISION,
   client,
   onStartIntake,
   onPickStopProfile,
@@ -66,10 +78,11 @@ export function AssistantTurn({
   // The rail renders only rail-tracked gate kinds (gateTrack is the single
   // kind→track routing point; banner-tracked kinds render in GateBannerHost).
   const rawGateKind = turn.awaitingUser?.specInline?.["kind"];
+  const gateKind = typeof rawGateKind === "string" ? rawGateKind : null;
   const showGate =
     turn.awaitingUser !== null &&
     turn.status === "awaiting_approval" &&
-    gateTrack(typeof rawGateKind === "string" ? rawGateKind : null) === "rail";
+    gateTrack(gateKind) === "rail";
   // Typed profile/precondition STOP (error name + code allowlist) → the card
   // with the answerable affordance (intake CTA / pick-by-vehicle picker /
   // friendly pointer). no_lead_submitted renders as a calm pointer, so it
@@ -79,15 +92,21 @@ export function AssistantTurn({
 
   return (
     <div className="turn assistant" data-testid="assistant-turn" data-status={turn.status}>
-      {/* ZONE 1 — GATE (structurally first; gate-before-prose). */}
+      {/* ZONE 1 — GATE (structurally first; gate-before-prose). The batch-review
+          family renders the shared GateCardSwitch (inventory batch / inbox /
+          hygiene cards); every other rail-tracked kind is the IntakeForm. */}
       {showGate && turn.runId !== null && (
         <div className="zone-gate" data-testid="turn-zone-gate">
-          <IntakeForm
-            runId={turn.runId}
-            awaitingUser={turn.awaitingUser!}
-            submitting={submitting}
-            onDecision={onDecision}
-          />
+          {gateKind === "batch_review" ? (
+            <GateCardSwitch awaiting={turn.awaitingUser!} decision={decision} />
+          ) : (
+            <IntakeForm
+              runId={turn.runId}
+              awaitingUser={turn.awaitingUser!}
+              submitting={submitting}
+              onDecision={onDecision}
+            />
+          )}
         </div>
       )}
 

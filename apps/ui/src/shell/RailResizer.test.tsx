@@ -65,9 +65,9 @@ describe("RailResizer — keyboard resize", () => {
     expect(widthOf(body)).toBe(320);
     keydown(sep, { key: "ArrowRight" }); // 320-16 → clamped back to 320
     expect(widthOf(body)).toBe(320);
-    keydown(sep, { key: "End" }); // → max = min(560, 48% of 1200=576) = 560
-    expect(widthOf(body)).toBe(560);
-    expect(localStorage.getItem("autobroker:rail-width")).toBe("560");
+    keydown(sep, { key: "End" }); // → max = min(800, 60% of 1200=720) = 720
+    expect(widthOf(body)).toBe(720);
+    expect(localStorage.getItem("autobroker:rail-width")).toBe("720");
     unmount();
   });
 

@@ -19,10 +19,12 @@ export const RAIL_DEFAULT_PX = 400;
 export const RAIL_MIN_PX = 320;
 const RAIL_WIDTH_KEY = "autobroker:rail-width";
 
-/** The widest the rail may get without starving the canvas: 560px, or 48% of the
- *  container, whichever is smaller (never below the min). */
+/** The widest the rail may get without starving the canvas: 800px, or 60% of the
+ *  container, whichever is smaller (never below the min). Widened from 560px/48%
+ *  so the rail can be dragged much larger — useful now that run-blocking
+ *  approval cards (e.g. the dealer batch review) render INSIDE the rail. */
 export function railMaxPx(containerWidth: number): number {
-  return Math.max(RAIL_MIN_PX, Math.min(560, Math.round(containerWidth * 0.48)));
+  return Math.max(RAIL_MIN_PX, Math.min(800, Math.round(containerWidth * 0.6)));
 }
 
 /** Clamp a desired width to [MIN, max(container)] — applied on every drag,

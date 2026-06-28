@@ -96,6 +96,51 @@ describe("AssistantTurn — gate-before-prose ordering", () => {
     r.unmount();
   });
 
+  it("a batch_review gate renders the batch-review-card INSIDE the turn's zone-gate (not the intake form), before the prose", () => {
+    const decide = vi.fn();
+    const turn = turnState({
+      skill: "dealer_web_lead_submit",
+      text: "Streamed prose that arrived before the gate.",
+      awaitingUser: {
+        decisionId: "d1",
+        formKind: "batch_review",
+        step: "confirm",
+        specInline: {
+          kind: "batch_review",
+          question: "Submit lead inquiries to these dealers?",
+          targets: [
+            { dealer_id: "d-1", name: "Tustin Hyundai", website: "https://www.tustinhyundai.com/" },
+            { dealer_id: "d-2", name: "Anaheim Hyundai", website: "https://www.anaheimhyundai.com/" },
+          ],
+          skipped: [],
+          total_targets: 2,
+          total_in_radius: 2,
+        },
+      },
+    });
+    const r = render(
+      <AssistantTurn
+        turn={turn}
+        submitting={false}
+        onDecision={() => {}}
+        decision={{ submitting: false, decisionError: null, decide }}
+        {...stopProps()}
+      />,
+    );
+    // The batch card mounts in the gate zone; the intake form does NOT render.
+    const gate = r.get("turn-zone-gate");
+    expect(gate.querySelector('[data-testid="batch-review-card"]')).not.toBeNull();
+    expect(r.query("intake-form")).toBeNull();
+    // gate-before-prose still holds (zone-gate precedes zone-text by structure).
+    const text = r.get("turn-zone-text");
+    expect(gate.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The card posts through the threaded decide() controller.
+    click(r.get("batch-select-all"));
+    click(r.get("batch-submit"));
+    expect(decide).toHaveBeenCalledWith("accept", { approved_dealer_ids: ["d-1", "d-2"] });
+    r.unmount();
+  });
+
   it("does NOT render the gate once the run is done (form collapsed)", () => {
     const turn = turnState({ status: "done", awaitingUser: null, text: "Created profile." });
     const r = render(<AssistantTurn turn={turn} submitting={false} onDecision={() => {}} {...stopProps()} />);

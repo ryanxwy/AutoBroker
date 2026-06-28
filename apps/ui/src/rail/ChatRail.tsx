@@ -222,6 +222,10 @@ export function ChatRail({
               onDecision={(action, content) =>
                 turn.id === activeRunId ? decision.decide(action, content) : undefined
               }
+              // The batch-review family card posts through the live decide()
+              // controller — but ONLY for the active turn (a stale turn's gate
+              // is never live; AssistantTurn defaults to an inert controller).
+              decision={turn.id === activeRunId ? decision : undefined}
               client={client}
               onStartIntake={onStartIntake}
               onPickStopProfile={(profileId) => onStopPick(turn.turn.skill, profileId)}

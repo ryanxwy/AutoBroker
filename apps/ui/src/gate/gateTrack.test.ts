@@ -21,13 +21,17 @@ describe("gateTrack — kind → surface routing", () => {
     }
   });
 
+  it("routes the batch-review family to the rail (it renders inline in the turn)", () => {
+    expect(gateTrack("batch_review")).toBe("rail");
+  });
+
   it("routes an unknown or missing kind to the rail (its fallback card renders)", () => {
     expect(gateTrack("brand_new_kind")).toBe("rail");
     expect(gateTrack(null)).toBe("rail");
   });
 
   it("routes the reserved banner kinds to the banner", () => {
-    for (const kind of ["approval", "batch_review", "confirmation_gate"]) {
+    for (const kind of ["approval", "confirmation_gate"]) {
       expect(gateTrack(kind)).toBe("banner");
     }
   });
