@@ -185,6 +185,20 @@ export function NegotiationsBoard({
     openId !== null && fetchDetail !== undefined,
   );
 
+  // The modal is open IFF the user has a card open (`openId`) AND we hold THAT
+  // dealer's detail — `openId` (user intent) is authoritative, never the fetch
+  // cache. useAsync is stale-while-revalidate: it KEEPS the last `ok` data after
+  // a card closes (a disabled re-run does not reset it), and a data.changed pulse
+  // can refetch it — so gating the modal on `detail.kind === "ok"` alone left
+  // Close/Escape/backdrop unable to dismiss it and let a background refresh
+  // re-open it. Requiring `openId !== null` makes close truly close; the
+  // `dealer_id === openId` match also avoids briefly showing a prior dealer's
+  // stale detail when reopening a different card before its fetch resolves.
+  const openDetail =
+    openId !== null && detail.kind === "ok" && detail.data.dealer_id === openId
+      ? detail.data
+      : null;
+
   return (
     <section data-testid="canvas-negotiations">
       <h2>Negotiations</h2>
@@ -222,9 +236,9 @@ export function NegotiationsBoard({
         </>
       )}
       <NegotiationDetailModal
-        detail={detail.kind === "ok" ? detail.data : null}
-        {...(openId !== null && fetchSummary !== undefined
-          ? { fetchSummary: (): Promise<DealerNegotiationSummary> => fetchSummary(openId) }
+        detail={openDetail}
+        {...(openDetail !== null && fetchSummary !== undefined
+          ? { fetchSummary: (): Promise<DealerNegotiationSummary> => fetchSummary(openDetail.dealer_id) }
           : {})}
         onClose={() => setOpenId(null)}
       />
