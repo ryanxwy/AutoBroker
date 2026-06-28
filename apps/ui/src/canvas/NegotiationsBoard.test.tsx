@@ -8,12 +8,61 @@
  * and that no bare id / budget surfaces.
  */
 
+import { act } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { AsyncState } from "../api/useApi.js";
-import type { DealerNegotiationList, DealerNegotiationRow } from "../api/wire.js";
-import { render } from "../test/render.js";
+import type {
+  DealerNegotiationDetail,
+  DealerNegotiationList,
+  DealerNegotiationRow,
+} from "../api/wire.js";
+import { click, render } from "../test/render.js";
 import { NegotiationsBoard } from "./NegotiationsBoard.js";
+
+/** Query a (portaled) modal node off the document, not the render container. */
+const docQuery = (testId: string): HTMLElement | null =>
+  document.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+/** Dispatch the two other dismiss paths the bug report cited (both route to onClose). */
+function escape(node: HTMLElement): void {
+  act(() => {
+    node.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  });
+}
+function mousedown(node: HTMLElement): void {
+  act(() => {
+    node.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  });
+}
+
+function makeDetail(overrides: Partial<DealerNegotiationDetail> = {}): DealerNegotiationDetail {
+  return {
+    dealer_id: "d-1",
+    name: "Jim Click Hyundai",
+    city: "Tucson",
+    state: "AZ",
+    website: "https://jimclick.example",
+    negotiation_status: "countered",
+    email_count: 6,
+    quote_sent: true,
+    best_competing_otd: 41000,
+    batna_gap_usd: 2210,
+    status_line: "The dealer countered; you are $2,210 above the best competing quote.",
+    strategy: "Hold firm.",
+    next_steps: ["Reply asking them to beat $41,000 OTD."],
+    contacts: [],
+    replies: [],
+    ...overrides,
+  };
+}
 
 function ok(data: DealerNegotiationList): AsyncState<DealerNegotiationList> {
   return { kind: "ok", data };
@@ -177,5 +226,133 @@ describe("NegotiationsBoard — loading / error", () => {
       />,
     );
     expect(container.querySelector('[role="alert"]')!.textContent).toContain("boom");
+  });
+});
+
+describe("NegotiationsBoard — open/close lifecycle (openId is authoritative)", () => {
+  it("opens the detail modal on a card click and CLOSES it on Close — even though the detail cache stays 'ok'", async () => {
+    const r = render(
+      <NegotiationsBoard
+        negotiations={ok([makeRow()])}
+        dealerCount={1}
+        fetchDetail={() => Promise.resolve(makeDetail())}
+      />,
+    );
+
+    // Open: click the card, let the detail fetch resolve → modal present.
+    click(r.get("canvas-negotiation-card"));
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).not.toBeNull();
+
+    // Close: the stale-while-revalidate detail cache stays {kind:"ok"} after the
+    // card closes, so a modal gated on detail.kind alone would never dismiss.
+    // Gating on openId makes Close truly close.
+    click(docQuery("negotiation-detail-close")!);
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).toBeNull();
+    expect(docQuery("modal-backdrop")).toBeNull();
+
+    r.unmount();
+  });
+
+  it("Escape and a backdrop click also dismiss the modal (the other two reported paths)", async () => {
+    const r = render(
+      <NegotiationsBoard
+        negotiations={ok([makeRow()])}
+        dealerCount={1}
+        fetchDetail={() => Promise.resolve(makeDetail())}
+      />,
+    );
+
+    // Escape.
+    click(r.get("canvas-negotiation-card"));
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).not.toBeNull();
+    escape(docQuery("modal-dialog")!);
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).toBeNull();
+
+    // Backdrop click (re-open first).
+    click(r.get("canvas-negotiation-card"));
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).not.toBeNull();
+    mousedown(docQuery("modal-backdrop")!);
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).toBeNull();
+
+    r.unmount();
+  });
+
+  it("does NOT flash a prior dealer's stale detail when reopening a DIFFERENT card before its fetch resolves", async () => {
+    // d-1 resolves immediately; d-2's fetch is held pending so the stale-while-
+    // revalidate cache still holds d-1's detail while d-2 is openId. The
+    // dealer_id === openId guard must keep d-1's detail off-screen.
+    let resolveD2: (() => void) | null = null;
+    const fetchDetail = (id: string): Promise<DealerNegotiationDetail> => {
+      if (id === "d-2") {
+        return new Promise((res) => {
+          resolveD2 = () => res(makeDetail({ dealer_id: "d-2", name: "Second Motors" }));
+        });
+      }
+      return Promise.resolve(makeDetail({ dealer_id: "d-1", name: "Jim Click Hyundai" }));
+    };
+    const r = render(
+      <NegotiationsBoard
+        negotiations={ok([makeRow(), makeRow({ dealer_id: "d-2", name: "Second Motors" })])}
+        dealerCount={2}
+        fetchDetail={fetchDetail}
+      />,
+    );
+    const cardOf = (name: string): HTMLElement =>
+      r.all("canvas-negotiation-card").find((c) => (c.textContent ?? "").includes(name))!;
+
+    // Open d-1, then close.
+    click(cardOf("Jim Click Hyundai"));
+    await flush();
+    expect(docQuery("negotiation-detail-title")!.textContent).toBe("Jim Click Hyundai");
+    click(docQuery("negotiation-detail-close")!);
+    await flush();
+
+    // Open d-2: its fetch is pending, so `detail` still holds d-1 (SWR). The modal
+    // must NOT show d-1's title (no stale flash) — it stays closed until d-2 lands.
+    click(cardOf("Second Motors"));
+    await flush();
+    expect(docQuery("negotiation-detail-title")).toBeNull();
+
+    // Resolve d-2 → the modal opens on the CORRECT dealer.
+    act(() => resolveD2!());
+    await flush();
+    expect(docQuery("negotiation-detail-title")!.textContent).toBe("Second Motors");
+
+    r.unmount();
+  });
+
+  it("does NOT re-open a closed modal when the board re-renders on a data refresh", async () => {
+    const r = render(
+      <NegotiationsBoard
+        negotiations={ok([makeRow()])}
+        dealerCount={1}
+        fetchDetail={() => Promise.resolve(makeDetail())}
+      />,
+    );
+    click(r.get("canvas-negotiation-card"));
+    await flush();
+    click(docQuery("negotiation-detail-close")!);
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).toBeNull();
+
+    // A data.changed pulse re-renders the board with refreshed rows; the closed
+    // modal must stay closed (no card was re-clicked).
+    r.rerender(
+      <NegotiationsBoard
+        negotiations={ok([makeRow({ email_count: 8 })])}
+        dealerCount={1}
+        fetchDetail={() => Promise.resolve(makeDetail({ email_count: 8 }))}
+      />,
+    );
+    await flush();
+    expect(docQuery("negotiation-detail-modal")).toBeNull();
+
+    r.unmount();
   });
 });
