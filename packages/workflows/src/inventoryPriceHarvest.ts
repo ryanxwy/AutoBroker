@@ -27,6 +27,9 @@ const MSRP_LABELS: readonly string[] = [
   "msrp",
   "sticker price",
   "retail price",
+  // Dealer.com (DDC) "Transparent Pricing" stack: the sticker line is labeled
+  // "Total SRP" (no "MSRP" word on the page at all).
+  "total srp",
 ];
 
 /** Selling/cash-price labels in PRIORITY order (earliest = strongest signal of
@@ -53,6 +56,12 @@ const SELLING_LABELS: readonly string[] = [
   "price after savings",
   "final price",
   "best price",
+  // Dealer.com (DDC) "Transparent Pricing" stack: the as-shown post-adjustment
+  // cash price is labeled "Transparent Price" (followed by a "No Hidden Fees"
+  // caption — see NEGATED_FEE_RE, which keeps that caption from tripping the
+  // fee pitfall on the adjacent amount). Ranked last so a stronger explicit
+  // label (sale/internet/your price) still wins on a mixed page.
+  "transparent price",
 ];
 
 /** Phrases that mean the price is legitimately WITHHELD behind a CTA — a null
@@ -128,6 +137,14 @@ const MAX_PRICE = 250_000;
 /** How far after a label a $-amount may sit and still belong to it. */
 const LABEL_TO_PRICE_WINDOW = 40;
 
+/** Dealer.com's "No Hidden Fees" transparency caption sits between the
+ *  "Transparent Price" label and its amount. It contains the substring "fee" but
+ *  is the OPPOSITE of a fee charge — strip it from the before-window before the
+ *  prefix-pitfall scan so it cannot reject the adjacent transparent price.
+ *  Narrow on purpose: only the negated slogan is removed; a real "Doc Fee" /
+ *  "Dealer Fee" line is untouched and still rejects its amount. */
+const NEGATED_FEE_RE = /no\s+hidden\s+fees?/g;
+
 /** Window BEFORE a $-amount scanned for label (prefix) pitfalls. */
 const PITFALL_BEFORE = 20;
 /** Window AFTER a $-amount scanned for qualifier (suffix) pitfalls. */
@@ -164,7 +181,9 @@ function hasPitfall(haystackLc: string, amountStart: number, amountLen: number):
   let beforeFrom = Math.max(0, amountStart - PITFALL_BEFORE);
   const prevDollar = haystackLc.lastIndexOf("$", amountStart - 1);
   if (prevDollar >= beforeFrom) beforeFrom = prevDollar + 1;
-  const before = haystackLc.slice(beforeFrom, amountStart);
+  // Strip the "No Hidden Fees" transparency slogan so its "fee" substring does
+  // not falsely reject a Dealer.com "Transparent Price" amount.
+  const before = haystackLc.slice(beforeFrom, amountStart).replace(NEGATED_FEE_RE, " ");
 
   // After-window: a true qualifier (/mo, apr, %) attaches IMMEDIATELY to the
   // amount (only whitespace between), so check the LEADING token, not the whole

@@ -57,6 +57,20 @@ describe("harvestBreakdownFromSnapshot — labeled dealer markup", () => {
     expect(harvestBreakdownFromSnapshot("Market Adjustment $90").dealerMarkup).toBeNull(); // < $100
     expect(harvestBreakdownFromSnapshot("Market Adjustment $75,000").dealerMarkup).toBeNull(); // > $50k
   });
+
+  it("captures the Dealer.com 'Dealer Installed Accessories' add-on line", () => {
+    // Live DDC "Transparent Pricing" stack: a generic dealer-add-on total the
+    // buyer pays on top of SRP. A negative "Dealer Adjustment" is a discount,
+    // NOT a markup, and must not be picked up as one.
+    const r = harvestBreakdownFromSnapshot(
+      "Total SRP $38,663 Documentary Fee $225 Dealer Installed Accessories $798 " +
+        "Dealer Adjustment -$2,455 Transparent Price $37,231",
+    );
+    expect(r.addOns).toEqual([{ label: "dealer accessories", amount: 798 }]);
+    expect(r.addonsTotal).toBe(798);
+    expect(r.dealerMarkup).toBeNull(); // the -$2,455 adjustment is a discount, not markup
+    expect(r.breakdownParsed).toBe(true);
+  });
 });
 
 describe("harvestBreakdownFromSnapshot — dealer add-ons", () => {

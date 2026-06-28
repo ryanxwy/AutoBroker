@@ -267,6 +267,7 @@ function vdpFact(
     msrp: null,
     priceGated: false,
     breakdown: { dealerMarkup: null, addOns: [], addonsTotal: null, breakdownParsed: true },
+    priceSnapshot: null,
     ...over,
   };
 }

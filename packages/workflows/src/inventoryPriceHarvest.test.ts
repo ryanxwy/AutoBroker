@@ -39,6 +39,35 @@ describe("harvestPriceFromSnapshot", () => {
     expect(r.msrp).toBe(32100);
   });
 
+  it("captures the Dealer.com 'Transparent Pricing' stack (Total SRP + Transparent Price)", () => {
+    // The exact live innerText layout from a real Dealer.com (DDC) Toyota VDP
+    // (toyotaofmtpleasant.com): newline-separated labels/values, no "MSRP" word,
+    // and a "No Hidden Fees" caption between the "Transparent Price" label and
+    // its amount (its "Fees" substring must NOT reject the price).
+    const snap =
+      "Total SRP\n$38,663\nDocumentary Fee\n$225\nDealer Installed Accessories\n$798\n" +
+      "Dealer Adjustment\n-$2,455\nTransparent Price\nNo Hidden Fees\n$37,231\n" +
+      "Price excludes required taxes, tag and title fees.";
+    const r = harvestPriceFromSnapshot(snap);
+    expect(r.msrp).toBe(38663);
+    expect(r.listedPrice).toBe(37231);
+    expect(r.priceGated).toBe(false);
+  });
+
+  it("captures a second DDC value shape (Total SRP + Transparent Price, sibling VDP)", () => {
+    const snap =
+      "Total SRP\n$36,233\nDocumentary Fee\n$225\nTransparent Price\nNo Hidden Fees\n$35,030";
+    const r = harvestPriceFromSnapshot(snap);
+    expect(r.msrp).toBe(36233);
+    expect(r.listedPrice).toBe(35030);
+  });
+
+  it("still rejects a REAL fee line — the 'No Hidden Fees' strip is narrow", () => {
+    // A genuine (in-band) dealer-fee amount must still be rejected; only the
+    // negated slogan is exempted.
+    expect(harvestPriceFromSnapshot("Dealer Fee $6,500").listedPrice).toBeNull();
+  });
+
   it("marks priceGated and keeps MSRP when the selling price is behind a CTA", () => {
     const snap = "2026 Mazda CX-5 Preferred MSRP $32,750 Get Instant Price";
     const r = harvestPriceFromSnapshot(snap);

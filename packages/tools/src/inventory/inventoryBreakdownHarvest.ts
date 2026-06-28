@@ -96,13 +96,22 @@ const ADDON_ANCHORS: readonly { re: RegExp; label: string; bundle: boolean }[] =
     label: "dealer prep",
     bundle: false,
   },
+  // Dealer.com (DDC) "Transparent Pricing" stack: a generic "Dealer Installed
+  // Accessories" / "Dealer Added Accessories" line (the dealer add-on TOTAL the
+  // buyer pays on top of SRP). bundle:true so a separately-itemized component
+  // set (nitrogen/etch/etc.) supersedes it and it is not double-counted.
+  {
+    re: /dealer[- ]?(?:installed|added|applied)\s+accessor(?:y|ies)|dealer\s+accessor(?:y|ies)/,
+    label: "dealer accessories",
+    bundle: true,
+  },
 ];
 
 /** Government + manufacturer charges that are NOT dealer junk add-ons (fees are
  *  quote_audit's domain). An exclusion adjacent to a $ disqualifies it as an
  *  add-on. Non-global → stateless `.test()`. */
 const EXCLUSION_RE =
-  /\btax\b|\btitle\b|\bregistration\b|\blicense\b|\bdmv\b|\bdoc\b|\bdocumentation\b|\bdocument\s+preparation\b|e-?filing|electronic\s+filing|\bdestination\b|\bfreight\b/;
+  /\btax\b|\btitle\b|\bregistration\b|\blicense\b|\bdmv\b|\bdoc\b|\bdocumentary\b|\bdocumentation\b|\bdocument\s+preparation\b|e-?filing|electronic\s+filing|\bdestination\b|\bfreight\b/;
 
 /** Disclaimer / nav-menu / "no charge" context that means a labeled item is NOT
  *  actually being charged here. Mandatory false-positive defense. Non-global. */
