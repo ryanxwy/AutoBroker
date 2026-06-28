@@ -715,6 +715,37 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
       const n = r.n ?? 0;
       const covered = r.covered ?? 0;
       const breakdown_parsed = r.breakdown_parsed ?? 0;
+      // Per-dealer breakdown of the SAME aggregates (GROUP BY dealer_id). The
+      // GLOBAL row masks single-dealer loss (one dealer dropping every breakdown
+      // is invisible in the pooled ratio); this is the measurement instrument for
+      // "which dealer is losing breakdown". Read-only, same WHERE, no new columns.
+      // match_status is NOT filtered — a null-make single-brand dealer classified
+      // 'unknown' keeps all its rows here (no exact-only drop = no had-and-lost).
+      const byDealer = adb.$client
+        .prepare(
+          `SELECT dealer_id,
+             COUNT(*) AS n,
+             SUM(CASE WHEN listed_price IS NOT NULL THEN 1 ELSE 0 END) AS priced,
+             SUM(CASE WHEN msrp IS NOT NULL THEN 1 ELSE 0 END) AS msrp_present,
+             SUM(CASE WHEN pricing_breakdown_json IS NOT NULL THEN 1 ELSE 0 END) AS breakdown_parsed,
+             SUM(CASE WHEN dealer_markup IS NOT NULL AND dealer_markup <> 0 THEN 1 ELSE 0 END) AS markup_present,
+             SUM(CASE WHEN pricing_breakdown_json LIKE '%"addOns":[{%' THEN 1 ELSE 0 END) AS addons_present
+           FROM inventory_listings ${where}
+           GROUP BY dealer_id
+           ORDER BY dealer_id`,
+        )
+        .all(...(profileId ? [profileId] : []))
+        .map((d) => ({
+          dealer_id: d.dealer_id,
+          n: d.n ?? 0,
+          priced: d.priced ?? 0,
+          msrp_present: d.msrp_present ?? 0,
+          // Gated discriminator is structurally 0 today (see the global note).
+          gated: 0,
+          breakdown_parsed: d.breakdown_parsed ?? 0,
+          markup_present: d.markup_present ?? 0,
+          addons_present: d.addons_present ?? 0,
+        }));
       reply.code(200);
       return {
         skill,
@@ -735,6 +766,7 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
         breakdown_coverage: n > 0 ? round2(breakdown_parsed / n) : 0,
         markup_present: r.markup_present ?? 0,
         addons_present: r.addons_present ?? 0,
+        byDealer,
       };
     }
     // dealer_reply_extract — OTD coverage over the extracted quotes.

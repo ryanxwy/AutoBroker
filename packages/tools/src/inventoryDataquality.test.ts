@@ -166,3 +166,86 @@ describe("dataquality — inventory_site_scan breakdown coverage", () => {
     expect(result.vdp_linked).toBe(3);
   });
 });
+
+/**
+ * Per-dealer breakdown (GROUP BY dealer_id) — the measurement instrument for
+ * "which dealer is losing breakdown" (the pooled GLOBAL ratio masks a single
+ * dealer dropping every breakdown). Replicates the per-dealer SQL added to the
+ * /__e2e/dataquality route. This suite seeds its OWN second dealer AFTER the
+ * global suite has run (source order), then tears it down — so the global
+ * counts above are untouched.
+ *
+ * NOTE: the per-dealer SQL is mirrored in apps/ui/e2e/serve-live.mjs — update both.
+ */
+function runByDealer() {
+  return db.$client
+    .prepare(
+      `SELECT dealer_id,
+         COUNT(*) AS n,
+         SUM(CASE WHEN listed_price IS NOT NULL THEN 1 ELSE 0 END) AS priced,
+         SUM(CASE WHEN msrp IS NOT NULL THEN 1 ELSE 0 END) AS msrp_present,
+         SUM(CASE WHEN pricing_breakdown_json IS NOT NULL THEN 1 ELSE 0 END) AS breakdown_parsed,
+         SUM(CASE WHEN dealer_markup IS NOT NULL AND dealer_markup <> 0 THEN 1 ELSE 0 END) AS markup_present,
+         SUM(CASE WHEN pricing_breakdown_json LIKE '%"addOns":[{%' THEN 1 ELSE 0 END) AS addons_present
+       FROM inventory_listings WHERE superseded_at IS NULL
+       GROUP BY dealer_id
+       ORDER BY dealer_id`,
+    )
+    .all() as Record<string, number | string>[];
+}
+
+describe("dataquality — per-dealer breakdown (GROUP BY dealer_id)", () => {
+  // A second dealer 'd2' with NULL make → classified match_status='unknown' (a
+  // single-brand dealer the make-axis can't classify). Two listings: one with a
+  // parsed breakdown blob, one without. The route does NOT filter match_status,
+  // so an 'unknown' dealer keeps ALL its rows — never zeroed (no had-and-lost).
+  beforeAll(() => {
+    const NOW = Date.now();
+    const ins = db.$client.prepare(
+      `INSERT INTO inventory_listings
+         (listing_id, search_profile_id, dealer_id, make, inventory_status, match_status,
+          raw_listing_json, first_seen_at, last_seen_at, observed_at,
+          listing_url, pricing_breakdown_json, dealer_markup)
+       VALUES (?, 'p1', 'd2', NULL, 'active', 'unknown',
+               '{}', ?, ?, ?, ?, ?, ?)`,
+    );
+    ins.run(
+      "l4",
+      NOW,
+      NOW,
+      NOW,
+      "https://d2.example/vdp/4",
+      JSON.stringify({ addOns: [], addonsTotal: null, priceGated: false, breakdownParsed: true }),
+      0,
+    );
+    ins.run("l5", NOW, NOW, NOW, "https://d2.example/vdp/5", null, null);
+  });
+
+  afterAll(() => {
+    db.$client.prepare("DELETE FROM inventory_listings WHERE dealer_id = 'd2'").run();
+  });
+
+  it("returns a per-dealer row for EACH dealer (not just the pooled global)", () => {
+    const byDealer = runByDealer();
+    const ids = byDealer.map((d) => d.dealer_id);
+    expect(ids).toContain("d1");
+    expect(ids).toContain("d2");
+  });
+
+  it("a null-make 'unknown'-match single-brand dealer is NOT zeroed (keeps all its rows)", () => {
+    const d2 = runByDealer().find((d) => d.dealer_id === "d2")!;
+    expect(d2).toBeDefined();
+    expect(d2.n).toBe(2); // both listings counted — no exact-only persist drop
+    expect(d2.breakdown_parsed).toBe(1); // l4 parsed, l5 null
+    expect(d2.markup_present).toBe(0); // l4 markup=0 sentinel → excluded
+    expect(d2.addons_present).toBe(0);
+  });
+
+  it("d1's per-dealer aggregates match its three seeded rows", () => {
+    const d1 = runByDealer().find((d) => d.dealer_id === "d1")!;
+    expect(d1.n).toBe(3);
+    expect(d1.breakdown_parsed).toBe(2);
+    expect(d1.markup_present).toBe(1);
+    expect(d1.addons_present).toBe(1);
+  });
+});
