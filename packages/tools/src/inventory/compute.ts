@@ -60,6 +60,11 @@ export interface RankedCandidate {
   add_ons: { label: string; amount: number }[];
   /** Sum of the add-on amounts in dollars, or null. */
   addons_total: number | null;
+  /** A LABELED dealer discount (savings off MSRP) in dollars, or null — recovered
+   *  by the folded LLM price-block read (the deterministic harvest omits it). */
+  dealer_discount: number | null;
+  /** A short verbatim manufacturer-incentive phrase, or null. Same provenance. */
+  incentives_text: string | null;
   /** true when the listing price was hidden behind a "Get your price" CTA. */
   price_gated: boolean;
   /** true ⇔ a price-stack region was actually read on the VDP. false means "no
@@ -147,6 +152,12 @@ function parseJsonStringArray(raw: unknown): string[] | null {
 interface ParsedBreakdown {
   add_ons: { label: string; amount: number }[];
   addons_total: number | null;
+  /** A LABELED dealer discount (savings off MSRP) in dollars, or null. Recovered
+   *  only by the folded LLM price-block read; the deterministic harvest omits it. */
+  dealer_discount: number | null;
+  /** A short verbatim manufacturer-incentive phrase (e.g. "$500 military rebate"),
+   *  or null. Same provenance as dealer_discount. */
+  incentives_text: string | null;
   price_gated: boolean;
   breakdown_parsed: boolean;
 }
@@ -158,6 +169,8 @@ interface ParsedBreakdown {
 const EMPTY_BREAKDOWN: ParsedBreakdown = {
   add_ons: [],
   addons_total: null,
+  dealer_discount: null,
+  incentives_text: null,
   price_gated: false,
   breakdown_parsed: false,
 };
@@ -190,9 +203,16 @@ function parseBreakdown(raw: unknown): ParsedBreakdown {
       }
     }
   }
+  let incentives_text: string | null = null;
+  const rawIncentives = blob["incentivesText"];
+  if (typeof rawIncentives === "string" && rawIncentives.trim() !== "") {
+    incentives_text = rawIncentives;
+  }
   return {
     add_ons,
     addons_total: asNumber(blob["addonsTotal"]),
+    dealer_discount: asNumber(blob["dealerDiscount"]),
+    incentives_text,
     price_gated: blob["priceGated"] === true,
     breakdown_parsed: blob["breakdownParsed"] === true,
   };
@@ -244,6 +264,8 @@ function toCandidate(ranked: RankedRow): RankedCandidate {
     dealer_markup: asNumber(listing["dealer_markup"]),
     add_ons: breakdown.add_ons,
     addons_total: breakdown.addons_total,
+    dealer_discount: breakdown.dealer_discount,
+    incentives_text: breakdown.incentives_text,
     price_gated: breakdown.price_gated,
     breakdown_parsed: breakdown.breakdown_parsed,
     // inventory_status / dealer_id are NOT NULL columns; default to "" defensively.

@@ -803,4 +803,39 @@ describe("persistScanResults — dealer_markup + pricing_breakdown_json (harvest
     expect(r.dealer_markup).toBe(3000); // preserved (COALESCE(null, old)=old)
     expect(r.pricing_breakdown_json).toBe(REAL_BLOB);
   });
+
+  it("DESYNC REGRESSION: a folded-LLM blob (markup + discount + incentives) survives a re-scan that never reaches the VDP", () => {
+    // The folded LLM price-block scalars (dealer_discount / incentives_text) ride
+    // INSIDE pricing_breakdown_json — they are NOT dedicated columns — so the
+    // lockstep sentinel that preserves dealer_markup must preserve them too.
+    const FOLDED_BLOB =
+      '{"addOns":[],"addonsTotal":null,"dealerDiscount":1500,"incentivesText":"$500 military rebate","priceGated":false,"breakdownParsed":true,"llmRecovered":true}';
+    // Scan 1: a VDP whose folded read captured a markup + discount + incentive.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [
+        scanned(DEALER_A, SRP_A, [
+          pricedRow({ vin: VIN }, { dealerMarkup: 4995, pricingBreakdownJson: FOLDED_BLOB }),
+        ]),
+      ],
+      db,
+      now: T1,
+    });
+    // Scan 2: the VDP is NOT reached this run (no pricing keys → undefined carry).
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [pricedRow({ vin: VIN }, {})])],
+      db,
+      now: T3,
+    });
+    const r = allListings()[0]!;
+    // Scalar AND every folded field (in the blob) are PRESERVED, never zeroed.
+    expect(r.dealer_markup).toBe(4995);
+    expect(r.pricing_breakdown_json).toBe(FOLDED_BLOB);
+    const blob = JSON.parse(r.pricing_breakdown_json as string);
+    expect(blob.dealerDiscount).toBe(1500);
+    expect(blob.incentivesText).toBe("$500 military rebate");
+  });
 });

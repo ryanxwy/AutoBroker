@@ -49,6 +49,8 @@ function makeCandidate(
     dealer_markup: number | null;
     add_ons: { label: string; amount: number }[];
     addons_total: number | null;
+    dealer_discount: number | null;
+    incentives_text: string | null;
     price_gated: boolean;
     breakdown_parsed: boolean;
     inventory_status: string;
@@ -77,6 +79,8 @@ function makeCandidate(
     dealer_markup: null,
     add_ons: [],
     addons_total: null,
+    dealer_discount: null,
+    incentives_text: null,
     price_gated: false,
     breakdown_parsed: false,
     inventory_status: "in_stock",

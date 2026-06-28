@@ -65,6 +65,11 @@ export const RankedCandidateSchema = z
     add_ons: z.array(z.object({ label: z.string(), amount: z.number() })),
     /** Sum of the add-on amounts in dollars, or null. */
     addons_total: z.number().nullable(),
+    /** A LABELED dealer discount (off MSRP) in dollars, or null — recovered by the
+     *  folded LLM price-block read (the deterministic harvest omits it). */
+    dealer_discount: z.number().nullable(),
+    /** A short verbatim manufacturer-incentive phrase, or null. Same provenance. */
+    incentives_text: z.string().nullable(),
     /** true when the price was hidden behind a "Get your price" CTA. */
     price_gated: z.boolean(),
     /** true ⇔ a price-stack region was actually read; false = "no breakdown captured". */

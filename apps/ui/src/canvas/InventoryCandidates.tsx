@@ -53,6 +53,11 @@ export interface InventoryCandidate {
   add_ons: { label: string; amount: number }[];
   /** Sum of the add-on amounts in dollars, or null. */
   addons_total: number | null;
+  /** A LABELED dealer discount (savings off MSRP) in dollars, or null — recovered
+   *  by the folded LLM price-block read. */
+  dealer_discount: number | null;
+  /** A short verbatim manufacturer-incentive phrase, or null. Same provenance. */
+  incentives_text: string | null;
   /** true when the listing's price was hidden behind a "Get your price" CTA. */
   price_gated: boolean;
   /** true ⇔ a price-stack region was actually read; false = "couldn't read"

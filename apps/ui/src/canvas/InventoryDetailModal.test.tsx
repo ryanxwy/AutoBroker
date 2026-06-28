@@ -37,6 +37,8 @@ function makeRow(overrides: Partial<InventoryCandidate> = {}): InventoryCandidat
     dealer_markup: null,
     add_ons: [],
     addons_total: null,
+    dealer_discount: null,
+    incentives_text: null,
     price_gated: false,
     breakdown_parsed: false,
     inventory_status: "in_stock",
@@ -110,6 +112,48 @@ describe("InventoryDetailModal — labeled markup", () => {
     const markup = doc("inventory-detail-markup");
     expect(markup).not.toBeNull();
     expect(markup!.textContent).toBe("+$2,500");
+    close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Folded LLM price-block read: dealer discount + incentives text
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — folded price-block (discount / incentives)", () => {
+  it("renders a 'Dealer discount' row with '−$' text when dealer_discount > 0", () => {
+    const close = open(makeRow({ dealer_discount: 1500 }));
+    const discount = doc("inventory-detail-discount");
+    expect(discount).not.toBeNull();
+    expect(discount!.textContent).toBe("−$1,500");
+    close();
+  });
+
+  it("omits the discount row when dealer_discount is 0 or null", () => {
+    const close = open(makeRow({ dealer_discount: 0 }));
+    expect(doc("inventory-detail-discount")).toBeNull();
+    close();
+    const close2 = open(makeRow({ dealer_discount: null }));
+    expect(doc("inventory-detail-discount")).toBeNull();
+    close2();
+  });
+
+  it("renders the incentives note verbatim when incentives_text is present, omits it when null/blank", () => {
+    const close = open(makeRow({ incentives_text: "$500 military rebate" }));
+    const note = doc("inventory-detail-incentives");
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain("$500 military rebate");
+    close();
+    const close2 = open(makeRow({ incentives_text: "   " }));
+    expect(doc("inventory-detail-incentives")).toBeNull();
+    close2();
+  });
+
+  it("shows the price-breakdown section for a discount/incentive even with no price or MSRP", () => {
+    const close = open(
+      makeRow({ listed_price: null, msrp: null, dealer_discount: 2000, incentives_text: null }),
+    );
+    expect(doc("inventory-detail-discount")).not.toBeNull();
     close();
   });
 });

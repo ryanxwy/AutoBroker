@@ -354,6 +354,34 @@ describe("rankInventoryForProfile", () => {
     expect(row.price_gated).toBe(false);
     expect(row.breakdown_parsed).toBe(false);
     expect(row.dealer_markup).toBeNull();
+    expect(row.dealer_discount).toBeNull();
+    expect(row.incentives_text).toBeNull();
+  });
+
+  it("projects the folded LLM price-block scalars (dealer_discount + incentives_text) from the blob", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_folded",
+      vin: FULL_VIN,
+      listedPrice: 36000,
+      pricingBreakdownJson: JSON.stringify({
+        addOns: [],
+        addonsTotal: null,
+        dealerDiscount: 1500,
+        incentivesText: "$500 military rebate",
+        priceGated: false,
+        breakdownParsed: true,
+        llmRecovered: true,
+      }),
+    });
+
+    const { candidates } = rankInventoryForProfile(db, PROFILE_ID);
+    const row = candidates.find((c) => c.listing_id === "lst_folded")!;
+    expect(row.dealer_discount).toBe(1500);
+    expect(row.incentives_text).toBe("$500 military rebate");
+    expect(row.breakdown_parsed).toBe(true);
+    expect(row.add_ons).toEqual([]);
   });
 
   it("does not throw on a malformed pricing_breakdown_json, falling back to the not-captured default", () => {

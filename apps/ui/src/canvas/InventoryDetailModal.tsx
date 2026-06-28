@@ -48,11 +48,27 @@ export function InventoryDetailModal({
   // LABELED markup only (>0). 0/null = "scanned, none" → no row, never a flag.
   const markup =
     typeof row.dealer_markup === "number" && row.dealer_markup > 0 ? row.dealer_markup : null;
+  // LABELED dealer discount (>0), recovered by the folded LLM price-block read —
+  // the dealer's OWN stated savings off MSRP, distinct from the implied below-MSRP
+  // delta. 0/null → no row.
+  const dealerDiscount =
+    typeof row.dealer_discount === "number" && row.dealer_discount > 0 ? row.dealer_discount : null;
+  // A short manufacturer-incentive phrase the LLM read off the price block.
+  const incentivesText =
+    typeof row.incentives_text === "string" && row.incentives_text.trim() !== ""
+      ? row.incentives_text.trim()
+      : null;
   // The price stack is shown when there is any price/discount to anchor the
-  // (static) rebate caveat to — OR a labeled markup, so a price-gated VDP that
-  // still exposes a "Market Adjustment" renders the RED markup row (the card
-  // flags it RED; the modal must not hide the very thing).
-  const hasPriceInfo = listed !== null || msrp !== null || belowMsrp !== null || markup !== null;
+  // (static) rebate caveat to — OR a labeled markup/discount/incentive, so a
+  // price-gated VDP that still exposes a "Market Adjustment" renders the RED
+  // markup row (the card flags it RED; the modal must not hide the very thing).
+  const hasPriceInfo =
+    listed !== null ||
+    msrp !== null ||
+    belowMsrp !== null ||
+    markup !== null ||
+    dealerDiscount !== null ||
+    incentivesText !== null;
   const addOns = Array.isArray(row.add_ons) ? row.add_ons : [];
   const addonsTotal = typeof row.addons_total === "number" ? row.addons_total : null;
   // Severity → token: add-ons are AMBER caution, escalating to RED at a heavy
@@ -122,6 +138,12 @@ export function InventoryDetailModal({
               <DetailRow label="MSRP" value={msrp} />
               <DetailRow label="below MSRP" value={belowMsrp} />
               <DetailRow label="Selling price" value={listed} />
+              {dealerDiscount !== null && (
+                <>
+                  <dt>Dealer discount</dt>
+                  <dd data-testid="inventory-detail-discount">−{dollarLabel(dealerDiscount)}</dd>
+                </>
+              )}
               {markup !== null && (
                 <>
                   <dt className="breakdown-flag-red">Dealer market adjustment</dt>
@@ -131,6 +153,11 @@ export function InventoryDetailModal({
                 </>
               )}
             </dl>
+            {incentivesText !== null && (
+              <p className="breakdown-note muted" data-testid="inventory-detail-incentives">
+                Incentive noted on the listing: {incentivesText}. Confirm eligibility.
+              </p>
+            )}
             {/* Static rebate caveat — NON-muted (WCAG AA), shown whenever a price
                 or discount is shown. Not per-listing detection: advertised prices
                 routinely assume rebates most buyers can't claim. */}
