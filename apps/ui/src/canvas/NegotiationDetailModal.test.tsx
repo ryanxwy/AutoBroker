@@ -254,6 +254,32 @@ describe("NegotiationDetailModal — lazy LLM summary", () => {
     r.unmount();
   });
 
+  it("resolved AI summary carries data-testid='negotiation-ai-summary' and contains the tag + text", async () => {
+    const fetchSummary = (): Promise<DealerNegotiationSummary> =>
+      Promise.resolve({ summary: "They're motivated; one more nudge should close the gap." });
+    const r = render(
+      <NegotiationDetailModal detail={makeDetail()} fetchSummary={fetchSummary} onClose={() => {}} />,
+    );
+    await flush();
+    const el = docQuery("negotiation-ai-summary");
+    expect(el).not.toBeNull();
+    expect(el!.textContent).toContain("AI summary");
+    expect(el!.textContent).toContain("They're motivated");
+    r.unmount();
+  });
+
+  it("negotiation-ai-summary testid is ABSENT when summary resolves null", async () => {
+    const fetchSummary = (): Promise<DealerNegotiationSummary> => Promise.resolve({ summary: null });
+    const r = render(
+      <NegotiationDetailModal detail={makeDetail()} fetchSummary={fetchSummary} onClose={() => {}} />,
+    );
+    await flush();
+    expect(docQuery("negotiation-ai-summary")).toBeNull();
+    // the always-present floor still shows
+    expect(docQuery("negotiation-status-summary")!.textContent).toContain("The dealer countered");
+    r.unmount();
+  });
+
   it("falls back to the status_line when the summary resolves null (degraded)", async () => {
     const fetchSummary = (): Promise<DealerNegotiationSummary> => Promise.resolve({ summary: null });
     const r = render(

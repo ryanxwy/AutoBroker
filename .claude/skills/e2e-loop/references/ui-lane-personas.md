@@ -235,10 +235,10 @@ Six tabs → six small reads, not one giant DOM.
 | Tab | Activate | Read (key testids) | Tab-specific watch |
 |---|---|---|---|
 | overview | `canvas-tab-overview` | `canvas-feed`, `canvas-next-actions`, `canvas-summary-best-otd`, `canvas-summary-headline` | Plain-language copy; one-number-one-home vs digest line |
-| dealers | `canvas-tab-dealers` | `canvas-dealer-tile`, `canvas-pager`, `canvas-dealers-empty`, `dealer-lead-submitted` | Pagination past 12; empty-state actionable; rank/distance legible |
-| inventory | `canvas-tab-inventory` | `inventory-candidate-row`, `inventory-listing-link`, `canvas-pager`, `inventory-empty-hint` | **#1 load-bearing:** `inventory-listing-link` `<a target=_blank rel=noopener>` present; scanned-0 vs never-scanned copy |
+| dealers | `canvas-tab-dealers` | `canvas-dealer-tile`, `canvas-pager`, `canvas-dealers-empty`, `dealer-lead-submitted`, `dealer-verdict-hold`, `dealer-verdict-switch` | Pagination past 12; empty-state actionable; rank/distance legible. **F4 give-up/switch (derived-on-read):** after the dealer-brain ghost/retrade rounds, a cold/ghosted dealer shows `dealer-verdict-hold` ("gone quiet"/"paused"/"not moving"); a dealer beaten by a cheaper same-mode front-runner shows `dealer-verdict-switch` ("consider switching · $N cheaper elsewhere", **NO competing name, NO budget**). Corroborate the chip against `GET /api/profiles/:id/dealers` (`verdict`/`verdict_reason`/`batna_gap_usd`) — see `references/dealer-brain.md` |
+| inventory | `canvas-tab-inventory` | `inventory-candidate-row`, `inventory-listing-link`, `canvas-pager`, `inventory-empty-hint`, `inventory-markup-flag`, `inventory-addons-flag`, `inventory-color-crosscheck` | **#1 load-bearing:** `inventory-listing-link` `<a target=_blank rel=noopener>` present; scanned-0 vs never-scanned copy. **F1 enrichment (conditional):** a flagged row carries `inventory-markup-flag`/`inventory-addons-flag` → `browser_click` opens `inventory-detail-modal` with `inventory-detail-markup`/`inventory-detail-addons` (unread breakdown → `inventory-detail-breakdown-unknown`); a loose color pref vs stocked names surfaces `inventory-color-crosscheck` (+ `inventory-color-add`/`inventory-color-crosscheck-dismiss`). No budget on any of these |
 | quotes | `canvas-tab-quotes` | `canvas-quotes-foldout` (`<details>`), `quote-audit-pill-<code>` | Audit pills on off-mode quotes in foldout; no budget number |
-| replies | `canvas-tab-replies` | `canvas-thread-row`, `thread-class-chip`, `message-extract-failed-badge`, `canvas-pager`, `canvas-threads-empty`; **+ Negotiations board** `canvas-negotiation-grid`, `canvas-negotiation-card` (per-card `canvas-negotiation-email-count`, `canvas-negotiation-quote-sent`, `canvas-negotiation-otd`, `canvas-negotiation-discount`) | Pagination at 10/page; relative-date copy; failed-extract badge legible. **Do NOT stop at the grid** — `browser_click` one `canvas-negotiation-card`, then `browser_evaluate` the opened `negotiation-detail-modal`: `negotiation-detail-title`, `negotiation-contact-row`, `negotiation-status-summary`, `negotiation-strategy`, `negotiation-next-steps`, `negotiation-competing-quote`, `negotiation-reply-row` (newest-first), close via `negotiation-detail-close`. Card shows total-emails / quote-sent / OTD / discount only — **never a budget number** (inv #9) |
+| replies | `canvas-tab-replies` | `canvas-thread-row`, `thread-class-chip`, `message-extract-failed-badge`, `canvas-pager`, `canvas-threads-empty`; **+ Negotiations board** `canvas-negotiation-grid`, `canvas-negotiation-card` (per-card `canvas-negotiation-email-count`, `canvas-negotiation-quote-sent`, `canvas-negotiation-otd`, `canvas-negotiation-discount`) | Pagination at 10/page; relative-date copy; failed-extract badge legible. **Do NOT stop at the grid** — `browser_click` one `canvas-negotiation-card`, then `browser_evaluate` the opened `negotiation-detail-modal`: `negotiation-detail-title`, `negotiation-contact-row`, `negotiation-status-summary`, `negotiation-strategy`, `negotiation-next-steps`, `negotiation-competing-quote`, `negotiation-reply-row` (newest-first), close via `negotiation-detail-close`. **F3 AI-summary (live-only):** the always-present `negotiation-status-summary` wrapper holds the deterministic `status_line`; the subordinate lazy LLM summary is the SEPARATE `negotiation-ai-summary` (the RESOLVED `<p>`, not "summarizing…") — in a live/buyer run assert it is present + text ≠ "summarizing…" (text ≠ `status_line` as a secondary belt). NEVER a func anchor (keyless degrades to null). Card shows total-emails / quote-sent / OTD / discount only — **never a budget number** (inv #9) |
 | incentives | `canvas-tab-incentives` | `canvas-incentive-row`, `-type`, `-amount`, `-eligibility`, `-expiry`, `-source`, `canvas-incentives-empty` | Provenance readable; empty-state actionable; **no Pager today — watch for unbounded list** (`Incentives.tsx:92`; pending backlog item) |
 
 **Cross-cutting (judge once, not per tab):**
@@ -247,9 +247,16 @@ Six tabs → six small reads, not one giant DOM.
   `stop-pick-option`, `reset-confirm`, `approval-approve`. Gate names blast radius
   in plain words.
 - Workbench layout is ONE always-on split (there is NO canvas/chat MODE toggle —
-  no `topbar-mode-canvas`/`topbar-mode-conversation`): drag `rail-resizer` (the
-  rail's left boundary), confirm the width persists + re-clamps, Canvas reflows at
-  narrow and wide.
+  no `topbar-mode-canvas`/`topbar-mode-conversation`). **Drag the rail (a REAL
+  Playwright drag, not just a read):** `browser_evaluate` the `rail-resizer` bounding
+  rect, then `mcp__plugin_playwright_playwright__browser_drag` (or `browser_click`-hold
+  + move via the mouse API) from its center to center−120px (leftward = widen, the rail
+  is on the right). Assert: the `.app-body` `--rail-width` GREW by ~120 (read
+  `getComputedStyle`), the canvas (`.app-main`) shrank ~the same, the value persisted
+  to `localStorage['autobroker:rail-width']`, and a drag far past the max RE-CLAMPS
+  (min 320 / max min(560, 48% of container)). A drag that moves the width by ~0 is the
+  `flex:0 0 0px` regression — a HIGH finding. (The deterministic twin is the
+  `rail_resize.func.toml` real-chromium case; this live step corroborates it.)
 - Top-bar right cluster: the app-mode LAMP (`mode-toggle` — ONE `role=switch`,
   GREEN=buyer / AMBER=test via `data-mode`/`aria-checked`; clicking flips, but
   switching TO buyer still opens the `mode-confirm-*` danger dialog — never auto-arm)
@@ -280,6 +287,20 @@ Six tabs → six small reads, not one giant DOM.
   user across pages and aggregates every parked gate across ALL pipelines (from
   `GET /api/approvals`); each `needs-you-item-<runId>` ROUTES to that run's gate (never
   approves inline). It is absent when nothing is parked (read-only/idle world).
+- **Top-3 skills popover (F5, interact — don't just read).** `browser_click`
+  `rail-skills-toggle` → assert `skills-list` becomes visible with ≤3 Ready `skills-row-*`
+  (the cap-3), each carrying a non-empty `skills-reason-*`, AND a `skills-more` disclosure
+  for the rest; `browser_click` `skills-more-toggle` → the remaining ready skills become
+  reachable (the discoverability-floor invariant); click again → it closes. The LLM
+  re-rank only fires in buyer/serve-live; `skills-reason-*` must show NO budget. (The
+  deterministic cap/fail-closed twin is `SkillsPopover.test.tsx`.)
+- **Contact-role on the negotiation card (F4).** After `POST /__e2e/inject_contact
+  {role:'sales manager', isPrimary:true}` and re-opening the `negotiation-detail-modal`,
+  assert a `negotiation-contact-row` carries BOTH the `mailto:` link and the role text
+  ("· sales manager"). After the live `#1244` check on `dealer_reply_extract`, the
+  affected dealer's `canvas-negotiation-card` should show `message-extract-failed-badge`
+  — cross-check against `GET /__e2e/dataquality?skill=dealer_reply_extract`
+  (`extract_failed>0`).
 
 **frontend-taste emits a ranked `[SEVERITY] <testid> — <experience> (file:line).
 Suggested direction:` list per tab.** The loop folds these into the e2e-evolve fix

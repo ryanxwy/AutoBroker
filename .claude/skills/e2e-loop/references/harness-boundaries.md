@@ -158,14 +158,21 @@ not in the supported set → `400 { ok:false, error:"unknown dataquality skill" 
 Test-host only; product wall untouched; a primary verdict signal.
 
 - `skill=inventory_site_scan` → `{ skill, n, metric:"price_coverage", covered,
-  coverage, priced, msrp_present, gated, vdp_linked, nullEscape }` over
+  coverage, priced, msrp_present, gated, vdp_linked, nullEscape,
+  breakdown_parsed, breakdown_coverage, markup_present, addons_present }` over
   `inventory_listings WHERE superseded_at IS NULL`. **Hard FAIL iff `n>0 AND
   priced==0 AND msrp_present==0 AND gated==0`** (TOTAL price loss — the 2026-06-22
   miss); `coverage≥0.5` is the healthy target, below-but->0 a soft note (the
   per-dealer VDP budget bounds gated-car coverage). `nullEscape:true` (n==0) = SKIP.
   (`gated` is structurally 0 until `inventory_status='price_gated'` is persisted — a
   backlog item; an all-gated dealer still FAILs today, acceptable since in the bug the
-  VDP exposed the price and the scan dropped it.)
+  VDP exposed the price and the scan dropped it.) **F1 enrichment (added this round):**
+  `breakdown_parsed` = listings with a non-null `pricing_breakdown_json`;
+  `breakdown_coverage = breakdown_parsed/n`. **Hard FAIL iff `vdp_linked>0 AND
+  breakdown_parsed==0`** (the scan reached VDPs but dropped EVERY price breakdown — a
+  total had-and-lost of the new dimension). `markup_present` / `addons_present` are
+  INFORMATIONAL counters ONLY — `markup_present==0`/`addons_present==0` is the healthy
+  norm (most listings carry no labeled dealer markup) and is **NEVER** a fail criterion.
 - `skill=dealer_reply_extract` → `{ skill, n, metric:"otd_coverage", covered,
   coverage, otd_present, extract_succeeded, extract_failed, nullEscape }` over
   `dealer_quotes` + `messages`. PASS iff `otd_present/n ≥ 0.5`; `nullEscape:true`

@@ -37,7 +37,8 @@ Your two outputs: **a better product** (fixes merged to `main`) and **a better r
 | 4 | **fix in a worktree** — apply the minimal change in a fresh worktree; a fresh-context reviewer returns APPROVE + a safety-auditor returns SAFE (+ alignment-auditor if it touches architecture); `RUN_UI_FUNCTIONAL=1 green.sh` is `GREEN`; re-verify against a **fresh serve-live** | review APPROVE/SAFE; green GREEN; a live `/__e2e/rows` delta proving the fix | `references/fix-machine.md` |
 | 5 | **integrate** — PR → `gh pr checks` exit 0 → merge → sync local `main` to `origin` (`0  0`) | `gh pr checks` exit 0; `main` aligned | `references/fix-machine.md` |
 | 6 | **improve the runner** — update `/e2e-loop` + its references so the next run catches what was missed (add a verification surface for a blind spot, refresh a stale route/persona, raise the realism); run the calibration two-liner | a concrete `/e2e-loop` diff, or a written "no runner change needed" | `references/evolving.md` |
-| 7 | **record** — update `harvest-register.md` (bump recurrence, mark shipped, move resolved items into the runner's known-correct list), write a short evolve-report, write-back memory | register + report + memory updated | `references/evolving.md` |
+| 6.5 | **season — LLM-driven edge-case DISCOVERY** (the preferred edge layer): for each shipped fix register one LLM-seasoned case ON TOP of (never instead of) its deterministic regression; then run a BOUNDED generate→soak→triage discovery pass that mutates personas/dealers/messy inputs to find edges the runner doesn't hit | ≥1 seasoned case registered per fix; the discovery pass classifies its candidates WINNER/HARDENER/DUD | `references/seasoning.md` |
+| 7 | **record** — update `harvest-register.md` (bump recurrence, mark shipped, move resolved items into the runner's known-correct list), write a short evolve-report (incl. the **Seasoning coverage** tally), write-back memory | register + report + memory updated | `references/evolving.md` |
 
 You do not have to clear the whole backlog in one session — work the top of the ranked
 list and leave the rest recorded. But **every open blocker you take on ends fixed +
@@ -74,6 +75,13 @@ never left half-done.
 - Explicit-path `git add` only — never `git add .` / `-A`. No Claude attribution trailer.
 - **Promotion is one-directional:** a backlog item may be electively pulled into the fix
   machine; a blocker can never be downgraded into a backlog note to avoid fixing it.
+- **Seasoning never replaces a deterministic gate.** An LLM-seasoned (advisory) case is the
+  edge-DISCOVERY + realism layer that rides ON TOP of the deterministic floor — it never
+  becomes a merge gate and never substitutes for a `*.func.toml` / forced-fault test. A
+  WINNER it surfaces is fixed through the SAME full gated machine (fresh-context
+  APPROVE/SAFE + `RUN_UI_FUNCTIONAL=1` green + fresh serve-live re-verify); discovery gets
+  no shortcut. The deterministic floor only ever GROWS (a seasoned case that repeatedly
+  catches a real regression graduates DOWN into a func case — `references/seasoning.md`).
 
 ## The known-correct list (read before researching)
 
@@ -94,4 +102,8 @@ the runner never re-flags it.
   `recurrence` is the runner's counter, you read it, you don't bump it.
 - If you changed `/e2e-loop`, the change is concrete and the calibration two-liner is
   done; if you didn't, you wrote why not.
+- **Seasoning (step 6.5):** every fix this session registered its paired LLM-seasoned case
+  (or you wrote why a deterministic regression was sufficient on its own); the bounded
+  discovery pass ran and its candidates are triaged; the evolve-report carries the
+  **Seasoning coverage** tally (`references/seasoning.md`).
 - A short evolve-report + a `MEMORY.md` pointer (≤200 chars) record what shipped.

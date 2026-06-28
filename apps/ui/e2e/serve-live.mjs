@@ -687,6 +687,14 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
   try {
     if (skill === "inventory_site_scan") {
       // Usable price coverage over the LIVE (non-superseded) listings.
+      // Breakdown dimension (migration 0004: dealer_markup + pricing_breakdown_json):
+      //   breakdown_parsed = rows where pricing_breakdown_json IS NOT NULL (i.e. VDP was
+      //   parsed for breakdown data). FAIL rule (runner, not this route): breakdown_parsed==0
+      //   AND vdp_linked>0 → hard fail (reached VDPs but dropped every breakdown — total
+      //   had-and-lost). markup_present==0 / addons_present==0 is the HEALTHY norm — those
+      //   are informational counters only, never a fail criterion.
+      //   addons_present uses LIKE '%"addOns":[{%': the blob stores camelCase addOns; the
+      //   pattern requires at least one array element ('{'), so "addOns":[] never matches.
       const where = profileId
         ? "WHERE superseded_at IS NULL AND search_profile_id = ?"
         : "WHERE superseded_at IS NULL";
@@ -696,12 +704,16 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
              SUM(CASE WHEN listed_price IS NOT NULL THEN 1 ELSE 0 END) AS priced,
              SUM(CASE WHEN msrp IS NOT NULL THEN 1 ELSE 0 END) AS msrp_present,
              SUM(CASE WHEN listed_price IS NOT NULL OR msrp IS NOT NULL THEN 1 ELSE 0 END) AS covered,
-             SUM(CASE WHEN listing_url IS NOT NULL THEN 1 ELSE 0 END) AS vdp_linked
+             SUM(CASE WHEN listing_url IS NOT NULL THEN 1 ELSE 0 END) AS vdp_linked,
+             SUM(CASE WHEN pricing_breakdown_json IS NOT NULL THEN 1 ELSE 0 END) AS breakdown_parsed,
+             SUM(CASE WHEN dealer_markup IS NOT NULL THEN 1 ELSE 0 END) AS markup_present,
+             SUM(CASE WHEN pricing_breakdown_json LIKE '%"addOns":[{%' THEN 1 ELSE 0 END) AS addons_present
            FROM inventory_listings ${where}`,
         )
         .get(...(profileId ? [profileId] : []));
       const n = r.n ?? 0;
       const covered = r.covered ?? 0;
+      const breakdown_parsed = r.breakdown_parsed ?? 0;
       reply.code(200);
       return {
         skill,
@@ -718,6 +730,10 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
         gated: 0,
         vdp_linked: r.vdp_linked ?? 0,
         nullEscape: n === 0,
+        breakdown_parsed,
+        breakdown_coverage: n > 0 ? round2(breakdown_parsed / n) : 0,
+        markup_present: r.markup_present ?? 0,
+        addons_present: r.addons_present ?? 0,
       };
     }
     // dealer_reply_extract — OTD coverage over the extracted quotes.

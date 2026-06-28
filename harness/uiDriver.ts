@@ -1343,6 +1343,113 @@ export class UiDriver {
   }
 
   /**
+   * drag: a REAL pointer drag of a widget by a horizontal delta, then a
+   * self-asserting check on the container's --rail-width. This is the func-lane
+   * proof the jsdom unit test cannot give — real chromium does layout, so a
+   * collapsed grab strip (the `.rail-resizer{flex:0 0 0px}` regression) makes the
+   * pointer miss the seam and the width never move.
+   *
+   * The pointer drag uses page.mouse (move→down→move→up) so it emits real
+   * pointerdown/move/up with a stable pointerId — RailResizer's setPointerCapture
+   * needs that. The grab point is the element's CENTER; `dx<0` sweeps LEFT, which
+   * (rail on the right) WIDENS the rail.
+   *
+   * Two assertion modes against the container's --rail-width (read computed
+   * before/after) plus a localStorage-persist check:
+   *   "delta" — the width changed by ≈|dx| in the widen direction (±TOL).
+   *   "clamp" — the width changed (widen direction) but was CAPPED below |dx|
+   *             (a far-past-max drag re-clamps to the layout max).
+   * A regression that collapses the grab strip yields delta=0 → BOTH modes fail.
+   */
+  async drag(
+    testid: string,
+    dx: number,
+    expect: "delta" | "clamp" = "delta",
+    container = "app-body",
+    timeoutMs = DEFAULT_TIMEOUT,
+  ): Promise<void> {
+    const TOL = 8; // px slack for sub-pixel center rounding.
+    const LS_KEY = "autobroker:rail-width";
+    // Wait for ATTACHED (not visible): a regressed 0px-wide grab strip is in the
+    // DOM but has no visible box, and we WANT to reach the boundingBox check
+    // below (record a clean fail) rather than hang on a visibility wait.
+    await this.page.waitForSelector(tid(testid), { state: "attached", timeout: timeoutMs });
+
+    const readVar = async (): Promise<number> =>
+      (await this.page.evaluate(
+        `(() => {
+          const el = document.querySelector('[data-testid="${container}"]');
+          if (el === null) return NaN;
+          return parseFloat(getComputedStyle(el).getPropertyValue("--rail-width"));
+        })()`,
+      )) as number;
+    const readLs = async (): Promise<string | null> =>
+      (await this.page.evaluate(`window.localStorage.getItem("${LS_KEY}")`)) as string | null;
+
+    const before = await readVar();
+    const box = await this.page.locator(tid(testid)).boundingBox();
+
+    if (box === null || box.width === 0) {
+      // No hittable box (a 0px-wide collapsed grab strip) — the drag can't land.
+      // Record the regression directly rather than throwing.
+      this.record({
+        surface: `dom:--rail-width`,
+        selector: `[data-testid="${container}"] --rail-width`,
+        expected: `a ${dx}px pointer drag on ${testid} moves the rail width`,
+        observed: `${testid} has no grab box (width=${box?.width ?? "null"}px) — drag missed the seam`,
+        ok: false,
+      });
+      await this.screenshot(`drag-${testid}-no-grab-box`);
+      return;
+    }
+
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await this.page.mouse.move(cx, cy);
+    await this.page.mouse.down();
+    await this.page.mouse.move(cx + dx, cy, { steps: 12 });
+    await this.page.mouse.up();
+
+    const after = await readVar();
+    const lsAfter = await readLs();
+    const delta = after - before;
+    const want = -dx; // dx<0 (leftward) widens by |dx|.
+
+    let widthOk: boolean;
+    let expected: string;
+    if (expect === "clamp") {
+      // Grew in the widen direction but capped below the requested |dx|.
+      widthOk =
+        Number.isFinite(delta) &&
+        Math.sign(delta) === Math.sign(want) &&
+        Math.abs(delta) > TOL &&
+        Math.abs(delta) < Math.abs(want) - TOL;
+      expected = `a ${dx}px drag (past max) widens but RE-CLAMPS: 0 < Δ < ${Math.abs(want)}px`;
+    } else {
+      widthOk = Number.isFinite(delta) && Math.abs(delta - want) <= TOL;
+      expected = `a ${dx}px drag changes --rail-width by ≈${want}px (±${TOL})`;
+    }
+    this.record({
+      surface: `dom:--rail-width`,
+      selector: `[data-testid="${container}"] --rail-width`,
+      expected,
+      observed: `before=${before}px after=${after}px Δ=${Number.isFinite(delta) ? Math.round(delta) : "NaN"}px`,
+      ok: widthOk,
+    });
+
+    // The committed width is persisted to localStorage (drag end → saveRailWidth).
+    const lsNum = lsAfter === null ? NaN : Number(lsAfter);
+    this.record({
+      surface: `localStorage:${LS_KEY}`,
+      selector: LS_KEY,
+      expected: `persisted to the committed width (≈${Math.round(after)}px)`,
+      observed: `stored=${lsAfter ?? "null"}`,
+      ok: Number.isFinite(lsNum) && Math.abs(lsNum - after) <= TOL,
+    });
+    await this.screenshot(`drag-${testid}-${expect}`);
+  }
+
+  /**
    * recordDomState: run a dom_state assertion against the live page and push a
    * UiCheck (the same channel every named check uses). The five expects:
    *   visible  — the widget is present and visible.
