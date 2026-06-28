@@ -33,6 +33,16 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/typecheck-edited-package.py\"",
             "timeout": 200
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-strings-edited.py\"",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/ui-functional-reminder.py\"",
+            "timeout": 20
           }
         ]
       }
