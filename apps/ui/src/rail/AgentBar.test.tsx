@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
  * AgentBar.test — the cross-disable + availability rules (pure), the dirty-omit
- * contract, and a render interaction proving the chips reflect presence (pick
- * Claude → OAuth greyed when no claude_oauth credential; resolved line updates).
+ * contract, and a render interaction proving the chips reflect presence (Claude
+ * is OAuth-only: pick Claude → Method locks to OAuth, the API-key lane greyed).
  */
 
 import { useState } from "react";
@@ -40,10 +40,14 @@ describe("AgentBar — availability rules", () => {
     expect(methodAvail("deepseek", "apikey", ALL_PRESENT)).toEqual({ ok: true });
   });
 
-  it("Claude·apikey needs anthropic; Claude·oauth needs claude_oauth", () => {
-    expect(methodAvail("claude", "apikey", CLAUDE_OAUTH_ONLY).ok).toBe(false);
+  it("Claude is OAuth-only: API key is always greyed; oauth needs claude_oauth", () => {
+    // Even with every credential present, Claude's API-key method is not offered.
+    expect(methodAvail("claude", "apikey", ALL_PRESENT)).toEqual({
+      ok: false,
+      why: "Claude uses the OAuth subscription lane",
+    });
+    expect(methodAvail("claude", "apikey", CLAUDE_APIKEY_ONLY).ok).toBe(false);
     expect(methodAvail("claude", "oauth", CLAUDE_OAUTH_ONLY).ok).toBe(true);
-    expect(methodAvail("claude", "apikey", CLAUDE_APIKEY_ONLY).ok).toBe(true);
     expect(methodAvail("claude", "oauth", CLAUDE_APIKEY_ONLY)).toEqual({
       ok: false,
       why: "connect a subscription token",
@@ -57,9 +61,13 @@ describe("AgentBar — availability rules", () => {
     });
   });
 
-  it("providerAvail: Claude needs ANY claude credential", () => {
-    expect(providerAvail("claude", ONLY_DEEPSEEK)).toEqual({ ok: false, why: "no Claude credential" });
-    expect(providerAvail("claude", CLAUDE_APIKEY_ONLY).ok).toBe(true);
+  it("providerAvail: Claude needs the claude_oauth subscription token", () => {
+    expect(providerAvail("claude", ONLY_DEEPSEEK)).toEqual({
+      ok: false,
+      why: "connect a Claude subscription token",
+    });
+    // An anthropic API key alone does NOT enable Claude (the lane is OAuth-only).
+    expect(providerAvail("claude", CLAUDE_APIKEY_ONLY).ok).toBe(false);
     expect(providerAvail("claude", CLAUDE_OAUTH_ONLY).ok).toBe(true);
     expect(providerAvail("deepseek", ONLY_DEEPSEEK).ok).toBe(true);
   });
@@ -71,7 +79,7 @@ describe("AgentBar — reconcile", () => {
     const out = reconcile(start, ALL_PRESENT);
     expect(out.model).toBe("claude-sonnet-4-6"); // deepseek model invalid for claude
     expect(out.effort).toBe("low"); // "max" not in claude's scale → second entry
-    expect(out.method).toBe("apikey");
+    expect(out.method).toBe("oauth"); // Claude is OAuth-only; stale apikey → oauth
   });
 
   it("a deepseek selection carrying oauth is coerced to apikey", () => {
@@ -175,28 +183,42 @@ function Host({ presence }: { presence: AgentPresence }): JSX.Element {
 }
 
 describe("AgentBar — render interaction", () => {
-  it("renders the four boxes + the resolved line", () => {
+  it("renders the four boxes only (no resolved line); the Effort box is disabled", () => {
     const r = render(<Host presence={ALL_PRESENT} />);
     expect(r.query("agent-bar")).not.toBeNull();
     for (const box of ["provider", "method", "model", "effort"]) {
       expect(r.query(`agent-box-${box}`)).not.toBeNull();
     }
-    expect(r.get("agent-resolved").textContent).toContain("DeepSeek");
+    // The bar is the four boxes only — head/lane badge/resolved line/caption gone.
+    expect(r.query("agent-resolved")).toBeNull();
+    expect(r.query("agent-lane")).toBeNull();
+    expect(r.query("agent-effort-caption")).toBeNull();
+    // Effort is inert in v1 → its box is disabled.
+    expect((r.get("agent-box-effort") as HTMLButtonElement).disabled).toBe(true);
     r.unmount();
   });
 
-  it("picking Claude greys OAuth when no claude_oauth credential, and updates the resolved line", () => {
-    const r = render(<Host presence={CLAUDE_APIKEY_ONLY} />);
-    // Open the Provider box → pick Claude.
+  it("picking Claude locks Method to OAuth (API key greyed — the OAuth-only lane)", () => {
+    const r = render(<Host presence={ALL_PRESENT} />);
+    // Open the Provider box → pick Claude (enabled: claude_oauth present).
     click(r.get("agent-box-provider"));
     click(r.get("agent-opt-claude"));
     expect(r.get("agent-box-provider").textContent).toContain("Claude");
-    expect(r.get("agent-resolved").textContent).toContain("Claude");
-    // Open the Method box → OAuth is disabled (no subscription token present).
+    // Method auto-resolved to OAuth; the model cascaded into Claude's scale.
+    expect(r.get("agent-box-method").textContent).toContain("OAuth");
+    expect(r.get("agent-box-model").textContent).toContain("Claude Sonnet 4.6");
+    // Open the Method box → API key is disabled (OAuth-only); OAuth is enabled.
     click(r.get("agent-box-method"));
-    const oauth = r.get("agent-opt-oauth") as HTMLButtonElement;
-    expect(oauth.disabled).toBe(true);
-    expect((r.get("agent-opt-apikey") as HTMLButtonElement).disabled).toBe(false);
+    expect((r.get("agent-opt-apikey") as HTMLButtonElement).disabled).toBe(true);
+    expect((r.get("agent-opt-oauth") as HTMLButtonElement).disabled).toBe(false);
+    r.unmount();
+  });
+
+  it("Claude is greyed in the Provider box when only an anthropic API key is present", () => {
+    const r = render(<Host presence={CLAUDE_APIKEY_ONLY} />);
+    click(r.get("agent-box-provider"));
+    // OAuth-only lane: an anthropic key without a subscription token cannot pick Claude.
+    expect((r.get("agent-opt-claude") as HTMLButtonElement).disabled).toBe(true);
     r.unmount();
   });
 });

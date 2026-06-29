@@ -2131,6 +2131,9 @@ details.optional[open] summary { margin-bottom: 10px; }
   flex: none;
   background: var(--agent-accent);
 }
+/* EFFORT is inert in v1 — its chip is disabled (greyed, non-interactive). */
+.agent-bar button.agent-chip--disabled { opacity: 0.5; cursor: not-allowed; }
+.agent-bar button.agent-chip--disabled .agent-chip__v::before { background: var(--ink-mute); }
 
 /* the option popover opens UPWARD (the bar sits at the rail bottom) */
 .agent-bar .popover-panel {

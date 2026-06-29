@@ -107,6 +107,7 @@ import {
   ContactFlipApprovalResumeSchema,
   QuotePipelineSendResumeSchema,
   requestContactFlipForRun,
+  resolveSelectionForRun,
   type createMastraInstance,
 } from "@autobroker/workflows";
 import {
@@ -210,6 +211,19 @@ export interface RunDescriptor {
   ): { resumeData: unknown; ackBody: Record<string, unknown> };
   /** The plain-speak summary for the terminal `text` frame on success. */
   summaryText(result: unknown): string;
+}
+
+/**
+ * The wire `driver_kind` for a run's init frame. A run with a resolved
+ * AgentSelection (an explicit bar pick registered for this runId, or the
+ * `AUTOBROKER_AGENT_PROVIDER` env default — e.g. `/e2e-loop --provider claude`)
+ * takes that selection's provider; otherwise the descriptor's policy-default
+ * label. This keeps the rail's run footer honest: the descriptor default always
+ * reads `deepseek_apikey`, so without this a Claude run would mislabel as DeepSeek.
+ */
+function runDriverKind(descriptor: RunDescriptor, runId: string): HarnessDriverKind {
+  const sel = resolveSelectionForRun(runId);
+  return sel !== null ? providerDriverKind(sel.provider) : descriptor.driverKind();
 }
 
 // ===========================================================================
@@ -2126,7 +2140,7 @@ export class SkillRunService {
     const step = entry[0];
     const payload = entry[1].suspendPayload ?? {};
 
-    this.pubsub.attachInit(runId, descriptor.skillId, descriptor.driverKind());
+    this.pubsub.attachInit(runId, descriptor.skillId, runDriverKind(descriptor, runId));
     const decisionId = randomUUID();
     this.runs.set(runId, {
       skill: descriptor.skillId,
@@ -2190,7 +2204,7 @@ export class SkillRunService {
 
     // First frame: init {run_id, skill, driver_kind} (the pubsub injects
     // driver_kind).
-    this.pubsub.attachInit(runId, descriptor.skillId, descriptor.driverKind());
+    this.pubsub.attachInit(runId, descriptor.skillId, runDriverKind(descriptor, runId));
 
     this.runs.set(runId, {
       skill: descriptor.skillId,

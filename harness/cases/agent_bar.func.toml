@@ -2,16 +2,17 @@
 # selector + its credential-driven cross-disable, end-to-end on the offline lane.
 #
 # The bar rides above the chat composer (Provider · Method · Model · Effort). The
-# agent_bar_keys world seeds a Claude API key (anthropic) but NO Claude
+# agent_bar_keys world seeds BOTH a Claude API key (anthropic) and a Claude
 # subscription token (claude_oauth) — DeepSeek's key is already present (the host
-# seeds it by default). So the Claude PROVIDER is enabled (an API key exists) but
-# within Claude the OAuth METHOD must be GREYED (no subscription token), while the
-# API-key method is enabled. That is exactly the bar's presence-gating contract.
+# seeds it by default). Claude is offered on the OAuth-subscription lane ONLY, so
+# the Claude PROVIDER is enabled (the subscription token exists) and within Claude
+# the OAuth METHOD is enabled while the API-key method stays GREYED — even though
+# the anthropic key IS present. That is exactly the bar's OAuth-only contract.
 #
 # THE PROOF (one ui step): open the Provider box → pick Claude → open the Method
 # box. The final DOM coheres: the bar rendered; the Provider chip now reads
-# Claude; the resolved line cascaded to a Claude model (Claude Sonnet 4.6); and
-# the Method popover shows OAuth DISABLED while API key is enabled.
+# Claude; the Model box cascaded to a Claude model (Claude Sonnet 4.6); and the
+# Method popover shows API key DISABLED while OAuth is enabled.
 #
 # The cross-disable rules + the dirty-omit payload contract are covered
 # exhaustively by the AgentBar.test.tsx unit suite (pure functions + a render
@@ -37,14 +38,14 @@ lane = "ui"
 id = "agent_bar_cross_disable"
 kind = "ui"
 fixture_state = "agent_bar_keys"
-purpose = "With a Claude API key but no subscription token, open the Provider box, pick Claude, then open the Method box: the bar renders, the Provider chip reads Claude, the resolved line cascades to a Claude model, and OAuth is greyed while API key is enabled."
+purpose = "With both a Claude API key and a subscription token present, open the Provider box, pick Claude, then open the Method box: the bar renders, the Provider chip reads Claude, the Model box cascades to a Claude model, and the API-key method is greyed while OAuth is enabled (Claude is OAuth-only)."
 
 # Open the Provider box.
 [[steps.ui_actions]]
 verb = "click"
 testid = "agent-box-provider"
 
-# Pick Claude (enabled because the anthropic API key is present); the popover closes.
+# Pick Claude (enabled because the claude_oauth subscription token is present); the popover closes.
 [[steps.ui_actions]]
 verb = "click"
 testid = "agent-opt-claude"
@@ -67,22 +68,23 @@ testid = "agent-box-provider"
 expect = "text"
 value = "Claude"
 
-# The resolved line cascaded to a Claude model (provider switch reconciled the
-# model into Claude's scale).
+# The Model box cascaded to a Claude model (provider switch reconciled the model
+# into Claude's scale).
 [[steps.anchors]]
 kind = "dom_state"
-testid = "agent-resolved"
+testid = "agent-box-model"
 expect = "text"
 value = "Claude Sonnet 4.6"
 
-# OAuth is GREYED — no Claude subscription token (claude_oauth) is present.
-[[steps.anchors]]
-kind = "dom_state"
-testid = "agent-opt-oauth"
-expect = "disabled"
-
-# The API-key method is present + enabled (the anthropic key is configured).
+# The API-key method is GREYED — Claude is offered on the OAuth-subscription lane
+# only, even with the anthropic key present.
 [[steps.anchors]]
 kind = "dom_state"
 testid = "agent-opt-apikey"
+expect = "disabled"
+
+# OAuth is present + enabled (the claude_oauth subscription token is configured).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "agent-opt-oauth"
 expect = "visible"

@@ -1,16 +1,19 @@
 /**
  * AgentBar — the four-box agent selector that rides above the chat composer
- * (Provider · Method · Model · Effort). Each box is a Popover chip showing the
- * collapsed resolved value; clicking it opens the option list. The bar encodes
- * the only combinations that work today (the cross-disable + availability rules)
- * and the resolved line + lane badge mirror the selection.
+ * (Provider · Method · Model · Effort). Provider/Method/Model are Popover chips
+ * showing the collapsed value; clicking opens the option list. The bar is the
+ * four boxes only — no header, lane badge, resolved line, or caption (kept
+ * deliberately minimal). The two supported lanes are DeepSeek·API-key and
+ * Claude·OAuth-subscription; every other cell is greyed.
  *
  * CROSS-DISABLE (pure, unit-tested below):
- *   - DeepSeek locks Method to API key (no subscription OAuth lane).
- *   - Models + effort scales are per provider.
+ *   - DeepSeek runs on API key only (no subscription OAuth lane).
+ *   - Claude runs on the OAuth subscription lane only (its per-token API-key lane
+ *     is NOT offered here, even when an anthropic key is present).
+ *   - Models are per provider; EFFORT is inert in v1 so its box is disabled.
  *   - A Provider/Method cell is enabled only when its credential is present
- *     (DeepSeek·apikey→deepseek, Claude·apikey→anthropic, Claude·oauth→
- *     claude_oauth). Greyed cells carry the reason + a "connect it" hint.
+ *     (DeepSeek·apikey→deepseek key, Claude·oauth→claude_oauth token). Greyed
+ *     cells carry the reason + a "connect it" hint.
  *
  * DIRTY-OMIT: the bar persists the selection to localStorage and the App sends
  * the `agent` field on a run ONLY when the user actively chose (dirty). A fresh
@@ -19,8 +22,8 @@
  * / agentPayload) own that contract; this component is a thin renderer.
  *
  * EFFORT is functional-but-inert in v1: it persists + rides the payload but is
- * consumed by NO model/workflow/server call yet. The caption says so honestly —
- * "carried with your run; effort tuning isn't wired into model calls yet".
+ * consumed by NO model/workflow/server call yet. Its box is therefore rendered
+ * DISABLED (present for shape, never selectable) with a title that says so.
  *
  * Dependency wall: app/ui layer. Reuses the Popover primitive + the wire types;
  * no UI framework, no new server endpoint.
@@ -120,7 +123,10 @@ export function methodAvail(provider: AgentProvider, method: AgentMethod, p: Age
         : { ok: false, why: "no DeepSeek API key" }
       : { ok: false, why: "DeepSeek has no subscription OAuth" };
   }
-  if (method === "apikey") return p.anthropic ? { ok: true } : { ok: false, why: "no Claude API key" };
+  // Claude is offered on the OAuth-subscription lane ONLY (the two supported lanes
+  // are DeepSeek·API-key + Claude·OAuth). The per-token API-key lane is not exposed
+  // here even when an anthropic key is present.
+  if (method === "apikey") return { ok: false, why: "Claude uses the OAuth subscription lane" };
   return p.claudeOauth ? { ok: true } : { ok: false, why: "connect a subscription token" };
 }
 
@@ -130,9 +136,9 @@ export function providerAvail(provider: AgentProvider, p: AgentPresence): Avail 
     ? p.deepseek
       ? { ok: true }
       : { ok: false, why: "no DeepSeek API key" }
-    : p.anthropic || p.claudeOauth
+    : p.claudeOauth
       ? { ok: true }
-      : { ok: false, why: "no Claude credential" };
+      : { ok: false, why: "connect a Claude subscription token" };
 }
 
 /** Which execution lane a selection resolves to (Claude·OAuth = B, else A). */
@@ -279,102 +285,100 @@ export function AgentBar({ selection, presence, onChange }: AgentBarProps): JSX.
   // Reconcile for DISPLAY so a persisted/stale selection renders consistently;
   // the App reconciles again for the payload (the single source of the wire shape).
   const sel = reconcile(selection, presence);
-  const lane = laneOf(sel);
   const providerClass = sel.provider === "claude" ? "agent--claude" : "agent--deepseek";
-  const billing =
-    lane === "B"
-      ? "subscription (cost NULL)"
-      : sel.provider === "deepseek"
-        ? "per-token (DeepSeek)"
-        : "per-token (Claude API)";
 
   const pick = (box: AgentBox, id: string): void => {
     onChange(reconcile({ ...sel, [box]: id }, presence));
   };
 
+  const chipFace = (box: AgentBox, label: string): JSX.Element => (
+    <span className="agent-chip__face">
+      <span className="agent-chip__k">{label}</span>
+      <span className="agent-chip__v">{currentLabel(box, sel)}</span>
+    </span>
+  );
+
   return (
     <div className={`agent-bar ${providerClass}`} data-testid="agent-bar">
-      <div className="agent-bar__head">
-        <span className="agent-bar__ttl">agent</span>
-        <span className={`agent-bar__lane lane-${lane}`} data-testid="agent-lane">
-          {lane === "A" ? "lane A · in-process" : "lane B · Agent SDK"}
-        </span>
-      </div>
-
       <div className="agent-bar__chips">
-        {BOXES.map(({ box, label }) => (
-          <div className={`agent-bar__chip agent-bar__chip--${box}`} key={box}>
-            <Popover
-              label={
-                <span className="agent-chip__face">
-                  <span className="agent-chip__k">{label}</span>
-                  <span className="agent-chip__v">{currentLabel(box, sel)}</span>
-                </span>
-              }
-              triggerClassName="agent-chip"
-              triggerTestId={`agent-box-${box}`}
-              panelTestId={`agent-box-${box}-popover`}
-            >
-              {(close) => (
-                <div className="agent-opts" role="listbox" aria-label={label}>
-                  <div className="agent-opts__ph">{label}</div>
-                  {optionsFor(box, sel, presence).map((o) => {
-                    const selected = currentId(box, sel) === o.id;
-                    const disabled = !o.avail.ok;
-                    return (
-                      <button
-                        type="button"
-                        key={o.id}
-                        className={`agent-opt${selected ? " is-selected" : ""}`}
-                        data-testid={`agent-opt-${o.id}`}
-                        role="option"
-                        aria-selected={selected}
-                        disabled={disabled}
-                        onClick={() => {
-                          if (disabled) return;
-                          pick(box, o.id);
-                          close();
-                        }}
-                      >
-                        <span className="agent-opt__rad" aria-hidden="true" />
-                        <span className="agent-opt__text">
-                          <span className="agent-opt__label">{o.label}</span>
-                          <small className="agent-opt__sub">
-                            {disabled ? `✕ ${o.avail.why ?? "unavailable"}` : o.sub}
-                          </small>
-                          {disabled && (box === "provider" || box === "method") && (
-                            <small className="agent-opt__hint">Connect it in Settings → API keys</small>
-                          )}
-                        </span>
-                        {disabled && (
-                          <span className="agent-opt__lock" aria-hidden="true">
-                            🔒
+        {BOXES.map(({ box, label }) => {
+          // EFFORT is functional-but-inert in v1 (no model call consumes it), so
+          // its box is a disabled, non-interactive chip — present for shape only.
+          if (box === "effort") {
+            return (
+              <div className="agent-bar__chip agent-bar__chip--effort" key={box}>
+                <button
+                  type="button"
+                  className="agent-chip agent-chip--disabled"
+                  data-testid={`agent-box-${box}`}
+                  disabled
+                  aria-disabled="true"
+                  title="Effort tuning isn't wired into model calls yet."
+                >
+                  {chipFace(box, label)}
+                </button>
+              </div>
+            );
+          }
+          return (
+            <div className={`agent-bar__chip agent-bar__chip--${box}`} key={box}>
+              <Popover
+                label={chipFace(box, label)}
+                triggerClassName="agent-chip"
+                triggerTestId={`agent-box-${box}`}
+                panelTestId={`agent-box-${box}-popover`}
+              >
+                {(close) => (
+                  <div className="agent-opts" role="listbox" aria-label={label}>
+                    <div className="agent-opts__ph">{label}</div>
+                    {optionsFor(box, sel, presence).map((o) => {
+                      const selected = currentId(box, sel) === o.id;
+                      const disabled = !o.avail.ok;
+                      return (
+                        <button
+                          type="button"
+                          key={o.id}
+                          className={`agent-opt${selected ? " is-selected" : ""}`}
+                          data-testid={`agent-opt-${o.id}`}
+                          role="option"
+                          aria-selected={selected}
+                          disabled={disabled}
+                          onClick={() => {
+                            if (disabled) return;
+                            pick(box, o.id);
+                            close();
+                          }}
+                        >
+                          <span className="agent-opt__rad" aria-hidden="true" />
+                          <span className="agent-opt__text">
+                            <span className="agent-opt__label">{o.label}</span>
+                            <small className="agent-opt__sub">
+                              {disabled ? `✕ ${o.avail.why ?? "unavailable"}` : o.sub}
+                            </small>
+                            {disabled &&
+                              (box === "provider" || box === "method") &&
+                              /key|token/i.test(o.avail.why ?? "") && (
+                                // Only a MISSING-CREDENTIAL disable is fixable by connecting a
+                                // key/token; a deliberately-unavailable lane (Claude·apikey,
+                                // DeepSeek·oauth) shows just its ✕ reason, no "connect it" hint.
+                                <small className="agent-opt__hint">Connect it in Settings → API keys</small>
+                              )}
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </Popover>
-          </div>
-        ))}
+                          {disabled && (
+                            <span className="agent-opt__lock" aria-hidden="true">
+                              🔒
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </Popover>
+            </div>
+          );
+        })}
       </div>
-
-      <div className="agent-bar__resolved" data-testid="agent-resolved">
-        <span className="agent-bar__pp">resolved →</span> <b>{currentLabel("provider", sel)}</b>
-        <span className="agent-bar__pp"> · </span>
-        <b>{currentLabel("method", sel)}</b>
-        <span className="agent-bar__pp"> · </span>
-        <b>{currentLabel("model", sel)}</b>
-        <span className="agent-bar__pp"> · effort </span>
-        <b>{currentLabel("effort", sel)}</b>{" "}
-        <span className={lane === "B" ? "agent-bar__warn" : "agent-bar__pp"}>→ {billing}</span>
-      </div>
-
-      <p className="agent-bar__caption" data-testid="agent-effort-caption">
-        Carried with your run; effort tuning isn&apos;t wired into model calls yet.
-      </p>
     </div>
   );
 }
