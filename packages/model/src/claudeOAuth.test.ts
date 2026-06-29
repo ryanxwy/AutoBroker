@@ -115,6 +115,36 @@ describe("claudeOAuthQuery — SAFETY: tools fail-closed + min-env", () => {
     });
   });
 
+  it("strips the top-level $schema meta key from outputFormat (Agent SDK rejects it)", async () => {
+    mockedQuery.mockReturnValue(fakeQuery(SUCCESS_STRUCTURED));
+    // zod's toJSONSchema() emits this meta key; the SDK chokes on it (returns
+    // success with NO structured_output). claudeOAuthQuery must strip it.
+    const schemaWithMeta = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { city: { type: "string" }, high: { type: "number" } },
+      required: ["city", "high"],
+      additionalProperties: false,
+    };
+
+    await claudeOAuthQuery({ prompt: "hi", jsonSchema: schemaWithMeta, model: "claude-opus-4-8" });
+
+    const sentSchema = mockedQuery.mock.calls[0]?.[0].options?.outputFormat?.schema as
+      | Record<string, unknown>
+      | undefined;
+    expect(sentSchema).toBeDefined();
+    expect(sentSchema).not.toHaveProperty("$schema");
+    // Every other key is preserved unchanged.
+    expect(sentSchema).toMatchObject({
+      type: "object",
+      properties: { city: { type: "string" }, high: { type: "number" } },
+      required: ["city", "high"],
+      additionalProperties: false,
+    });
+    // The caller's object is NOT mutated (shallow copy).
+    expect(schemaWithMeta).toHaveProperty("$schema");
+  });
+
   it("omits outputFormat on the prose lane (no schema)", async () => {
     mockedQuery.mockReturnValue(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }));
     await claudeOAuthQuery({ prompt: "hi", model: "claude-sonnet-4-6" });
@@ -192,43 +222,19 @@ describe("claudeOAuthQuery — fail-closed", () => {
     ).rejects.toBeInstanceOf(ClaudeOAuthError);
   });
 
-  it("(b) throws when BOTH the call and its one retry are success-but-no-structured_output", async () => {
-    // A fresh empty generator per call (a single generator is single-use, so the
-    // retry must get its own). Both empty → fail closed, query called exactly twice.
-    mockedQuery
-      .mockReturnValueOnce(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }))
-      .mockReturnValueOnce(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }));
+  it("(c) throws when a schema success carries no structured_output — ONE attempt, no retry", async () => {
+    mockedQuery.mockReturnValue(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }));
     await expect(
       claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" }),
     ).rejects.toBeInstanceOf(ClaudeOAuthError);
-    expect(mockedQuery).toHaveBeenCalledTimes(2);
+    // The $schema strip is the real, deterministic fix; an empty structured_output
+    // is now a genuine failure — fail closed on a single attempt, never retried.
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("claudeOAuthQuery — inv#4 bounded retry on empty structured_output", () => {
-  it("(a) retries ONCE when success carries no structured_output, then returns the retried object", async () => {
-    // First success has undefined structured_output (the intermittent SDK case);
-    // the single retry returns a present structured_output → the object is returned
-    // and query was called exactly twice.
-    mockedQuery
-      .mockReturnValueOnce(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }))
-      .mockReturnValueOnce(
-        fakeQuery({
-          ...SUCCESS_STRUCTURED,
-          structured_output: { city: "Reno", high: 95 },
-          usage: { input_tokens: 5, output_tokens: 6 },
-        }),
-      );
-
-    const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
-
-    expect(r.structuredOutput).toEqual({ city: "Reno", high: 95 });
-    // usage comes from the attempt that produced the returned output (the retry).
-    expect(r.usage).toEqual({ inputTokens: 5, outputTokens: 6 });
-    expect(mockedQuery).toHaveBeenCalledTimes(2);
-  });
-
-  it("does NOT retry when the first success already carries structured_output", async () => {
+describe("claudeOAuthQuery — structured success (no retry path)", () => {
+  it("(b) returns the object on a single successful call (query called exactly once)", async () => {
     mockedQuery.mockReturnValue(fakeQuery(SUCCESS_STRUCTURED));
     const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
     expect(r.structuredOutput).toEqual({ city: "Tucson", high: 100 });

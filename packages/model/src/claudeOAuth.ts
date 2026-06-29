@@ -22,7 +22,7 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Options, SDKResultMessage, SDKResultSuccess } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 
 /**
  * The Agent SDK's default built-in tools, listed in `disallowedTools` as a belt
@@ -103,69 +103,50 @@ export async function claudeOAuthQuery(args: {
     },
   };
   if (args.jsonSchema !== undefined) {
-    options.outputFormat = {
-      type: "json_schema",
-      schema: args.jsonSchema as Record<string, unknown>,
-    };
+    // The Agent SDK's outputFormat:{type:"json_schema",schema} REJECTS the
+    // top-level "$schema" meta key that zod's toJSONSchema() emits — with it
+    // present the model returns SUCCESS with NO structured_output every time
+    // (deterministic, live-proven). Strip the meta key (shallow copy — never
+    // mutate the caller's object); the field constraints are unchanged.
+    const schemaForSdk = { ...(args.jsonSchema as Record<string, unknown>) };
+    delete schemaForSdk["$schema"];
+    options.outputFormat = { type: "json_schema", schema: schemaForSdk };
   }
 
-  // Run one tool-disabled, min-env query and return its SUCCESS result message.
-  // Throws (fail-closed) on no result / non-success subtype / is_error — those are
-  // REAL errors, never the intermittent empty-structured case retried below.
-  const runOnce = async (): Promise<SDKResultSuccess> => {
-    let result: SDKResultMessage | null = null;
-    for await (const message of query({ prompt: args.prompt, options })) {
-      if (message.type === "result") result = message;
-    }
-    if (result === null) {
-      throw new ClaudeOAuthError(
-        "Claude Agent SDK produced no result message — lane B fails closed",
-      );
-    }
-    if (result.subtype !== "success" || result.is_error === true) {
-      throw new ClaudeOAuthError(
-        `Claude Agent SDK returned a non-success result (subtype=${String(
-          result.subtype,
-        )}, is_error=${String(result.is_error)}) — lane B fails closed`,
-      );
-    }
-    return result;
-  };
-
-  const usageOf = (r: SDKResultSuccess): ClaudeOAuthResult["usage"] => ({
-    inputTokens: r.usage?.input_tokens ?? null,
-    outputTokens: r.usage?.output_tokens ?? null,
-  });
-
-  // Prose lane: no schema, no retry — `result` text is always present on success.
-  if (args.jsonSchema === undefined) {
-    const r = await runOnce();
-    return { text: r.result, usage: usageOf(r) };
+  let result: SDKResultMessage | null = null;
+  for await (const message of query({ prompt: args.prompt, options })) {
+    if (message.type === "result") result = message;
   }
 
-  // Structured lane — inv#4-style SINGLE bounded recovery. The Agent SDK
-  // intermittently returns a SUCCESS result (subtype 'success', is_error false)
-  // with `structured_output` UNDEFINED even though a json_schema was requested
-  // (live-observed across a 17-skill journey). Retry the SAME query EXACTLY ONCE
-  // (a fresh call with identical options — tool-disable + min-env unchanged); a
-  // present structured_output on either attempt is returned, otherwise fail CLOSED.
-  // Scope is NARROW: missing token (above) and non-success/is_error (in runOnce)
-  // still throw immediately WITHOUT a retry — only the empty-structured success is
-  // retried, and at most once (no loop).
-  //
-  // NOTE: by the 5-layer rule the model layer cannot write the ledger — the harness
-  // writes ONE ledger row for the FINAL outcome, so this internal retry is
-  // TRANSPARENT to the ledger (an accepted, documented deviation from the DeepSeek
-  // two-row recovery pattern, which ledgers each hop).
-  const isEmpty = (r: SDKResultSuccess): boolean =>
-    r.structured_output === undefined || r.structured_output === null;
-
-  let r = await runOnce();
-  if (isEmpty(r)) r = await runOnce();
-  if (isEmpty(r)) {
+  if (result === null) {
     throw new ClaudeOAuthError(
-      "Claude Agent SDK success carried no structured_output despite a json_schema request (after one retry) — lane B fails closed",
+      "Claude Agent SDK produced no result message — lane B fails closed",
     );
   }
-  return { structuredOutput: r.structured_output, usage: usageOf(r) };
+  if (result.subtype !== "success" || result.is_error === true) {
+    throw new ClaudeOAuthError(
+      `Claude Agent SDK returned a non-success result (subtype=${String(
+        result.subtype,
+      )}, is_error=${String(result.is_error)}) — lane B fails closed`,
+    );
+  }
+
+  const usage = {
+    inputTokens: result.usage?.input_tokens ?? null,
+    outputTokens: result.usage?.output_tokens ?? null,
+  };
+
+  // Structured lane: with the $schema meta key stripped above, a clean success
+  // carries structured_output. An empty structured_output is now a genuine,
+  // non-recoverable failure → throw (fail closed, ONE attempt, no retry).
+  if (args.jsonSchema !== undefined) {
+    if (result.structured_output === undefined || result.structured_output === null) {
+      throw new ClaudeOAuthError(
+        "Claude Agent SDK success carried no structured_output despite a json_schema request — lane B fails closed",
+      );
+    }
+    return { structuredOutput: result.structured_output, usage };
+  }
+
+  return { text: result.result, usage };
 }
