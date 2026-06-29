@@ -34,6 +34,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import type { AgentSelection } from "@autobroker/core";
 import {
   closeDb,
   FakeGmailAdapter,
@@ -41,6 +42,12 @@ import {
   sendAndRecord as sendAndRecordImpl,
   type Db,
 } from "@autobroker/tools";
+
+import {
+  __clearAllRunSelectionsForTests,
+  getRunSelection,
+  setRunSelection,
+} from "./agentSelection.js";
 
 import { INCENTIVE_SCRAPE_WORKFLOW_ID } from "./incentiveScrape.js";
 import { DEALER_REPLY_EXTRACT_WORKFLOW_ID } from "./dealerReplyExtract.js";
@@ -89,6 +96,7 @@ beforeEach(() => {
 
 afterEach(() => {
   __resetQuotePipelineDepsForTests();
+  __clearAllRunSelectionsForTests();
   db.$client.close();
   closeDb();
   rmSync(tmpDir, { recursive: true, force: true });
@@ -556,5 +564,108 @@ describe("quote_pipeline child-run reap (no dangling suspend)", () => {
     const scrapeChild = mastra.getWorkflow(INCENTIVE_SCRAPE_WORKFLOW_ID);
     const suspended = await scrapeChild.listWorkflowRuns({ status: "suspended" });
     expect(suspended.runs).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// per-run AgentSelection propagation — the parent's provider selection must
+// flow onto EVERY fan-out child run (selecting Claude routes every useCase),
+// run-scoped + cleared (no childRunId leak).
+// ---------------------------------------------------------------------------
+
+describe("quote_pipeline fan-out AgentSelection propagation", () => {
+  const PASSTHROUGH_IO = z.object({ search_profile_id: z.string() });
+
+  /** A trivial child that records its own runId + the selection visible to its
+   *  harness.generate boundary (resolveSelectionForRun's registry hit), so the
+   *  test can assert the parent's selection was re-homed onto the child run. */
+  function selectionCapturingChild(
+    id: string,
+    seen: { runId: string; sel: AgentSelection | undefined }[],
+  ) {
+    const step = createStep({
+      id: "cap",
+      inputSchema: PASSTHROUGH_IO,
+      outputSchema: PASSTHROUGH_IO,
+      execute: async ({ inputData, runId }) => {
+        seen.push({ runId, sel: getRunSelection(runId) });
+        return inputData;
+      },
+    });
+    return createWorkflow({ id, inputSchema: PASSTHROUGH_IO, outputSchema: PASSTHROUGH_IO })
+      .then(step)
+      .commit();
+  }
+
+  function fanOutMastra(seen: { runId: string; sel: AgentSelection | undefined }[]) {
+    return createMastraInstance({
+      workflows: {
+        [QUOTE_PIPELINE_WORKFLOW_ID]: quotePipelineWorkflow as never,
+        [INCENTIVE_SCRAPE_WORKFLOW_ID]: selectionCapturingChild(INCENTIVE_SCRAPE_WORKFLOW_ID, seen) as never,
+        [QUOTE_AUDIT_WORKFLOW_ID]: selectionCapturingChild(QUOTE_AUDIT_WORKFLOW_ID, seen) as never,
+        [QUOTE_COMPARE_WORKFLOW_ID]: selectionCapturingChild(QUOTE_COMPARE_WORKFLOW_ID, seen) as never,
+        [DEALER_REPLY_EXTRACT_WORKFLOW_ID]: selectionCapturingChild(DEALER_REPLY_EXTRACT_WORKFLOW_ID, seen) as never,
+      },
+    });
+  }
+
+  it("a parent selection is re-homed onto each child run, then cleared (no leak)", async () => {
+    seedProfile();
+    seedTwoUnauditedQuotes(); // detect → scrape + audit + compare applicable
+
+    const parentSel: AgentSelection = {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    };
+    const seen: { runId: string; sel: AgentSelection | undefined }[] = [];
+    const mastra = fanOutMastra(seen);
+    const orchestrator = mastra.getWorkflow(QUOTE_PIPELINE_WORKFLOW_ID);
+
+    const parentRunId = `qp-sel-${Math.random().toString(36).slice(2)}`;
+    setRunSelection(parentRunId, parentSel); // mirror the server's per-run registration
+
+    const run = await orchestrator.createRun({ runId: parentRunId });
+    const result = await run.start({
+      inputData: { search_profile_id: PROFILE_ID, dry_run: false, target_listing_id: null },
+    });
+    expect(statusOf(result)).toBe("success");
+
+    // Every fan-out child saw the PARENT's selection at its harness boundary.
+    expect(seen.length).toBeGreaterThanOrEqual(3); // scrape + audit + compare
+    for (const entry of seen) {
+      expect(entry.sel).toEqual(parentSel);
+      expect(entry.runId).not.toBe(parentRunId); // a distinct child runId
+    }
+
+    // Run-scoped + cleared: no childRunId lingers in the registry after the run.
+    for (const entry of seen) {
+      expect(getRunSelection(entry.runId)).toBeUndefined();
+    }
+    // The parent's own registration is untouched (the server still owns it).
+    expect(getRunSelection(parentRunId)).toEqual(parentSel);
+  });
+
+  it("no parent selection → children resolve nothing (DeepSeek default preserved)", async () => {
+    seedProfile();
+    seedTwoUnauditedQuotes();
+
+    const seen: { runId: string; sel: AgentSelection | undefined }[] = [];
+    const mastra = fanOutMastra(seen);
+    const orchestrator = mastra.getWorkflow(QUOTE_PIPELINE_WORKFLOW_ID);
+
+    const parentRunId = `qp-nosel-${Math.random().toString(36).slice(2)}`;
+    // NO setRunSelection for the parent → nothing to propagate.
+    const run = await orchestrator.createRun({ runId: parentRunId });
+    const result = await run.start({
+      inputData: { search_profile_id: PROFILE_ID, dry_run: false, target_listing_id: null },
+    });
+    expect(statusOf(result)).toBe("success");
+
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    for (const entry of seen) {
+      expect(entry.sel).toBeUndefined(); // nothing registered for any child
+    }
   });
 });

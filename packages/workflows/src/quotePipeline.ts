@@ -101,6 +101,11 @@ import {
   type SendRecordTarget,
 } from "@autobroker/tools";
 
+import {
+  clearRunSelection,
+  resolveSelectionForRun,
+  setRunSelection,
+} from "./agentSelection.js";
 import { DealerReplyExtractInputSchema } from "./dealerReplyExtractContracts.js";
 import { DEALER_REPLY_EXTRACT_WORKFLOW_ID } from "./dealerReplyExtract.js";
 import { IncentiveScrapeInputSchema } from "./incentiveScrapeContracts.js";
@@ -154,21 +159,34 @@ async function runChildImpl(
   mastra: Mastra,
   childId: string,
   inputData: Record<string, unknown>,
+  parentRunId: string,
 ): Promise<ChildRunOutcome> {
   const workflow = mastra.getWorkflow(childId);
-  const run = await workflow.createRun({ runId: `${childId}-${randomUUID()}` });
-  const result = (await run.start({ inputData })) as { status?: string };
-  if (result.status === "success") return "success";
-  if (result.status === "suspended") {
-    // REAP the abandoned child run (the orchestrator never resumes it — see the
-    // SCRAPE-SUSPEND NOTE). Cancelling flips its persisted status to 'canceled'
-    // so recoverOnBoot's listWorkflowRuns({status:'suspended'}) scan never
-    // resurfaces it as a dangling re-attachable run. A cancel failure must not
-    // mask the suspend disposition the orchestrator branches on.
-    await run.cancel().catch(() => undefined);
-    return "suspended";
+  const childRunId = `${childId}-${randomUUID()}`;
+  const run = await workflow.createRun({ runId: childRunId });
+  // Propagate the parent's per-run provider selection onto the FRESH child runId:
+  // the child's harness.generate resolves resolveSelectionForRun(childRunId), so
+  // without this re-registration a Claude-selected pipeline would silently extract
+  // on the DeepSeek default. Run-scoped + cleared in `finally` (mirrors the
+  // runtimeGlue ownership lifecycle) so the registry never leaks child runIds.
+  const sel = resolveSelectionForRun(parentRunId);
+  if (sel) setRunSelection(childRunId, sel);
+  try {
+    const result = (await run.start({ inputData })) as { status?: string };
+    if (result.status === "success") return "success";
+    if (result.status === "suspended") {
+      // REAP the abandoned child run (the orchestrator never resumes it — see the
+      // SCRAPE-SUSPEND NOTE). Cancelling flips its persisted status to 'canceled'
+      // so recoverOnBoot's listWorkflowRuns({status:'suspended'}) scan never
+      // resurfaces it as a dangling re-attachable run. A cancel failure must not
+      // mask the suspend disposition the orchestrator branches on.
+      await run.cancel().catch(() => undefined);
+      return "suspended";
+    }
+    return "failed";
+  } finally {
+    clearRunSelection(childRunId);
   }
-  return "failed";
 }
 
 // ---------------------------------------------------------------------------
@@ -205,11 +223,14 @@ export interface QuotePipelineWorkflowDeps {
   sendAndRecord: typeof sendAndRecordImpl;
   /** The one-row audit_log completion writer (tools layer, LOCAL write). */
   writePipelineCompletion: typeof writePipelineCompletionImpl;
-  /** The child-skill-workflow composer (drives Mastra; injectable for tests). */
+  /** The child-skill-workflow composer (drives Mastra; injectable for tests).
+   *  `parentRunId` is the orchestrator run's id — the source of the per-run
+   *  provider selection re-homed onto each child run. */
   runChild: (
     mastra: Mastra,
     childId: string,
     inputData: Record<string, unknown>,
+    parentRunId: string,
   ) => Promise<ChildRunOutcome>;
   /** The DB accessor the read/write closures run through (tools layer). */
   getDb: typeof getDb;
@@ -592,7 +613,7 @@ const fanOutStep = createStep({
   id: "fanOut",
   inputSchema: QuotePipelineStateSchema,
   outputSchema: QuotePipelineStateSchema,
-  execute: async ({ inputData, mastra }) => {
+  execute: async ({ inputData, mastra, runId }) => {
     const state = asState(inputData);
     // The targeted sub-path / dry-run / a decline all skip the fan-out.
     if (state.targeted || state.dryRun || state.declined) return state;
@@ -604,6 +625,7 @@ const fanOutStep = createStep({
         mastra,
         CHILD_FOR_STEP[step],
         childInputFor(step, state.searchProfileId),
+        runId,
       );
       // A child that SUSPENDED (incentive_scrape OEM first-encounter) or FAILED
       // is NOT completed — no auto-retry; the run continues to `partial` and the
