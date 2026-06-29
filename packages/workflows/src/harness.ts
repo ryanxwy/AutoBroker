@@ -75,6 +75,7 @@ import { z } from "zod";
 
 import {
   chooseStructuredOutputStrategy,
+  claudeOAuthQuery,
   computeCostUsd,
   detectMalformedToolCall,
   MalformedToolCallAbort,
@@ -228,6 +229,9 @@ export interface HarnessTestOverrides {
   model?: unknown;
   /** Inject the isolated tmp-DB handle the ledger row is written through. */
   db?: Db;
+  /** Inject a fake lane-B (Claude OAuth) query so the SDK subprocess never spawns
+   *  in a unit test. Same guard as `model`/`db`: refused outside a test runner. */
+  claudeOAuthQuery?: typeof claudeOAuthQuery;
 }
 
 /**
@@ -270,6 +274,61 @@ async function generate<TSchema extends z.ZodTypeAny>(
   let route = policy(input.useCase);
   const sel = resolveSelectionForRun(ledger.runId);
   if (sel) route = applySelection(route, sel);
+
+  // Lane B — Claude OAuth via the official Agent SDK (subscription token). When
+  // the run's selection is anthropic+oauth the api-key Mastra loop does NOT fire:
+  // a single tool-disabled, min-env subprocess query serves the call (native
+  // outputFormat:json_schema → structured_output). Structurally exempt from #1244
+  // (no api-key tool loop; native structured output), so there is NO
+  // detector/recovery here — Zod `.parse` THROWS as the fail-closed belt. The
+  // model id is the concrete claude-* id behind the (re-homed) anthropic alias.
+  if (sel?.provider === "anthropic" && sel?.method === "oauth") {
+    const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
+    const oauthModelId = concreteModelId(resolveModel(route.alias));
+    const r = await oauthQuery({
+      prompt: input.prompt,
+      jsonSchema: z.toJSONSchema(input.schema),
+      model: oauthModelId,
+    });
+    const object = input.schema.parse(r.structuredOutput) as z.infer<TSchema>;
+    const laneBDuration = Date.now() - startedAt;
+    // Subscription is flat-rate: cost is NULL + pricing_source 'subscription'
+    // (honest — never a fabricated $0; tokens recorded for volume metering).
+    writeTestRunRecord(
+      {
+        runId: ledger.runId,
+        skill: ledger.skill,
+        createdAt: createdAtBucket(),
+        layer: ledger.layer,
+        provider: route.provider,
+        modelAlias: route.alias,
+        costUsd: null,
+        latencyMs: laneBDuration,
+        inputTokens: r.usage.inputTokens,
+        outputTokens: r.usage.outputTokens,
+        pricingSource: "subscription",
+        priceInputPerMtok: null,
+        priceOutputPerMtok: null,
+        promptVersion: ledger.promptVersion,
+        schemaVersion: ledger.schemaVersion,
+        failReason: null,
+        malformedSignals: null,
+        malformedSample: null,
+      },
+      ..._dbArg(_testOverrides),
+    );
+    return {
+      object,
+      usage: {
+        costUsd: null,
+        durationMs: laneBDuration,
+        pricingSource: "unavailable",
+        promptTokens: r.usage.inputTokens,
+        completionTokens: r.usage.outputTokens,
+      },
+    };
+  }
+
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 
@@ -885,6 +944,50 @@ async function draftProse(
   let route = policy(input.useCase);
   const sel = resolveSelectionForRun(ledger.runId);
   if (sel) route = applySelection(route, sel);
+
+  // Lane B — Claude OAuth prose draft (no schema → r.text). Same subscription
+  // ledger shape as generate's lane B; no #1244 detector (no tools, no structured
+  // output, and the OAuth lane runs no api-key tool loop).
+  if (sel?.provider === "anthropic" && sel?.method === "oauth") {
+    const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
+    const oauthModelId = concreteModelId(resolveModel(route.alias));
+    const r = await oauthQuery({ prompt: input.prompt, model: oauthModelId });
+    const laneBDuration = Date.now() - startedAt;
+    writeTestRunRecord(
+      {
+        runId: ledger.runId,
+        skill: ledger.skill,
+        createdAt: createdAtBucket(),
+        layer: ledger.layer,
+        provider: route.provider,
+        modelAlias: route.alias,
+        costUsd: null,
+        latencyMs: laneBDuration,
+        inputTokens: r.usage.inputTokens,
+        outputTokens: r.usage.outputTokens,
+        pricingSource: "subscription",
+        priceInputPerMtok: null,
+        priceOutputPerMtok: null,
+        promptVersion: ledger.promptVersion,
+        schemaVersion: ledger.schemaVersion,
+        failReason: null,
+        malformedSignals: null,
+        malformedSample: null,
+      },
+      ..._dbArg(_testOverrides),
+    );
+    return {
+      text: r.text ?? "",
+      usage: {
+        costUsd: null,
+        durationMs: laneBDuration,
+        pricingSource: "unavailable",
+        promptTokens: r.usage.inputTokens,
+        completionTokens: r.usage.outputTokens,
+      },
+    };
+  }
+
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 

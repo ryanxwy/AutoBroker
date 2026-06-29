@@ -12,6 +12,10 @@
 
 // Provider registry + model resolution.
 export { registry, resolveModel, defaultProvider } from "./registry.js";
+// Lane B — Claude via the official Agent SDK on a subscription OAuth token
+// (tool-disabled, min-env, fail-closed). The ONLY importer of the raw Agent SDK.
+export { claudeOAuthQuery, ClaudeOAuthError } from "./claudeOAuth.js";
+export type { ClaudeOAuthResult } from "./claudeOAuth.js";
 // Test-only generate-fault seam (T4-U2): arm a provider-5xx / hung-request fault
 // so the next resolved model fails CLOSED (refused outside a test runner).
 export {

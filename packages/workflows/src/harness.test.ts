@@ -33,7 +33,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
@@ -48,7 +48,7 @@ import {
 } from "@autobroker/model";
 import { openDb, type Db } from "@autobroker/tools";
 
-import { clearRunSelection } from "./agentSelection.js";
+import { clearRunSelection, setRunSelection } from "./agentSelection.js";
 import {
   harness,
   THINKING_AUTO_EMIT_USE_CASES,
@@ -619,6 +619,147 @@ describe("harness.generate — transport throw (injected llm fault) fails CLOSED
     expect(rows[0]?.fail_reason).not.toBeNull(); // Error.name recorded on the throw.
     expect(rows[0]?.cost_usd).toBeNull(); // NULL-not-$0 (no usage on a failed call).
     expect(rows[0]?.pricing_source).toBe("unavailable");
+  });
+});
+
+describe("harness.generate — lane B (Claude OAuth) dispatch", () => {
+  // A dedicated runId so the per-run selection never leaks into the DeepSeek-default
+  // tests above/below; afterEach clears it for total isolation.
+  const laneBLedger: HarnessLedgerContext = {
+    runId: "run-laneb-1",
+    skill: "foundation_probe",
+    layer: "L2",
+    promptVersion: null,
+    schemaVersion: null,
+  };
+
+  afterEach(() => clearRunSelection(laneBLedger.runId));
+
+  it("anthropic+oauth selection dispatches to lane B → Zod object + subscription ledger row", async () => {
+    setRunSelection(laneBLedger.runId, {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    });
+
+    const calls: Array<{ prompt: string; jsonSchema?: object; model: string }> = [];
+    const fakeOAuth = async (args: { prompt: string; jsonSchema?: object; model: string }) => {
+      calls.push(args);
+      return {
+        structuredOutput: { city: "Tucson", high: 100 },
+        usage: { inputTokens: 11, outputTokens: 22 },
+      };
+    };
+
+    const out = await harness.generate(probeInput(), laneBLedger, {
+      db,
+      claudeOAuthQuery: fakeOAuth,
+    });
+
+    expect("object" in out).toBe(true);
+    if (!("object" in out)) return; // narrow
+    expect(out.object).toEqual({ city: "Tucson", high: 100 });
+    // Subscription is flat-rate ⇒ the RESULT usage is cost-null / 'unavailable'
+    // (the ledger column carries the 'subscription' flag instead).
+    expect(out.usage.costUsd).toBeNull();
+    expect(out.usage.pricingSource).toBe("unavailable");
+    expect(out.usage.promptTokens).toBe(11);
+    expect(out.usage.completionTokens).toBe(22);
+
+    // lane B re-homes foundation_probe (deepseek.cheap) → anthropic.cheap and
+    // passes the concrete claude id + the schema's JSON-Schema to the OAuth query.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.model).toBe("claude-haiku-4-5");
+    expect(calls[0]?.jsonSchema).toBeDefined();
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.provider).toBe("anthropic");
+    expect(rows[0]?.model_alias).toBe("anthropic.cheap");
+    expect(rows[0]?.pricing_source).toBe("subscription");
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.input_tokens).toBe(11);
+    expect(rows[0]?.output_tokens).toBe(22);
+    expect(rows[0]?.fail_reason).toBeNull();
+  });
+
+  it("lane B is Zod-authoritative: a contract-violating structured_output throws ZodError", async () => {
+    setRunSelection(laneBLedger.runId, {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    });
+    const strictSchema = z
+      .object({ city: z.string(), high: z.number() })
+      .refine((v) => v.high <= 50, { message: "high must be <= 50" });
+    const fakeOAuth = async () => ({
+      structuredOutput: { city: "Tucson", high: 100 }, // passes shape, fails refine.
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await expect(
+      harness.generate(
+        { useCase: "foundation_probe", schema: strictSchema, prompt: "x", hitlAvailable: false },
+        laneBLedger,
+        { db, claudeOAuthQuery: fakeOAuth },
+      ),
+    ).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("DeepSeek default path is unchanged when no selection is set (no lane B)", async () => {
+    clearRunSelection(laneBLedger.runId);
+    const model = makeStaticToolCallModel({
+      toolName: "emit_result",
+      args: { city: "Tucson", high: 100 },
+      modelId: "deepseek-v4-flash",
+      usage: { inputTokens: 1000, outputTokens: 250 },
+    });
+
+    const out = await harness.generate(probeInput(), laneBLedger, { model, db });
+
+    expect("object" in out).toBe(true);
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.provider).toBe("deepseek");
+    expect(rows[0]?.model_alias).toBe("deepseek.cheap");
+    expect(rows[0]?.pricing_source).not.toBe("subscription");
+  });
+
+  it("draftProse lane B: no schema → prose text + subscription ledger row", async () => {
+    setRunSelection(laneBLedger.runId, {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    });
+    const calls: Array<{ prompt: string; jsonSchema?: object; model: string }> = [];
+    const fakeOAuth = async (args: { prompt: string; jsonSchema?: object; model: string }) => {
+      calls.push(args);
+      return { text: "Can you beat 31,200 out-the-door?", usage: { inputTokens: 7, outputTokens: 9 } };
+    };
+
+    const out = await harness.draftProse(
+      { useCase: "negotiation_followup", prompt: "Write an assertive follow-up." },
+      laneBLedger,
+      { db, claudeOAuthQuery: fakeOAuth },
+    );
+
+    expect(out.text).toContain("out-the-door");
+    expect(out.usage.costUsd).toBeNull();
+    // negotiation_followup (deepseek.chat) re-homes to anthropic.chat → claude-sonnet-4-6.
+    expect(calls[0]?.jsonSchema).toBeUndefined();
+    expect(calls[0]?.model).toBe("claude-sonnet-4-6");
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.provider).toBe("anthropic");
+    expect(rows[0]?.model_alias).toBe("anthropic.chat");
+    expect(rows[0]?.pricing_source).toBe("subscription");
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.input_tokens).toBe(7);
+    expect(rows[0]?.fail_reason).toBeNull();
   });
 });
 
