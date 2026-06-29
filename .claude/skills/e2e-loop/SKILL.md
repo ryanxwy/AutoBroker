@@ -7,15 +7,18 @@ description: Run one manually-triggered, live end-to-end pass of the AutoBroker 
   into an HTML report. The job is to reproduce the real buyer experience and expose its
   imperfections honestly — NOT to ship a perfect run. Fixing the recorded issues is the
   companion `e2e-evolve` skill's job (run it in a fresh session). Pass `--light` for a
-  quick read-only sweep. Use to run the live e2e / 全技能巡检 on demand.
+  quick read-only sweep. Pass `--provider claude` to drive the WHOLE journey through the
+  Claude OAuth subscription lane (lane B, the official Agent SDK) instead of the default
+  `--provider deepseek` (the DeepSeek API-key lane). Use to run the live e2e / 全技能巡检 on demand.
 disable-model-invocation: true
 ---
 
 You drive **one live end-to-end pass** of AutoBroker, manually triggered, every time.
 You play a **real, non-technical car buyer** going through the whole new-car quote
 pipeline. It is heavyweight: it starts a real server, drives a real browser via
-Playwright MCP, calls the paid DeepSeek provider, and dispatches subagents (the LLM
-dealers). Track progress with TodoWrite. cwd = `~/vscode/AutoBroker/AutoBroker`.
+Playwright MCP, calls the real LLM provider for the run (DeepSeek API-key by default, or
+the Claude OAuth subscription lane under `--provider claude`), and dispatches subagents
+(the LLM dealers). Track progress with TodoWrite. cwd = `~/vscode/AutoBroker/AutoBroker`.
 
 ## What this skill is for (read this first)
 
@@ -43,6 +46,17 @@ ends with a full report; it does **not** need an empty backlog.
 
 ## Modes
 
+- **Provider lane** (`--provider claude|deepseek`, default `deepseek`): which real LLM
+  lane the WHOLE journey runs on. `deepseek` = the DeepSeek API-key lane (lane A, the
+  historical default, unchanged). `claude` = the **Claude OAuth subscription** lane (lane
+  B, the official Agent SDK) — every one of the 17 skills' LLM calls (extraction / prose /
+  routing) routes through it, the same scope as DeepSeek. The runner enforces this by
+  exporting `AUTOBROKER_AGENT_PROVIDER=<provider>` into the `serve-live` environment BEFORE
+  boot; the server reads it as the default agent selection (the 4-box AgentBar is left
+  untouched, so its `agent` payload stays omitted and the env default wins). Record the
+  provider/lane the run used at the top of the report, and confirm on a `claude` run that
+  `/__e2e/rows`-adjacent ledger rows read `provider: anthropic` / `pricingSource:
+  subscription` (not deepseek). Combine with any other mode (e.g. `--light --provider claude`).
 - **Full** (bare `/e2e-loop`): the whole journey, steps 0→7 below.
 - **Light** (`--light` / "light sweep" / "manual inspection"): a bounded read-only
   inspection — steps **{0, 1 pin-or-bootstrap, 2 two-pass sweep, 5 frontend-taste,
@@ -63,8 +77,11 @@ ends with a full report; it does **not** need an empty backlog.
 
 ## Safety gate (do this first, fail closed)
 
-1. Keys present (`DEEPSEEK_API_KEY`, `GOOGLE_PLACES_API_KEY`) and Playwright MCP
-   reachable — else **STOP and report**, do not run.
+1. Keys present and Playwright MCP reachable — else **STOP and report**, do not run. The
+   LLM credential is **provider-aware**: `--provider deepseek` (default) requires
+   `DEEPSEEK_API_KEY`; `--provider claude` requires `CLAUDE_CODE_OAUTH_TOKEN`. Either way
+   `GOOGLE_PLACES_API_KEY` is required (geosearch). If the chosen provider's credential is
+   absent, **STOP** — do not silently fall back to the other provider.
 2. After serve-live launches: confirm the `{"liveE2e":"listening",…,"dataDir":…}` line
    appears within a bounded wait and **record `dataDir`** — else fail closed.
 3. After picking the buyer: confirm geosearch returns **≥1 dealer** for the metro (**≥10
@@ -180,6 +197,12 @@ headline.
   immutable for the run — **never** flip it on a running host (a live flip arms a real
   adapter on the next send with no second guard). **Never** set
   `AUTOBROKER_TEST_AUTO_APPROVE` — the decline path must stay live (CLAUDE.md inv #11).
+  This holds **identically on both provider lanes**: under `--provider claude` the lane-B
+  Agent-SDK subprocess only emits structured data / prose (its built-in tools are
+  fail-closed disabled — `allowedTools:[]` + deny-all `canUseTool`) and can never reach a
+  send; `browser.submit`/`gmail.send` stay the in-process tools-layer steps behind the L2
+  gate + mode brake. A `claude` run consumes **real Pro/Max subscription quota** (the same
+  realism-over-cost posture as the DeepSeek live harness).
 - **The 3 irreversible skills stay fake-send** (`dealer_web_lead_submit`,
   `negotiation_followup`, `dealer_closeout_email`); gates render before prose; a decline
   changes nothing, proven via `/__e2e/rows` before/after.

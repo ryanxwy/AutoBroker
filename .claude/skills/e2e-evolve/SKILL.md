@@ -7,6 +7,9 @@ description: The companion to `/e2e-loop`. Run it in a FRESH session AFTER one o
   improves the `/e2e-loop` skill itself so the next run reproduces the buyer experience
   better on a better product. Use after an e2e-loop run to close the loop on what it
   exposed — to fix the live-e2e findings, work the backlog, or evolve the e2e harness.
+  Pass `--provider claude|deepseek` (default `deepseek`) to re-verify fixes against the
+  same LLM lane the finding came from — `claude` runs the fresh serve-live re-verify on
+  the Claude OAuth subscription lane (lane B), `deepseek` on the DeepSeek API-key lane.
 disable-model-invocation: true
 ---
 
@@ -68,7 +71,11 @@ never left half-done.
   harness diff (the default lane skips `ui:functional` and that gap once merged a CI-red).
 - Re-verify every fix against a **fresh serve-live** (isolated tmp DB, `AUTOBROKER_MODE=test`,
   gates live) — "needs live verify" is not a defer reason, a fresh run is. The verdict is a
-  `/__e2e/rows` / `/__e2e/audit` delta, not a screenshot.
+  `/__e2e/rows` / `/__e2e/audit` delta, not a screenshot. Re-verify on the **same provider
+  lane the finding came from** (`--provider claude|deepseek`): export
+  `AUTOBROKER_AGENT_PROVIDER=<provider>` before the re-verify serve-live so the whole run
+  routes through that lane (a Claude-lane finding must be re-verified on Claude, not silently
+  on DeepSeek).
 - **Never** set `AUTOBROKER_TEST_AUTO_APPROVE`; never touch a production DB; isolated
   throwaway data-dir (CLAUDE.md inv #11). The 12 safety invariants hold — your fixes
   strengthen the floor, never lower it.
