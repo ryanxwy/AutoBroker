@@ -139,6 +139,8 @@ describe("claudeOAuthQuery — success normalization", () => {
     expect(r.text).toBe("hello prose");
     expect(r.usage).toEqual({ inputTokens: 1, outputTokens: 2 });
     expect(r.structuredOutput).toBeUndefined();
+    // (d) prose lane is unaffected by the structured retry — exactly one call.
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
   });
 
   it("maps missing usage fields to null (NULL-not-$0 friendly)", async () => {
@@ -165,13 +167,15 @@ describe("claudeOAuthQuery — fail-closed", () => {
     expect(mockedQuery).not.toHaveBeenCalled();
   });
 
-  it("throws on a non-success subtype (error_during_execution)", async () => {
+  it("(c) throws on a non-success subtype (error_during_execution) WITHOUT a retry", async () => {
     mockedQuery.mockReturnValue(
       fakeQuery({ type: "result", subtype: "error_during_execution", is_error: true, usage: {} }),
     );
     await expect(
       claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" }),
     ).rejects.toBeInstanceOf(ClaudeOAuthError);
+    // A real error is NOT the intermittent-empty case — no retry, exactly one call.
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
   });
 
   it("throws on is_error:true even with subtype 'success'", async () => {
@@ -188,10 +192,46 @@ describe("claudeOAuthQuery — fail-closed", () => {
     ).rejects.toBeInstanceOf(ClaudeOAuthError);
   });
 
-  it("throws when a schema is requested but success carries no structured_output", async () => {
-    mockedQuery.mockReturnValue(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }));
+  it("(b) throws when BOTH the call and its one retry are success-but-no-structured_output", async () => {
+    // A fresh empty generator per call (a single generator is single-use, so the
+    // retry must get its own). Both empty → fail closed, query called exactly twice.
+    mockedQuery
+      .mockReturnValueOnce(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }))
+      .mockReturnValueOnce(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }));
     await expect(
       claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" }),
     ).rejects.toBeInstanceOf(ClaudeOAuthError);
+    expect(mockedQuery).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("claudeOAuthQuery — inv#4 bounded retry on empty structured_output", () => {
+  it("(a) retries ONCE when success carries no structured_output, then returns the retried object", async () => {
+    // First success has undefined structured_output (the intermittent SDK case);
+    // the single retry returns a present structured_output → the object is returned
+    // and query was called exactly twice.
+    mockedQuery
+      .mockReturnValueOnce(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }))
+      .mockReturnValueOnce(
+        fakeQuery({
+          ...SUCCESS_STRUCTURED,
+          structured_output: { city: "Reno", high: 95 },
+          usage: { input_tokens: 5, output_tokens: 6 },
+        }),
+      );
+
+    const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+
+    expect(r.structuredOutput).toEqual({ city: "Reno", high: 95 });
+    // usage comes from the attempt that produced the returned output (the retry).
+    expect(r.usage).toEqual({ inputTokens: 5, outputTokens: 6 });
+    expect(mockedQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry when the first success already carries structured_output", async () => {
+    mockedQuery.mockReturnValue(fakeQuery(SUCCESS_STRUCTURED));
+    const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+    expect(r.structuredOutput).toEqual({ city: "Tucson", high: 100 });
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
   });
 });
