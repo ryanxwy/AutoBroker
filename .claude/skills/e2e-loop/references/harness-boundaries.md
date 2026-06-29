@@ -74,11 +74,13 @@ it in `finally`. Seed ONLY through these — see "External-SQLite invisible" bel
 
 ### `POST /__e2e/inject_replies` — seed the dealer-reply corpus
 
-**Payload:** `{ profileId: string, replies: [{ dealerName, dealerWebsite, from, subject, body, attachment? }] }`
+**Payload:** `{ profileId: string, replies: [{ dealer_id?, dealerName, dealerWebsite, from, subject, body, attachment? }] }`
+
+`dealer_id` (optional but **strongly preferred**): the geosearch `dealer_id` for this rooftop (read it from `SELECT dealer_id, name, website FROM dealers`). When present the reply BINDS to the existing geosearch dealer and **upgrades it to `bound`** instead of minting a duplicate `live-dealer-*` row — keeping one card per rooftop so the Negotiations board and the F4 give-up chips line up with the geosearch tiles. Omit it only for a pure inject-without-geosearch case; `dealer_key` (B2 shared-dealer) still works and is mutually exclusive with `dealer_id`.
 
 **Side effects per reply (via `injectDealerReplies`):**
-- a bound `dealers` row with `contact_email = reply.from` (the last-resort fallback in the reply-target ladder — without it `negotiation_followup`/`dealer_closeout_email` resolve null targets)
-- a `profile_dealers` bind
+- a `dealers` row with `contact_email = reply.from` (the last-resort fallback in the reply-target ladder — without it `negotiation_followup`/`dealer_closeout_email` resolve null targets); a supplied `dealer_id` reuses the existing geosearch row (`ON CONFLICT … SET contact_email`)
+- a `profile_dealers` bind (upgrade-only to `bound`: a reused geosearch `candidate` is promoted; a shared-dealer 2nd profile stays `candidate`, never downgraded)
 - a `threads` row `state='replied'` with a non-null `gmail_thread_id` (`live-gthread-…`) — required; a null anchor on a non-null thread trips `thread_flag_mismatch` and closeout fails closed
 - an inbound `messages` row `quote_extraction_status='pending'`
 - a fake-mailbox thread+message (`fake-${threadId}`) the `FakeGmailAdapter` reads; optional attachment bytes written
