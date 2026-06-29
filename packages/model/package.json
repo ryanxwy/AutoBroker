@@ -12,7 +12,10 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
@@ -23,12 +26,13 @@
     "vitest": "^4.0.0"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/deepseek": "^2.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/provider": "^3.0.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.195",
     "@autobroker/core": "workspace:*",
     "ai": "^6.0.0",
-    "@ai-sdk/provider": "^3.0.0",
-    "@ai-sdk/anthropic": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
-    "@ai-sdk/deepseek": "^2.0.0",
     "zod": "^4.0.0"
   }
 }
