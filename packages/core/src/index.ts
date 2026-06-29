@@ -116,3 +116,6 @@ export type {
 
 export { SessionThreadSchema } from "./schema/sessionThread.js";
 export type { SessionThread } from "./schema/sessionThread.js";
+
+export { AgentSelectionSchema, parseAgentSelection } from "./agentSelection.js";
+export type { AgentSelection } from "./agentSelection.js";
