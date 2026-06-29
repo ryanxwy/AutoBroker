@@ -72,7 +72,7 @@ export const AGENT_PROVIDERS: readonly { id: AgentProvider; label: string }[] = 
 
 export const AGENT_METHODS: readonly Opt[] = [
   { id: "apikey", label: "API key", sub: "x-api-key · per-token" },
-  { id: "oauth", label: "OAuth (subscription)", sub: "Agent SDK · subscription" },
+  { id: "oauth", label: "OAuth", sub: "Agent SDK" },
 ];
 
 // Model labels carry NO provider prefix — the Provider box already names it, so
