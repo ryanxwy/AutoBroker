@@ -28,7 +28,7 @@
  */
 
 import type { AgentSelection } from "@autobroker/core";
-import { policyForAlias, withProvider, type PolicyResolution } from "@autobroker/model";
+import { aliasForModelId, policyForAlias, withProvider, type PolicyResolution } from "@autobroker/model";
 
 /** The single env var naming the process-wide default provider. */
 const AGENT_PROVIDER_ENV = "AUTOBROKER_AGENT_PROVIDER";
@@ -88,5 +88,8 @@ export function resolveSelectionForRun(runId: string): AgentSelection | null {
  */
 export function applySelection(route: PolicyResolution, sel: AgentSelection): PolicyResolution {
   if (!route.alias.startsWith("deepseek")) return route;
-  return { ...policyForAlias(withProvider(route.alias, sel.provider)), useCase: route.useCase };
+  const targetAlias = sel.model
+    ? (aliasForModelId(sel.model) ?? withProvider(route.alias, sel.provider))
+    : withProvider(route.alias, sel.provider);
+  return { ...policyForAlias(targetAlias), useCase: route.useCase };
 }

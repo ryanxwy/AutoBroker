@@ -147,4 +147,31 @@ describe("applySelection", () => {
     expect(out.provider).toBe("deepseek");
     expect(out.useCase).toBe("dealer_reply_extract");
   });
+
+  it("sel.model=claude-opus-4-8 routes to anthropic.strong (ignores tier from base route)", () => {
+    const route = policy("dealer_reply_extract"); // deepseek.chat
+    const sel: AgentSelection = { provider: "anthropic", method: "oauth", model: "claude-opus-4-8", effort: "off" };
+    const out = applySelection(route, sel);
+    expect(out.alias).toBe("anthropic.strong");
+    expect(out.provider).toBe("anthropic");
+    expect(out.useCase).toBe("dealer_reply_extract");
+  });
+
+  it("sel.model=null preserves tier (anthropic.chat when base is deepseek.chat)", () => {
+    const route = policy("dealer_reply_extract"); // deepseek.chat
+    const sel: AgentSelection = { provider: "anthropic", method: "oauth", model: null, effort: "off" };
+    const out = applySelection(route, sel);
+    expect(out.alias).toBe("anthropic.chat");
+    expect(out.provider).toBe("anthropic");
+    expect(out.useCase).toBe("dealer_reply_extract");
+  });
+
+  it("sel.model=deepseek-v4-pro on a deepseek base routes to deepseek.strong", () => {
+    const route = policy("dealer_reply_extract"); // deepseek.chat
+    const sel: AgentSelection = { provider: "deepseek", method: "apikey", model: "deepseek-v4-pro", effort: "off" };
+    const out = applySelection(route, sel);
+    expect(out.alias).toBe("deepseek.strong");
+    expect(out.provider).toBe("deepseek");
+    expect(out.useCase).toBe("dealer_reply_extract");
+  });
 });

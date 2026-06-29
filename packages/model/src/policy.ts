@@ -380,3 +380,38 @@ export function withProvider(alias: ModelAlias, provider: Provider): ModelAlias 
 export function policy(useCase: UseCase): PolicyResolution {
   return { useCase, ...policyForAlias(USE_CASE_ALIAS[useCase]) };
 }
+
+/**
+ * Concrete model id for each alias. Kept in sync with registry.ts by hand.
+ * When two aliases share the same concrete id (e.g. deepseek.cheap / deepseek.chat
+ * both map to deepseek-v4-flash), the FIRST entry wins in aliasForModelId.
+ */
+const ALIAS_MODEL_ID: Partial<Record<ModelAlias, string>> = {
+  // DeepSeek
+  "deepseek.cheap": "deepseek-v4-flash",
+  "deepseek.chat": "deepseek-v4-flash",
+  "deepseek.strong": "deepseek-v4-pro",
+  "deepseek.reasoner": "deepseek-v4-flash",
+  // Anthropic — chat before reasoner so claude-sonnet-4-6 → anthropic.chat
+  "anthropic.cheap": "claude-haiku-4-5",
+  "anthropic.chat": "claude-sonnet-4-6",
+  "anthropic.strong": "claude-opus-4-8",
+  "anthropic.reasoner": "claude-sonnet-4-6",
+  // OpenAI — chat before reasoner so gpt-5.4 → openai.chat
+  "openai.cheap": "gpt-5.4-mini",
+  "openai.chat": "gpt-5.4",
+  "openai.strong": "gpt-5.5",
+  "openai.reasoner": "gpt-5.4",
+};
+
+/**
+ * Reverse-lookup: returns the FIRST ModelAlias whose concrete model id equals
+ * `modelId`, or `null` when no alias is bound to that id.
+ *
+ * Ambiguity: deepseek-v4-flash maps to deepseek.cheap / .chat / .reasoner —
+ * the first entry (deepseek.cheap) is returned; all three resolve the same model.
+ */
+export function aliasForModelId(modelId: string): ModelAlias | null {
+  const entry = Object.entries(ALIAS_MODEL_ID).find(([, id]) => id === modelId);
+  return entry ? (entry[0] as ModelAlias) : null;
+}

@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { policy, policyForAlias, withProvider } from "./policy.js";
+import { aliasForModelId, policy, policyForAlias, withProvider } from "./policy.js";
 import type { UseCase } from "./policy.js";
 
 const RETRY_USE_CASES: UseCase[] = [
@@ -66,6 +66,24 @@ describe("withProvider()", () => {
 
   it('withProvider("deepseek.strong", "anthropic") === "anthropic.strong"', () => {
     expect(withProvider("deepseek.strong", "anthropic")).toBe("anthropic.strong");
+  });
+});
+
+describe("aliasForModelId()", () => {
+  it("claude-opus-4-8 → anthropic.strong", () => {
+    expect(aliasForModelId("claude-opus-4-8")).toBe("anthropic.strong");
+  });
+
+  it("claude-sonnet-4-6 → anthropic.chat (chat before reasoner)", () => {
+    expect(aliasForModelId("claude-sonnet-4-6")).toBe("anthropic.chat");
+  });
+
+  it("deepseek-v4-pro → deepseek.strong", () => {
+    expect(aliasForModelId("deepseek-v4-pro")).toBe("deepseek.strong");
+  });
+
+  it("unknown id → null", () => {
+    expect(aliasForModelId("nope")).toBeNull();
   });
 });
 

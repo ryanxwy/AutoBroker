@@ -40,7 +40,7 @@ export {
 export type { TranscriptEvent, TranscriptSink } from "./recordReplay.js";
 
 // useCase -> ModelAlias -> CapabilityFlags routing policy.
-export { policy, policyForAlias, withProvider, USE_CASES } from "./policy.js";
+export { policy, policyForAlias, withProvider, aliasForModelId, USE_CASES } from "./policy.js";
 export type { UseCase, PolicyResolution, AliasResolution } from "./policy.js";
 
 // Provider-neutral harness contract: signature types + the pure structured-output
