@@ -285,12 +285,44 @@ async function generate<TSchema extends z.ZodTypeAny>(
   if (sel?.provider === "anthropic" && sel?.method === "oauth") {
     const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
     const oauthModelId = concreteModelId(resolveModel(route.alias));
-    const r = await oauthQuery({
-      prompt: input.prompt,
-      jsonSchema: z.toJSONSchema(input.schema),
-      model: oauthModelId,
-    });
-    const object = input.schema.parse(r.structuredOutput) as z.infer<TSchema>;
+    // F1 parity: a real subprocess call (or its Zod `.parse` belt) that THROWS is
+    // a run that HAPPENED — record ONE NULL-not-$0 ledger row (failReason set) then
+    // rethrow, mirroring the api-key lane's .catch above. Fail-closed is unchanged:
+    // the error still propagates and no object is ever fabricated.
+    let object: z.infer<TSchema>;
+    let usage: { inputTokens: number | null; outputTokens: number | null };
+    try {
+      const r = await oauthQuery({
+        prompt: input.prompt,
+        jsonSchema: z.toJSONSchema(input.schema),
+        model: oauthModelId,
+      });
+      object = input.schema.parse(r.structuredOutput) as z.infer<TSchema>;
+      usage = r.usage;
+    } catch (err) {
+      writeTestRunRecord(
+        {
+          runId: ledger.runId,
+          skill: ledger.skill,
+          createdAt: createdAtBucket(),
+          layer: ledger.layer,
+          provider: route.provider,
+          modelAlias: route.alias,
+          costUsd: null,
+          latencyMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          pricingSource: "unavailable",
+          priceInputPerMtok: null,
+          priceOutputPerMtok: null,
+          promptVersion: ledger.promptVersion,
+          schemaVersion: ledger.schemaVersion,
+          failReason: err instanceof Error ? err.name : "claude_oauth_failed",
+        },
+        ..._dbArg(_testOverrides),
+      );
+      throw err;
+    }
     const laneBDuration = Date.now() - startedAt;
     // Subscription is flat-rate: cost is NULL + pricing_source 'subscription'
     // (honest — never a fabricated $0; tokens recorded for volume metering).
@@ -304,8 +336,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
         modelAlias: route.alias,
         costUsd: null,
         latencyMs: laneBDuration,
-        inputTokens: r.usage.inputTokens,
-        outputTokens: r.usage.outputTokens,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
         pricingSource: "subscription",
         priceInputPerMtok: null,
         priceOutputPerMtok: null,
@@ -323,8 +355,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
         costUsd: null,
         durationMs: laneBDuration,
         pricingSource: "unavailable",
-        promptTokens: r.usage.inputTokens,
-        completionTokens: r.usage.outputTokens,
+        promptTokens: usage.inputTokens,
+        completionTokens: usage.outputTokens,
       },
     };
   }
@@ -951,7 +983,38 @@ async function draftProse(
   if (sel?.provider === "anthropic" && sel?.method === "oauth") {
     const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
     const oauthModelId = concreteModelId(resolveModel(route.alias));
-    const r = await oauthQuery({ prompt: input.prompt, model: oauthModelId });
+    // F1 parity: a throwing subprocess call is a run that HAPPENED — ledger ONE
+    // NULL-not-$0 row (failReason set) then rethrow, mirroring the api-key lane.
+    let text: string;
+    let usage: { inputTokens: number | null; outputTokens: number | null };
+    try {
+      const r = await oauthQuery({ prompt: input.prompt, model: oauthModelId });
+      text = r.text ?? "";
+      usage = r.usage;
+    } catch (err) {
+      writeTestRunRecord(
+        {
+          runId: ledger.runId,
+          skill: ledger.skill,
+          createdAt: createdAtBucket(),
+          layer: ledger.layer,
+          provider: route.provider,
+          modelAlias: route.alias,
+          costUsd: null,
+          latencyMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          pricingSource: "unavailable",
+          priceInputPerMtok: null,
+          priceOutputPerMtok: null,
+          promptVersion: ledger.promptVersion,
+          schemaVersion: ledger.schemaVersion,
+          failReason: err instanceof Error ? err.name : "claude_oauth_failed",
+        },
+        ..._dbArg(_testOverrides),
+      );
+      throw err;
+    }
     const laneBDuration = Date.now() - startedAt;
     writeTestRunRecord(
       {
@@ -963,8 +1026,8 @@ async function draftProse(
         modelAlias: route.alias,
         costUsd: null,
         latencyMs: laneBDuration,
-        inputTokens: r.usage.inputTokens,
-        outputTokens: r.usage.outputTokens,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
         pricingSource: "subscription",
         priceInputPerMtok: null,
         priceOutputPerMtok: null,
@@ -977,13 +1040,13 @@ async function draftProse(
       ..._dbArg(_testOverrides),
     );
     return {
-      text: r.text ?? "",
+      text,
       usage: {
         costUsd: null,
         durationMs: laneBDuration,
         pricingSource: "unavailable",
-        promptTokens: r.usage.inputTokens,
-        completionTokens: r.usage.outputTokens,
+        promptTokens: usage.inputTokens,
+        completionTokens: usage.outputTokens,
       },
     };
   }

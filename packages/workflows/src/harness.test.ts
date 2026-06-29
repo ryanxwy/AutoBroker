@@ -706,6 +706,73 @@ describe("harness.generate — lane B (Claude OAuth) dispatch", () => {
         { db, claudeOAuthQuery: fakeOAuth },
       ),
     ).rejects.toBeInstanceOf(z.ZodError);
+
+    // F1 parity: the Zod `.parse` throw still leaves ONE NULL-not-$0 trace row.
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBe("ZodError");
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("unavailable");
+    expect(rows[0]?.provider).toBe("anthropic");
+    expect(rows[0]?.model_alias).toBe("anthropic.cheap");
+  });
+
+  it("F1 parity: a throwing claudeOAuthQuery writes ONE NULL-not-$0 ledger row + rethrows", async () => {
+    setRunSelection(laneBLedger.runId, {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    });
+    // Simulate a non-success / is_error / missing-token throw from inside lane B.
+    const boom = new Error("simulated claude oauth non-success");
+    boom.name = "ClaudeOAuthError";
+    const fakeOAuth = async () => {
+      throw boom;
+    };
+
+    await expect(
+      harness.generate(probeInput(), laneBLedger, { db, claudeOAuthQuery: fakeOAuth }),
+    ).rejects.toThrow("simulated claude oauth non-success");
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBe("ClaudeOAuthError");
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("unavailable");
+    expect(rows[0]?.input_tokens).toBeNull();
+    expect(rows[0]?.output_tokens).toBeNull();
+    expect(rows[0]?.provider).toBe("anthropic");
+    expect(rows[0]?.model_alias).toBe("anthropic.cheap");
+  });
+
+  it("F1 parity (draftProse): a throwing claudeOAuthQuery writes ONE NULL-not-$0 row + rethrows", async () => {
+    setRunSelection(laneBLedger.runId, {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    });
+    const boom = new Error("simulated claude oauth transport failure");
+    boom.name = "ClaudeOAuthError";
+    const fakeOAuth = async () => {
+      throw boom;
+    };
+
+    await expect(
+      harness.draftProse({ useCase: "negotiation_followup", prompt: "x" }, laneBLedger, {
+        db,
+        claudeOAuthQuery: fakeOAuth,
+      }),
+    ).rejects.toThrow("simulated claude oauth transport failure");
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBe("ClaudeOAuthError");
+    expect(rows[0]?.cost_usd).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("unavailable");
+    expect(rows[0]?.provider).toBe("anthropic");
+    expect(rows[0]?.model_alias).toBe("anthropic.chat");
   });
 
   it("DeepSeek default path is unchanged when no selection is set (no lane B)", async () => {
