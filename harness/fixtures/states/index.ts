@@ -37,6 +37,7 @@ import type { Db } from "@autobroker/tools";
 import type { Scenario } from "../stubs.js";
 
 import { activeSearch } from "./activeSearch.js";
+import { agentBarKeys } from "./agentBarKeys.js";
 import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { closeoutReady } from "./closeoutReady.js";
@@ -79,6 +80,7 @@ export interface FixtureState {
 export const FIXTURE_STATES: Record<string, FixtureState> = {
   [emptyHome.id]: emptyHome,
   [activeSearch.id]: activeSearch,
+  [agentBarKeys.id]: agentBarKeys,
   [multiActive.id]: multiActive,
   [negotiationsBoard.id]: negotiationsBoard,
   [closedProfile.id]: closedProfile,

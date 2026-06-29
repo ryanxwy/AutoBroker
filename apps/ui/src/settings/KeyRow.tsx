@@ -42,7 +42,10 @@ export interface KeyRowProps {
 }
 
 export function KeyRow({ client, def, present, onChanged }: KeyRowProps): JSX.Element {
-  const { id, label, description, required } = def;
+  const { id, label, description, required, testKind } = def;
+  // Presence-only keys (e.g. the Claude OAuth token) have no probe: the backend
+  // skips it, so the row hides the Test button and never calls testKey.
+  const canTest = testKind !== "none";
   const [value, setValue] = useState("");
   const [show, setShow] = useState(false);
   const [test, setTest] = useState<TestState>({ kind: "idle" });
@@ -143,14 +146,16 @@ export function KeyRow({ client, def, present, onChanged }: KeyRowProps): JSX.El
         >
           {show ? "Hide" : "Show"}
         </button>
-        <button
-          type="button"
-          data-testid={`key-test-${id}`}
-          disabled={!hasCandidate || test.kind === "testing"}
-          onClick={onTest}
-        >
-          Test connection
-        </button>
+        {canTest && (
+          <button
+            type="button"
+            data-testid={`key-test-${id}`}
+            disabled={!hasCandidate || test.kind === "testing"}
+            onClick={onTest}
+          >
+            Test connection
+          </button>
+        )}
         <button
           type="button"
           className="btn-primary"

@@ -21,6 +21,7 @@ import { HistoryIcon, PinIcon } from "../shell/icons.js";
 import { Popover } from "../shell/Popover.js";
 import { SearchPicker } from "../shell/SearchPicker.js";
 import { SkillsPopoverList, type ServerSuggestion } from "../shell/SkillsPopover.js";
+import { AgentBar, type AgentPresence, type AgentUiSelection } from "./AgentBar.js";
 import { AssistantTurn } from "./AssistantTurn.js";
 import { ChatInput } from "./ChatInput.js";
 import { IntakeScopeNoticeCard } from "./IntakeScopeNotice.js";
@@ -65,6 +66,12 @@ export interface ChatRailProps {
   hasActiveProfile: boolean;
   /** Whether the required DeepSeek key is configured (skill launch gate). */
   deepseekReady: boolean;
+  /** The AgentBar's current selection (App owns it; the bar reconciles for display). */
+  agentSelection: AgentUiSelection;
+  /** Credential presence the AgentBar gates its options on. */
+  agentPresence: AgentPresence;
+  /** Fired on an explicit AgentBar pick (App marks dirty + persists). */
+  onAgentChange: (next: AgentUiSelection) => void;
   onSlash: (skill: string, args: Record<string, string>, note?: string) => void;
   onFreeform: (text: string) => void;
   onUnpin: () => void;
@@ -102,6 +109,9 @@ export function ChatRail({
   serverSuggested,
   hasActiveProfile,
   deepseekReady,
+  agentSelection,
+  agentPresence,
+  onAgentChange,
   onSlash,
   onFreeform,
   onUnpin,
@@ -258,6 +268,10 @@ export function ChatRail({
           />
         </div>
       </details>
+
+      {/* The agent selector — Provider · Method · Model · Effort — rides directly
+          above the composer; its selection rides the next run/route when dirty. */}
+      <AgentBar selection={agentSelection} presence={agentPresence} onChange={onAgentChange} />
 
       <ChatInput
         knownSkills={knownSkills}

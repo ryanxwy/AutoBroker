@@ -15,7 +15,7 @@
  */
 
 import { type ApiClient } from "./api/client.js";
-import { type StartAck } from "./api/wire.js";
+import { type AgentSelection, type StartAck } from "./api/wire.js";
 
 /** The intake start surface (slash mode). Free-form prose routes via the NL
  *  router (POST /api/route), not here. */
@@ -28,6 +28,9 @@ export interface LaunchArgs {
    *  fresh unpinned session with no notice), so every rail intake run has a
    *  session home the popover can re-enter later. */
   fromSessionId?: string | null;
+  /** The AgentBar's per-run provider selection — passed ONLY when the user made
+   *  an explicit choice (dirty); omitted lets the server default win. */
+  agent?: AgentSelection;
 }
 
 /** Start a NON-intake skill run in slash mode (the generic skill-run start).
@@ -40,13 +43,19 @@ export interface LaunchArgs {
  *  bad field → 400 content_invalid). */
 export async function launchSkill(
   client: ApiClient,
-  args: { skill: string; args?: Record<string, unknown>; sessionId?: string | null },
+  args: {
+    skill: string;
+    args?: Record<string, unknown>;
+    sessionId?: string | null;
+    agent?: AgentSelection;
+  },
 ): Promise<StartAck> {
   return client.startRun({
     ...(args.args ?? {}),
     skill: args.skill,
     input_mode: "slash",
     ...(args.sessionId != null ? { session_id: args.sessionId } : {}),
+    ...(args.agent !== undefined ? { agent: args.agent } : {}),
   });
 }
 
@@ -60,5 +69,6 @@ export async function launchIntake(client: ApiClient, args: LaunchArgs): Promise
     from_session_id: args.fromSessionId ?? null,
     input_mode: "slash",
     ...(args.mode.seedFields !== undefined ? { seed_fields: args.mode.seedFields } : {}),
+    ...(args.agent !== undefined ? { agent: args.agent } : {}),
   });
 }

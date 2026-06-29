@@ -87,6 +87,7 @@ function mockFetch(
         anthropic: { present: false },
         openai: { present: false },
         google_places: { present: true },
+        claude_oauth: { present: false },
         gmail: { connected: false },
       });
     if (url.endsWith("/api/skills"))
@@ -663,6 +664,7 @@ describe("App — first-run gate (no DeepSeek key)", () => {
           anthropic: { present: false },
           openai: { present: false },
           google_places: { present: false },
+          claude_oauth: { present: false },
           gmail: { connected: false },
         });
       if (url.endsWith("/api/skills"))

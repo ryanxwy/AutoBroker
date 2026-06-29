@@ -16,8 +16,9 @@
 import type { SecretKeyId } from "../api/wire.js";
 
 /** What kind of probe the "Test connection" button runs — copy only (the server
- *  routes the id to the right probe; this just shapes the row's wording). */
-export type KeyTestKind = "llm" | "geocode";
+ *  routes the id to the right probe; this just shapes the row's wording).
+ *  "none" = presence-only (no Test button; the backend skips its probe). */
+export type KeyTestKind = "llm" | "geocode" | "none";
 
 export interface KeyDef {
   /** The wire id the routes accept. */
@@ -63,5 +64,13 @@ export const KEY_DEFS: readonly KeyDef[] = [
     description: "Optional alternative AI provider (GPT).",
     required: false,
     testKind: "llm",
+  },
+  {
+    id: "claude_oauth",
+    label: "Claude subscription (OAuth)",
+    description:
+      "Optional. A Claude Pro/Max subscription token (CLAUDE_CODE_OAUTH_TOKEN) — lets the agent selector run Claude on your subscription instead of an API key. Presence-only; no connection test.",
+    required: false,
+    testKind: "none",
   },
 ] as const;

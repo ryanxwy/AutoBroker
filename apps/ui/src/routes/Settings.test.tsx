@@ -25,6 +25,7 @@ function presence(deepseek: boolean): AsyncState<KeyPresenceResponse> & { refetc
       anthropic: { present: false },
       openai: { present: false },
       google_places: { present: false },
+      claude_oauth: { present: false },
       gmail: { connected: false },
     },
     refetch: () => {},

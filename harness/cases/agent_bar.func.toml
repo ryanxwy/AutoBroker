@@ -1,0 +1,88 @@
+# harness/cases/agent_bar.func.toml — FUNCTIONAL lane: the four-box AgentBar
+# selector + its credential-driven cross-disable, end-to-end on the offline lane.
+#
+# The bar rides above the chat composer (Provider · Method · Model · Effort). The
+# agent_bar_keys world seeds a Claude API key (anthropic) but NO Claude
+# subscription token (claude_oauth) — DeepSeek's key is already present (the host
+# seeds it by default). So the Claude PROVIDER is enabled (an API key exists) but
+# within Claude the OAuth METHOD must be GREYED (no subscription token), while the
+# API-key method is enabled. That is exactly the bar's presence-gating contract.
+#
+# THE PROOF (one ui step): open the Provider box → pick Claude → open the Method
+# box. The final DOM coheres: the bar rendered; the Provider chip now reads
+# Claude; the resolved line cascaded to a Claude model (Claude Sonnet 4.6); and
+# the Method popover shows OAuth DISABLED while API key is enabled.
+#
+# The cross-disable rules + the dirty-omit payload contract are covered
+# exhaustively by the AgentBar.test.tsx unit suite (pure functions + a render
+# interaction); this func case is the representative real-chromium proof that the
+# live keys-presence read drives the cell states.
+#
+# Δ=0 BY CONSTRUCTION: the bar is a local selector with no run between the
+# before/after snapshots — picking an agent reaches no side effect.
+
+[meta]
+id = "agent_bar_func"
+archetype = "B"
+skills = ["search_profile_intake"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+[[steps]]
+id = "agent_bar_cross_disable"
+kind = "ui"
+fixture_state = "agent_bar_keys"
+purpose = "With a Claude API key but no subscription token, open the Provider box, pick Claude, then open the Method box: the bar renders, the Provider chip reads Claude, the resolved line cascades to a Claude model, and OAuth is greyed while API key is enabled."
+
+# Open the Provider box.
+[[steps.ui_actions]]
+verb = "click"
+testid = "agent-box-provider"
+
+# Pick Claude (enabled because the anthropic API key is present); the popover closes.
+[[steps.ui_actions]]
+verb = "click"
+testid = "agent-opt-claude"
+
+# Open the Method box to reveal the API-key / OAuth options for Claude.
+[[steps.ui_actions]]
+verb = "click"
+testid = "agent-box-method"
+
+# The bar rendered.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "agent-bar"
+expect = "visible"
+
+# The Provider chip now reads Claude (the pick landed).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "agent-box-provider"
+expect = "text"
+value = "Claude"
+
+# The resolved line cascaded to a Claude model (provider switch reconciled the
+# model into Claude's scale).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "agent-resolved"
+expect = "text"
+value = "Claude Sonnet 4.6"
+
+# OAuth is GREYED — no Claude subscription token (claude_oauth) is present.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "agent-opt-oauth"
+expect = "disabled"
+
+# The API-key method is present + enabled (the anthropic key is configured).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "agent-opt-apikey"
+expect = "visible"

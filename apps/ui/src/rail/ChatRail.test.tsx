@@ -40,6 +40,9 @@ function renderRail(activeAwaiting: unknown | null) {
       skills={[]}
       hasActiveProfile={false}
       deepseekReady={true}
+      agentSelection={{ provider: "deepseek", method: "apikey", model: "deepseek-v4-flash", effort: "off" }}
+      agentPresence={{ deepseek: true, anthropic: true, claudeOauth: true }}
+      onAgentChange={() => {}}
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}
@@ -95,6 +98,9 @@ function renderRunActive(runActive: boolean) {
       skills={[]}
       hasActiveProfile={false}
       deepseekReady={true}
+      agentSelection={{ provider: "deepseek", method: "apikey", model: "deepseek-v4-flash", effort: "off" }}
+      agentPresence={{ deepseek: true, anthropic: true, claudeOauth: true }}
+      onAgentChange={() => {}}
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}
@@ -130,6 +136,9 @@ function renderPinned(pinLabel: string | null, pinZip: string | null) {
       skills={[]}
       hasActiveProfile={true}
       deepseekReady={true}
+      agentSelection={{ provider: "deepseek", method: "apikey", model: "deepseek-v4-flash", effort: "off" }}
+      agentPresence={{ deepseek: true, anthropic: true, claudeOauth: true }}
+      onAgentChange={() => {}}
       onSlash={() => {}}
       onFreeform={() => {}}
       onUnpin={() => {}}

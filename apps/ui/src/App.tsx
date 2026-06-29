@@ -69,6 +69,13 @@ import { GateBannerHost } from "./gate/GateBannerHost.js";
 import { NeedsYouInbox } from "./gate/NeedsYouInbox.js";
 import { toSnapshot, vehicleLabel, zipOf } from "./home/profileView.js";
 import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
+import {
+  agentPayload,
+  loadAgentSelection,
+  saveAgentSelection,
+  type AgentPresence,
+  type AgentUiSelection,
+} from "./rail/AgentBar.js";
 import { ChatRail } from "./rail/ChatRail.js";
 import { Digest } from "./routes/Digest.js";
 import { NotFound } from "./routes/NotFound.js";
@@ -124,6 +131,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // key in Settings calls keyPresence.refetch() → the gate clears with no reload.
   const keyPresence = useAsync<KeyPresenceResponse>(() => client.getKeyPresence(), []);
   const deepseekReady = keyPresence.kind === "ok" ? keyPresence.data.deepseek.present : true;
+  // The AgentBar's credential gating reads the SAME presence (optimistic-true
+  // while loading, mirroring deepseekReady — no greyed flash before the read).
+  const agentPresence: AgentPresence = {
+    deepseek: keyPresence.kind === "ok" ? keyPresence.data.deepseek.present : true,
+    anthropic: keyPresence.kind === "ok" ? keyPresence.data.anthropic.present : true,
+    claudeOauth: keyPresence.kind === "ok" ? keyPresence.data.claude_oauth.present : true,
+  };
   // The curated operational env vars — owned here (like presence) so the
   // Environment panel reflects a live value after a write with no reload.
   const env = useAsync<EnvConfigResponse>(() => client.getEnvConfig(), []);
@@ -211,6 +225,17 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const [scopeNotice, setScopeNotice] = useState<IntakeScopeNotice | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [railTitle, setRailTitle] = useState<string>("New search");
+  // The AgentBar selection (device-local, mirrors the mode/pin state pattern).
+  // `dirty` is true once the user actively chose; only then does `agent` ride a
+  // run/route payload (a fresh browser omits it → the server default wins).
+  const [agent, setAgent] = useState<{ selection: AgentUiSelection; dirty: boolean }>(loadAgentSelection);
+  const onAgentChange = (next: AgentUiSelection): void => {
+    setAgent({ selection: next, dirty: true });
+    saveAgentSelection(next);
+  };
+  // The reconciled, wire-shaped selection for the next run/route — undefined
+  // until dirty (the dirty-omit contract).
+  const agentRun = agentPayload(agent.selection, agent.dirty, agentPresence);
   // The current session's TRUE pin (thread metadata) + its human label —
   // hydrated from GET /api/sessions/:id together with the scope notice.
   const [pinnedProfileId, setPinnedProfileId] = useState<string | null>(null);
@@ -446,7 +471,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const doLaunch = (mode: LaunchMode, userText?: string): void => {
     setLaunchError(null);
     // Always fork a fresh unpinned session from the current one.
-    launchIntake(client, { mode, fromSessionId: sessionIdRef.current })
+    launchIntake(client, {
+      mode,
+      fromSessionId: sessionIdRef.current,
+      ...(agentRun !== undefined ? { agent: agentRun } : {}),
+    })
       .then((ack) => bindAck(ack, "New search", userText))
       .catch((err: unknown) => {
         setLaunchError(err instanceof Error ? err.message : "Could not start intake.");
@@ -475,6 +504,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       skill,
       ...(args !== undefined ? { args } : {}),
       sessionId: sessionIdRef.current,
+      ...(agentRun !== undefined ? { agent: agentRun } : {}),
     })
       .then((ack) => bindAck(ack, `/${skill}`, userText))
       .catch((err: unknown) => {
@@ -561,7 +591,12 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const onFreeform = (text: string): void => {
     setLaunchError(null);
     client
-      .route({ nl_input: text, session_id: sessionIdRef.current, from_session_id: sessionIdRef.current })
+      .route({
+        nl_input: text,
+        session_id: sessionIdRef.current,
+        from_session_id: sessionIdRef.current,
+        ...(agentRun !== undefined ? { agent: agentRun } : {}),
+      })
       .then((ack: RouteAck) => {
         if (ack.routing.kind === "launch" && ack.run_id !== undefined) {
           const startAck: StartAck = {
@@ -833,6 +868,9 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           serverSuggested={serverSuggested}
           hasActiveProfile={hasActiveProfile}
           deepseekReady={deepseekReady}
+          agentSelection={agent.selection}
+          agentPresence={agentPresence}
+          onAgentChange={onAgentChange}
           onSlash={onSlash}
           onFreeform={onFreeform}
           onUnpin={onUnpin}

@@ -43,7 +43,7 @@ function mockFetch(): typeof fetch {
     if (url.includes("/stream-v2")) return new MockStream().response;
     if (url.endsWith("/api/mode")) return json({ active_db: "t.db", data_dir: "/x", demo: false, mode: "buyer" });
     if (url.endsWith("/api/settings/keys"))
-      return json({ deepseek: { present: true }, anthropic: { present: false }, openai: { present: false }, google_places: { present: true }, gmail: { connected: false } });
+      return json({ deepseek: { present: true }, anthropic: { present: false }, openai: { present: false }, google_places: { present: true }, claude_oauth: { present: false }, gmail: { connected: false } });
     if (url.endsWith("/api/settings/env")) return json({ vars: [] });
     if (url.endsWith("/api/skills")) return json([]);
     if (url.endsWith("/api/portfolio"))

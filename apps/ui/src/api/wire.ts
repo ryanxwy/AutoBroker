@@ -9,8 +9,14 @@
  * framework below the app layer.
  */
 
-import { SkillRunStatusSchema } from "@autobroker/core";
+import { SkillRunStatusSchema, type AgentSelection } from "@autobroker/core";
 import { z } from "zod";
+
+/** The normalized, validated provider-selection payload (provider deepseek |
+ *  anthropic). Re-exported from the wire boundary so the rail/App import the
+ *  app-facing contract from one place; the server validates it with the SAME
+ *  core `parseAgentSelection`. */
+export type { AgentSelection } from "@autobroker/core";
 
 // ---------------------------------------------------------------------------
 // Error envelope — apps/server/src/server.ts:38-52 (errorEnvelope).
@@ -232,6 +238,9 @@ export interface RouteRequestBody {
   nl_input: string;
   session_id?: string | null;
   from_session_id?: string | null;
+  /** The UI's per-run provider selection (the AgentBar) — sent ONLY when dirty,
+   *  honored by the router's classify call; omitted lets the default win. */
+  agent?: AgentSelection;
 }
 
 /** POST /api/suggest-next-skills — the Hybrid skills-popover re-rank. The client
@@ -262,6 +271,11 @@ export interface StartRunBody {
   seed_fields?: Record<string, unknown> | null;
   session_id?: string | null;
   from_session_id?: string | null;
+  /** The UI's per-run provider selection (the AgentBar). Sent ONLY when the user
+   *  made an explicit selection (dirty); omitted otherwise so the server's
+   *  env-default / policy default wins. The server validates it with
+   *  `parseAgentSelection`. */
+  agent?: AgentSelection;
   /** Per-skill start fields ride the same body (the server's StartBodySchema is
    *  non-strict; the skill's RunDescriptor.buildInput validates its own slice —
    *  e.g. dealer_geosearch's `search_profile_id`, the slash-args carrier). */
@@ -659,8 +673,10 @@ export type Mode = z.infer<typeof ModeSchema>;
 // malformed request (unknown id / missing value) is a non-2xx.
 // ---------------------------------------------------------------------------
 
-/** The four managed key ids (the stable wire ids the routes accept). */
-export const SECRET_KEY_IDS = ["deepseek", "anthropic", "openai", "google_places"] as const;
+/** The five managed key ids (the stable wire ids the routes accept). `claude_oauth`
+ *  is the Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN) — presence-only, no
+ *  probe (the backend skips its test). */
+export const SECRET_KEY_IDS = ["deepseek", "anthropic", "openai", "google_places", "claude_oauth"] as const;
 export type SecretKeyId = (typeof SECRET_KEY_IDS)[number];
 
 /** GET /api/settings/keys — the per-id presence map + the Gmail connection slot.
@@ -671,6 +687,7 @@ export const KeyPresenceResponseSchema = z.object({
   anthropic: z.object({ present: z.boolean() }),
   openai: z.object({ present: z.boolean() }),
   google_places: z.object({ present: z.boolean() }),
+  claude_oauth: z.object({ present: z.boolean() }),
   gmail: z.object({ connected: z.boolean() }),
 });
 export type KeyPresenceResponse = z.infer<typeof KeyPresenceResponseSchema>;
