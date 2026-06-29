@@ -2167,7 +2167,10 @@ export class SkillRunService {
     input: unknown;
     sessionId?: string | null;
     /** Per-run provider selection (lane A). Registered run-scoped by
-     *  beginRunGuarded in lock-step with ownership; absent → DeepSeek default. */
+     *  beginRunGuarded in lock-step with ownership; absent → no run-scoped
+     *  override, so resolveSelectionForRun falls through to the env default
+     *  (`AUTOBROKER_AGENT_PROVIDER`, which may itself be claude) or, unset, the
+     *  policy() default. */
     agentSelection?: AgentSelection;
   }): Promise<{ runId: string }> {
     const descriptor = DESCRIPTORS_BY_SKILL.get(args.skill);

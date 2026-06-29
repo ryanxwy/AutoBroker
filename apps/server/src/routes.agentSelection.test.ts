@@ -248,6 +248,39 @@ describe("POST /api/route — AgentSelection threading (router's synthetic runId
     expect(getRunSelection(seenRunId!)).toBeUndefined();
   });
 
+  it("an NL-routed LAUNCH carries the selection into the launched skill's run", async () => {
+    // Force a launch decision (intake freeform) via the classifier seam; the
+    // launched run gets its OWN runId (not the chat_route synthetic one), and the
+    // selection must ride into it so the downstream skill runs on the chosen
+    // provider. intake suspends at `collect`, so the run-scoped entry persists.
+    const classifier = async (): Promise<RouteDecision> => ({
+      kind: "launch",
+      skillId: "search_profile_intake",
+      inputData: { input_mode: "freeform", freeform_text: "I want a 2026 Tucson near Irvine" },
+      confidence: 0.9,
+      reason: "starting a new search",
+    });
+    __setRouteClassifierForTests(classifier);
+    server = await buildServer({ quiet: true });
+
+    const res = await server.app.inject({
+      method: "POST",
+      url: "/api/route",
+      payload: {
+        nl_input: "I want a 2026 Tucson near Irvine",
+        from_session_id: null,
+        agent: CLAUDE_OAUTH_RAW,
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const ack = res.json<{ run_id: string; routing: { kind: string } }>();
+    expect(ack.routing.kind).toBe("launch");
+    // The launched run carries the mapped selection (a distinct runId from the
+    // chat_route synthetic one, which was cleared right after classify).
+    expect(resolveSelectionForRun(ack.run_id)).toEqual(CLAUDE_OAUTH_MAPPED);
+  });
+
   it("registers NOTHING during classify when `agent` is absent", async () => {
     let seenDuringClassify: AgentSelection | null | undefined = undefined;
     const classifier = async (_nl: string, ctx: RouterContext): Promise<RouteDecision> => {

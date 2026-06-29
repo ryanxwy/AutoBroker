@@ -669,7 +669,16 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
 
     try {
-      const { runId } = await skillRuns.start({ skill: decision.skillId, input, sessionId });
+      // The launched skill carries the SAME selection the classifier honored, so
+      // an NL command routed to a launch runs the downstream skill on the chosen
+      // provider (registered run-scoped for THIS run's runId, distinct from the
+      // chat_route synthetic runId cleared above). Absent → policy/env default.
+      const { runId } = await skillRuns.start({
+        skill: decision.skillId,
+        input,
+        sessionId,
+        ...(agentSelection !== null ? { agentSelection } : {}),
+      });
       if (sessionId !== null) {
         try {
           await sessions.recordRun(sessionId, runId);
