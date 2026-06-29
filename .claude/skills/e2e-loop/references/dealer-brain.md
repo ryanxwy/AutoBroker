@@ -121,9 +121,11 @@ thread runs deep; a silent dealer is dropped after 2 nudges.
 Feed the Sonnet dealer subagent(s): (1) the **register** of
 `harness/cases/dealer_reply_extract.live_extract.toml` (OTD line-item layout, APR
 phrasing, scarcity language) — learn the register, don't copy text; (2) this run's
-**brand + metro** (match prose to brand tier); (3) the **live dealer names +
+**brand + metro** (match prose to brand tier); (3) the **live dealer ids + names +
 websites** from geosearch (read-only `sqlite3 -readonly <dataDir>/autobroker.db
-"SELECT name, website FROM dealers ORDER BY rowid"`); (4) the **state doc-fee cap**
+"SELECT dealer_id, name, website FROM dealers ORDER BY rowid"`) — carry each reply's
+`dealer_id` into the inject payload (below) so the reply binds to the real
+geosearch rooftop instead of minting a duplicate dealer card; (4) the **state doc-fee cap**
 for the metro (capped: CA $85 / NY $175 / WA $200 / MN $125 / MI $260 / OH $250 /
 MD $500; uncapped TX/FL/OR fire `DOC_FEE_UNCAPPED` above ~$500, Phase 5).
 
@@ -158,9 +160,13 @@ These audit firings are **correct behavior**, not bugs (see the "known-correct
 behaviors" list in `references/recording.md`). DON'T re-flag DOC_FEE_CAP/DOC_FEE_UNCAPPED/
 MATH_SANITY/MISSING_BREAKDOWN/DEALER_FEE_OUTLIER on the planted archetypes.
 
-POST `/__e2e/inject_replies` `{ profileId, replies:[…] }`. **Record the full
-`applied.threadIds[]`** (`[{dealerName, from, threadId}]`) — the only source of
-valid threadIds; you cannot mint your own.
+POST `/__e2e/inject_replies` `{ profileId, replies:[…] }`. **Give each reply the
+geosearch `dealer_id`** (`{ dealer_id, dealerName, dealerWebsite, from, subject, body }`)
+so it binds to the existing rooftop — without it the route mints a duplicate
+`live-dealer-*` card, splitting the Negotiations board and putting the F4 give-up
+chips on the wrong tile. **Record the full `applied.threadIds[]`**
+(`[{dealerName, from, threadId}]`) — the only source of valid threadIds; you
+cannot mint your own.
 
 **Anchor first:** the inbox gate needs ≥1 `lead_submissions` row, so run
 `dealer_web_lead_submit` (pin → form-scout → batch gate → fake-send; ~3 min for a

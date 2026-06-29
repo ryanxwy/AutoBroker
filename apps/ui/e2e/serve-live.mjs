@@ -85,9 +85,16 @@ const INSERT_DEALER =
 // index (which the composite-PK ON CONFLICT does NOT catch) → 'candidate' is the
 // only shape both profiles can hold, leaving the live claimDealer step to pick the
 // exclusivity winner — exactly the production flow the shared-dealer mode tests.
+// Upgrade-only conflict: a REUSED geosearch dealer is usually already a
+// 'candidate' row, and the reuse path binds it 'bound' so closeout/negotiation/
+// digest (which read pd.status='bound') stay exercisable — so upgrade candidate→
+// bound. The shared-dealer 2nd-profile path passes 'candidate' (WHERE false → no
+// downgrade, never trips uq_profile_dealers_bound_dealer); a fresh slug insert
+// has no conflict. So: only ever promote to 'bound', never demote.
 const BIND_DEALER =
   "INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, ?, ?) " +
-  "ON CONFLICT(search_profile_id, dealer_id) DO NOTHING";
+  "ON CONFLICT(search_profile_id, dealer_id) DO UPDATE SET status = excluded.status " +
+  "WHERE excluded.status = 'bound'";
 // gmail_thread_id must be set: dealer_closeout_email replies on the thread and
 // uses gmail_thread_id as the in_reply_to anchor — a null anchor with a non-null
 // thread_id trips the reply double-flag invariant (thread_flag_mismatch) and the
@@ -170,10 +177,18 @@ function injectDealerReplies(profileId, replies) {
       // rooftop and the live claimDealer step decides the exclusivity winner (a
       // 'bound' second row would trip uq_profile_dealers_bound_dealer). Omitting
       // dealer_key preserves the old per-profile-unique 'bound' pre-bind.
-      const sharedDealer = typeof reply.dealer_key === "string" && reply.dealer_key.length > 0;
-      const dealerId = sharedDealer
-        ? `live-dealer-${reply.dealer_key}`
-        : `live-dealer-${slug}`;
+      // REUSE an existing geosearch dealer_id when the caller supplies one — the
+      // reply then binds to the real rooftop instead of a duplicate live-dealer-*
+      // row (the live F4 give-up chips and the /api dealers count stay aligned with
+      // the geosearch tiles). Reuse takes priority over the shared/slug schemes.
+      const reuseDealer = typeof reply.dealer_id === "string" && reply.dealer_id.length > 0;
+      const sharedDealer =
+        !reuseDealer && typeof reply.dealer_key === "string" && reply.dealer_key.length > 0;
+      const dealerId = reuseDealer
+        ? reply.dealer_id
+        : sharedDealer
+          ? `live-dealer-${reply.dealer_key}`
+          : `live-dealer-${slug}`;
       const threadId = `live-thread-${slug}`;
       const messageId = `live-msg-${slug}`;
       const gmailMessageId = `live-gmsg-${slug}`;
@@ -522,6 +537,11 @@ built.app.post("/__e2e/inject_replies", async (req, reply) => {
     subject: String(r.subject ?? "Re: your inquiry"),
     body: String(r.body ?? ""),
     attachment: r.attachment ?? null,
+    // Pass through an explicit geosearch dealer_id so a reply BINDS to the
+    // existing geosearch rooftop instead of minting a duplicate live-dealer-* row
+    // (one rooftop per physical dealer, as the real buyer flow has — the runner
+    // reads the geosearch dealer_id from the `dealers` table and passes it here).
+    ...(typeof r.dealer_id === "string" && r.dealer_id.length > 0 ? { dealer_id: r.dealer_id } : {}),
     // B2: pass through dealer_key when present so injectDealerReplies uses a
     // shared dealer_id across profiles instead of a per-profile-unique slug.
     ...(typeof r.dealer_key === "string" && r.dealer_key.length > 0 ? { dealer_key: r.dealer_key } : {}),
