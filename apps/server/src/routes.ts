@@ -75,6 +75,7 @@ import {
   ActiveSlotConflict,
   type Db,
 } from "@autobroker/tools";
+import { parseAgentSelection } from "@autobroker/core";
 import type { SearchProfile } from "@autobroker/core";
 
 import { IMPLEMENTED_SKILLS, INTAKE_SKILL_ID, SKILLS } from "@autobroker/skills";
@@ -96,7 +97,9 @@ import {
 import {
   DuplicateRunIdError,
   classifySkillFromText,
+  clearRunSelection,
   getOrGenerateDealerNegotiationSummary,
+  setRunSelection,
   suggestNextSkills,
   type RouteDecision,
   type RouterContext,
@@ -144,6 +147,10 @@ const StartBodySchema = z.object({
   /** The session intake was TRIGGERED from (slash/freeform). When pinned, the
    *  route forks a fresh unpinned session and carries an IntakeScopeNotice. */
   from_session_id: z.string().nullable().optional(),
+  /** The UI's raw provider-selection payload (validated by parseAgentSelection,
+   *  which tolerates absent/garbage → null). Kept `unknown` here so the envelope
+   *  schema never rejects it; the core parser is the single authority. */
+  agent: z.unknown().optional(),
 });
 
 /** POST /api/route body — the NL skill-router request. `nl_input` is the user's
@@ -154,6 +161,8 @@ const RouteBodySchema = z.object({
   nl_input: z.string().min(1),
   session_id: z.string().nullable().optional(),
   from_session_id: z.string().nullable().optional(),
+  /** The UI's raw provider-selection payload — see StartBodySchema.agent. */
+  agent: z.unknown().optional(),
 });
 
 /** POST /api/suggest-next-skills body — the Hybrid skills-popover re-rank
@@ -530,8 +539,18 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       scopeNotice = fork.scopeNotice;
     }
 
+    // Per-run provider selection (parsed ONCE at the envelope; absent/garbage →
+    // null → register nothing → the DeepSeek default is unchanged). It rides into
+    // beginRunGuarded, which registers it run-scoped in lock-step with ownership.
+    const agentSelection = parseAgentSelection(body.agent);
+
     try {
-      const { runId } = await skillRuns.start({ skill: body.skill, input, sessionId });
+      const { runId } = await skillRuns.start({
+        skill: body.skill,
+        input,
+        sessionId,
+        ...(agentSelection !== null ? { agentSelection } : {}),
+      });
       // Durable run↔session link (thread metadata): the Searches popover's
       // per-session terminal pill and post-restart re-entry both read it. The
       // run IS already started — a failed metadata write is voiced, never a
@@ -590,7 +609,18 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       },
     };
 
-    const decision = await routeClassifier(body.nl_input, ctx);
+    // Per-run provider selection (parsed ONCE at the envelope; absent/garbage →
+    // null → register nothing). Register it against the SAME runId the router's
+    // ledger uses so the classifier's harness.generate(chat_route) honors it, then
+    // clear it in a finally — the selection lives only for the classify call.
+    const agentSelection = parseAgentSelection(body.agent);
+    if (agentSelection !== null) setRunSelection(ctx.ledger.runId, agentSelection);
+    let decision: RouteDecision;
+    try {
+      decision = await routeClassifier(body.nl_input, ctx);
+    } finally {
+      if (agentSelection !== null) clearRunSelection(ctx.ledger.runId);
+    }
 
     // CLARIFY — no run started; the rail renders a local assistant clarify turn.
     if (decision.kind === "clarify") {

@@ -54,6 +54,7 @@ import { randomUUID } from "node:crypto";
 import {
   SearchProfileIntakeInputSchema,
   providerDriverKind,
+  type AgentSelection,
   type HarnessDriverKind,
   type SearchProfileIntakeInput,
 } from "@autobroker/core";
@@ -2165,6 +2166,9 @@ export class SkillRunService {
     runId?: string;
     input: unknown;
     sessionId?: string | null;
+    /** Per-run provider selection (lane A). Registered run-scoped by
+     *  beginRunGuarded in lock-step with ownership; absent → DeepSeek default. */
+    agentSelection?: AgentSelection;
   }): Promise<{ runId: string }> {
     const descriptor = DESCRIPTORS_BY_SKILL.get(args.skill);
     if (descriptor === undefined) {
@@ -2178,6 +2182,7 @@ export class SkillRunService {
     const { started } = await beginRunGuarded(workflow, {
       runId,
       inputData: args.input,
+      ...(args.agentSelection !== undefined ? { agentSelection: args.agentSelection } : {}),
     });
 
     // First frame: init {run_id, skill, driver_kind} (the pubsub injects

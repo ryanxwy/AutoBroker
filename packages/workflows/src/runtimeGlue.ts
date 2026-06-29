@@ -52,7 +52,11 @@ import type {
   WorkflowState,
 } from "@mastra/core/workflows";
 
-import { clearRunSelection, setRunSelection } from "./agentSelection.js";
+import {
+  __clearAllRunSelectionsForTests,
+  clearRunSelection,
+  setRunSelection,
+} from "./agentSelection.js";
 
 /**
  * A suspended run that recoverOnBoot found, packaged as a re-attachable handle
@@ -111,9 +115,12 @@ export interface BootRecoveryReport {
  */
 const ownedRunIds = new Set<string>();
 
-/** Test-only: clear the process-ownership set between isolated test cases. */
+/** Test-only: clear the process-ownership set between isolated test cases. The
+ *  per-run selection registry is bound to ownership, so clear it in lock-step so
+ *  no selection leaks across isolated cases. */
 export function resetRuntimeGlueForTests(): void {
   ownedRunIds.clear();
+  __clearAllRunSelectionsForTests();
 }
 
 /** Options for {@link recoverOnBoot}. */

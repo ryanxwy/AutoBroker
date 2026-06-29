@@ -14,6 +14,7 @@ import { type AgentSelection } from "@autobroker/core";
 import { policy } from "@autobroker/model";
 
 import {
+  __clearAllRunSelectionsForTests,
   applySelection,
   clearRunSelection,
   envDefaultSelection,
@@ -21,6 +22,7 @@ import {
   resolveSelectionForRun,
   setRunSelection,
 } from "./agentSelection.js";
+import { resetRuntimeGlueForTests } from "./runtimeGlue.js";
 
 const AGENT_PROVIDER_ENV = "AUTOBROKER_AGENT_PROVIDER";
 const originalEnv = process.env[AGENT_PROVIDER_ENV];
@@ -60,6 +62,26 @@ describe("run-selection registry", () => {
 
     clearRunSelection(runId);
     expect(getRunSelection(runId)).toBeUndefined();
+  });
+
+  it("__clearAllRunSelectionsForTests drops every registered selection", () => {
+    setRunSelection("run-clear-a", anthropicSel);
+    setRunSelection("run-clear-b", deepseekSel);
+    expect(getRunSelection("run-clear-a")).toEqual(anthropicSel);
+
+    __clearAllRunSelectionsForTests();
+
+    expect(getRunSelection("run-clear-a")).toBeUndefined();
+    expect(getRunSelection("run-clear-b")).toBeUndefined();
+  });
+
+  it("resetRuntimeGlueForTests clears the selection registry in lock-step", () => {
+    setRunSelection("run-reset-1", anthropicSel);
+    expect(getRunSelection("run-reset-1")).toEqual(anthropicSel);
+
+    resetRuntimeGlueForTests();
+
+    expect(getRunSelection("run-reset-1")).toBeUndefined();
   });
 });
 

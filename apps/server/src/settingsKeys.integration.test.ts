@@ -43,6 +43,7 @@ const PROVIDER_VARS = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_PLACES_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
 ] as const;
 
 let tmpDir: string;
@@ -138,6 +139,25 @@ describe("POST /api/settings/keys", () => {
     expect(after.body).not.toContain("sk-live-candidate");
   });
 
+  it("stores claude_oauth (the 5th, presence-only key) → present + CLAUDE_CODE_OAUTH_TOKEN set", async () => {
+    const { app } = await build();
+    const save = await app.inject({
+      method: "POST",
+      url: "/api/settings/keys",
+      payload: { id: "claude_oauth", value: "tok-oauth-candidate" },
+    });
+    expect(save.statusCode).toBe(200);
+    expect(save.json()).toEqual({ ok: true });
+
+    // The OAuth subscription token maps to CLAUDE_CODE_OAUTH_TOKEN (presence-only;
+    // never network-probed) and the Settings UI can save it like any other key.
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("tok-oauth-candidate");
+
+    const after = await app.inject({ method: "GET", url: "/api/settings/keys" });
+    expect(after.json().claude_oauth).toEqual({ present: true });
+    expect(after.body).not.toContain("tok-oauth-candidate");
+  });
+
   it("rejects an unknown id with 400", async () => {
     const { app } = await build();
     const res = await app.inject({
@@ -165,6 +185,23 @@ describe("DELETE /api/settings/keys/:id", () => {
 
     const after = await app.inject({ method: "GET", url: "/api/settings/keys" });
     expect(after.json().openai).toEqual({ present: false });
+  });
+
+  it("clears a stored claude_oauth token → 204, presence false, env var gone", async () => {
+    const { app } = await build();
+    await app.inject({
+      method: "POST",
+      url: "/api/settings/keys",
+      payload: { id: "claude_oauth", value: "tok-oauth" },
+    });
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("tok-oauth");
+
+    const del = await app.inject({ method: "DELETE", url: "/api/settings/keys/claude_oauth" });
+    expect(del.statusCode).toBe(204);
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBeUndefined();
+
+    const after = await app.inject({ method: "GET", url: "/api/settings/keys" });
+    expect(after.json().claude_oauth).toEqual({ present: false });
   });
 
   it("rejects an unknown id with 400", async () => {

@@ -56,6 +56,17 @@ export function getRunSelection(runId: string): AgentSelection | undefined {
 }
 
 /**
+ * Test-only: drop EVERY registered selection. The per-run entries are normally
+ * cleared in lock-step with ownership (rollback / releaseRunOwnership), but an
+ * isolated test that registers a selection without driving the run to terminal
+ * would otherwise leak it across cases. Called from resetRuntimeGlueForTests so
+ * the registry resets alongside the ownership set.
+ */
+export function __clearAllRunSelectionsForTests(): void {
+  runSelections.clear();
+}
+
+/**
  * The process-wide default selection from `AUTOBROKER_AGENT_PROVIDER`:
  *   "claude"   → anthropic / oauth
  *   "deepseek" → deepseek / apikey
