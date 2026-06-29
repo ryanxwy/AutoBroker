@@ -23,6 +23,7 @@ export {
   HARNESS_DRIVER_KINDS,
   HarnessDriverKindSchema,
   providerDriverKind,
+  selectionDriverKind,
 } from "./types.js";
 export type {
   Provider,

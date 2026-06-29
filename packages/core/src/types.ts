@@ -155,6 +155,11 @@ export const HARNESS_DRIVER_KINDS = [
   // PROVIDER_DRIVER_KIND). DeepSeek stays the default-resolved label.
   "anthropic_apikey",
   "openai_apikey",
+  // anthropic_oauth is the Claude OAuth subscription lane (lane B) label — the
+  // run-chip footer for a run resolved to anthropic+oauth (e.g. `/e2e-loop
+  // --provider claude`). Distinct from anthropic_apikey: same provider, the
+  // subscription method, NOT the api key. Live-only (no func case pins it).
+  "anthropic_oauth",
 ] as const;
 export type HarnessDriverKind = (typeof HARNESS_DRIVER_KINDS)[number];
 export const HarnessDriverKindSchema = z.enum(HARNESS_DRIVER_KINDS);
@@ -170,4 +175,19 @@ export const HarnessDriverKindSchema = z.enum(HARNESS_DRIVER_KINDS);
  */
 export function providerDriverKind(provider: Provider): HarnessDriverKind {
   return `${provider}_apikey` as HarnessDriverKind;
+}
+
+/**
+ * Method-aware `driver_kind` for a RESOLVED AgentSelection. The Claude OAuth
+ * subscription lane (anthropic + oauth, lane B) reads `anthropic_oauth`; every
+ * api-key lane reads `{provider}_apikey` via providerDriverKind. The rail's
+ * run-chip footer derives from THIS, so a subscription run (whose ledger records
+ * `pricing_source=subscription`) never mislabels as an api-key run.
+ */
+export function selectionDriverKind(
+  provider: Provider,
+  method: "apikey" | "oauth",
+): HarnessDriverKind {
+  if (provider === "anthropic" && method === "oauth") return "anthropic_oauth";
+  return providerDriverKind(provider);
 }

@@ -54,6 +54,7 @@ import { randomUUID } from "node:crypto";
 import {
   SearchProfileIntakeInputSchema,
   providerDriverKind,
+  selectionDriverKind,
   type AgentSelection,
   type HarnessDriverKind,
   type SearchProfileIntakeInput,
@@ -220,10 +221,15 @@ export interface RunDescriptor {
  * takes that selection's provider; otherwise the descriptor's policy-default
  * label. This keeps the rail's run footer honest: the descriptor default always
  * reads `deepseek_apikey`, so without this a Claude run would mislabel as DeepSeek.
+ *
+ * The label is METHOD-AWARE: a Claude OAuth-subscription run (anthropic+oauth,
+ * lane B) reads `anthropic_oauth`, NOT `anthropic_apikey` — same provider, the
+ * subscription method, not the api key. Without this an OAuth run mislabels as an
+ * api-key run even though the ledger records `pricing_source=subscription`.
  */
 function runDriverKind(descriptor: RunDescriptor, runId: string): HarnessDriverKind {
   const sel = resolveSelectionForRun(runId);
-  return sel !== null ? providerDriverKind(sel.provider) : descriptor.driverKind();
+  return sel !== null ? selectionDriverKind(sel.provider, sel.method) : descriptor.driverKind();
 }
 
 // ===========================================================================
