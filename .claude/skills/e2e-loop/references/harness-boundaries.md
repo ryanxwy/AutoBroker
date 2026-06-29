@@ -190,6 +190,39 @@ skill that wrote ≥1 row, BEFORE declaring it PASS.
 
 ---
 
+## Cross-provider data-fetch verification (a 0-yield on a browser skill is NOT a lane verdict)
+
+**Practice (2026-06-29, owner-directed):** when a browser-fed skill — `inventory_site_scan`,
+`inventory_link_scan`, the `dealer_web_lead_submit` form-scout — fetches **0 usable rows on the
+live lane**, do NOT conclude a provider/lane bug from the live result alone. The browse path is
+**provider-independent** (the tools-layer Playwright has no LLM in it); only the EXTRACTION is the
+LLM. A live 0 has three confounds before "the lane is broken": (1) **browsing variance** (real
+dealer sites flake / anti-bot block run-to-run; repeated scans of the same metro rate-limit the
+scraper); (2) **machine thrash** — over-aggressive concurrency drives the host's load average to
+100+, and under that load the headless browsers can't render pages → car-less SRPs → extraction
+correctly returns `[]` (watch `uptime`; if load ≫ cores, the browser quality has collapsed); (3)
+a genuine extraction-lane bug.
+
+**Isolate before you blame the lane — two cheap, deterministic checks:**
+1. **Cross-provider re-run.** Run the SAME skill with the other provider (`AUTOBROKER_AGENT_PROVIDER`
+   flipped, fresh dir). If the other provider ALSO depends on browsing (it does) and it fetches while
+   the first didn't, that points to **browsing variance/thrash**, not the lane — same browse code.
+   Confirmed live 2026-06-29: DeepSeek fetched 60 listings; Claude fetched 0 — but only because the
+   Claude runs coincided with a thrashed host (load 122–139) + over-scanned (blocked) sites.
+2. **Controlled extraction test (the decisive one).** Feed a FIXED woven-card snapshot (the exact
+   `weaveCardsForExtraction` `[CARD n]…URL:…` format) to the extractor on the suspect provider,
+   sequentially AND concurrently. If it extracts (e.g. 3/3, 6/6) the extraction lane is FINE and the
+   live 0 was upstream browsing. (2026-06-29: Claude OAuth lane B passed both — no extraction bug.)
+
+**Lane-B (Claude OAuth) caveats to know while diagnosing:** lane-B subprocesses **contend** under
+concurrency (~13s sequential → ~90s each at 6-concurrent) and thrash the host, so the browser skills
+auto-cap Claude concurrency low (`laneConcurrency`, env `AUTOBROKER_CLAUDE_*_CONCURRENCY`); the
+`test_run_records.input_tokens` for lane B reads a constant **3** (an SDK usage-reporting artifact,
+NOT empty input); and `AUTOBROKER_RECORD_TRANSCRIPT` does **not** capture lane-B calls. Record any
+real provider-specific gap into `harvest-register.md` for `e2e-evolve`.
+
+---
+
 ## External-SQLite writes are invisible to the running server
 
 A SQLite write made by a separate process underneath the already-running server

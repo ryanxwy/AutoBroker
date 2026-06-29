@@ -115,6 +115,7 @@ import {
   profileStopCode,
 } from "./dealerWebLeadSubmitContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { envConcurrency, laneConcurrency } from "./inventorySiteScan.js";
 import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 export { DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID };
@@ -284,10 +285,11 @@ export async function scoutOneWithSession(deps: {
  *  + a benign contact_email upsert) and holds NO Approver — no submit/send face is
  *  reachable from here, so running several dealers in parallel is SAFE: there is no
  *  shared mutable state, each dealer opens its OWN isolated browser context, and the
- *  per-dealer slow-path is the 15s NAV + 4s network-idle wait. The cap keeps us from
- *  spawning 13–21 chromium contexts at once (RAM/FD pressure on slow, bot-protected
- *  real dealer sites) while still cutting the wall-clock to ~ceil(N/4)·per-dealer. */
-const SCOUT_CONCURRENCY = 4;
+ *  per-dealer slow-path is the 15s NAV + 4s network-idle wait. The cap bounds how
+ *  many chromium contexts spawn at once (RAM/FD pressure on slow, bot-protected real
+ *  dealer sites); it is env-overridable (AUTOBROKER_SCOUT_CONCURRENCY) so a capable
+ *  host can MAX OUT the fan-out, cutting wall-clock to ~ceil(N/limit)·per-dealer. */
+const SCOUT_CONCURRENCY = envConcurrency("AUTOBROKER_SCOUT_CONCURRENCY", 8);
 
 /** Submit batch: each dealer opens its OWN isolated browser to navigate + (in test
  *  mode) fake-submit. The submit step is the GATED MUTATING face and stays SERIAL (one
@@ -341,7 +343,7 @@ export async function boundedConcurrentMap<T, R>(
 async function scoutFormsImpl(args: ScoutFormsArgs): Promise<ScoutOutcome[]> {
   const outcomes = await boundedConcurrentMap(
     args.dealers,
-    SCOUT_CONCURRENCY,
+    laneConcurrency(args.runId, SCOUT_CONCURRENCY, "AUTOBROKER_CLAUDE_SCOUT_CONCURRENCY", 3),
     (dealer) =>
       withBrowserContext(
         `${args.runId}-leadscout-${dealer.dealerId}`,

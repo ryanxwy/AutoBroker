@@ -56,6 +56,7 @@ import {
   type Db,
 } from "@autobroker/tools";
 
+import { clearRunSelection, setRunSelection } from "./agentSelection.js";
 import { createMastraInstance } from "./mastra.js";
 import {
   browserWalkSrp,
@@ -67,6 +68,9 @@ import {
   harvestVinFromSnapshot,
   inventorySiteScanWorkflow,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
+  isClaudeOauthRun,
+  laneConcurrency,
+  SCAN_CONCURRENCY,
   scanDealersParallelImpl,
   selectVdpCandidates,
   walkFilterLadder,
@@ -1412,5 +1416,42 @@ describe("collectInventoryCards survives page.evaluate serialization", () => {
       if (prevLoc === undefined) delete g.location;
       else g.location = prevLoc;
     }
+  });
+});
+
+describe("laneConcurrency — Claude-only concurrency cap (lane-B subprocess contention)", () => {
+  const RUN = "lane-conc-test-run";
+  afterEach(() => {
+    clearRunSelection(RUN);
+    delete process.env["AUTOBROKER_CLAUDE_SCAN_CONCURRENCY"];
+  });
+
+  it("a DeepSeek (or unset) run keeps the full base concurrency", () => {
+    // No selection registered → not a Claude lane → base unchanged.
+    expect(isClaudeOauthRun(RUN)).toBe(false);
+    expect(laneConcurrency(RUN, SCAN_CONCURRENCY, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3)).toBe(SCAN_CONCURRENCY);
+    setRunSelection(RUN, { provider: "deepseek", method: "apikey", model: null, effort: "off" });
+    expect(isClaudeOauthRun(RUN)).toBe(false);
+    expect(laneConcurrency(RUN, 8, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3)).toBe(8);
+  });
+
+  it("the Claude OAuth lane caps concurrency to the low claudeCap", () => {
+    setRunSelection(RUN, { provider: "anthropic", method: "oauth", model: null, effort: "off" });
+    expect(isClaudeOauthRun(RUN)).toBe(true);
+    // base 8 capped to 3 (never raises above base; never below 1).
+    expect(laneConcurrency(RUN, 8, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3)).toBe(3);
+    expect(laneConcurrency(RUN, 2, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3)).toBe(2); // min(base, cap)
+  });
+
+  it("Claude API-key (lane A) is NOT capped — only the OAuth subprocess lane is", () => {
+    setRunSelection(RUN, { provider: "anthropic", method: "apikey", model: null, effort: "off" });
+    expect(isClaudeOauthRun(RUN)).toBe(false);
+    expect(laneConcurrency(RUN, 8, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3)).toBe(8);
+  });
+
+  it("the Claude cap is env-overridable for a capable host", () => {
+    setRunSelection(RUN, { provider: "anthropic", method: "oauth", model: null, effort: "off" });
+    process.env["AUTOBROKER_CLAUDE_SCAN_CONCURRENCY"] = "6";
+    expect(laneConcurrency(RUN, 8, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3)).toBe(6);
   });
 });
