@@ -103,7 +103,7 @@ async function build(): Promise<BuiltServer> {
 }
 
 describe("GET /api/settings/keys", () => {
-  it("returns presence-only for the four keys + a gmail placeholder", async () => {
+  it("returns presence-only for the five managed keys + a gmail placeholder", async () => {
     const { app } = await build();
     const res = await app.inject({ method: "GET", url: "/api/settings/keys" });
     expect(res.statusCode).toBe(200);
@@ -112,6 +112,7 @@ describe("GET /api/settings/keys", () => {
       anthropic: { present: false },
       openai: { present: false },
       google_places: { present: false },
+      claude_oauth: { present: false },
       gmail: { connected: false },
     });
   });
