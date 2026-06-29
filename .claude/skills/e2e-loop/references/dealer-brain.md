@@ -150,6 +150,13 @@ distribution — most are no-price first touches:
   - **math-inconsistent** — itemized, **non-null** sales_tax, line items miss the
     stated total by ~$200-500 → fires `MATH_SANITY` (null-tax would hit the
     null-skip guard — NOT a firing).
+  - **honest-combined-govt-fee** (seasoned SC-628-2, advisory) — itemized, math
+    CORRECT, but writes title + registration as ONE combined line ("Title &
+    registration: $550" / "TT&L: $X") rather than separate fields. The live
+    extractor sometimes drops the combined line, leaving the itemized fields short
+    of the (correct) OTD by ≤ ~$800. After the `1111962` fix `quote_audit` must NOT
+    fire a (false) `MATH_SANITY` on this honest dealer — re-flag ONLY if it fires
+    on a ≤$1000 positive govt-fee residual, or FAILS to fire on a >$1000 shortfall.
   - a clean LOWER price — the eventual front-runner.
 - **~15% LUMP-OTD only** ("$XX,XXX out the door, best I can do") → `MISSING_BREAKDOWN`.
 - **~8% PAYMENT-ONLY** ("just $429/mo!", no OTD) → monthly-without-total handling.
