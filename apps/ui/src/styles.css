@@ -1052,6 +1052,14 @@ body.resizing { cursor: col-resize; user-select: none; }
   gap: 10px 18px;
   margin-bottom: 8px;
   flex-wrap: wrap;
+  /* Keep the sort/filter strip in reach while the cards scroll beneath it — it
+     pins to the top of the scrolling panel instead of sliding away. Opaque
+     panel background so cards never show through. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  padding-top: 4px;
 }
 .inventory-tally {
   flex-basis: 100%;
@@ -2142,9 +2150,49 @@ p.muted, span.muted { font-size: 0.95em; }
 .canvas-pager button:hover:not(:disabled) { color: var(--ink); box-shadow: var(--shadow); }
 .canvas-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ---- canvas sticky header (summary + tab strip stick together) --------------
- * The wrapper owns stickiness for BOTH the summary and the tab strip so they
- * never double-stick. ProfileCard sits above it and scrolls away; the topbar is
+/* ---- canvas = contained workbench frame (fits the viewport; panel scrolls) ---
+ * The canvas fills app-main's height and lays its children out as a column:
+ * a fixed header zone (run line, profile card, summary+tabs) and ONE scrolling
+ * region — the active tab panel. Only the panel scrolls, so its bottom controls
+ * (the pager) are ALWAYS reachable inside a bounded region instead of trailing
+ * off the end of a page-length scroll. min-height:0 lets the panel shrink so its
+ * own overflow:auto engages (the classic flex-overflow guard). app-main keeps
+ * overflow:auto as the graceful fallback for an extreme-short viewport AND for
+ * the other routes (Portfolio/Settings/…), which are NOT canvases. */
+.canvas {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.canvas > .canvas-runline,
+.canvas > .profile-card,
+.canvas > .canvas-stickyhead {
+  flex: 0 0 auto;
+}
+.canvas > [role="tabpanel"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* a thin, always-present scrollbar so the overflow is discoverable even where
+     the OS hides overlay scrollbars (macOS) — the ledger-toned signal. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+  /* room for the scrollbar gutter so cards never sit under the thumb. */
+  padding-right: 2px;
+}
+.canvas > [role="tabpanel"]::-webkit-scrollbar { width: 9px; }
+.canvas > [role="tabpanel"]::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 4px;
+}
+.canvas > [role="tabpanel"]::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- canvas sticky header (summary + tab strip) -----------------------------
+ * The summary + tab strip form the fixed header zone at the top of the canvas
+ * column. position:sticky is retained as a harmless belt for the app-main
+ * fallback-scroll path (an extreme-short viewport); in the normal contained
+ * layout the panel scrolls beneath it, so it simply stays put. The topbar is
  * z-index 60 and lives OUTSIDE app-main, so 20 here is safe. */
 .canvas-stickyhead {
   position: sticky;
