@@ -43,10 +43,12 @@ import {
   makeProseDumpModel,
   makeStaticToolCallModel,
   makeStructuredObjectModel,
+  policy,
   type HarnessGenerateInput,
 } from "@autobroker/model";
 import { openDb, type Db } from "@autobroker/tools";
 
+import { clearRunSelection } from "./agentSelection.js";
 import {
   harness,
   THINKING_AUTO_EMIT_USE_CASES,
@@ -56,8 +58,10 @@ import {
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
+const AGENT_PROVIDER = "AUTOBROKER_AGENT_PROVIDER";
 const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
+const originalAgentProvider = process.env[AGENT_PROVIDER];
 
 const here = dirname(fileURLToPath(import.meta.url));
 // 0000 creates test_run_records; 0005 adds the #1244 malformed-evidence columns
@@ -73,6 +77,9 @@ beforeAll(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-harness-"));
   process.env[DATA_DIR] = tmpDir;
   delete process.env[DB_OVERRIDE];
+  // Lane-A provider override reads this env default; keep the whole suite on the
+  // DeepSeek default (no provider override) so route assertions are deterministic.
+  delete process.env[AGENT_PROVIDER];
   db = openDb(); // resolves <tmpDir>/autobroker.db
   for (const sql of MIGRATION_SQLS) db.$client.exec(readFileSync(sql, "utf8"));
 });
@@ -84,6 +91,8 @@ afterAll(() => {
   else process.env[DATA_DIR] = originalDataDir;
   if (originalDbOverride === undefined) delete process.env[DB_OVERRIDE];
   else process.env[DB_OVERRIDE] = originalDbOverride;
+  if (originalAgentProvider === undefined) delete process.env[AGENT_PROVIDER];
+  else process.env[AGENT_PROVIDER] = originalAgentProvider;
 });
 
 beforeEach(() => {
@@ -162,6 +171,36 @@ describe("harness.generate — clean emit_result path", () => {
     expect(rows[0]?.price_input_per_mtok).toBe(0.14); // flash cache-miss input rate.
     // provider/model_alias are derived from policy(useCase) at the generate
     // seam (foundation_probe routes to deepseek.cheap) — not caller strings.
+    expect(rows[0]?.provider).toBe("deepseek");
+    expect(rows[0]?.model_alias).toBe("deepseek.cheap");
+  });
+});
+
+describe("harness.generate — lane-A provider override is OFF by default (DeepSeek identity)", () => {
+  it("with no run selection AND no env default, the routed provider/alias == policy(useCase)", async () => {
+    // The byte-identity guarantee: empty registry + unset AUTOBROKER_AGENT_PROVIDER
+    // (the beforeAll deletes it) ⇒ resolveSelectionForRun returns null ⇒
+    // applySelection never fires ⇒ the route IS the untouched policy() default.
+    clearRunSelection(ledger.runId);
+    expect(process.env[AGENT_PROVIDER]).toBeUndefined();
+
+    const model = makeStaticToolCallModel({
+      toolName: "emit_result",
+      args: { city: "Tucson", high: 100 },
+      modelId: "deepseek-v4-flash",
+      usage: { inputTokens: 1000, outputTokens: 250 },
+    });
+
+    const out = await harness.generate(probeInput(), ledger, { model, db });
+    expect("object" in out).toBe(true);
+
+    const expected = policy("foundation_probe");
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    // The recorded route — what actually served the call — is byte-identical to
+    // the policy() default that shipped before the selection seam existed.
+    expect(rows[0]?.provider).toBe(expected.provider);
+    expect(rows[0]?.model_alias).toBe(expected.alias);
     expect(rows[0]?.provider).toBe("deepseek");
     expect(rows[0]?.model_alias).toBe("deepseek.cheap");
   });

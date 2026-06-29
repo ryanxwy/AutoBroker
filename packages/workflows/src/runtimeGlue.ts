@@ -44,12 +44,15 @@
  * product DB, never raw-SQLs mastra.db — only the instance/workflow/run API.
  */
 
+import type { AgentSelection } from "@autobroker/core";
 import type { Mastra } from "@mastra/core";
 import type {
   Workflow,
   WorkflowRunStatus,
   WorkflowState,
 } from "@mastra/core/workflows";
+
+import { clearRunSelection, setRunSelection } from "./agentSelection.js";
 
 /**
  * A suspended run that recoverOnBoot found, packaged as a re-attachable handle
@@ -284,6 +287,13 @@ export interface StartRunGuardedArgs<TInput = unknown> {
   runId: string;
   /** Input data passed to workflow start(). */
   inputData: TInput;
+  /**
+   * Optional per-run provider selection. When present, it is registered into the
+   * run-selection registry (keyed by runId) the moment ownership is taken, and
+   * cleared on rollback or {@link releaseRunOwnership} — so the registry stays a
+   * bounded "currently live" set in lock-step with {@link ownedRunIds}.
+   */
+  agentSelection?: AgentSelection;
 }
 
 /**
@@ -349,6 +359,9 @@ export async function beginRunGuarded<TInput = unknown>(
     throw new DuplicateRunIdError(workflow.id, args.runId, "running");
   }
   ownedRunIds.add(args.runId);
+  // Register the per-run provider selection in lock-step with ownership: it lives
+  // exactly as long as the reservation (cleared on rollback below + on release).
+  if (args.agentSelection) setRunSelection(args.runId, args.agentSelection);
   try {
     const existing = await workflow.getWorkflowRunById(args.runId);
     if (existing !== null) {
@@ -362,6 +375,7 @@ export async function beginRunGuarded<TInput = unknown>(
     // concurrent loser threw at the synchronous `has` check ABOVE this try, so
     // it never reaches here and never clears the winner's reservation.
     ownedRunIds.delete(args.runId);
+    clearRunSelection(args.runId);
     throw err;
   }
 }
@@ -374,5 +388,7 @@ export async function beginRunGuarded<TInput = unknown>(
  * observable signal a terminated/rolled-back run no longer holds a reservation.
  */
 export function releaseRunOwnership(runId: string): boolean {
+  // The per-run selection is bound to ownership — drop it alongside.
+  clearRunSelection(runId);
   return ownedRunIds.delete(runId);
 }

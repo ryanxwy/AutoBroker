@@ -79,6 +79,21 @@ export {
   type StartRunGuardedArgs,
 } from "./runtimeGlue.js";
 
+// Per-run provider-selection registry + alias override (lane A). The server
+// registers a run's AgentSelection (setRunSelection, threaded through
+// startRunGuarded's agentSelection arg); the harness reads it at the generate
+// seam (resolveSelectionForRun → applySelection) to re-home a DeepSeek-default
+// route onto the chosen provider. With no selection the route is the untouched
+// policy() default.
+export {
+  setRunSelection,
+  clearRunSelection,
+  getRunSelection,
+  envDefaultSelection,
+  resolveSelectionForRun,
+  applySelection,
+} from "./agentSelection.js";
+
 // The search_profile_intake skill workflow (the first skill) — one flat
 // linear createWorkflow, 8 steps, no nested workflow. The test-only deps seam is
 // exported so the offline in-stack tests drive the real suspend/resume chain.

@@ -90,6 +90,7 @@ import {
 } from "@autobroker/model";
 import { llmLimiter, writeTestRunRecord, type Db } from "@autobroker/tools";
 
+import { applySelection, resolveSelectionForRun } from "./agentSelection.js";
 import {
   malformedToolCallProcessor,
   type MalformedToolCallTripMetadata,
@@ -259,8 +260,16 @@ async function generate<TSchema extends z.ZodTypeAny>(
     );
   }
 
-  // Stage 1 — route (fail-LOUD inherited from policy()).
-  const route = policy(input.useCase);
+  // Stage 1 — route (fail-LOUD inherited from policy()). Lane-A provider
+  // override: a per-run / env selection re-homes a DeepSeek-default route onto
+  // the chosen provider (identity when there is no selection, or when the route
+  // is already a non-DeepSeek pin like cross_provider_smoke's anthropic.chat).
+  // With NO selection this is byte-identical to policy(input.useCase). Every
+  // downstream consumer — resolveModel, the strategy gate, generateOutputObject,
+  // and the ledger writes — reads `route`, so the override is honored uniformly.
+  let route = policy(input.useCase);
+  const sel = resolveSelectionForRun(ledger.runId);
+  if (sel) route = applySelection(route, sel);
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 
@@ -870,8 +879,12 @@ async function draftProse(
     );
   }
 
-  // Stage 1 — route (fail-LOUD inherited from policy()).
-  const route = policy(input.useCase);
+  // Stage 1 — route (fail-LOUD inherited from policy()). Same lane-A provider
+  // override as generate(): a per-run / env selection re-homes a DeepSeek-default
+  // route onto the chosen provider; identity when none / already non-DeepSeek.
+  let route = policy(input.useCase);
+  const sel = resolveSelectionForRun(ledger.runId);
+  if (sel) route = applySelection(route, sel);
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 
