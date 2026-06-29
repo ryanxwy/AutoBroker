@@ -350,7 +350,7 @@ describe("SkillsPopoverList — suggested set + 'More skills' disclosure", () =>
     r.unmount();
   });
 
-  it("no profile, no pin: only intake is suggested and there is NO 'More skills' (every other skill is blocked)", () => {
+  it("no profile, no pin: only intake is suggested; every other skill folds into the collapsed 'More skills' (no 'Needs an active search' section)", () => {
     const onRun = vi.fn();
     const r = render(
       <SkillsPopoverList
@@ -364,9 +364,14 @@ describe("SkillsPopoverList — suggested set + 'More skills' disclosure", () =>
     );
     const intakeRun = r.get("ledger-run-search_profile_intake") as HTMLButtonElement;
     expect(intakeRun.disabled).toBe(false);
-    // The non-intake skills are all BLOCKED (0-active world), so none are in the
-    // ready group → no "More skills" disclosure.
-    expect(r.query("skills-more")).toBeNull();
+    // The non-intake skills are all BLOCKED (0-active world) but still REACHABLE:
+    // they fold into the collapsed "More skills" disclosure (owner-directed) — no
+    // always-visible "Needs an active search" header/prose.
+    expect(r.query("skills-more")).not.toBeNull();
+    expect(r.query("skills-more-toggle")).not.toBeNull();
+    expect(r.container.textContent).not.toContain("Needs an active search");
+    const blockedRun = r.get("ledger-run-quote_audit") as HTMLButtonElement;
+    expect(blockedRun.disabled).toBe(true);
     r.unmount();
   });
 });
@@ -419,9 +424,11 @@ describe("SkillsPopoverList — rendered Run buttons", () => {
     );
     const pinRun = r.get("ledger-run-dealer_inbox_check") as HTMLButtonElement;
     expect(pinRun.disabled).toBe(true);
+    // The precise per-row tip rides the row's title (a hover hint), not an
+    // always-visible "Needs an active search" prose block (removed, owner-directed).
     expect(pinRun.title).toBe(PIN_REQUIRED_TIP);
-    // The blocked-group hint text is rendered.
-    expect(r.container.textContent).toContain(PIN_REQUIRED_TIP);
+    expect(r.query("skills-more")).not.toBeNull();
+    expect(r.container.textContent).not.toContain("Needs an active search");
     // intake is still ready.
     const intakeRun = r.get("ledger-run-search_profile_intake") as HTMLButtonElement;
     expect(intakeRun.disabled).toBe(false);

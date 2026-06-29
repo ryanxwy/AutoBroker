@@ -129,7 +129,7 @@ kind = "no_external_mutation"
 [[steps]]
 id = "reload_after_clean"
 kind = "ui"
-purpose = "Reload after the clean (no re-seed) — the prior cleanup persists; the Skills popover still renders the skill row."
+purpose = "Reload after the clean (no re-seed) — the prior cleanup persists; the Skills popover still renders the skill row (now under the collapsed 'More skills' disclosure — owner-directed 2026-06-29: only recommended next skills show under Ready; the rest hide until the bar is opened)."
 
 [[steps.ui_actions]]
 verb = "reload"
@@ -139,10 +139,18 @@ testid = "app-main"
 verb = "click"
 testid = "rail-skills-toggle"
 
+# After reload the session pin is not re-hydrated, so dealer_hygiene (pin_required)
+# is a non-recommended row folded into the collapsed "More skills" disclosure.
+# Open it to reach the row (still fully reachable — the cap shrinks the VISIBLE set,
+# never the REACHABLE set).
+[[steps.ui_actions]]
+verb = "click"
+testid = "skills-more-toggle"
+
 [[steps.anchors]]
 kind = "dom_state"
 testid = "ledger-run-dealer_hygiene"
-expect = "visible"               # the rail Skills tray renders the skill row after the reload.
+expect = "visible"               # the rail Skills tray still renders the skill row after the reload (inside More skills).
 
 # ---- step 4: re-run → nothing_to_clean, no card, Δ=0 -------------------------
 

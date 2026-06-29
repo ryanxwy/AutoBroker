@@ -327,15 +327,13 @@ export function SkillsPopoverList({
   const reasonByName = new Map(suggestedWithReasons.map((x) => [x.skill.name, x.reason] as const));
   const suggestedNames = new Set(suggestedSkills.map((s) => s.name));
   const moreReady = groups.ready.filter((s) => !suggestedNames.has(s.name));
-  // The blocked group mixes two reasons (no search vs no pin); the group header
-  // shows the pin-required hint when ANY blocked skill is pin-required with an
-  // active search, else the create-a-search hint. Each row still carries its
-  // own precise tip.
-  const groupHint = groups.blocked.some(
-    (s) => s.profile_pin === "pin_required" && hasActiveProfile,
-  )
-    ? PIN_REQUIRED_TIP
-    : PIN_TIP;
+  // Everything that is NOT a suggested next-step — the rest of the ready skills
+  // PLUS the not-yet-runnable (blocked) ones — folds into ONE collapsed "More
+  // skills" disclosure (owner-directed 2026-06-29). The popover surfaces only the
+  // recommended next steps under Ready; the rest stay reachable but hidden until
+  // the user opens the collapse bar. The blocked rows keep their per-row tip (a
+  // hover hint) but there is no always-visible "Needs an active search" section.
+  const moreCount = moreReady.length + groups.blocked.length;
   return (
     <div data-testid="skills-list">
       <h3 className="skills-group-title">Ready</h3>
@@ -345,23 +343,21 @@ export function SkillsPopoverList({
         reasonFor={(s) => reasonByName.get(s.name) ?? defaultSuggestionReason(s)}
         onRun={onRun}
       />
-      {moreReady.length > 0 && (
+      {moreCount > 0 && (
         <details data-testid="skills-more">
-          <summary data-testid="skills-more-toggle">More skills</summary>
-          <SkillRows skills={moreReady} disabled={false} onRun={onRun} />
+          <summary data-testid="skills-more-toggle">More skills ({moreCount})</summary>
+          {moreReady.length > 0 && (
+            <SkillRows skills={moreReady} disabled={false} onRun={onRun} />
+          )}
+          {groups.blocked.length > 0 && (
+            <SkillRows
+              skills={groups.blocked}
+              disabled
+              tipFor={(s) => blockedTipFor(s, state)}
+              onRun={onRun}
+            />
+          )}
         </details>
-      )}
-      {groups.blocked.length > 0 && (
-        <>
-          <h3 className="skills-group-title">Needs an active search</h3>
-          <p className="muted">{groupHint}</p>
-          <SkillRows
-            skills={groups.blocked}
-            disabled
-            tipFor={(s) => blockedTipFor(s, state)}
-            onRun={onRun}
-          />
-        </>
       )}
     </div>
   );
