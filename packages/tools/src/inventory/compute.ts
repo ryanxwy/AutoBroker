@@ -22,9 +22,17 @@ import {
 } from "./inventory_rank.js";
 
 /** A recommended candidate satisfies all three: a match_status of exact/near, an
- *  inventory_status of in_stock/in_transit, and a composite score >= 0.6. */
+ *  inventory_status of in_stock/in_transit/unknown, and a composite score >= 0.6.
+ *  `unknown` is included because many dealer platforms list a new car on the SRP
+ *  with no availability badge the scraper recognizes, so the listing persists
+ *  `unknown` — withholding a recommendation from an on-model, in-budget, in-radius
+ *  car purely because its availability could not be READ would silently kill the
+ *  recommendation engine on those platforms. The score >= 0.6 + exact/near gates
+ *  still bound the set; `ordered`/`sold` stay excluded; and an `unknown`-availability
+ *  recommendation is surfaced with an "availability unconfirmed" caveat (the data
+ *  layer keeps the `unknown` distinction, so the UI never claims a confirmed stock). */
 const RECOMMENDED_MATCH_STATUSES = new Set(["exact", "near"]);
-const RECOMMENDED_INVENTORY_STATUSES = new Set(["in_stock", "in_transit"]);
+const RECOMMENDED_INVENTORY_STATUSES = new Set(["in_stock", "in_transit", "unknown"]);
 const RECOMMENDED_MIN_SCORE = 0.6;
 
 /**
@@ -34,7 +42,7 @@ const RECOMMENDED_MIN_SCORE = 0.6;
  * renders an em-dash). `inventory_status` / `dealer_id` are NOT NULL columns.
  * `match_status` is recomputed at rank time, never persisted.
  * `recommended` is the SINGLE source of the three-condition predicate:
- * true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
+ * true ⇔ match exact/near AND inventory in_stock/in_transit/unknown AND score >= 0.6.
  */
 export interface RankedCandidate {
   listing_id: string;

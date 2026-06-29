@@ -81,9 +81,10 @@ export const RankedCandidateSchema = z
     score: z.number(),
     reasons: z.array(z.string()),
     match_status: z.enum(["exact", "near", "mismatch", "unknown"]),
-    /** true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
-     *  The SINGLE source of the recommended predicate (set by the ranker; never
-     *  re-derived downstream). */
+    /** true ⇔ match exact/near AND inventory in_stock/in_transit/unknown AND
+     *  score >= 0.6. The SINGLE source of the recommended predicate (set by the
+     *  ranker; never re-derived downstream). An `unknown`-availability recommend
+     *  is surfaced with an "availability unconfirmed" caveat. */
     recommended: z.boolean(),
   })
   .strict();
@@ -121,7 +122,7 @@ export const InventoryCompareOutputSchema = z
     /** Candidate count (post hard-filter). */
     totalListings: z.number().int(),
     /** Candidates satisfying the recommended predicate (match exact/near AND
-     *  inventory in_stock/in_transit AND score >= 0.6). */
+     *  inventory in_stock/in_transit/unknown AND score >= 0.6). */
     recommendedCount: z.number().int(),
     candidates: z.array(RankedCandidateSchema),
     /** Color config cross-check advisory — loose preferred colors the EXACT
