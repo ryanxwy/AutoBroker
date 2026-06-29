@@ -1230,6 +1230,12 @@ export interface ScanDealersArgs {
 export interface DealerCaptureOutcome {
   dealerId: string;
   status: "scanned" | "blocked" | "failed";
+  /** RENDER-QUALITY signal (scanned outcomes only): the SRP resolved and was
+   *  not blocked, yet it yielded zero cards AND a sub-threshold snapshot — a
+   *  blank/car-less render (host thrash), distinct from a genuine "0 vehicles
+   *  found" SRP whose chrome renders >= FILTERED_RENDER_MIN_CHARS. Always
+   *  false for blocked/failed outcomes. */
+  renderedEmpty: boolean;
   /** The SRP URL actually captured (canonical filtered URL on a ladder hit),
    *  or the dealer website for pre-SRP failures. */
   sourceUrl: string;
@@ -1265,6 +1271,7 @@ function failedOutcome(dealer: ScanTargetRow, reason: string, message: string): 
     sourceUrl: dealer.website,
     rung: null,
     errorJson: JSON.stringify({ reason, message }),
+    renderedEmpty: false,
     snapshotText: null,
     cardHrefs: [],
     vdpFacts: [],
@@ -1278,6 +1285,7 @@ function blockedOutcome(dealerId: string, url: string, marker: string | null): D
     sourceUrl: url,
     rung: "blocked",
     errorJson: JSON.stringify({ reason: "blocked", marker }),
+    renderedEmpty: false,
     snapshotText: null,
     cardHrefs: [],
     vdpFacts: [],
@@ -1402,6 +1410,10 @@ export async function captureOneDealer(deps: {
       sourceUrl: ladder.finalUrl,
       rung: ladder.rung,
       errorJson: null,
+      // Render-quality signal: no cards AND a sub-threshold snapshot is a blank
+      // render (host thrash), NOT a genuine empty SRP (whose chrome clears the
+      // same threshold). Reuses the calibrated FILTERED_RENDER_MIN_CHARS.
+      renderedEmpty: cards.length === 0 && snapshotText.length < FILTERED_RENDER_MIN_CHARS,
       snapshotText,
       cardHrefs: cards.map((c) => c.href),
       vdpFacts,
@@ -1790,6 +1802,10 @@ const InventoryScanStateSchema = z.object({
   rungUrlTemplateHits: z.number().int(),
   rungDomFilterHits: z.number().int(),
   rungUnfilteredFallbacks: z.number().int(),
+  /** Scanned-but-blank dealers: SRP resolved un-blocked yet rendered 0 cards
+   *  and a sub-threshold snapshot (host thrash), distinct from a real 0-stock
+   *  SRP. The marker rides the source row's error_json at last_status='scanned'. */
+  renderedEmptyDealers: z.number().int(),
   listingsFound: z.number().int(),
   rowsInvalidDropped: z.number().int(),
   vinProvenanceDropped: z.number().int(),
@@ -1827,6 +1843,9 @@ const InventoryScanOutputSchema = z.discriminatedUnion("outcome", [
     dealersScanned: z.number().int(),
     dealersBlocked: z.number().int(),
     dealersFailed: z.number().int(),
+    /** Scanned dealers whose SRP rendered blank (0 cards + sub-threshold
+     *  snapshot) — host-thrash, distinct from a real 0-stock SRP. */
+    dealersRenderedEmpty: z.number().int(),
     /** Pre-review skips (non-US / no-website / malformed / valve overflow). */
     dealersSkipped: z.number().int(),
     listingsFound: z.number().int(),
@@ -1960,6 +1979,7 @@ const resolveProfileStep = createStep({
       rungUrlTemplateHits: 0,
       rungDomFilterHits: 0,
       rungUnfilteredFallbacks: 0,
+      renderedEmptyDealers: 0,
       listingsFound: 0,
       rowsInvalidDropped: 0,
       vinProvenanceDropped: 0,
@@ -2081,6 +2101,7 @@ const scanDealersStep = createStep({
     let rungUrlTemplateHits = 0;
     let rungDomFilterHits = 0;
     let rungUnfilteredFallbacks = 0;
+    let renderedEmptyDealers = 0;
     const captured = outcomes.map((o) => {
       if (o.status === "scanned" && o.snapshotText !== null) {
         captures.set(o.dealerId, {
@@ -2092,12 +2113,17 @@ const scanDealersStep = createStep({
       if (o.rung === "i_hit") rungUrlTemplateHits += 1;
       else if (o.rung === "ii_hit") rungDomFilterHits += 1;
       else if (o.rung === "iii_fallback") rungUnfilteredFallbacks += 1;
+      const renderedEmpty = o.status === "scanned" && o.renderedEmpty;
+      if (renderedEmpty) renderedEmptyDealers += 1;
       return {
         dealer_id: o.dealerId,
         status: o.status,
         source_url: o.sourceUrl,
         rung: o.rung,
-        error_json: o.errorJson,
+        // Persist the render-quality marker on the scanned source row's
+        // error_json (the MARK_SOURCE writer keeps last_status='scanned'), so a
+        // host-thrash blank is distinguishable from a genuine 0-stock dealer.
+        error_json: renderedEmpty ? JSON.stringify({ rendered_empty: true }) : o.errorJson,
       };
     });
     scanCarryByRun.set(runId, { captures, classified: new Map() });
@@ -2109,6 +2135,7 @@ const scanDealersStep = createStep({
       rungUrlTemplateHits,
       rungDomFilterHits,
       rungUnfilteredFallbacks,
+      renderedEmptyDealers,
     };
   },
 });
@@ -2417,6 +2444,9 @@ const persistConfirmStep = createStep({
         (persist.sourcesBlocked > 0 ? `, ${persist.sourcesBlocked} blocked` : "") +
         (persist.sourcesFailed > 0 ? `, ${persist.sourcesFailed} failed` : "") +
         (skippedCount > 0 ? `; ${skippedCount} dealer(s) skipped` : "") +
+        (state.renderedEmptyDealers > 0
+          ? `; ${state.renderedEmptyDealers} dealer(s) rendered blank (host load?)`
+          : "") +
         `. Found ${state.listingsFound} listing(s), ${persist.listingsWritten} written/refreshed` +
         (persist.vinPromoted > 0 ? `, ${persist.vinPromoted} VIN-promoted` : "") +
         (persist.staleSuperseded > 0 ? `, ${persist.staleSuperseded} stale retired` : "") +
@@ -2445,6 +2475,7 @@ const persistConfirmStep = createStep({
         dealersScanned: persist.sourcesScanned,
         dealersBlocked: persist.sourcesBlocked,
         dealersFailed: persist.sourcesFailed,
+        dealersRenderedEmpty: state.renderedEmptyDealers,
         dealersSkipped: skippedCount,
         listingsFound: state.listingsFound,
         listingsWritten: persist.listingsWritten,

@@ -249,3 +249,52 @@ describe("dataquality — per-dealer breakdown (GROUP BY dealer_id)", () => {
     expect(d1.addons_present).toBe(1);
   });
 });
+
+/**
+ * Render-quality signal — the "rendered_empty" marker rides the SOURCE row
+ * (dealer_inventory_sources.error_json) at last_status='scanned', NOT the
+ * listings table, so a host-thrash blank SRP is distinguishable from a genuine
+ * 0-stock dealer. Replicates the source-row aggregate added to the
+ * /__e2e/dataquality route. NOTE: this SQL is mirrored in
+ * apps/ui/e2e/serve-live.mjs — update both.
+ */
+function runRenderEmpty() {
+  const r = db.$client
+    .prepare(
+      `SELECT COUNT(*) AS scanned_sources,
+         SUM(CASE WHEN error_json LIKE '%rendered_empty%' THEN 1 ELSE 0 END) AS rendered_empty
+       FROM dealer_inventory_sources WHERE last_status='scanned'`,
+    )
+    .get() as Record<string, number>;
+  return {
+    scanned_sources: r["scanned_sources"] ?? 0,
+    rendered_empty_count: r["rendered_empty"] ?? 0,
+  };
+}
+
+describe("dataquality — rendered_empty source marker", () => {
+  // Two scanned source rows: one carries the {"rendered_empty":true} marker in
+  // error_json (host-thrash blank render), the other is a clean scan (genuine
+  // listings / real 0-stock). Both stay last_status='scanned'.
+  beforeAll(() => {
+    const NOW = Date.now();
+    const ins = db.$client.prepare(
+      `INSERT INTO dealer_inventory_sources
+         (source_id, search_profile_id, dealer_id, source_type, source_url,
+          normalized_url, discovery_method, first_seen_at, last_status, error_json)
+       VALUES (?, 'p1', ?, 'srp', ?, ?, 'scan', ?, 'scanned', ?)`,
+    );
+    ins.run("s-blank", "dr1", "https://dr1.example/new", "https://dr1.example/new", NOW, '{"rendered_empty":true}');
+    ins.run("s-clean", "dr2", "https://dr2.example/new", "https://dr2.example/new", NOW, null);
+  });
+
+  afterAll(() => {
+    db.$client.prepare("DELETE FROM dealer_inventory_sources WHERE source_id IN ('s-blank','s-clean')").run();
+  });
+
+  it("counts exactly the scanned source carrying the rendered_empty marker", () => {
+    const r = runRenderEmpty();
+    expect(r.scanned_sources).toBe(2);
+    expect(r.rendered_empty_count).toBe(1);
+  });
+});

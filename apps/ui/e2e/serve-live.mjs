@@ -766,11 +766,28 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
           markup_present: d.markup_present ?? 0,
           addons_present: d.addons_present ?? 0,
         }));
+      // RENDER-QUALITY signal: the marker rides the SOURCE row (not the listings
+      // table) at last_status='scanned' — error_json carries {"rendered_empty":true}
+      // for a host-thrash blank SRP (0 cards + sub-threshold snapshot), distinct
+      // from a real 0-stock dealer. NOTE: this SQL is mirrored in
+      // packages/tools/src/inventoryDataquality.test.ts — update both.
+      const se = profileId
+        ? "WHERE last_status='scanned' AND search_profile_id = ?"
+        : "WHERE last_status='scanned'";
+      const reInfo = adb.$client
+        .prepare(
+          `SELECT COUNT(*) AS scanned_sources,
+             SUM(CASE WHEN error_json LIKE '%rendered_empty%' THEN 1 ELSE 0 END) AS rendered_empty
+           FROM dealer_inventory_sources ${se}`,
+        )
+        .get(...(profileId ? [profileId] : []));
       reply.code(200);
       return {
         skill,
         n,
         metric: "price_coverage",
+        rendered_empty_count: reInfo.rendered_empty ?? 0,
+        scanned_sources: reInfo.scanned_sources ?? 0,
         covered,
         coverage: n > 0 ? round2(covered / n) : 0,
         priced: r.priced ?? 0,
