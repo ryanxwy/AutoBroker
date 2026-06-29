@@ -34,13 +34,33 @@ to, stored in, and potentially trained on inside the PRC.
 If you do not accept this, do not use the default. Instead set one of the other
 two first-class providers:
 
-- `ANTHROPIC_API_KEY` — route LLM calls to Anthropic (Claude).
+- `ANTHROPIC_API_KEY` — route LLM calls to Anthropic (Claude) via the API key
+  (per-token billed).
 - `OPENAI_API_KEY` — route LLM calls to OpenAI.
 
 All three providers (DeepSeek, Anthropic, OpenAI) are first-class and
 switchable. Provider selection is policy-driven (`useCase → ModelAlias`); you do
 not edit workflow code to change providers — set the corresponding key and the
 provider registry routes there.
+
+**Switching at runtime — the chat-rail AgentBar.** Above the chat input, a
+four-box selector (Provider · Method · Model · Thinking effort) lets you pick the
+lane per run; it only enables combinations whose credential is present. DeepSeek
+runs on its API key; **Claude runs on either an API key OR a Pro/Max
+subscription (OAuth)** — see below. Until you pick explicitly, the server's
+default lane is used, so existing behavior is unchanged.
+
+**Claude on your subscription (OAuth, lane B).** Set `CLAUDE_CODE_OAUTH_TOKEN`
+(from `claude setup-token`) to run LLM calls on your Claude **Pro/Max
+subscription** instead of per-token billing, via Anthropic's official Agent SDK.
+This is for **personal, single-user use of your own subscription** (Anthropic's
+"ordinary individual usage of Claude Code and the Agent SDK") — AutoBroker is
+local-first and you bring your own token; it does **not** route others'
+subscription credentials. A multi-user deployment must use `ANTHROPIC_API_KEY`
+instead. Subscription usage is flat-rate (the cost ledger records it as
+subscription, not a per-call dollar amount). Privacy note: this routes your Gmail
+content / dealer PII to Anthropic (US) rather than the PRC — generally a stronger
+posture than the DeepSeek default.
 
 ---
 
