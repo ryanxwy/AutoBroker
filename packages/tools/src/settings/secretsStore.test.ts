@@ -8,7 +8,7 @@
  * NEVER ~/.autobroker* — every case runs in a fresh os.tmpdir() subdir.
  */
 
-import { mkdtempSync, readFileSync, rmSync, statSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   clearKey,
   getKeyPresence,
+  loadDotEnvKeys,
   loadSecretsIntoEnv,
   setKey,
   UnknownSecretKeyError,
@@ -27,12 +28,13 @@ const DATA_DIR = "AUTOBROKER_DATA_DIR";
 let tmpDir: string;
 let originalDataDir: string | undefined;
 
-// The four provider env vars + a system var we assert is never touched.
+// The five provider env vars + a system var we assert is never touched.
 const ALL_VARS = [
   "DEEPSEEK_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_PLACES_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
 ] as const;
 const SYSTEM_VAR = "MASTRA_TELEMETRY_DISABLED";
 
@@ -103,6 +105,7 @@ describe("getKeyPresence", () => {
       anthropic: { present: false },
       openai: { present: false },
       google_places: { present: false },
+      claude_oauth: { present: false },
     });
 
     setKey("anthropic", "secret-value-must-not-leak");
@@ -162,5 +165,38 @@ describe("loadSecretsIntoEnv", () => {
     setKey("deepseek", "d1");
     loadSecretsIntoEnv();
     expect(process.env[SYSTEM_VAR]).toBeUndefined();
+  });
+});
+
+describe("claude_oauth (presence-only key)", () => {
+  it("SecretKeyId includes claude_oauth and KEY_ENV_VARS maps it to CLAUDE_CODE_OAUTH_TOKEN", () => {
+    // setKey accepts claude_oauth (proves it's in the allow-list / KEY_ENV_VARS).
+    setKey("claude_oauth", "tok-test");
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("tok-test");
+  });
+
+  it("getKeyPresence reports claude_oauth present when set via setKey", () => {
+    expect(getKeyPresence().claude_oauth).toEqual({ present: false });
+    setKey("claude_oauth", "tok-abc");
+    expect(getKeyPresence().claude_oauth).toEqual({ present: true });
+    // presence object must not leak the value.
+    expect(JSON.stringify(getKeyPresence())).not.toContain("tok-abc");
+  });
+
+  it("getKeyPresence reports claude_oauth present when supplied via env only", () => {
+    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = "env-supplied-tok";
+    expect(getKeyPresence().claude_oauth).toEqual({ present: true });
+  });
+
+  it("loadDotEnvKeys loads CLAUDE_CODE_OAUTH_TOKEN from a fixture .env (no-clobber)", () => {
+    const envFile = join(tmpDir, ".env.claude");
+    writeFileSync(envFile, "CLAUDE_CODE_OAUTH_TOKEN=tok-from-dotenv\n");
+    loadDotEnvKeys(envFile);
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("tok-from-dotenv");
+
+    // NO-CLOBBER: ambient wins.
+    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = "ambient-wins";
+    loadDotEnvKeys(envFile);
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("ambient-wins");
   });
 });

@@ -65,4 +65,28 @@ describe("testKey (stubbed probe — no real external call)", () => {
     expect(res.ok).toBe(false);
     expect(probeLlm).not.toHaveBeenCalled();
   });
+
+  it("claude_oauth: returns a presence-only ok:true result WITHOUT calling probeLlm or probeGeocode", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const probeLlm = vi.fn();
+    const probeGeocode = vi.fn();
+    __setSecretsProbeForTests({ probeLlm, probeGeocode });
+
+    const res = await testKey("claude_oauth", "tok-oauth-value");
+    expect(res.ok).toBe(true);
+    // The presence detail must not leak the token value.
+    expect(res.detail).not.toContain("tok-oauth-value");
+    // No network probes invoked.
+    expect(probeLlm).not.toHaveBeenCalled();
+    expect(probeGeocode).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("claude_oauth with empty candidate → failed probe (same as other ids)", async () => {
+    const probeLlm = vi.fn();
+    __setSecretsProbeForTests({ probeLlm });
+    const res = await testKey("claude_oauth", "");
+    expect(res.ok).toBe(false);
+    expect(probeLlm).not.toHaveBeenCalled();
+  });
 });

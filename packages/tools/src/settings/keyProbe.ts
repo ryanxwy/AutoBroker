@@ -37,10 +37,14 @@ export interface KeyProbeResult {
   readonly detail: string;
 }
 
+/** LLM provider ids that use a network probe (excludes google_places and
+ *  claude_oauth, which have their own non-network paths). */
+type LlmProbeId = Exclude<SecretKeyId, "google_places" | "claude_oauth">;
+
 /** The two real probes, behind an injectable seam. */
 export interface SecretsProbeDeps {
   /** Validate an LLM provider key with a cheap authenticated read. */
-  probeLlm: (id: Exclude<SecretKeyId, "google_places">, candidateKey: string) => Promise<KeyProbeResult>;
+  probeLlm: (id: LlmProbeId, candidateKey: string) => Promise<KeyProbeResult>;
   /** Validate the geocoding key with one trial geocode. */
   probeGeocode: (candidateKey: string) => Promise<KeyProbeResult>;
 }
@@ -48,7 +52,7 @@ export interface SecretsProbeDeps {
 /** The model-list endpoint + auth shape per LLM provider (a GET, no body, no
  *  mutation). Base URLs match the AI-SDK provider defaults. */
 const LLM_PROBE_ENDPOINTS: Readonly<
-  Record<Exclude<SecretKeyId, "google_places">, { url: string; headers: (key: string) => Record<string, string> }>
+  Record<LlmProbeId, { url: string; headers: (key: string) => Record<string, string> }>
 > = {
   deepseek: {
     // OpenAI-compatible API — Bearer auth, GET /models.
@@ -71,7 +75,7 @@ const GEOCODE_PROBE_QUERY = "1600 Amphitheatre Parkway, Mountain View, CA";
 
 /** Real LLM probe: one authenticated GET to the model-list endpoint. */
 async function realProbeLlm(
-  id: Exclude<SecretKeyId, "google_places">,
+  id: LlmProbeId,
   candidateKey: string,
 ): Promise<KeyProbeResult> {
   const ep = LLM_PROBE_ENDPOINTS[id];
@@ -150,5 +154,10 @@ export async function testKey(id: string, candidateKey: string): Promise<KeyProb
   if (id === "google_places") {
     return deps().probeGeocode(candidateKey);
   }
-  return deps().probeLlm(id as Exclude<SecretKeyId, "google_places">, candidateKey);
+  if (id === "claude_oauth") {
+    // OAuth token: presence-only — probing Anthropic /v1/models with an OAuth
+    // token (not an x-api-key) would false-negative a valid token.
+    return { ok: true, detail: "claude_oauth present (OAuth token; not network-probed)" };
+  }
+  return deps().probeLlm(id as LlmProbeId, candidateKey);
 }

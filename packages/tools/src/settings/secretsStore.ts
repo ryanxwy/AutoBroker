@@ -31,15 +31,16 @@ import { dirname, join } from "node:path";
 import { resolveDataDir } from "../db.js";
 
 /** The stable id for each managed key (the wire id used by the routes). */
-export type SecretKeyId = "deepseek" | "anthropic" | "openai" | "google_places";
+export type SecretKeyId = "deepseek" | "anthropic" | "openai" | "google_places" | "claude_oauth";
 
 /** id -> the process.env var name it backs. This map IS the allow-list: an id
- *  not present here is refused, and only these four env vars are ever touched. */
+ *  not present here is refused, and only these env vars are ever touched. */
 const KEY_ENV_VARS: Readonly<Record<SecretKeyId, string>> = {
   deepseek: "DEEPSEEK_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   google_places: "GOOGLE_PLACES_API_KEY",
+  claude_oauth: "CLAUDE_CODE_OAUTH_TOKEN",
 };
 
 /** The four ids, in a stable order (presence projection + iteration). */

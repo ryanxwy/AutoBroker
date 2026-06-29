@@ -24,12 +24,13 @@ let tmpDir: string;
 let envFile: string;
 let originalDataDir: string | undefined;
 
-// The four provider env vars + the non-allow-listed vars we assert stay untouched.
+// The five provider env vars + the non-allow-listed vars we assert stay untouched.
 const KEY_VARS = [
   "DEEPSEEK_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_PLACES_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
 ] as const;
 const NON_KEY_VARS = ["TELEGRAM_BOT_TOKEN", "OBSIDIAN_VAULT", "AUTOBROKER_DATA_DIR_X"] as const;
 
@@ -169,5 +170,17 @@ describe("loadDotEnvKeys", () => {
     // Passing a directory path (unreadable as a file content in a useful way) must
     // not throw — fail safe to "nothing to load".
     expect(() => loadDotEnvKeys(tmpDir)).not.toThrow();
+  });
+
+  it("loads CLAUDE_CODE_OAUTH_TOKEN from .env into process.env (no-clobber)", () => {
+    writeFileSync(envFile, "CLAUDE_CODE_OAUTH_TOKEN=tok-from-dotenv\n");
+    loadDotEnvKeys(envFile);
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("tok-from-dotenv");
+
+    // NO-CLOBBER: an existing value wins.
+    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = "ambient-wins";
+    writeFileSync(envFile, "CLAUDE_CODE_OAUTH_TOKEN=tok-loses\n");
+    loadDotEnvKeys(envFile);
+    expect(process.env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("ambient-wins");
   });
 });
