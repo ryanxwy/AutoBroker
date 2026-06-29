@@ -6,16 +6,18 @@
  */
 
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { click, render } from "../test/render.js";
 import {
   AgentBar,
   agentPayload,
   laneOf,
+  loadAgentSelection,
   methodAvail,
   providerAvail,
   reconcile,
+  saveAgentSelection,
   toAgentSelection,
   type AgentPresence,
   type AgentUiSelection,
@@ -127,6 +129,42 @@ describe("AgentBar — dirty-omit", () => {
       model: "claude-opus-4-8",
       effort: "high",
     });
+  });
+});
+
+describe("AgentBar — loadAgentSelection dirty seed (e2e-precedence guard)", () => {
+  // Load-bearing: if a refactor defaulted dirty:true on a FRESH browser, the
+  // agent payload would shadow the env default and silently break
+  // `/e2e-loop --provider claude` (it routes via AUTOBROKER_AGENT_PROVIDER only
+  // when the UI omits `agent`). This freezes the empty→false / saved→true seed.
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("a fresh browser (empty localStorage) is NOT dirty → the default selection", () => {
+    const loaded = loadAgentSelection();
+    expect(loaded.dirty).toBe(false);
+    expect(loaded.selection).toEqual(DEFAULT_AGENT_SELECTION);
+  });
+
+  it("after a saved selection exists, it loads dirty:true with that selection", () => {
+    const saved: AgentUiSelection = {
+      provider: "claude",
+      method: "oauth",
+      model: "claude-opus-4-8",
+      effort: "high",
+    };
+    saveAgentSelection(saved);
+    const loaded = loadAgentSelection();
+    expect(loaded.dirty).toBe(true);
+    expect(loaded.selection).toEqual(saved);
+  });
+
+  it("a corrupt localStorage value degrades to not-dirty + the default", () => {
+    window.localStorage.setItem("autobroker:agent-selection", "{not json");
+    const loaded = loadAgentSelection();
+    expect(loaded.dirty).toBe(false);
+    expect(loaded.selection).toEqual(DEFAULT_AGENT_SELECTION);
   });
 });
 

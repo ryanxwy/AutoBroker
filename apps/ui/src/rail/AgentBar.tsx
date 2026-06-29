@@ -18,9 +18,9 @@
  * env-default / policy default wins. The pure helpers (reconcile / toAgentSelection
  * / agentPayload) own that contract; this component is a thin renderer.
  *
- * EFFORT is functional-but-inert in v1: it persists + rides the payload but does
- * not change a model call (every journey useCase pins its own determinism). The
- * caption says so honestly — it never implies it changes structured extraction.
+ * EFFORT is functional-but-inert in v1: it persists + rides the payload but is
+ * consumed by NO model/workflow/server call yet. The caption says so honestly —
+ * "carried with your run; effort tuning isn't wired into model calls yet".
  *
  * Dependency wall: app/ui layer. Reuses the Popover primitive + the wire types;
  * no UI framework, no new server endpoint.
@@ -373,7 +373,7 @@ export function AgentBar({ selection, presence, onChange }: AgentBarProps): JSX.
       </div>
 
       <p className="agent-bar__caption" data-testid="agent-effort-caption">
-        Effort applies to conversational/prose turns; structured extraction stays deterministic.
+        Carried with your run; effort tuning isn&apos;t wired into model calls yet.
       </p>
     </div>
   );
