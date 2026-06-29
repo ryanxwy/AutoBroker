@@ -10,6 +10,7 @@
  * OpenAI are switchable by changing the alias string. No privacy gate.
  */
 
+import { ModelAliasSchema } from "@autobroker/core";
 import type { CapabilityFlags, ModelAlias, Provider } from "@autobroker/core";
 
 /**
@@ -334,11 +335,40 @@ const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
   },
 };
 
-export interface PolicyResolution {
-  useCase: UseCase;
+/** Alias-level resolution without a useCase (returned by policyForAlias). */
+export interface AliasResolution {
   alias: ModelAlias;
   provider: Provider;
   capabilities: CapabilityFlags;
+}
+
+export interface PolicyResolution extends AliasResolution {
+  useCase: UseCase;
+}
+
+/**
+ * Resolve a ModelAlias to its provider + capabilities.
+ *
+ * Fail-LOUD: a missing capability row throws rather than silently down-routing.
+ */
+export function policyForAlias(alias: ModelAlias): AliasResolution {
+  const capabilities = ALIAS_CAPABILITIES[alias];
+  if (capabilities === undefined) {
+    throw new Error(
+      `policy: no CapabilityFlags registered for alias "${alias}"`,
+    );
+  }
+  const provider = alias.split(".")[0] as Provider;
+  return { alias, provider, capabilities };
+}
+
+/**
+ * Swap the provider prefix of a ModelAlias, keeping the tier segment.
+ * withProvider("deepseek.chat", "anthropic") === "anthropic.chat"
+ */
+export function withProvider(alias: ModelAlias, provider: Provider): ModelAlias {
+  const tier = alias.split(".")[1];
+  return ModelAliasSchema.parse(`${provider}.${tier}`) as ModelAlias;
 }
 
 /**
@@ -348,14 +378,5 @@ export interface PolicyResolution {
  * silently down-routing to a default. (No silent fallbacks.)
  */
 export function policy(useCase: UseCase): PolicyResolution {
-  const alias = USE_CASE_ALIAS[useCase];
-  const capabilities = ALIAS_CAPABILITIES[alias];
-  if (capabilities === undefined) {
-    // TODO: replace with a typed PolicyError once the error taxonomy exists.
-    throw new Error(
-      `policy: no CapabilityFlags registered for alias "${alias}" (useCase "${useCase}")`,
-    );
-  }
-  const provider = alias.split(".")[0] as Provider;
-  return { useCase, alias, provider, capabilities };
+  return { useCase, ...policyForAlias(USE_CASE_ALIAS[useCase]) };
 }

@@ -1,5 +1,6 @@
 /**
- * policy() routing — the four shared malformed-class recovery hops.
+ * policy() routing — the four shared malformed-class recovery hops, plus
+ * policyForAlias() and withProvider() helper coverage.
  *
  * Each *_retry useCase must route to the `deepseek.strong` alias on the deepseek
  * provider: the recoverEmitWithRetry helper asserts the provider is deepseek
@@ -9,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { policy } from "./policy.js";
+import { policy, policyForAlias, withProvider } from "./policy.js";
 import type { UseCase } from "./policy.js";
 
 const RETRY_USE_CASES: UseCase[] = [
@@ -33,5 +34,55 @@ describe("policy() — malformed-class recovery routes", () => {
     const resolved = policy("dealer_reply_extract_retry");
     expect(resolved.alias).toBe("deepseek.strong");
     expect(resolved.provider).toBe("deepseek");
+  });
+});
+
+describe("policyForAlias()", () => {
+  it("resolves anthropic.chat → provider anthropic + supportsOutputObjectWithTools true", () => {
+    const res = policyForAlias("anthropic.chat");
+    expect(res.provider).toBe("anthropic");
+    expect(res.alias).toBe("anthropic.chat");
+    expect(res.capabilities.supportsOutputObjectWithTools).toBe(true);
+  });
+
+  it("resolves deepseek.chat → supportsOutputObjectWithTools false", () => {
+    const res = policyForAlias("deepseek.chat");
+    expect(res.provider).toBe("deepseek");
+    expect(res.capabilities.supportsOutputObjectWithTools).toBe(false);
+  });
+
+  it("throws loudly on an alias with no capabilities row", () => {
+    // deepseek.reasoner is a valid ModelAlias shape but has no ALIAS_CAPABILITIES entry
+    expect(() => policyForAlias("deepseek.reasoner" as Parameters<typeof policyForAlias>[0])).toThrow(
+      /no CapabilityFlags registered/,
+    );
+  });
+});
+
+describe("withProvider()", () => {
+  it('withProvider("deepseek.chat", "anthropic") === "anthropic.chat"', () => {
+    expect(withProvider("deepseek.chat", "anthropic")).toBe("anthropic.chat");
+  });
+
+  it('withProvider("deepseek.strong", "anthropic") === "anthropic.strong"', () => {
+    expect(withProvider("deepseek.strong", "anthropic")).toBe("anthropic.strong");
+  });
+});
+
+describe("policy() still returns correct resolution after refactor", () => {
+  it("cross_provider_smoke routes to anthropic.chat with supportsOutputObjectWithTools true", () => {
+    const res = policy("cross_provider_smoke");
+    expect(res.useCase).toBe("cross_provider_smoke");
+    expect(res.alias).toBe("anthropic.chat");
+    expect(res.provider).toBe("anthropic");
+    expect(res.capabilities.supportsOutputObjectWithTools).toBe(true);
+  });
+
+  it("dealer_reply_extract routes to deepseek.chat with supportsOutputObjectWithTools false", () => {
+    const res = policy("dealer_reply_extract");
+    expect(res.useCase).toBe("dealer_reply_extract");
+    expect(res.alias).toBe("deepseek.chat");
+    expect(res.provider).toBe("deepseek");
+    expect(res.capabilities.supportsOutputObjectWithTools).toBe(false);
   });
 });
