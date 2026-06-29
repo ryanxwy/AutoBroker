@@ -9,7 +9,7 @@
  * framework below the app layer.
  */
 
-import { SkillRunStatusSchema, type AgentSelection } from "@autobroker/core";
+import { AgentSelectionSchema, SkillRunStatusSchema, type AgentSelection } from "@autobroker/core";
 import { z } from "zod";
 
 /** The normalized, validated provider-selection payload (provider deepseek |
@@ -689,6 +689,11 @@ export const KeyPresenceResponseSchema = z.object({
   google_places: z.object({ present: z.boolean() }),
   claude_oauth: z.object({ present: z.boolean() }),
   gmail: z.object({ connected: z.boolean() }),
+  /** The server's EFFECTIVE default agent selection (from AUTOBROKER_AGENT_PROVIDER),
+   *  or null when unset. The AgentBar reflects this so its boxes show what will
+   *  actually run (e.g. Claude under `/e2e-loop --provider claude`) instead of the
+   *  hardcoded client default. Display-only — never marks the bar dirty. */
+  agentDefault: AgentSelectionSchema.nullable().default(null),
 });
 export type KeyPresenceResponse = z.infer<typeof KeyPresenceResponseSchema>;
 

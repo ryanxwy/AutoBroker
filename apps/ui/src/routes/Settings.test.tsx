@@ -27,6 +27,7 @@ function presence(deepseek: boolean): AsyncState<KeyPresenceResponse> & { refetc
       google_places: { present: false },
       claude_oauth: { present: false },
       gmail: { connected: false },
+      agentDefault: null,
     },
     refetch: () => {},
     refreshing: false,

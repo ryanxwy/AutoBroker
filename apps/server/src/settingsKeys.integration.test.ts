@@ -115,6 +115,9 @@ describe("GET /api/settings/keys", () => {
       google_places: { present: false },
       claude_oauth: { present: false },
       gmail: { connected: false },
+      // The effective default provider selection (AUTOBROKER_AGENT_PROVIDER); unset in
+      // this test → null. The AgentBar reflects it so its boxes show what will run.
+      agentDefault: null,
     });
   });
 });

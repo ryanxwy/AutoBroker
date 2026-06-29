@@ -98,6 +98,7 @@ import {
   DuplicateRunIdError,
   classifySkillFromText,
   clearRunSelection,
+  envDefaultSelection,
   getOrGenerateDealerNegotiationSummary,
   setRunSelection,
   suggestNextSkills,
@@ -1305,7 +1306,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/settings/keys", async () => {
     // gmail is a placeholder (the OAuth connect wiring lands separately); report
     // it not-connected so the UI can render the slot without a real signal yet.
-    return { ...getKeyPresence(), gmail: { connected: false } };
+    // agentDefault = the server's effective default provider selection (from
+    // AUTOBROKER_AGENT_PROVIDER); the AgentBar reflects it so its boxes show what
+    // will actually run, not the hardcoded client default.
+    return { ...getKeyPresence(), gmail: { connected: false }, agentDefault: envDefaultSelection() };
   });
 
   // ---- POST /api/settings/keys — store a key (live env mutation in tools) --

@@ -11,7 +11,7 @@
 #
 # THE PROOF (one ui step): open the Provider box → pick Claude → open the Method
 # box. The final DOM coheres: the bar rendered; the Provider chip now reads
-# Claude; the Model box cascaded to a Claude model (Claude Sonnet 4.6); and the
+# Claude; the Model box cascaded to a Claude model (Sonnet 4.6); and the
 # Method popover shows API key DISABLED while OAuth is enabled.
 #
 # The cross-disable rules + the dirty-omit payload contract are covered
@@ -69,12 +69,12 @@ expect = "text"
 value = "Claude"
 
 # The Model box cascaded to a Claude model (provider switch reconciled the model
-# into Claude's scale).
+# into Claude's scale). Model labels carry no provider prefix → "Sonnet 4.6".
 [[steps.anchors]]
 kind = "dom_state"
 testid = "agent-box-model"
 expect = "text"
-value = "Claude Sonnet 4.6"
+value = "Sonnet 4.6"
 
 # The API-key method is GREYED — Claude is offered on the OAuth-subscription lane
 # only, even with the anthropic key present.

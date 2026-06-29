@@ -19,6 +19,7 @@ import {
   reconcile,
   saveAgentSelection,
   toAgentSelection,
+  uiSelectionFromWire,
   type AgentPresence,
   type AgentUiSelection,
   DEFAULT_AGENT_SELECTION,
@@ -122,6 +123,22 @@ describe("AgentBar — lane + wire mapping", () => {
       effort: "max",
     });
   });
+
+  it("uiSelectionFromWire reflects the server default (anthropic→claude; fills model)", () => {
+    // The env default carries model:null → the helper fills the provider's default.
+    expect(uiSelectionFromWire({ provider: "anthropic", method: "oauth", model: null, effort: "off" })).toEqual({
+      provider: "claude",
+      method: "oauth",
+      model: "claude-sonnet-4-6",
+      effort: "off",
+    });
+    expect(uiSelectionFromWire({ provider: "deepseek", method: "apikey", model: null, effort: "off" })).toEqual({
+      provider: "deepseek",
+      method: "apikey",
+      model: "deepseek-v4-flash",
+      effort: "off",
+    });
+  });
 });
 
 describe("AgentBar — dirty-omit", () => {
@@ -206,7 +223,7 @@ describe("AgentBar — render interaction", () => {
     expect(r.get("agent-box-provider").textContent).toContain("Claude");
     // Method auto-resolved to OAuth; the model cascaded into Claude's scale.
     expect(r.get("agent-box-method").textContent).toContain("OAuth");
-    expect(r.get("agent-box-model").textContent).toContain("Claude Sonnet 4.6");
+    expect(r.get("agent-box-model").textContent).toContain("Sonnet 4.6");
     // Open the Method box → API key is disabled (OAuth-only); OAuth is enabled.
     click(r.get("agent-box-method"));
     expect((r.get("agent-opt-apikey") as HTMLButtonElement).disabled).toBe(true);

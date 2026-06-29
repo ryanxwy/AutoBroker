@@ -73,6 +73,7 @@ import {
   agentPayload,
   loadAgentSelection,
   saveAgentSelection,
+  uiSelectionFromWire,
   type AgentPresence,
   type AgentUiSelection,
 } from "./rail/AgentBar.js";
@@ -233,6 +234,16 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     setAgent({ selection: next, dirty: true });
     saveAgentSelection(next);
   };
+  // Reflect the server's EFFECTIVE default (AUTOBROKER_AGENT_PROVIDER) in the bar
+  // DISPLAY so its boxes show what will actually run (e.g. Claude under
+  // `/e2e-loop --provider claude`) — but only when the user hasn't explicitly
+  // picked, and WITHOUT marking dirty, so the payload stays omitted and the env
+  // default still drives. A real user pick (dirty) always wins.
+  const serverAgentDefault = keyPresence.kind === "ok" ? keyPresence.data.agentDefault : null;
+  useEffect(() => {
+    if (serverAgentDefault === null) return;
+    setAgent((prev) => (prev.dirty ? prev : { selection: uiSelectionFromWire(serverAgentDefault), dirty: false }));
+  }, [serverAgentDefault]);
   // The reconciled, wire-shaped selection for the next run/route — undefined
   // until dirty (the dirty-omit contract).
   const agentRun = agentPayload(agent.selection, agent.dirty, agentPresence);

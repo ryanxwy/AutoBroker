@@ -75,14 +75,16 @@ export const AGENT_METHODS: readonly Opt[] = [
   { id: "oauth", label: "OAuth (subscription)", sub: "Agent SDK · subscription" },
 ];
 
+// Model labels carry NO provider prefix — the Provider box already names it, so
+// the Model box shows just the model (e.g. "v4-flash", "Sonnet 4.6").
 export const AGENT_MODELS: Readonly<Record<AgentProvider, readonly Opt[]>> = {
   deepseek: [
-    { id: "deepseek-v4-flash", label: "DeepSeek v4-flash", sub: "fast · default" },
-    { id: "deepseek-v4-pro", label: "DeepSeek v4-pro", sub: "strong" },
+    { id: "deepseek-v4-flash", label: "v4-flash", sub: "fast · default" },
+    { id: "deepseek-v4-pro", label: "v4-pro", sub: "strong" },
   ],
   claude: [
-    { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", sub: "chat tier" },
-    { id: "claude-opus-4-8", label: "Claude Opus 4.8", sub: "strong tier" },
+    { id: "claude-sonnet-4-6", label: "Sonnet 4.6", sub: "chat tier" },
+    { id: "claude-opus-4-8", label: "Opus 4.8", sub: "strong tier" },
   ],
 };
 
@@ -177,6 +179,19 @@ export function toAgentSelection(sel: AgentUiSelection): AgentSelection {
   const provider = sel.provider === "claude" ? "anthropic" : "deepseek";
   const method = provider === "deepseek" ? "apikey" : sel.method;
   return { provider, method, model: sel.model, effort: sel.effort };
+}
+
+/** Map the server's effective-default wire AgentSelection back to a UI selection
+ *  (anthropic→claude; fill a valid model/effort — reconcile finalizes). Lets the
+ *  bar DISPLAY what the server will actually run (e.g. `/e2e-loop --provider
+ *  claude` → the bar shows Claude) without marking the bar dirty, so the payload
+ *  stays omitted and the env default still drives. */
+export function uiSelectionFromWire(sel: AgentSelection): AgentUiSelection {
+  const provider: AgentProvider = sel.provider === "anthropic" ? "claude" : "deepseek";
+  const method: AgentMethod = sel.method === "oauth" ? "oauth" : "apikey";
+  const model = typeof sel.model === "string" && sel.model.length > 0 ? sel.model : AGENT_MODELS[provider][0]!.id;
+  const effort = VALID_EFFORTS.includes(sel.effort as AgentEffort) ? (sel.effort as AgentEffort) : "off";
+  return { provider, method, model, effort };
 }
 
 /** The dirty-omit contract: the `agent` payload is the reconciled selection ONLY
