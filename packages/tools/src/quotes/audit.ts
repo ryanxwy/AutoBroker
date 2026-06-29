@@ -85,6 +85,23 @@ const ADD_ON_KEYWORDS = [
 ] as const;
 
 const MATH_TOLERANCE_USD = 1.0;
+// The widest plausible UNCAPTURED government-fee residual (a combined "Title &
+// registration" / "tax, title & license" line a dealer bundles into the OTD
+// without itemizing) that the extractor sometimes drops. When sales tax IS
+// present and the ONLY shortfall is a small POSITIVE residual within this band
+// (stated OTD exceeds the itemized sum), the OTD is PLAUSIBLY honest — most often
+// a govt-fee line was simply not captured — so MATH_SANITY stays quiet rather
+// than crying "doesn't reconcile" at a dealer whose math is fine. A residual
+// above this band, or a computed OTD that EXCEEDS the stated OTD (a real error),
+// still fires. Combined title+registration+plate/DMV transfer is typically
+// $200–$800; $1000 is the conservative ceiling. A data-driven reference like
+// STATE_DOC_FEE_CAP, not a tunable.
+//   Tradeoff (accepted): MATH_SANITY is a TRUST signal, not a safety gate, and a
+// FALSE "doesn't reconcile" on an honest dealer is the larger harm (it steers a
+// buyer away from a clean dealer). The cost is that up to ~$1000 of un-itemized
+// OTD money also goes unflagged here; that is bounded and acceptable for a trust
+// advisory — the safety codes (salvage/recall/flood) are separate and untouched.
+const GOV_FEE_RESIDUAL_CAP_USD = 1000;
 const APR_MARKUP_PCT = 1.5;
 const MF_MARKUP_MULTIPLIER = 2.0;
 const DEALER_FEE_OUTLIER_MULTIPLIER = 2.0;
@@ -251,6 +268,16 @@ function checkMathSanity(quote: AuditQuote): AuditFinding | null {
   });
   if (result.status !== "fail") return null;
   const delta = result.delta ?? 0;
+  // delta = computed - stated. A dropped, un-itemized government-fee line makes
+  // computed < stated → delta NEGATIVE → residual (stated - computed) is small +
+  // POSITIVE. Suppress that ONE case only: a plausible uncaptured title/reg/DMV
+  // bucket within the band. A computed-OVER-stated residual (delta > 0 — visible
+  // lines sum to MORE than the dealer's OTD) is NOT an uncaptured fee and still
+  // fires; a shortfall larger than the band (e.g. a dropped tax line) still fires.
+  // (sales_tax is already guaranteed present above, so the big number is accounted
+  // for before we trust a sub-$1000 residual as a fee bucket.)
+  const residual = -delta;
+  if (residual > MATH_TOLERANCE_USD && residual <= GOV_FEE_RESIDUAL_CAP_USD) return null;
   return finding(
     "MATH_SANITY",
     `Quote arithmetic doesn't reconcile: computed OTD $${money2(result.computedOtd ?? 0)} vs stated $${money2(result.statedOtd ?? 0)} (delta $${moneySigned2(delta)}).`,

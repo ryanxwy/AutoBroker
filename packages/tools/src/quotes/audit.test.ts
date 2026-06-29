@@ -169,6 +169,41 @@ describe("MATH_SANITY", () => {
     // …but the incompleteness is still surfaced — the signal is preserved.
     expect(c).toContain("MISSING_BREAKDOWN");
   });
+
+  it("does not fire on a small positive residual matching an uncaptured title/registration bucket", () => {
+    // Honest dealer: 27800 + 499 doc + 2335 tax = 30634, OTD 31184. The $550 gap
+    // is a combined "Title & registration" line the extractor dropped (title/reg/
+    // dmv all null) — the math is correct, so MATH_SANITY must stay quiet.
+    const q = quote({ selling_price: 27800, doc_fee: 499, sales_tax: 2335, otd_total: 31184 });
+    expect(codes(auditQuote(q, [], [], profile()))).not.toContain("MATH_SANITY");
+  });
+
+  it("still fires when the OTD shortfall is too large to be a government-fee bucket", () => {
+    // A $6,915 gap (e.g. a dropped tax line / mis-keyed price) is a real error.
+    const q = quote({ selling_price: 40000, doc_fee: 85, sales_tax: 3000, otd_total: 50000 });
+    expect(codes(auditQuote(q, [], [], profile()))).toContain("MATH_SANITY");
+  });
+
+  it("residual-band boundary: at the $1000 cap suppresses, just over fires", () => {
+    // 30000 + 0 doc + 3000 tax = 33000 computed; residual = otd - 33000.
+    const atCap = quote({ selling_price: 30000, doc_fee: 0, sales_tax: 3000, otd_total: 34000 }); // +1000
+    const overCap = quote({ selling_price: 30000, doc_fee: 0, sales_tax: 3000, otd_total: 34001 }); // +1001
+    expect(codes(auditQuote(atCap, [], [], profile()))).not.toContain("MATH_SANITY");
+    expect(codes(auditQuote(overCap, [], [], profile()))).toContain("MATH_SANITY");
+  });
+
+  it("still fires when visible lines OVER-sum the stated OTD (negative residual not masked)", () => {
+    // 27800 + 499 doc + 2335 tax + 550 reg = 31184 computed > 30634 stated → the
+    // visible lines exceed the OTD, which is NOT an uncaptured fee; keep flagging.
+    const q = quote({
+      selling_price: 27800,
+      doc_fee: 499,
+      sales_tax: 2335,
+      registration_fee: 550,
+      otd_total: 30634,
+    });
+    expect(codes(auditQuote(q, [], [], profile()))).toContain("MATH_SANITY");
+  });
 });
 
 // --------------------------------------------------------------------------- //
