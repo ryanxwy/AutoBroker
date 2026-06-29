@@ -140,6 +140,20 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   rooftop of the searched make is dropped (the H3 sibling-franchise edge, e.g. Genesis at a
   Hyundai store) or two genuinely-distinct rooftops are over-merged. Shipped 2026-06-28
   (`phase2/dealer_geosearch`, `7375aa1`).
+- Lane-B (Claude OAuth) telemetry is now reliable — do NOT re-file the 2026-06-29 gaps:
+  `test_run_records.input_tokens` for lane B is **cache-inclusive** (sums input + cache_creation
+  + cache_read), so it reads the real prompt size (~26k on a large site_scan prompt), NOT a
+  constant ~3; and `AUTOBROKER_RECORD_TRANSCRIPT` **DOES** capture lane-B calls into a sibling
+  `<path>.laneB.jsonl`. Re-flag ONLY if a lane-B row's `input_tokens` is implausibly tiny on a
+  large prompt (a regression of the cache-sum) or the sibling is missing under RECORD_TRANSCRIPT.
+  Shipped 2026-06-29 (`phase0/provider_select`, `1d679d9`).
+- A `inventory_site_scan` **0-yield with `rendered_empty_count>0`** (via `/__e2e/dataquality`)
+  is **host thrash** (the SRPs rendered blank under CPU load), NOT a product bug, NOT a genuine
+  no-stock, and NOT a lane bug — `rendered_empty` is an environment signal, never a fail. Read it
+  before blaming a provider on a browser-skill 0-yield (the 2026-06-29 trap). A 0-yield with
+  `rendered_empty_count==0` means the dealers genuinely had no parseable stock or were `blocked`.
+  Re-flag ONLY a genuine had-and-lost (`vdp_linked>0 AND breakdown_parsed==0`), never a thrash
+  0-yield. Shipped 2026-06-29 (`phase2/inventory_site_scan`, `44c802c`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)

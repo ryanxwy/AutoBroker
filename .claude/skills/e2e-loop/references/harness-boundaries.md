@@ -26,7 +26,7 @@ Wait for this line; **record `dataDir`**.
 | `AUTOBROKER_TEST_AUTO_APPROVE` | **deleted — NEVER set** (CLAUDE.md inv #11; keeps decline path live) |
 | `AUTOBROKER_MODE` | `"test"` — the sole send-control variable; every send resolves fake/local |
 | `DEEPSEEK_API_KEY` | **not pinned** — boot's `loadDotEnvKeys` reads the real key from `.env` (no-clobber); **LLM lane is live** |
-| `AUTOBROKER_RECORD_TRANSCRIPT` | optional; when set, records the SUT's LLM traffic to a JSONL file (the step-3.9 record/replay seam) |
+| `AUTOBROKER_RECORD_TRANSCRIPT` | optional; when set, records the SUT's LLM traffic to a JSONL file (the step-3.9 record/replay seam). Lane A (AI-SDK) → `<path>`; lane B (Claude OAuth) → sibling `<path>.laneB.jsonl` (diagnostic-only, since 2026-06-29) |
 | `AUTOBROKER_REPLAY_TRANSCRIPT` | optional; when set, replays a prior transcript with ZERO provider cost (deterministic; dealer replies are frozen as seeds) |
 | `AUTOBROKER_PORTFOLIO_SCHEDULER` | `"1"` arms the real PortfolioScheduler for step 3.9; pair with `MAX_CONCURRENT_ACTIVE_PROFILES` (set below the active count to prove the cap) and `AUTOBROKER_PORTFOLIO_TICK_MS` (e.g. 2000) |
 
@@ -161,7 +161,8 @@ Test-host only; product wall untouched; a primary verdict signal.
 
 - `skill=inventory_site_scan` → `{ skill, n, metric:"price_coverage", covered,
   coverage, priced, msrp_present, gated, vdp_linked, nullEscape,
-  breakdown_parsed, breakdown_coverage, markup_present, addons_present }` over
+  breakdown_parsed, breakdown_coverage, markup_present, addons_present,
+  rendered_empty_count, scanned_sources }` over
   `inventory_listings WHERE superseded_at IS NULL`. **Hard FAIL iff `n>0 AND
   priced==0 AND msrp_present==0 AND gated==0`** (TOTAL price loss — the 2026-06-22
   miss); `coverage≥0.5` is the healthy target, below-but->0 a soft note (the
@@ -175,6 +176,15 @@ Test-host only; product wall untouched; a primary verdict signal.
   total had-and-lost of the new dimension). `markup_present` / `addons_present` are
   INFORMATIONAL counters ONLY — `markup_present==0`/`addons_present==0` is the healthy
   norm (most listings carry no labeled dealer markup) and is **NEVER** a fail criterion.
+  **Render-quality signal (added 2026-06-29, PIC-20260629-3):** `scanned_sources` =
+  `dealer_inventory_sources` rows at `last_status='scanned'`; `rendered_empty_count` = the
+  subset whose `error_json` carries `{"rendered_empty":true}` — a scanned dealer whose SRP
+  resolved un-blocked yet rendered 0 cards + a sub-threshold snapshot (a **blank/host-thrash
+  render**, distinct from a genuine "0 vehicles found" SRP whose chrome clears the threshold).
+  Use it to read a 0-yield: **`n==0 AND rendered_empty_count>0` = host thrash (browse
+  collapsed), NOT a genuine no-stock and NOT a lane bug** — a single-run, deterministic thrash
+  signal (no cross-provider re-run needed). It is **INFORMATIONAL** (never a fail criterion;
+  thrash is an environment condition, not a product defect) — surface it, don't FAIL on it.
 - `skill=dealer_reply_extract` → `{ skill, n, metric:"otd_coverage", covered,
   coverage, otd_present, extract_succeeded, extract_failed, nullEscape }` over
   `dealer_quotes` + `messages`. PASS iff `otd_present/n ≥ 0.5`; `nullEscape:true`
@@ -203,7 +213,11 @@ scraper); (2) **machine thrash** — over-aggressive concurrency drives the host
 correctly returns `[]` (watch `uptime`; if load ≫ cores, the browser quality has collapsed); (3)
 a genuine extraction-lane bug.
 
-**Isolate before you blame the lane — two cheap, deterministic checks:**
+**Isolate before you blame the lane — three cheap, deterministic checks:**
+0. **Read `/__e2e/dataquality?skill=inventory_site_scan` first (single-run, no re-run).** If the
+   0-yield carries `rendered_empty_count>0`, the SRPs rendered BLANK (host thrash) — confound (2)
+   is confirmed directly, no cross-provider re-run needed. `rendered_empty_count==0` on a 0-yield
+   means the dealers genuinely had no parseable stock (or were `blocked`), not a thrashed browse.
 1. **Cross-provider re-run.** Run the SAME skill with the other provider (`AUTOBROKER_AGENT_PROVIDER`
    flipped, fresh dir). If the other provider ALSO depends on browsing (it does) and it fetches while
    the first didn't, that points to **browsing variance/thrash**, not the lane — same browse code.
@@ -214,12 +228,34 @@ a genuine extraction-lane bug.
    sequentially AND concurrently. If it extracts (e.g. 3/3, 6/6) the extraction lane is FINE and the
    live 0 was upstream browsing. (2026-06-29: Claude OAuth lane B passed both — no extraction bug.)
 
-**Lane-B (Claude OAuth) caveats to know while diagnosing:** lane-B subprocesses **contend** under
-concurrency (~13s sequential → ~90s each at 6-concurrent) and thrash the host, so the browser skills
-auto-cap Claude concurrency low (`laneConcurrency`, env `AUTOBROKER_CLAUDE_*_CONCURRENCY`); the
-`test_run_records.input_tokens` for lane B reads a constant **3** (an SDK usage-reporting artifact,
-NOT empty input); and `AUTOBROKER_RECORD_TRANSCRIPT` does **not** capture lane-B calls. Record any
-real provider-specific gap into `harvest-register.md` for `e2e-evolve`.
+**Lane-B (Claude OAuth) diagnostics (2 telemetry gaps FIXED 2026-06-29, PIC-20260629-1/-2):**
+lane-B subprocesses **contend** under concurrency (~13s sequential → ~90s each at 6-concurrent) and
+thrash the host, so the browser skills auto-cap Claude concurrency low (`laneConcurrency`, env
+`AUTOBROKER_CLAUDE_*_CONCURRENCY`). Two diagnostics that USED to mislead are now reliable:
+- `test_run_records.input_tokens` for lane B is now **cache-inclusive** (sums
+  `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) — it reads the REAL
+  prompt size (e.g. ~26k on a large site_scan prompt), no longer a misleading constant ~3. A
+  near-zero lane-B `input_tokens` now genuinely means a near-empty prompt.
+- `AUTOBROKER_RECORD_TRANSCRIPT=<path>` now **DOES** capture lane-B calls — into a **sibling**
+  file `<path>.laneB.jsonl` (one JSON line per call: `{lane:"claudeOAuth", model, prompt,
+  structuredOutput|text, usage}`; the main `<path>` stays the AI-SDK replay file, never polluted).
+  To inspect "was the woven-card input empty, or did the model return empty?" on a Claude-lane
+  0-yield, read the `.laneB.jsonl` sibling — the controlled-extraction test in check (2) is no
+  longer the ONLY window into the lane-B prompt/response.
+
+Record any real provider-specific gap into `harvest-register.md` for `e2e-evolve`.
+
+**Seasoned advisory probes (2026-06-29 evolve, CONDITIONAL — never force the scenario, ADVISORY only):**
+- **Mixed-thrash per-dealer signal** — when a site_scan draws SOME dealers that render blank and
+  others that yield stock, `rendered_empty_count` must reflect only the blank ones WHILE `n>0` from
+  the healthy dealers (the signal is per-source, not a global flag). Falsifiable: on a partial-thrash
+  scan, `0 < rendered_empty_count < scanned_sources` AND `n>0`. Don't engineer thrash; assert this
+  ONLY if a mixed render naturally occurs.
+- **Small-prompt no-inflation** — the lane-B cache-inclusive `input_tokens` must not INFLATE a
+  genuinely small prompt: a short Claude-lane call (e.g. a one-line router prompt) should read a
+  modest `input_tokens`, not the ~26k system-prompt-cache figure of a big extraction. Falsifiable: a
+  small lane-B prompt's `input_tokens` is well below a large site_scan prompt's. (Guards the cache-sum
+  against over-counting; the deterministic absent-cache test is the floor.)
 
 ---
 
