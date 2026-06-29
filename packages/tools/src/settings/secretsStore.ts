@@ -1,6 +1,7 @@
 /**
- * secretsStore — the at-rest store for the FOUR user-supplied API keys, and the
- * only code that reads/writes the keys file or mutates a provider env var.
+ * secretsStore — the at-rest store for the FIVE managed credentials (four
+ * user-supplied API keys + the claude_oauth subscription token), and the only
+ * code that reads/writes the keys file or mutates a provider env var.
  *
  * WHY HERE: tools is the sole layer permitted to touch the filesystem or hold a
  * secret (the SQLite/external-API invariant). Routes delegate DOWN into this
@@ -13,10 +14,10 @@
  * reboot. setKey/clearKey therefore mutate process.env in addition to the file,
  * and loadSecretsIntoEnv seeds the env once at boot.
  *
- * ALLOW-LIST DISCIPLINE: this store manages EXACTLY the four key vars below and
+ * ALLOW-LIST DISCIPLINE: this store manages EXACTLY the five key vars below and
  * nothing else. It NEVER reads, writes, or deletes a system/operational env var
  * (AUTOBROKER_MODE, AUTOBROKER_DATA_DIR, MASTRA_TELEMETRY_DISABLED, NODE_ENV,
- * PORT, ...). An id outside the four is rejected.
+ * PORT, ...). An id outside these five is rejected.
  *
  * AT-REST: the file is 0600 plaintext JSON. This is a local-first, single-user
  * app on the owner's own machine, and it matches the existing Gmail-token
@@ -43,7 +44,7 @@ const KEY_ENV_VARS: Readonly<Record<SecretKeyId, string>> = {
   claude_oauth: "CLAUDE_CODE_OAUTH_TOKEN",
 };
 
-/** The four ids, in a stable order (presence projection + iteration). */
+/** The five ids, in a stable order (presence projection + iteration). */
 export const SECRET_KEY_IDS = Object.keys(KEY_ENV_VARS) as readonly SecretKeyId[];
 
 /** Per-key presence (NEVER the value). */
@@ -54,7 +55,7 @@ export interface KeyPresence {
 /** The presence projection returned to a read route — presence ONLY. */
 export type KeyPresenceMap = Readonly<Record<SecretKeyId, KeyPresence>>;
 
-/** Reject an id outside the four. Fail LOUD — a typo must not silently no-op. */
+/** Reject an id outside the five. Fail LOUD — a typo must not silently no-op. */
 export class UnknownSecretKeyError extends Error {
   constructor(readonly id: string) {
     super(`unknown secret key id '${id}' (allowed: ${SECRET_KEY_IDS.join(", ")})`);
@@ -78,13 +79,13 @@ function keysFilePath(): string {
   return join(settingsDir(), "keys.json");
 }
 
-/** The on-disk shape: a partial id->value map. Only the four ids are ever
+/** The on-disk shape: a partial id->value map. Only the five ids are ever
  *  written; an unknown id read from a hand-edited file is ignored. */
 type StoredKeys = Partial<Record<SecretKeyId, string>>;
 
 /** Read + parse the keys file, or {} when it is absent / unreadable / malformed
  *  (a corrupt file is treated as no keys — fail safe to "nothing stored", never
- *  throw on boot). Only the four known ids are kept; values must be strings. */
+ *  throw on boot). Only the five known ids are kept; values must be strings. */
 function readStoredKeys(): StoredKeys {
   let raw: string;
   try {
@@ -124,7 +125,7 @@ function writeStoredKeys(keys: StoredKeys): void {
 /**
  * Seed process.env from the persisted keys file. Called ONCE at boot, BEFORE the
  * model registry / first provider call, so the first request sees the stored
- * keys. A missing file is a no-op. Only the four allow-listed env vars are set,
+ * keys. A missing file is a no-op. Only the five allow-listed env vars are set,
  * and only for ids actually present in the file — a key absent from the file is
  * left to whatever the environment already provides (an env-supplied key is not
  * clobbered).
@@ -180,9 +181,10 @@ function parseDotEnvLine(line: string): [string, string] | undefined {
  * so a key written only into a repo-root `.env` works in every lane (server boot
  * AND harness AND CLI) and shows up as "present" in the UI Keys panel.
  *
- * SCOPE: only the FOUR allow-listed provider keys (KEY_ENV_VARS values); every
- * other var in `.env` (operational AUTOBROKER_*, TELEGRAM_*, ...) is IGNORED —
- * this loader never touches a non-key var, matching the store's allow-list.
+ * SCOPE: only the FIVE allow-listed managed credentials (KEY_ENV_VARS values);
+ * every other var in `.env` (operational AUTOBROKER_*, TELEGRAM_*, ...) is
+ * IGNORED — this loader never touches a non-key var, matching the store's
+ * allow-list.
  *
  * NO-CLOBBER: a var is set only when currently unset-or-empty, so an ambient /
  * exported key wins, and a later loadSecretsIntoEnv() (keys.json, the canonical
@@ -206,13 +208,13 @@ export function loadDotEnvKeys(envFilePath?: string): void {
     return; // missing / unreadable / a directory — fail safe.
   }
 
-  // The allow-list as an env-var-name -> id reverse lookup (only the four).
+  // The allow-list as an env-var-name -> id reverse lookup (only the five).
   const allowed = new Set<string>(Object.values(KEY_ENV_VARS));
   for (const line of raw.split(/\r?\n/)) {
     const parsed = parseDotEnvLine(line);
     if (parsed === undefined) continue; // blank / comment / malformed — skip.
     const [name, value] = parsed;
-    if (!allowed.has(name)) continue; // not one of the four — ignore.
+    if (!allowed.has(name)) continue; // not one of the five — ignore.
     if (value.length === 0) continue; // an empty value is not a key.
     const current = process.env[name];
     if (current === undefined || current.length === 0) {
@@ -222,7 +224,7 @@ export function loadDotEnvKeys(envFilePath?: string): void {
 }
 
 /**
- * Presence-only projection of the four keys: a key is "present" when it has a
+ * Presence-only projection of the five keys: a key is "present" when it has a
  * non-empty value EITHER in the persisted file OR in the current process env
  * (an env-supplied key with no file entry still counts as configured). Never
  * exposes the value.
@@ -242,7 +244,7 @@ export function getKeyPresence(): KeyPresenceMap {
 
 /**
  * Persist a key (merged into the file at 0600) AND set process.env[VAR] in-place
- * for live effect. Rejects an id outside the four and an empty value. NEVER logs
+ * for live effect. Rejects an id outside the five and an empty value. NEVER logs
  * the value.
  */
 export function setKey(id: string, value: string): void {
@@ -257,7 +259,7 @@ export function setKey(id: string, value: string): void {
 
 /**
  * Remove a key from the file AND delete process.env[VAR] in-place. Rejects an id
- * outside the four. Idempotent — clearing an absent key still rewrites the file
+ * outside the five. Idempotent — clearing an absent key still rewrites the file
  * and deletes the (possibly already-absent) env var.
  */
 export function clearKey(id: string): void {

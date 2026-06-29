@@ -1,6 +1,6 @@
 /**
- * keyProbe — a CHEAP, real "test this key before I save it" check for each of
- * the four managed keys, using the CANDIDATE value the owner just typed (so the
+ * keyProbe — a CHEAP, real "test this key before I save it" check for the five
+ * managed credentials, using the CANDIDATE value the owner just typed (so the
  * test validates the key that is about to be stored, not whatever is currently
  * in the env).
  *
@@ -15,6 +15,9 @@
  *     NOT construct an AI-SDK provider here — the AI SDK is the model layer's
  *     framework and is invisible to tools — so the LLM probe is a direct fetch,
  *     exactly the kind of read-only external call tools is allowed to make.
+ *   - claude_oauth: PRESENCE-ONLY — no network call. It is an OAuth subscription
+ *     token, not an x-api-key, so probing Anthropic's model-list with it would
+ *     false-negative a valid token; a non-empty candidate is reported ok.
  *
  * NEVER a mutation. NEVER logs the candidate key. The candidate is used ONLY for
  * this one request — process.env is NOT touched (a test must not change the
@@ -140,9 +143,11 @@ export function __resetSecretsProbeForTests(): void {
 }
 
 /**
- * Test a candidate key. Routes the four ids to their probe. An unknown id is a
- * failed probe (ok:false) rather than a throw — the route validates the id shape
- * upstream, this stays defensive. NEVER logs/returns the candidate value.
+ * Test a candidate key. Routes each id to its check: google_places → geocode,
+ * the three LLM keys → network probe, claude_oauth → presence-only (no network).
+ * An unknown id is a failed probe (ok:false) rather than a throw — the route
+ * validates the id shape upstream, this stays defensive. NEVER logs/returns the
+ * candidate value.
  */
 export async function testKey(id: string, candidateKey: string): Promise<KeyProbeResult> {
   if (!(SECRET_KEY_IDS as readonly string[]).includes(id)) {
