@@ -115,7 +115,7 @@ import {
   profileStopCode,
 } from "./dealerWebLeadSubmitContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { envConcurrency, laneConcurrency } from "./inventorySiteScan.js";
+import { envConcurrency } from "./inventorySiteScan.js";
 import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 export { DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID };
@@ -288,8 +288,9 @@ export async function scoutOneWithSession(deps: {
  *  per-dealer slow-path is the 15s NAV + 4s network-idle wait. The cap bounds how
  *  many chromium contexts spawn at once (RAM/FD pressure on slow, bot-protected real
  *  dealer sites); it is env-overridable (AUTOBROKER_SCOUT_CONCURRENCY) so a capable
- *  host can MAX OUT the fan-out, cutting wall-clock to ~ceil(N/limit)·per-dealer. */
-const SCOUT_CONCURRENCY = envConcurrency("AUTOBROKER_SCOUT_CONCURRENCY", 8);
+ *  host can MAX OUT the fan-out, cutting wall-clock to ~ceil(N/limit)·per-dealer.
+ *  Host-safe default; no per-provider cap (the scout phase makes no LLM call). */
+const SCOUT_CONCURRENCY = envConcurrency("AUTOBROKER_SCOUT_CONCURRENCY", 4);
 
 /** Submit batch: each dealer opens its OWN isolated browser to navigate + (in test
  *  mode) fake-submit. The submit step is the GATED MUTATING face and stays SERIAL (one
@@ -343,7 +344,7 @@ export async function boundedConcurrentMap<T, R>(
 async function scoutFormsImpl(args: ScoutFormsArgs): Promise<ScoutOutcome[]> {
   const outcomes = await boundedConcurrentMap(
     args.dealers,
-    laneConcurrency(args.runId, SCOUT_CONCURRENCY, "AUTOBROKER_CLAUDE_SCOUT_CONCURRENCY", 3),
+    SCOUT_CONCURRENCY,
     (dealer) =>
       withBrowserContext(
         `${args.runId}-leadscout-${dealer.dealerId}`,

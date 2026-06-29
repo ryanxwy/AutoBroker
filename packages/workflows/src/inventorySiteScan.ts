@@ -145,7 +145,6 @@ import {
   type PlatformFilterSelectors,
 } from "@autobroker/tools";
 
-import { resolveSelectionForRun } from "./agentSelection.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
 import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
@@ -196,18 +195,25 @@ export class InventoryScanCaptureLostError extends Error {
 // never hammers a single dealer site — it only widens the across-dealer fan-out.
 // ---------------------------------------------------------------------------
 
-/** Read a positive-int env override, else the (already aggressive) default. */
+/** Read a positive-int env override, else the host-safe default. */
 export function envConcurrency(name: string, def: number): number {
   const raw = process.env[name];
   const n = raw !== undefined ? Number.parseInt(raw, 10) : NaN;
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
+// Concurrency defaults are HOST-SAFE and PROVIDER-AGNOSTIC. Past a host's render
+// ceiling, MORE parallel browsers THRASH the machine and yield blank SRPs — that is
+// lower scrape quality, not higher — so the defaults stay conservative and a capable
+// host opts into wider fan-out through the env knobs. There is NO per-provider cap:
+// the browse path has no LLM in it, and the flat scan→extract chain never overlaps a
+// live browser with an LLM extraction call, so concurrency is a host property, not a
+// lane property.
 /** Concurrent isolated BROWSERS (one per dealer-host bucket task). */
-export const SCAN_CONCURRENCY = envConcurrency("AUTOBROKER_SCAN_CONCURRENCY", 8);
+export const SCAN_CONCURRENCY = envConcurrency("AUTOBROKER_SCAN_CONCURRENCY", 4);
 /** Gap between consecutive browser launches (a Browser launch is heavyweight; a
  *  small stagger keeps the first-contact requests from landing in one instant). */
-const SCAN_LAUNCH_STAGGER_MS = envConcurrency("AUTOBROKER_LAUNCH_STAGGER_MS", 1_000);
+const SCAN_LAUNCH_STAGGER_MS = envConcurrency("AUTOBROKER_LAUNCH_STAGGER_MS", 4_000);
 /** Max VDP harvest tabs per dealer (page-doc budget below also clamps). Raised
  *  from 3 → 10 once the VDP yields PRICE (not just a VIN): dealers that gate the
  *  SRP price behind a "Get Instant Price" CTA expose it only on the VDP, so to
@@ -215,34 +221,15 @@ const SCAN_LAUNCH_STAGGER_MS = envConcurrency("AUTOBROKER_LAUNCH_STAGGER_MS", 1_
  *  cars need a VDP visit. Still bounded + concurrent + staggered. */
 const VDP_MAX_PER_DEALER = 10;
 /** Concurrent VDP tabs actively loading within one dealer task. */
-const VDP_TAB_CONCURRENCY = envConcurrency("AUTOBROKER_VDP_TAB_CONCURRENCY", 4);
+const VDP_TAB_CONCURRENCY = envConcurrency("AUTOBROKER_VDP_TAB_CONCURRENCY", 2);
 /** Gap between consecutive VDP tab opens within one dealer task. */
-const VDP_TAB_STAGGER_MS = envConcurrency("AUTOBROKER_VDP_TAB_STAGGER_MS", 500);
+const VDP_TAB_STAGGER_MS = envConcurrency("AUTOBROKER_VDP_TAB_STAGGER_MS", 1_500);
 /** Hard per-dealer page-document budget (SRP loads + VDP loads). */
 const PAGE_DOC_BUDGET_PER_DEALER = 13;
 /** Concurrent `inventory_extract` LLM calls in the extract phase (no browser is
- *  live during extract, so this fans the LLM lane out as wide as it'll go). */
-const EXTRACT_CONCURRENCY = envConcurrency("AUTOBROKER_EXTRACT_CONCURRENCY", 8);
+ *  live during extract; host-safe default, env-raisable on a capable host). */
+const EXTRACT_CONCURRENCY = envConcurrency("AUTOBROKER_EXTRACT_CONCURRENCY", 4);
 
-/** True when the run resolves to the Claude OAuth subscription lane (lane B). */
-export function isClaudeOauthRun(runId: string): boolean {
-  const sel = resolveSelectionForRun(runId);
-  return sel?.provider === "anthropic" && sel?.method === "oauth";
-}
-
-/**
- * Cap a run's concurrency to its lane. The Claude OAuth lane is a heavy per-call
- * SUBPROCESS that contends badly under concurrency (measured ~13s sequential →
- * ~90s each at 6-concurrent) and the resulting host thrash also DEGRADES the
- * concurrent browser scrape (slow/blank page renders → car-less SRPs). So the
- * browser skills run Claude at a low `claudeCap` (still env-overridable for a
- * capable host), while the in-process DeepSeek lane keeps the full `base`.
- * Claude-ONLY: a non-Claude run is returned `base` unchanged.
- */
-export function laneConcurrency(runId: string, base: number, envKey: string, claudeCap: number): number {
-  if (!isClaudeOauthRun(runId)) return base;
-  return Math.max(1, Math.min(base, envConcurrency(envKey, claudeCap)));
-}
 /** A filtered SRP whose rendered text is thinner than this is treated as a
  *  zero-card/unfiltered render and the ladder falls through (a real results
  *  page — even an empty one — carries far more chrome text than this). */
@@ -1581,9 +1568,7 @@ export async function scanDealersParallelImpl(
   runBucket: BucketRunner = realBucketRunner,
 ): Promise<DealerCaptureOutcome[]> {
   const headed = process.env["AUTOBROKER_CHROME_HEADLESS"] === "0";
-  const browserLimit = headed
-    ? 1
-    : laneConcurrency(args.runId, SCAN_CONCURRENCY, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3);
+  const browserLimit = headed ? 1 : SCAN_CONCURRENCY;
   const buckets = bucketTargetsByHost(args.targets);
 
   // Launch-stagger gate (same synchronous-bookkeeping idiom as the tab gate).
@@ -2186,8 +2171,7 @@ const extractStep = createStep({
         budget_max: null,
       };
 
-      const extractLimit = laneConcurrency(runId, EXTRACT_CONCURRENCY, "AUTOBROKER_CLAUDE_EXTRACT_CONCURRENCY", 2);
-      await runWorkerPool(extractLimit, scanned.length, async (i) => {
+      await runWorkerPool(EXTRACT_CONCURRENCY, scanned.length, async (i) => {
         const row = scanned[i]!;
         const capture = carry.captures.get(row.dealer_id);
         if (capture === undefined) throw new InventoryScanCaptureLostError();

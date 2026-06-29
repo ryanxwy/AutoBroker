@@ -76,6 +76,15 @@ never left half-done.
   `AUTOBROKER_AGENT_PROVIDER=<provider>` before the re-verify serve-live so the whole run
   routes through that lane (a Claude-lane finding must be re-verified on Claude, not silently
   on DeepSeek).
+- **Cross-provider isolation before a lane-specific fix (the golden rule).** Don't ship a
+  provider-specific branch — a per-lane cap, retry, or fallback — for a failure you have not
+  ISOLATED to that lane. Re-run the failing skill on the other provider
+  (`AUTOBROKER_AGENT_PROVIDER`): if BOTH lanes fail, the cause is general / environmental and
+  the fix is provider-agnostic (or none, when it is host thrash); only a fault that reproduces
+  on one lane AND clears on the other earns a lane-scoped fix. **No fallback method ships
+  without a met live case** — a merely-hypothesised failure mode is a *discovery* job (a
+  seasoned candidate to go find it, `references/seasoning.md`), never pre-emptively-shipped
+  code nor an "assert this someday" probe baked into the runner docs.
 - **Never** set `AUTOBROKER_TEST_AUTO_APPROVE`; never touch a production DB; isolated
   throwaway data-dir (CLAUDE.md inv #11). The 12 safety invariants hold — your fixes
   strengthen the floor, never lower it.

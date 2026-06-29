@@ -169,7 +169,6 @@ import {
   collectInventoryCards,
   envConcurrency,
   InventoryExtractSchema,
-  laneConcurrency,
   parseAcceptableTrims,
   runWorkerPool,
   SCAN_CONCURRENCY,
@@ -223,10 +222,14 @@ export class InventoryLinkScanCaptureLostError extends Error {
 // ---------------------------------------------------------------------------
 
 /** Gap between consecutive isolated-browser launches (mirrors the sibling
- *  scan: a small stagger keeps first-contact requests from one instant). */
-const LINK_LAUNCH_STAGGER_MS = envConcurrency("AUTOBROKER_LAUNCH_STAGGER_MS", 1_000);
-/** Concurrent `inventory_extract` LLM calls in the extract phase. */
-const EXTRACT_CONCURRENCY = envConcurrency("AUTOBROKER_EXTRACT_CONCURRENCY", 8);
+ *  scan: a small stagger keeps first-contact requests from one instant).
+ *  Host-safe default, kept in lock-step with the site_scan sibling so the
+ *  shared `AUTOBROKER_LAUNCH_STAGGER_MS` knob resolves identically. */
+const LINK_LAUNCH_STAGGER_MS = envConcurrency("AUTOBROKER_LAUNCH_STAGGER_MS", 4_000);
+/** Concurrent `inventory_extract` LLM calls in the extract phase. Host-safe
+ *  default, lock-step with the site_scan sibling (shared
+ *  `AUTOBROKER_EXTRACT_CONCURRENCY` knob resolves identically). */
+const EXTRACT_CONCURRENCY = envConcurrency("AUTOBROKER_EXTRACT_CONCURRENCY", 4);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -602,9 +605,7 @@ export async function captureLinksParallelImpl(
   runBucket: LinkBucketRunner = realLinkBucketRunner,
 ): Promise<SourceCaptureOutcome[]> {
   const headed = process.env["AUTOBROKER_CHROME_HEADLESS"] === "0";
-  const browserLimit = headed
-    ? 1
-    : laneConcurrency(args.runId, SCAN_CONCURRENCY, "AUTOBROKER_CLAUDE_SCAN_CONCURRENCY", 3);
+  const browserLimit = headed ? 1 : SCAN_CONCURRENCY;
   const buckets = bucketLinksByHost(args.targets);
 
   // Launch-stagger gate (synchronous bookkeeping → race-free in one loop).
@@ -1163,8 +1164,7 @@ const visitExtractStep = createStep({
       let urlProvenanceStripped = 0;
 
       const scanned = captured.filter((c) => c.status === "scanned");
-      const extractLimit = laneConcurrency(runId, EXTRACT_CONCURRENCY, "AUTOBROKER_CLAUDE_EXTRACT_CONCURRENCY", 2);
-      await runWorkerPool(extractLimit, scanned.length, async (i) => {
+      await runWorkerPool(EXTRACT_CONCURRENCY, scanned.length, async (i) => {
         const row = scanned[i]!;
         const capture = carry.captures.get(row.source_id);
         if (capture === undefined) throw new InventoryLinkScanCaptureLostError();

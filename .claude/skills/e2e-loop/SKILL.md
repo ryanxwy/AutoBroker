@@ -128,6 +128,18 @@ rows — and a buyer then sees "0 recommendations". For `inventory_site_scan` an
 `dealer_reply_extract` the verdict is the **coverage** from `/__e2e/dataquality`, not the
 row count. (`references/harness-boundaries.md` has the exact thresholds.)
 
+**Cross-provider isolation — a one-lane failure is not a lane verdict (general rule, both
+lanes).** When a skill misbehaves on the run's provider lane (a 0-yield scan, a malformed
+extract, a dropped field), do NOT conclude "this lane is broken" from that one run — *isolate*
+it first. Re-run that ONE skill on the OTHER provider (`AUTOBROKER_AGENT_PROVIDER` flipped,
+fresh dir): the same fault on both lanes = a general / product / environmental cause (fix it
+provider-agnostically); a fault on only one lane = a genuine lane-specific gap (record it for
+`e2e-evolve`). For a browser-fed 0-yield, read `/__e2e/dataquality … rendered_empty_count`
+FIRST — a blank render is host thrash, provider-independent, and needs no re-run. The browse
+path has no LLM in it, so it is byte-identical across providers; only the EXTRACTION is the
+lane. (Full procedure + the decisive controlled-extraction test:
+`references/harness-boundaries.md`.)
+
 ## How to classify what you find (three buckets)
 
 Decide each imperfection by two questions, in order:

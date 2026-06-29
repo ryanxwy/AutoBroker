@@ -229,9 +229,13 @@ a genuine extraction-lane bug.
    live 0 was upstream browsing. (2026-06-29: Claude OAuth lane B passed both — no extraction bug.)
 
 **Lane-B (Claude OAuth) diagnostics (2 telemetry gaps FIXED 2026-06-29, PIC-20260629-1/-2):**
-lane-B subprocesses **contend** under concurrency (~13s sequential → ~90s each at 6-concurrent) and
-thrash the host, so the browser skills auto-cap Claude concurrency low (`laneConcurrency`, env
-`AUTOBROKER_CLAUDE_*_CONCURRENCY`). Two diagnostics that USED to mislead are now reliable:
+lane-B is a heavier per-call subprocess than the in-process DeepSeek lane, but browse concurrency is
+a HOST property, not a lane property — the flat `scan→extract` chain never runs a live browser and
+an LLM call at the same time, so there is **no per-provider concurrency cap**. (A speculative
+Claude-only cap was tried and removed; both lanes share the host-safe `AUTOBROKER_*_CONCURRENCY`
+defaults, env-raisable on a capable host — past the host's render ceiling more browsers thrash and
+yield blank SRPs, so the default stays conservative.) Two diagnostics that USED to mislead are now
+reliable:
 - `test_run_records.input_tokens` for lane B is now **cache-inclusive** (sums
   `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) — it reads the REAL
   prompt size (e.g. ~26k on a large site_scan prompt), no longer a misleading constant ~3. A
@@ -244,18 +248,6 @@ thrash the host, so the browser skills auto-cap Claude concurrency low (`laneCon
   longer the ONLY window into the lane-B prompt/response.
 
 Record any real provider-specific gap into `harvest-register.md` for `e2e-evolve`.
-
-**Seasoned advisory probes (2026-06-29 evolve, CONDITIONAL — never force the scenario, ADVISORY only):**
-- **Mixed-thrash per-dealer signal** — when a site_scan draws SOME dealers that render blank and
-  others that yield stock, `rendered_empty_count` must reflect only the blank ones WHILE `n>0` from
-  the healthy dealers (the signal is per-source, not a global flag). Falsifiable: on a partial-thrash
-  scan, `0 < rendered_empty_count < scanned_sources` AND `n>0`. Don't engineer thrash; assert this
-  ONLY if a mixed render naturally occurs.
-- **Small-prompt no-inflation** — the lane-B cache-inclusive `input_tokens` must not INFLATE a
-  genuinely small prompt: a short Claude-lane call (e.g. a one-line router prompt) should read a
-  modest `input_tokens`, not the ~26k system-prompt-cache figure of a big extraction. Falsifiable: a
-  small lane-B prompt's `input_tokens` is well below a large site_scan prompt's. (Guards the cache-sum
-  against over-counting; the deterministic absent-cache test is the floor.)
 
 ---
 
