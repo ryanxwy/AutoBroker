@@ -23,6 +23,8 @@
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 /**
  * The Agent SDK's default built-in tools, listed in `disallowedTools` as a belt
@@ -63,6 +65,36 @@ export interface ClaudeOAuthResult {
   text?: string;
   /** Token usage for the ledger (null when the SDK omits a field). */
   usage: { inputTokens: number | null; outputTokens: number | null };
+}
+
+/**
+ * DIAGNOSTIC tee (harness-only, fail-soft). When AUTOBROKER_RECORD_TRANSCRIPT is
+ * set, append ONE lane-B line to a SIBLING file (`<path>.laneB.jsonl`) so the
+ * AI-SDK replay file stays pristine (lane B is not replayable — diagnostic only).
+ * Reads the env per-call; any write error is swallowed and NEVER alters the result.
+ */
+function recordLaneBDiagnostic(
+  args: { prompt: string; model: string },
+  out: ClaudeOAuthResult,
+): void {
+  const recordPath = process.env["AUTOBROKER_RECORD_TRANSCRIPT"];
+  if (recordPath === undefined || recordPath === "") return;
+  try {
+    const sibling = `${recordPath}.laneB.jsonl`;
+    const line = JSON.stringify({
+      lane: "claudeOAuth",
+      model: args.model,
+      prompt: args.prompt,
+      ...(out.structuredOutput !== undefined
+        ? { structuredOutput: out.structuredOutput }
+        : { text: out.text }),
+      usage: out.usage,
+    });
+    mkdirSync(dirname(sibling), { recursive: true });
+    appendFileSync(sibling, line + "\n");
+  } catch {
+    // Diagnostic-only: a transcript-write failure must NEVER break the lane-B call.
+  }
 }
 
 /**
@@ -131,22 +163,32 @@ export async function claudeOAuthQuery(args: {
     );
   }
 
+  const u = result.usage;
   const usage = {
-    inputTokens: result.usage?.input_tokens ?? null,
-    outputTokens: result.usage?.output_tokens ?? null,
+    inputTokens:
+      u?.input_tokens == null
+        ? null
+        : u.input_tokens +
+          (u.cache_creation_input_tokens ?? 0) +
+          (u.cache_read_input_tokens ?? 0),
+    outputTokens: u?.output_tokens ?? null,
   };
 
   // Structured lane: with the $schema meta key stripped above, a clean success
   // carries structured_output. An empty structured_output is now a genuine,
   // non-recoverable failure → throw (fail closed, ONE attempt, no retry).
+  let out: ClaudeOAuthResult;
   if (args.jsonSchema !== undefined) {
     if (result.structured_output === undefined || result.structured_output === null) {
       throw new ClaudeOAuthError(
         "Claude Agent SDK success carried no structured_output despite a json_schema request — lane B fails closed",
       );
     }
-    return { structuredOutput: result.structured_output, usage };
+    out = { structuredOutput: result.structured_output, usage };
+  } else {
+    out = { text: result.result, usage };
   }
 
-  return { text: result.result, usage };
+  recordLaneBDiagnostic(args, out);
+  return out;
 }

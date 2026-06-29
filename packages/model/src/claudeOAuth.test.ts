@@ -10,6 +10,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 
@@ -178,6 +182,30 @@ describe("claudeOAuthQuery — success normalization", () => {
     const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
     expect(r.usage).toEqual({ inputTokens: null, outputTokens: null });
   });
+
+  it("sums cache_read/cache_creation into inputTokens (Anthropic prompt caching)", async () => {
+    mockedQuery.mockReturnValue(
+      fakeQuery({
+        ...SUCCESS_STRUCTURED,
+        usage: {
+          input_tokens: 3,
+          cache_creation_input_tokens: 1200,
+          cache_read_input_tokens: 359492,
+          output_tokens: 47,
+        },
+      }),
+    );
+    const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+    expect(r.usage).toEqual({ inputTokens: 360695, outputTokens: 47 }); // 3 + 1200 + 359492
+  });
+
+  it("treats absent cache fields as 0 (no cache → inputTokens === input_tokens)", async () => {
+    mockedQuery.mockReturnValue(
+      fakeQuery({ ...SUCCESS_STRUCTURED, usage: { input_tokens: 5000, output_tokens: 12 } }),
+    );
+    const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+    expect(r.usage).toEqual({ inputTokens: 5000, outputTokens: 12 });
+  });
 });
 
 describe("claudeOAuthQuery — fail-closed", () => {
@@ -239,5 +267,40 @@ describe("claudeOAuthQuery — structured success (no retry path)", () => {
     const r = await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
     expect(r.structuredOutput).toEqual({ city: "Tucson", high: 100 });
     expect(mockedQuery).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("claudeOAuthQuery — diagnostic transcript tee (BUG B)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "laneb-diag-"));
+  });
+  afterEach(() => {
+    delete process.env["AUTOBROKER_RECORD_TRANSCRIPT"];
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("writes exactly one diagnostic line (prompt+response+usage) when AUTOBROKER_RECORD_TRANSCRIPT is set", async () => {
+    const base = join(dir, "transcript.jsonl");
+    process.env["AUTOBROKER_RECORD_TRANSCRIPT"] = base;
+    mockedQuery.mockReturnValue(fakeQuery(SUCCESS_STRUCTURED));
+
+    await claudeOAuthQuery({ prompt: "scan SRP", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+
+    const lines = readFileSync(`${base}.laneB.jsonl`, "utf8").trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      lane: "claudeOAuth",
+      model: "claude-opus-4-8",
+      prompt: "scan SRP",
+    });
+    expect(existsSync(base)).toBe(false); // AI-SDK replay file never written by lane B
+  });
+
+  it("writes ZERO diagnostic lines when AUTOBROKER_RECORD_TRANSCRIPT is unset", async () => {
+    delete process.env["AUTOBROKER_RECORD_TRANSCRIPT"];
+    mockedQuery.mockReturnValue(fakeQuery(SUCCESS_STRUCTURED));
+    await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+    expect(existsSync(join(dir, "transcript.jsonl.laneB.jsonl"))).toBe(false);
   });
 });
