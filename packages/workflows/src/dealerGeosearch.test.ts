@@ -350,6 +350,72 @@ describe("dealer_geosearch — happy path (zero-LLM)", () => {
     // The DB never carried the cross-border dealer.
     expect(rowCount("dealers")).toBe(1);
   });
+
+  it("excludes an off-brand dealer + merges a duplicate rooftop through the real workflow", async () => {
+    seedProfile(); // make Hyundai
+    const resolution = { kind: null as string | null };
+
+    const us = candidate(); // Tustin Hyundai, in radius, on-brand
+    // An off-brand store (names only Chevrolet/GMC, no Hyundai) — dropped.
+    const offBrand = candidate({
+      name: "Garrett Motors Chevrolet GMC",
+      address: "200 Auto Row, Irvine, CA",
+      website: "https://garrettchevy.com",
+      google_place_id: "0xob:0x1",
+      latitude: 33.69,
+      longitude: -117.79,
+    });
+    // A co-located same-website "…Service" duplicate of an on-brand rooftop —
+    // merged into the primary card.
+    const primary = candidate({
+      name: "Irvine Hyundai",
+      address: "50 Auto Center Dr, Irvine, CA",
+      website: "https://irvinehyundai.com",
+      google_place_id: "0xdup:0x1",
+      latitude: 33.68,
+      longitude: -117.78,
+    });
+    const service = candidate({
+      name: "Irvine Hyundai Service",
+      address: "50 Auto Center Dr, Irvine, CA",
+      website: "https://irvinehyundai.com",
+      google_place_id: "0xdup:0x2",
+      latitude: 33.68,
+      longitude: -117.78,
+    });
+
+    __setGeosearchDepsForTests({
+      harnessGenerate: harnessNeverCalled,
+      resolveProfile: spyResolve(resolution),
+      scanViewports: scanStub((vps) =>
+        vps.map((vp) => ({
+          label: vp.label,
+          kind: "rows" as const,
+          rows: [us, offBrand, primary, service],
+        })),
+      ),
+    });
+
+    const r = await startRun("geo-offbrand-dedup-1");
+    expect(r.status).toBe("success");
+    if (r.status !== "success") return;
+
+    const out = r.result as {
+      dealersDiscovered: number;
+      offBrandExcluded: number;
+      duplicateRooftopsMerged: number;
+      summary: string;
+    };
+    // Tustin Hyundai + Irvine Hyundai (merged) survive; off-brand dropped.
+    expect(out.dealersDiscovered).toBe(2);
+    expect(out.offBrandExcluded).toBe(1);
+    expect(out.duplicateRooftopsMerged).toBe(1);
+    expect(out.summary).toContain("1 off-brand dealer(s) excluded");
+    expect(out.summary).toContain("1 duplicate rooftop(s) merged");
+    expect(out.summary).not.toContain("Garrett");
+    // The DB carries exactly the two surviving rooftops, no off-brand / no dupe.
+    expect(rowCount("dealers")).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------

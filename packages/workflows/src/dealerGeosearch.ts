@@ -420,9 +420,11 @@ const GeosearchStateSchema = z.object({
   ranked: z.array(RankedCandidateSchema).nullable(),
   /** Filter-chain counters (after step 3). */
   nonUsDropped: z.number().int(),
+  offBrandDropped: z.number().int(),
   sponsoredDropped: z.number().int(),
   serviceOnlyDropped: z.number().int(),
   placeIdCollisionsDropped: z.number().int(),
+  duplicateRooftopsDropped: z.number().int(),
   /** Upsert counters (after step 4); null until then. */
   upsert: UpsertResultSchema.nullable(),
 });
@@ -450,6 +452,10 @@ const GeosearchOutputSchema = z.object({
   /** Cross-border (non-US) dealers excluded from the search (dropped in the
    *  pure filter before ranking; the upsert gate is a defense-in-depth backstop). */
   nonUsSkipped: z.number().int(),
+  /** Off-brand rooftops excluded (name advertised only a competing franchise). */
+  offBrandExcluded: z.number().int(),
+  /** Co-located same-website duplicate rooftop cards merged into one. */
+  duplicateRooftopsMerged: z.number().int(),
   /** Viewports that produced nothing (blocked + errored). */
   viewportsFailed: z.number().int(),
   usedSnapshotFallback: z.boolean(),
@@ -549,9 +555,11 @@ const resolveProfileStep = createStep({
       usedSnapshotFallback: false,
       ranked: null,
       nonUsDropped: 0,
+      offBrandDropped: 0,
       sponsoredDropped: 0,
       serviceOnlyDropped: 0,
       placeIdCollisionsDropped: 0,
+      duplicateRooftopsDropped: 0,
       upsert: null,
     };
   },
@@ -685,7 +693,7 @@ const dedupFilterStep = createStep({
     // collision counts sum without double-counting), then the distance pass.
     const deduped = dedupByPlaceId(candidates);
     const crossViewportDropped = candidates.length - deduped.length;
-    const filter = rejectNonCandidate(deduped);
+    const filter = rejectNonCandidate(deduped, { make: state.make });
     const ranked = rankByDistance(
       filter.kept,
       { lat: state.latitude, lng: state.longitude },
@@ -696,9 +704,11 @@ const dedupFilterStep = createStep({
       ...state,
       ranked,
       nonUsDropped: filter.nonUsDropped,
+      offBrandDropped: filter.offBrandDropped,
       sponsoredDropped: filter.sponsoredDropped,
       serviceOnlyDropped: filter.serviceOnlyDropped,
       placeIdCollisionsDropped: crossViewportDropped + filter.placeIdCollisionsDropped,
+      duplicateRooftopsDropped: filter.duplicateRooftopsDropped,
     };
   },
 });
@@ -775,6 +785,10 @@ const confirmStep = createStep({
       `profile — ${dealersDiscovered} dealer(s) discovered in radius, ` +
       `${dealersUpserted} saved/refreshed` +
       (nonUsExcluded > 0 ? `, ${nonUsExcluded} cross-border dealer(s) excluded` : "") +
+      (state.offBrandDropped > 0 ? `, ${state.offBrandDropped} off-brand dealer(s) excluded` : "") +
+      (state.duplicateRooftopsDropped > 0
+        ? `, ${state.duplicateRooftopsDropped} duplicate rooftop(s) merged`
+        : "") +
       (upsert.unnamedSkipped > 0 ? `, ${upsert.unnamedSkipped} unnamed skipped` : "") +
       (viewportsFailed > 0 ? `, ${viewportsFailed} viewport(s) failed` : "") +
       ".";
@@ -792,6 +806,8 @@ const confirmStep = createStep({
       dealersUpserted,
       candidatesRegistered: upsert.candidatesRegistered,
       nonUsSkipped: nonUsExcluded,
+      offBrandExcluded: state.offBrandDropped,
+      duplicateRooftopsMerged: state.duplicateRooftopsDropped,
       viewportsFailed,
       usedSnapshotFallback: state.usedSnapshotFallback,
       summary,

@@ -14,7 +14,10 @@ import {
   buildMapsSearchUrl,
   dealerId,
   dedupByPlaceId,
+  dedupRooftops,
   haversineMiles,
+  isOffBrand,
+  normalizeWebsiteHost,
   rankByDistance,
   rejectNonCandidate,
   tileViewports,
@@ -239,6 +242,121 @@ describe("rejectNonCandidate", () => {
     const result = rejectNonCandidate([noSite]);
     expect(result.kept).toHaveLength(1);
     expect(result.kept[0]!.website).toBeNull();
+  });
+
+  it("drops an off-brand rooftop (names only a competing make) when a make is given", () => {
+    const offBrand = candidate({
+      name: "Garrett Motors Chevrolet GMC",
+      website: "https://garrettchevy.com",
+      google_place_id: "0xbr:0x1",
+    });
+    const onBrand = candidate({
+      name: "Bell Road Nissan",
+      website: "https://bellroadnissan.com",
+      google_place_id: "0xbr:0x2",
+    });
+    const result = rejectNonCandidate([offBrand, onBrand], { make: "Nissan" });
+    expect(result.offBrandDropped).toBe(1);
+    expect(result.kept.map((c) => c.name)).toEqual(["Bell Road Nissan"]);
+  });
+
+  it("does NOT filter by brand when no make is given (fail-open)", () => {
+    const chevy = candidate({ name: "Garrett Chevrolet", website: "https://gc.com", google_place_id: "0xbr:0x3" });
+    const result = rejectNonCandidate([chevy]);
+    expect(result.offBrandDropped).toBe(0);
+    expect(result.kept).toHaveLength(1);
+  });
+
+  it("merges a co-located same-website duplicate rooftop (primary + …Service card)", () => {
+    const primary = candidate({
+      name: "Courtesy Nissan of Mesa",
+      website: "https://courtesynissanofmesa.com",
+      latitude: 33.41,
+      longitude: -111.82,
+      google_place_id: "0xrt:0x1",
+    });
+    const service = candidate({
+      name: "Courtesy Nissan Of Mesa Service",
+      website: "https://courtesynissanofmesa.com",
+      latitude: 33.41,
+      longitude: -111.82,
+      google_place_id: "0xrt:0x2",
+    });
+    const result = rejectNonCandidate([primary, service], { make: "Nissan" });
+    expect(result.duplicateRooftopsDropped).toBe(1);
+    // The primary (non-"Service") card is the one kept.
+    expect(result.kept.map((c) => c.name)).toEqual(["Courtesy Nissan of Mesa"]);
+  });
+
+  it("does NOT merge same-domain rooftops that are far apart (different physical stores)", () => {
+    const tempe = candidate({
+      name: "AutoNation Toyota Tempe",
+      website: "https://tempe.autonation.com",
+      latitude: 33.41,
+      longitude: -111.94,
+      google_place_id: "0xrt:0x3",
+    });
+    const tucson = candidate({
+      name: "AutoNation Toyota Tucson",
+      website: "https://tucson.autonation.com",
+      latitude: 32.22,
+      longitude: -110.97,
+      google_place_id: "0xrt:0x4",
+    });
+    // Different full hosts anyway, but assert both survive (no over-collapse).
+    const result = rejectNonCandidate([tempe, tucson], { make: "Toyota" });
+    expect(result.duplicateRooftopsDropped).toBe(0);
+    expect(result.kept).toHaveLength(2);
+  });
+});
+
+describe("isOffBrand", () => {
+  it("drops a name that advertises only a competing make", () => {
+    expect(isOffBrand("Garrett Motors Chevrolet GMC", "Nissan")).toBe(true);
+  });
+  it("keeps a name carrying the searched make even alongside a competing one", () => {
+    // "…Chevrolet GMC" for a Chevrolet search: the searched make is present, so
+    // keep (rule 3 wins over the competing GMC token).
+    expect(isOffBrand("Smith Chevrolet GMC", "Chevrolet")).toBe(false);
+  });
+  it("keeps a neutral / multi-brand / used name", () => {
+    expect(isOffBrand("AutoNation USA", "Nissan")).toBe(false);
+    expect(isOffBrand("Larry H. Miller Used Cars", "Toyota")).toBe(false);
+  });
+  it("resolves an alias for the searched make (chevy → chevrolet)", () => {
+    expect(isOffBrand("Chevy Land", "Chevrolet")).toBe(false);
+    expect(isOffBrand("Bob's Ford", "chevy")).toBe(true);
+  });
+  it("fails open on an unknown searched make or a null name", () => {
+    expect(isOffBrand("Garrett Chevrolet", "Lamborghini")).toBe(false);
+    expect(isOffBrand(null, "Nissan")).toBe(false);
+  });
+  it("respects word boundaries (does not match a make token inside another word)", () => {
+    // "ford" must not match inside "Crawford"; "Crawford Auto" names no make → keep.
+    expect(isOffBrand("Crawford Auto Group", "Nissan")).toBe(false);
+  });
+});
+
+describe("normalizeWebsiteHost", () => {
+  it("strips a leading www and lowercases, keeping the TLD", () => {
+    expect(normalizeWebsiteHost("https://WWW.CourtesyNissanOfMesa.com/inventory")).toBe(
+      "courtesynissanofmesa.com",
+    );
+  });
+  it("returns null for a null/empty/unparseable website", () => {
+    expect(normalizeWebsiteHost(null)).toBeNull();
+    expect(normalizeWebsiteHost("")).toBeNull();
+    expect(normalizeWebsiteHost("not a url")).toBeNull();
+  });
+});
+
+describe("dedupRooftops", () => {
+  it("never merges null-website rows", () => {
+    const a = candidate({ name: "A", website: null, google_place_id: "0xn:0x1" });
+    const b = candidate({ name: "B", website: null, google_place_id: "0xn:0x2" });
+    const { kept, dropped } = dedupRooftops([a, b]);
+    expect(dropped).toBe(0);
+    expect(kept).toHaveLength(2);
   });
 });
 
