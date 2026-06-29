@@ -520,7 +520,11 @@ export function Canvas({
       )}
       {active !== null && (
         <>
-          {/* Context header — ProfileCard scrolls away ABOVE the sticky region. */}
+          {/* Context header — part of the canvas's FIXED header zone (it no longer
+              scrolls away): the canvas is a flex column and only the tab panel
+              below scrolls, so the profile card + summary + tabs stay put while
+              the active panel's content (incl. its bottom pager) scrolls in a
+              bounded region. See .canvas / [role=tabpanel] in styles.css. */}
           <ProfileCard
             client={client}
             snapshot={active}
@@ -528,8 +532,8 @@ export function Canvas({
             onDeleteProfile={onDeleteProfile}
           />
 
-          {/* Sticky header region — the summary + the tab strip stick together
-              below the topbar; only ONE owner of stickiness (the wrapper). */}
+          {/* Header region — the summary + tab strip; the bottom of the fixed
+              header zone, above the single scrolling panel. */}
           <div className="canvas-stickyhead">
             <ProfileSummary
               bestOtd={deriveBestOtd(quotes, digest)}
