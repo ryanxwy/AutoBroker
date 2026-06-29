@@ -116,6 +116,30 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   decision engine doing its job (derived-on-read), NOT a bug. Re-flag ONLY if it leaks a
   competing dealer NAME or a budget number (inv #9), or advises switching when no cheaper
   same-mode quote exists.
+- `inventory_compare` RECOMMENDING an exact/near, in-budget, in-radius listing whose
+  `inventory_status` is `'unknown'` (with an `inventory-availability-caveat` "availability
+  unconfirmed" chip) is correct: many dealer platforms list a new car with no availability
+  badge the scraper recognizes, so withholding the recommend purely on an unreadable badge
+  killed the engine. The score>=0.6 + exact/near gates still bound it; `ordered`/`sold` stay
+  excluded; the data layer keeps the `unknown` distinction so the caveat stays honest.
+  Re-flag ONLY if a recommended `unknown` row's own live VDP shows a sold/pending badge the
+  scraper missed (that is the H5 scraper-vocabulary gap, not a recommend bug). Shipped
+  2026-06-28 (`phase1/inventory_compare`, `0c61e0d`).
+- `quote_audit` NOT firing `MATH_SANITY` when the ONLY discrepancy is a small POSITIVE
+  residual (stated OTD exceeds the itemized sum) within ~$1000 with sales tax present — a
+  combined "Title & registration"/"TT&L" line the extractor dropped. MATH_SANITY is a trust
+  advisory, not a safety gate, and a false "doesn't reconcile" on an honest dealer is the
+  larger harm. Re-flag ONLY if it fails to fire on a >$1000 shortfall, or fires on a
+  computed-OVER-stated (visible-lines-over-sum) error. Shipped 2026-06-28
+  (`phase1/quote_audit`, `1111962`).
+- `dealer_geosearch` EXCLUDING an off-brand rooftop (name advertises ONLY a competing make,
+  lacks the searched make) and MERGING a co-located same-website duplicate rooftop (primary
+  + "…Service") — both counted + voiced in the headline ("N off-brand dealer(s) excluded" /
+  "N duplicate rooftop(s) merged"). Fail-open: a neutral/used/multi-brand name, a name
+  carrying the searched make, or an unknown searched make is kept. Re-flag ONLY if a real
+  rooftop of the searched make is dropped (the H3 sibling-franchise edge, e.g. Genesis at a
+  Hyundai store) or two genuinely-distinct rooftops are over-merged. Shipped 2026-06-28
+  (`phase2/dealer_geosearch`, `7375aa1`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
