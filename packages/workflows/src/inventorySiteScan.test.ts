@@ -251,6 +251,7 @@ function scannedOutcome(
     sourceUrl: t.website,
     rung: "i_hit",
     errorJson: null,
+    renderedEmpty: false,
     snapshotText: `New 2026 Hyundai Tucson SEL ${VIN_A} $33,999`,
     cardHrefs: ["https://www.d-a.com/new/Hyundai-Tucson-1.htm"],
     vdpFacts: [],
@@ -875,6 +876,44 @@ describe("captureOneDealer — scout-null browser-walk fallback", () => {
     expect(out.errorJson).toContain("srp_unresolved");
     expect(fx.actions.some((a) => a.startsWith("scan_srp_unresolved|"))).toBe(true);
   });
+
+  // --- render-quality signal (the over-fit guard: thin vs rich) ---
+
+  it("0 cards + thin snapshot (< FILTERED_RENDER_MIN_CHARS) → scanned + renderedEmpty", async () => {
+    const fx = fakeCapture({
+      homepageHtml: "<script src='https://static.dealer.com/x.js'></script>",
+      cards: [], // a card-less DOM
+      pageText: "x".repeat(FILTERED_RENDER_MIN_CHARS - 1), // sub-threshold render
+    });
+    const out = await capture(fx);
+    expect(out.status).toBe("scanned");
+    expect(out.renderedEmpty).toBe(true);
+  });
+
+  it("0 cards + rich snapshot (>= FILTERED_RENDER_MIN_CHARS) → NOT renderedEmpty (real empty SRP)", async () => {
+    const fx = fakeCapture({
+      homepageHtml: "<script src='https://static.dealer.com/x.js'></script>",
+      cards: [], // 0 vehicles found, but the SRP chrome renders
+      pageText: "x".repeat(FILTERED_RENDER_MIN_CHARS + 50),
+    });
+    const out = await capture(fx);
+    expect(out.status).toBe("scanned");
+    expect(out.renderedEmpty).toBe(false);
+  });
+
+  it("cards present → never renderedEmpty (regardless of snapshot length)", async () => {
+    const card: CollectedCard = {
+      href: "https://www.walk-a.com/new/Hyundai-Tucson-9.htm",
+      cardText: "New 2026 Hyundai Tucson SEL $33,999",
+    };
+    const fx = fakeCapture({
+      homepageHtml: "<script src='https://static.dealer.com/x.js'></script>",
+      cards: [card],
+    });
+    const out = await capture(fx);
+    expect(out.status).toBe("scanned");
+    expect(out.renderedEmpty).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -902,6 +941,7 @@ describe("scanDealersParallelImpl — task isolation", () => {
         sourceUrl: d.website,
         rung: "iii_fallback" as const,
         errorJson: null,
+        renderedEmpty: false,
         snapshotText: "snapshot",
         cardHrefs: [],
         vdpFacts: [],
@@ -1303,6 +1343,38 @@ describe("inventory_site_scan — persist discipline", () => {
       .get() as { last_status: string; blocked_count: number };
     expect(blockedRow.last_status).toBe("blocked");
     expect(blockedRow.blocked_count).toBe(1);
+  });
+
+  it("a rendered-empty scanned dealer persists the marker on error_json at last_status='scanned'", async () => {
+    seedProfile();
+    seedDealer({ id: "d-blank", name: "Blank Dealer", lat: 33.7, lng: -117.8 });
+
+    __setInventoryScanDepsForTests({
+      // no listings extracted — a blank SRP carries no cards to the LLM phase
+      harnessGenerate: harnessStub([]),
+      scanDealers: scanStub({ calls: [] }, (args) =>
+        args.targets.map((t) =>
+          scannedOutcome(t, { renderedEmpty: true, snapshotText: "thin", cardHrefs: [], vdpFacts: [] }),
+        ),
+      ),
+      persistScan: persistScanResults,
+    });
+
+    const { result } = await startRun("scan-rendered-empty-1");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+
+    const out = result.result as Record<string, unknown>;
+    expect(out["dealersScanned"]).toBe(1);
+    expect(out["dealersRenderedEmpty"]).toBe(1);
+    expect(String(out["summary"])).toContain("rendered blank");
+
+    // The marker round-trips onto the SOURCE row — still last_status='scanned'.
+    const row = db.$client
+      .prepare("SELECT last_status, error_json FROM dealer_inventory_sources WHERE dealer_id = 'd-blank'")
+      .get() as { last_status: string; error_json: string | null };
+    expect(row.last_status).toBe("scanned");
+    expect(row.error_json).toContain("rendered_empty");
   });
 });
 
