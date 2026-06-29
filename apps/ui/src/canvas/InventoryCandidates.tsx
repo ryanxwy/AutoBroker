@@ -157,6 +157,19 @@ function CandidateRow({
         >
           {row.match_status}
         </span>
+        {/* A recommended listing whose availability the scan could not read
+            (inventory_status "unknown") is surfaced honestly — we never claim a
+            confirmed stock the scan didn't see. The data layer keeps the
+            "unknown" distinction; this chip only renders on a recommended row. */}
+        {row.recommended && row.inventory_status === "unknown" && (
+          <span
+            className="mini-chip inventory-avail-unconfirmed"
+            data-testid="inventory-availability-caveat"
+            title="This car is on the dealer's inventory page, but the scan couldn't confirm it's in stock."
+          >
+            availability unconfirmed
+          </span>
+        )}
       </div>
       <div className="t-addr">
         VIN <span data-testid="inventory-candidate-vin">{row.vin ?? "—"}</span>

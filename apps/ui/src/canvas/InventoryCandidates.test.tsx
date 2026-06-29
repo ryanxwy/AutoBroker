@@ -207,6 +207,48 @@ describe("InventoryCandidates — segmented filter", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Availability-unconfirmed caveat (the 0-rec-on-unknown fix)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — availability-unconfirmed caveat", () => {
+  it("renders the caveat on a recommended row whose inventory_status is 'unknown'", () => {
+    const row = makeCandidate({
+      listing_id: "lst-unknown",
+      recommended: true,
+      inventory_status: "unknown",
+    });
+    const { query } = render(<InventoryCandidates inventory={ok(makeResult([row]))} />);
+    expect(query("inventory-availability-caveat")).not.toBeNull();
+  });
+
+  it("does not render the caveat on a recommended row with a confirmed in_stock status", () => {
+    const row = makeCandidate({
+      listing_id: "lst-instock",
+      recommended: true,
+      inventory_status: "in_stock",
+    });
+    const { query } = render(<InventoryCandidates inventory={ok(makeResult([row]))} />);
+    expect(query("inventory-availability-caveat")).toBeNull();
+  });
+
+  it("does not render the caveat on a non-recommended unknown row (the All view)", () => {
+    // A non-recommended 'unknown' row only shows in the All view; it carries no
+    // caveat (the caveat is exclusively a recommend-time honesty marker).
+    const row = makeCandidate({
+      listing_id: "lst-unknown-norec",
+      recommended: false,
+      inventory_status: "unknown",
+    });
+    const { query, get } = render(
+      <InventoryCandidates inventory={ok(makeResult([row], { recommendedCount: 0 }))} />,
+    );
+    // Default filter is All when recommendedCount is 0, so the row is visible.
+    expect(get("inventory-candidate-row")).not.toBeNull();
+    expect(query("inventory-availability-caveat")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tally line
 // ---------------------------------------------------------------------------
 

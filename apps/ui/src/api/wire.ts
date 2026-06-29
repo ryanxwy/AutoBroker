@@ -509,8 +509,9 @@ export const InventoryCandidateRowSchema = z
     score: z.number(),
     reasons: z.array(z.string()),
     match_status: z.string(),
-    /** true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
-     *  Set by the ranker as the SINGLE source; never re-derived on the client. */
+    /** true ⇔ match exact/near AND inventory in_stock/in_transit/unknown AND
+     *  score >= 0.6. Set by the ranker as the SINGLE source; never re-derived on
+     *  the client. An `unknown`-availability recommend carries a UI caveat. */
     recommended: z.boolean(),
   })
   .passthrough();

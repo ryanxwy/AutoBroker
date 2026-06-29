@@ -281,6 +281,34 @@ describe("rankInventoryForProfile", () => {
     expect(candidates[0]!.recommended).toBe(false);
   });
 
+  it("recommends an exact, in-budget, in-radius listing whose availability the scan could not read (inventory_status 'unknown') — the 0-rec-on-unknown fix", () => {
+    // Many dealer platforms (Dealer.com etc.) list a new car on the SRP with no
+    // availability badge the scraper recognizes, so the listing persists
+    // 'unknown'. Before the fix the recommend predicate hard-required
+    // in_stock/in_transit, so a lot full of exact-trim, under-budget, nearby cars
+    // got 0 recommendations. 'unknown' is now recommendable (the score >= 0.6 +
+    // exact/near gates still bound it); the UI marks it "availability unconfirmed".
+    seedProfile({ budgetMax: null, preferredExteriorColorsJson: JSON.stringify(["Shimmering Silver"]) });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({
+      listingId: "lst_unknown",
+      vin: FULL_VIN,
+      exteriorColor: "Shimmering Silver",
+      msrp: 46500,
+      listedPrice: 44175,
+      inventoryStatus: "unknown",
+    });
+
+    const { candidates, recommendedCount } = rankInventoryForProfile(db, PROFILE_ID);
+    const row = candidates.find((c) => c.listing_id === "lst_unknown")!;
+    expect(row.match_status).toBe("exact");
+    expect(row.score).toBeGreaterThanOrEqual(0.6);
+    expect(row.inventory_status).toBe("unknown");
+    // The data layer keeps the 'unknown' distinction; the recommend flag is true.
+    expect(row.recommended).toBe(true);
+    expect(recommendedCount).toBe(1);
+  });
+
   it("reports the max last_seen_at over the candidates as scannedAtMax", () => {
     seedProfile({ budgetMax: null });
     insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
