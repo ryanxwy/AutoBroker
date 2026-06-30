@@ -237,7 +237,7 @@ receipt UI via the Replies tab DOM and `/__e2e/audit`. Decline = Δ0 on `threads
 | `inject_reply_to_thread` (+contact) | `messages` +1; on escalation a new `dealer_contacts` row, `is_primary_reply_target=1` |
 | **the responsive cap (the proof)** | per-thread `COUNT(outbound)` vs unanswered — **active threads reach ≥4 outbound** (past the old flat 3); **silent threads freeze at 2 outbound / unanswered=2 and DROP from the next batch** (12→6 in the live run) |
 | `reply_extract` | `dealer_quotes` grows; revised OTDs grind to the floors; **#1244 CLEAN — or, if it ever trips, fail-closed-THEN-auto-recover** (2 `provider=deepseek` ledger rows, redacted `malformed_sample`, NO user retry button — see `skill-pipeline.md` item 9; a silent tool-SKIP / regex-exec'd name IS still the blocker) on the largest extraction |
-| **F4 give-up / switch (derived-on-read, NEW)** | after the ghost rounds, a **ghosted/cold** dealer surfaces a `dealer-verdict-hold` chip ("gone quiet" / "paused" / "not moving") on the Dealers tab + its thread reads `thread-class-chip`="gone quiet" (dormant) on Replies. After a **retrade** where a cheaper itemized **same-mode** front-runner exists, the lagging dealer surfaces `dealer-verdict-switch` = "consider switching · $N cheaper elsewhere" where **N == currentOtd − bestCompetingOtd**, with **NO competing dealer NAME and NO budget** (inv #9). After a **concession** the thread reads `thread-class-chip`="countered". Read the verdict/reason/gap from the product JSON `GET /api/profiles/:id/dealers` (`verdict`/`verdict_reason`/`batna_gap_usd`) + `/threads` (`negotiation_status`) and corroborate with the DOM chip — no new test-host route. **Window note:** the give-up engine's anti-pester cap is `BATCH_SILENCE_WINDOW_DAYS=7` (`dealerComm/constants.ts`), but the inject clock backdates only ~2d (below) — so the DEFAULT run reaches the **'paused'** cap path; to drive the silent **'gone quiet'** path use the already-documented `ageHoursAgo>168` lever (`serve-live.mjs:136-148`). |
+| **F4 give-up / switch (derived-on-read, NEW)** | after the ghost rounds, a **ghosted/cold** dealer surfaces a `dealer-verdict-hold` chip ("gone quiet" / "paused" / "not moving") on the Dealers tab + its thread reads `thread-class-chip`="gone quiet" (dormant) on Replies. After a **retrade** where a cheaper itemized **same-mode** front-runner exists, the lagging dealer surfaces `dealer-verdict-switch` = "consider switching · $N cheaper elsewhere" where **N == currentOtd − bestCompetingRealOtd** (the DISPLAYED gap = the lowest REAL competing OTD, incl. a cheaper non-itemized bottom-line offer — matches the detail modal so board and modal never show two different $N; the give_up_switch VERDICT still fires only on the strict itemized BATNA), with **NO competing dealer NAME and NO budget** (inv #9). After a **concession** the thread reads `thread-class-chip`="countered". Read the verdict/reason/gap from the product JSON `GET /api/profiles/:id/dealers` (`verdict`/`verdict_reason`/`batna_gap_usd`) + `/threads` (`negotiation_status`) and corroborate with the DOM chip — no new test-host route. **Window note:** the give-up engine's anti-pester cap is `BATCH_SILENCE_WINDOW_DAYS=7` (`dealerComm/constants.ts`), but the inject clock backdates only ~2d (below) — so the DEFAULT run reaches the **'paused'** cap path; to drive the silent **'gone quiet'** path use the already-documented `ageHoursAgo>168` lever (`serve-live.mjs:136-148`). |
 | **come-onsite / ghost (realistic no-OTD)** | the pipeline does NOT fail when most dealers never quote: each come-onsite-only / ghost thread yields **0 `dealer_quotes` rows (`no_quote`, no error — never a fabricated number)**; the data-quality verdict's `nullEscape` / `gated` escape PASSES a realistic low quote-rate; a profile's best OTD may come from only **1-2** dealers, or be legitimately **absent** (a valid terminal — "go visit / keep waiting", not a bug). Distinguish this from the real FAIL: a dealer that DID email a number whose OTD the extractor dropped (`n>0 AND otd_present==0`). |
 | closeout decline | `/__e2e/rows?table=threads` Δ0 |
 
@@ -250,6 +250,34 @@ SELECT d.name,
 FROM threads t JOIN dealers d ON d.dealer_id=t.dealer_id ORDER BY buyer_FUs DESC;
 ```
 Active threads → `buyer_FUs ≥ 4`; ghosts → `buyer_FUs = 2, unanswered = 2`.
+
+### Seasoned cases (advisory — ride ON TOP of the deterministic regressions, never block CI)
+
+These mutate a dealer behavior to reproduce a live edge a planted fixture cannot;
+each is ADVISORY with a falsifiable expected outcome. Drawn from the 2026-06-29-run2
+e2e-evolve round.
+
+- **SC-629r2-3 — payment-probe dealer × finance buyer** (PIC-20260629r2-3 / `0a0bdee`).
+  A come-onsite / reverse-induce dealer whose every counter asks a pointed qualifier —
+  "Are you paying cash or financing with us? We sharpen the number once we know." Pair
+  with a **finance** persona. EXPECT: the round-1 `negotiation_followup` draft for that
+  thread, when it mentions payment at all, says **finance** (or asks for APR) and NEVER
+  contains "cash" (case-insensitive); symmetrically a **cash** buyer's draft never claims
+  finance/lease. Stresses the draft financing-grounding + the `assertPaymentMethodConsistent`
+  belt (inv #9 hard-constraint-in-code).
+- **SC-629r2-5 — re-quotes-then-holds dealer** (PIC-20260629r2-5 / `60ae1db`).
+  Round-0 gives a real itemized OTD; on the follow-up the dealer replies "my $X stands,
+  I won't chase" (restates the number, emits no fresh quote → extracts to $0). EXPECT after
+  `dealer_reply_extract` on the hold: that dealer's board `best_otd`
+  (`GET /api/profiles/:id/dealer-negotiations`) **=== the round-0 OTD** (never $0/null); the
+  new `dealer_quotes` row's `otd_total IS NULL` (a `/__e2e/rows?table=dealer_quotes` +1, but
+  `otd_coverage` unchanged). Stresses the $0→null write-normalization + read guards.
+- **SC-629r2-4 — non-itemized cheaper front-runner** (PIC-20260629r2-4 / `60ae1db`).
+  The current dealer's itemized OTD sits slightly ABOVE a cheaper **bottom-line
+  (non-itemized)** competitor. EXPECT: the detail-modal advisory reads "close to the best
+  competing" (moderate) / the signed gap, **never "at or below best"**; `best_competing_otd`
+  === the real cheaper number; `give_up_switch` does NOT fire (the cheaper competitor is
+  non-itemized). Stresses the `bestCompetingRealOtd` tone baseline + the verdict-strict split.
 
 ---
 

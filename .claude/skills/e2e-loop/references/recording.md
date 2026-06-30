@@ -154,6 +154,25 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   `rendered_empty_count==0` means the dealers genuinely had no parseable stock or were `blocked`.
   Re-flag ONLY a genuine had-and-lost (`vdp_linked>0 AND breakdown_parsed==0`), never a thrash
   0-yield. Shipped 2026-06-29 (`phase2/inventory_site_scan`, `44c802c`).
+- `negotiation_followup`'s prose draft GROUNDED in `financing_preference`: a finance buyer's
+  draft says it plans to finance / asks for APR and NEVER fabricates "cash"; a cash buyer's
+  draft never claims financing/lease; the `assertPaymentMethodConsistent` belt fail-CLOSES a
+  contradiction (negation/contrast-guarded so "rather than paying cash, I'll finance" passes).
+  Re-flag ONLY if a draft asserts a payment method contradicting the profile. Shipped
+  2026-06-30 (`phase5/negotiation_followup`, `0a0bdee`).
+- A no-fresh-number reply (a hold / payment-only / come-onsite extraction) persisting
+  `otd_total` **NULL (not $0)** and NEVER superseding the dealer's real OTD on the board /
+  digest / quote-compare / latest-quote views — the reply is still RECORDED (provenance), it
+  just never ranks; migration `0006` healed any pre-existing $0 row. Re-flag ONLY if a
+  $0/null hold reply ranks as a quote or hides a dealer's real OTD. Shipped 2026-06-30
+  (`phase2/negotiation_followup`, `60ae1db`).
+- The negotiation "at or below best" advisory using the **lowest REAL competing OTD** (a
+  cheaper bottom-line / non-itemized competitor counts), so a quote $N above the real best
+  reads "close to" / the signed gap, never "at or below"; the `give_up_switch` VERDICT still
+  fires only on the strict itemized BATNA; the board card and the detail modal show the SAME
+  gap. Re-flag ONLY if the advisory claims "at or below" for an above-best quote, or
+  `give_up_switch` fires on a lone non-itemized lowball. Shipped 2026-06-30
+  (`phase2/negotiation_followup`, `60ae1db`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
