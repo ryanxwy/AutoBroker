@@ -111,15 +111,17 @@ describe("composeStatusLine", () => {
 });
 
 describe("composeNegotiationStrategy", () => {
-  it("give_up_switch with a known gap names the dollar gap, not a dealer", () => {
+  it("give_up_switch names the strict ITEMIZED gap, not the real (tone) gap, and no dealer", () => {
     const s = composeNegotiationStrategy({
       tone: "assertive",
       verdict: "give_up_switch",
       reason: "non_improving",
-      batnaGapUsd: 1500,
+      batnaGapUsd: 9999, // the real/tone gap — must NOT be cited by give_up_switch
+      itemizedBatnaGapUsd: 1500, // the itemized BATNA gap — the one that justifies a switch
       isItemized: true,
     });
     expect(s).toContain("$1,500");
+    expect(s).not.toContain("9,999");
     expect(s.toLowerCase()).toContain("switch");
     expect(s.toLowerCase()).not.toContain("dealer name");
   });
@@ -130,6 +132,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "give_up_switch",
       reason: "non_improving",
       batnaGapUsd: null,
+      itemizedBatnaGapUsd: null,
       isItemized: false,
     });
     expect(s.toLowerCase()).toContain("switch");
@@ -143,6 +146,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "hold",
       reason: "unanswered_cap",
       batnaGapUsd: 800,
+      itemizedBatnaGapUsd: 800,
       isItemized: true,
     });
     expect(s.toLowerCase()).toContain("pause");
@@ -155,6 +159,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "hold",
       reason: "total_cap",
       batnaGapUsd: null,
+      itemizedBatnaGapUsd: null,
       isItemized: true,
     });
     expect(s.toLowerCase()).toContain("ceiling");
@@ -166,6 +171,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "continue",
       reason: "active",
       batnaGapUsd: null,
+      itemizedBatnaGapUsd: null,
       isItemized: false,
     });
     expect(s.toLowerCase()).toContain("itemized");
@@ -178,6 +184,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "continue",
       reason: "active",
       batnaGapUsd: 900,
+      itemizedBatnaGapUsd: null,
       isItemized: true,
     });
     expect(s).toContain("$900");
@@ -190,6 +197,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "continue",
       reason: "active",
       batnaGapUsd: 200,
+      itemizedBatnaGapUsd: null,
       isItemized: true,
     });
     expect(s.toLowerCase()).toContain("modest");
@@ -201,6 +209,7 @@ describe("composeNegotiationStrategy", () => {
       verdict: "continue",
       reason: "active",
       batnaGapUsd: null,
+      itemizedBatnaGapUsd: null,
       isItemized: true,
     });
     expect(s.toLowerCase()).toContain("hold");

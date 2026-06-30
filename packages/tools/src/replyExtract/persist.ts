@@ -205,6 +205,13 @@ export function persistMessageQuotes(opts: {
         source_gmail_message_id: p.sourceGmailMessageId,
         search_profile_id: p.searchProfileId,
         ...row,
+        // A no-fresh-number reply (a hold/payment-only/come-onsite extraction)
+        // must NOT persist a $0 OTD: SQLite MIN() / nulls-last ordering rank 0 as
+        // the cheapest, so a $0 row would supersede the dealer's last real OTD on
+        // the board + latest-quote views. Normalize otd_total <= 0 → null so the
+        // reply is still recorded (provenance/coverage) but never ranks as a
+        // quote (a no-number reply stores null, never a $0 quote).
+        otd_total: row.otd_total != null && row.otd_total <= 0 ? null : row.otd_total,
         extractor_provider: p.extractorProvider,
         extraction_method: p.extractionMethod,
         extracted_at: now,

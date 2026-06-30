@@ -75,11 +75,15 @@ export function readQuoteSituationForThread(
 ): QuoteSituationRead {
   const nowMs = args.nowMs ?? Date.now();
 
+  // `otd_total > 0` keeps the LIMIT-1 on the latest REAL OTD: a no-number reply
+  // (a hold/payment-only/come-onsite extraction) normalizes to null at write, and
+  // `> 0` is additionally robust to any pre-existing $0 row — so a dealer who
+  // declines to re-quote never loses their last real OTD here (PIC-20260629r2-5).
   const current = db.$client
     .prepare(
       "SELECT otd_total AS otd, selling_price AS selling, doc_fee AS doc, dealer_fee AS dealer, sales_tax AS tax " +
         "FROM dealer_quotes " +
-        "WHERE search_profile_id = ? AND dealer_id = ? AND " +
+        "WHERE search_profile_id = ? AND dealer_id = ? AND otd_total > 0 AND " +
         OPEN_QUOTE_PREDICATE +
         " ORDER BY CAST(quote_received_at AS INTEGER) DESC, quote_id DESC LIMIT 1",
     )
@@ -97,7 +101,7 @@ export function readQuoteSituationForThread(
     .prepare(
       "SELECT MIN(otd_total) AS best " +
         "FROM dealer_quotes " +
-        "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total IS NOT NULL AND " +
+        "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total > 0 AND " +
         OPEN_QUOTE_PREDICATE,
     )
     .get(args.profileId, args.dealerId, nowMs) as { best: number | null };
@@ -120,8 +124,15 @@ export interface DealerGiveUpInputsRead {
   currentOtd: number | null;
   /** Best competing OTD over OTHER dealers' open quotes that are ITEMIZED AND
    *  confidence-floored — the SYMMETRIC BATNA guard. null when no quality
-   *  competitor exists, so a lone non-itemized lowball can never justify a switch. */
+   *  competitor exists, so a lone non-itemized lowball can never justify a switch.
+   *  Drives the give_up_switch verdict ONLY. */
   bestCompetingOtd: number | null;
+  /** Best competing REAL OTD over OTHER dealers' open same-mode quotes WITHOUT the
+   *  itemization gate ($0/null excluded) — the lowest real competing number, for
+   *  the TONE/display "at or below best" advisory. A bottom-line OTD counts here
+   *  (it is a real competing number) but never triggers give_up_switch
+   *  (PIC-20260629r2-4). null when no real competitor exists. */
+  bestCompetingRealOtd: number | null;
 }
 
 /**
@@ -196,7 +207,12 @@ export function readDealerGiveUpInputs(
       if (am !== bm) return bm - am; // newest first
       return a.quoteId < b.quoteId ? 1 : a.quoteId > b.quoteId ? -1 : 0; // stable tiebreak
     });
-  const current = sorted[0];
+  // Anchor "current" on the newest row with a REAL OTD: a no-number reply
+  // (a hold/payment-only/come-onsite) normalizes to null at write, and `> 0` is
+  // additionally robust to a pre-existing $0 row — so a dealer who declines to
+  // re-quote keeps their last real OTD as the current quote (PIC-20260629r2-5).
+  // Falls back to the newest row when the dealer has no real OTD at all.
+  const current = sorted.find((r) => r.otd !== null && r.otd > 0) ?? sorted[0];
 
   const currentOtd = current?.otd ?? null;
   const isItemized =
@@ -218,6 +234,7 @@ export function readDealerGiveUpInputs(
         .filter(
           (r) =>
             r.otd !== null &&
+            r.otd > 0 &&
             r.mode === current.mode &&
             (hasVin ? r.vin === current.vin : r.sli === current.sli),
         )
@@ -238,11 +255,17 @@ export function readDealerGiveUpInputs(
   // side that actually triggers give_up_switch). null when there is no current
   // quote to compare against, or no quality same-mode competitor.
   let bestCompetingOtd: number | null = null;
+  // The TONE/display baseline: the lowest REAL same-mode other-dealer OTD WITHOUT
+  // the give-up itemization gate. A bottom-line OTD (no full breakdown) is a
+  // genuine competing number for the "at or below best" advisory, even though it
+  // must never trigger give_up_switch (PIC-20260629r2-4). $0/null excluded so a
+  // hold can't read as the best competitor.
+  let bestCompetingRealOtd: number | null = null;
   if (current !== undefined) {
     const competingRows = db.$client
       .prepare(
         "SELECT otd_total AS otd, quote_expires_at AS expiresAt FROM dealer_quotes " +
-          "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total IS NOT NULL AND " +
+          "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total > 0 AND " +
           CONFIDENCE_FLOOR_PREDICATE +
           " AND financing_mode = ? AND selling_price IS NOT NULL " +
           "AND (doc_fee IS NOT NULL OR dealer_fee IS NOT NULL OR sales_tax IS NOT NULL)",
@@ -253,9 +276,23 @@ export function readDealerGiveUpInputs(
     }>;
     const openOtds = competingRows.filter((r) => isOpen(r.expiresAt)).map((r) => r.otd);
     bestCompetingOtd = openOtds.length > 0 ? Math.min(...openOtds) : null;
+
+    const realRows = db.$client
+      .prepare(
+        "SELECT otd_total AS otd, quote_expires_at AS expiresAt FROM dealer_quotes " +
+          "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total > 0 AND " +
+          CONFIDENCE_FLOOR_PREDICATE +
+          " AND financing_mode = ?",
+      )
+      .all(args.profileId, args.dealerId, DEALER_QUOTE_MIN_CONFIDENCE, current.mode) as Array<{
+      otd: number;
+      expiresAt: string | number | null;
+    }>;
+    const realOpenOtds = realRows.filter((r) => isOpen(r.expiresAt)).map((r) => r.otd);
+    bestCompetingRealOtd = realOpenOtds.length > 0 ? Math.min(...realOpenOtds) : null;
   }
 
-  return { otdTrajectory, isItemized, currentOtd, bestCompetingOtd };
+  return { otdTrajectory, isItemized, currentOtd, bestCompetingOtd, bestCompetingRealOtd };
 }
 
 // ---------------------------------------------------------------------------

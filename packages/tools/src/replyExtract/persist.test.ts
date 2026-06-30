@@ -218,6 +218,22 @@ describe("persistMessageQuotes — success", () => {
     expect(msg.processed_at).not.toBeNull();
   });
 
+  it("normalizes a $0 (no-fresh-number) otd_total to NULL so it never ranks as a quote (PIC-20260629r2-5)", () => {
+    // A hold/payment-only/come-onsite reply extracts to otd_total=0. The row is
+    // still recorded (provenance/coverage), but otd_total must persist as NULL so
+    // MIN()/nulls-last ordering never ranks it as the cheapest best OTD.
+    const res = persistMessageQuotes({
+      provenance: provenance(),
+      rows: [row({ financing_mode: "cash", otd_total: 0 })],
+      db,
+      now: "2026-06-14T00:00:00.000Z",
+    });
+    expect(res).toEqual({ ok: true, status: "succeeded", rowsUpserted: 1 });
+    const quotes = quoteRows();
+    expect(quotes).toHaveLength(1); // the reply IS recorded
+    expect(quotes[0]!.otd_total).toBeNull(); // but 0 → NULL, never a $0 quote
+  });
+
   it("JSON-array fields are stringified into their TEXT columns", () => {
     persistMessageQuotes({
       provenance: provenance(),

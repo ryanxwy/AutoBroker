@@ -100,6 +100,39 @@ function quote(
   );
 }
 
+/** A raw quote insert with explicit itemization + otd (lets a test seed a
+ *  NON-itemized bottom-line OTD or a pre-existing $0 row, which the `quote()`
+ *  helper — always itemized, otd>0 — cannot). */
+function rawQuote(
+  c: Db["$client"],
+  q: {
+    quoteId: string;
+    dealerId: string;
+    otd: number | null;
+    selling?: number | null;
+    doc?: number | null;
+    receivedAt: number;
+    vin?: string | null;
+  },
+): void {
+  c.prepare(
+    "INSERT INTO dealer_quotes (quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, " +
+      "selling_price, doc_fee, otd_total, dealer_discount, quote_received_at, vin, confidence, financing_mode) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0.9, 'cash')",
+  ).run(
+    q.quoteId,
+    q.dealerId,
+    `m-${q.quoteId}`,
+    `g-${q.quoteId}`,
+    PROFILE,
+    q.selling ?? null,
+    q.doc ?? null,
+    q.otd,
+    q.receivedAt,
+    q.vin ?? null,
+  );
+}
+
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
   tmpDir = mkdtempSync(join(tmpdir(), "autobroker-neg-proj-"));
@@ -325,6 +358,63 @@ describe("readDealerNegotiationDetail", () => {
     dealer(c, "d-unbound", "Unbound Hyundai"); // exists but never bound to PROFILE
     expect(readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-unbound", nowMs: NOW })).toBeNull();
     expect(readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-missing", nowMs: NOW })).toBeNull();
+  });
+
+  it("the 'at or below best' advisory uses the lowest REAL competing OTD, not the strict itemized BATNA (PIC-20260629r2-4)", () => {
+    const c = db.$client;
+    dealer(c, "d-kirk", "Kirkland Hyundai");
+    dealer(c, "d-rod", "Rodland Hyundai");
+    bind(c, "d-kirk");
+    bind(c, "d-rod");
+    thread(c, "t-kirk", "d-kirk");
+    inbound(c, "in-kirk", "t-kirk", NOW - 1 * DAY);
+    // d-kirk: itemized open OTD 25,499. d-rod: a cheaper BOTTOM-LINE (non-itemized)
+    // OTD 25,450 — the true front-runner, but the strict give-up BATNA would drop
+    // it (no breakdown), making d-kirk falsely read "at or below best".
+    quote(c, { quoteId: "q-kirk", dealerId: "d-kirk", otd: 25499, discount: 1000, vin: "VK", receivedAt: NOW - 1 * DAY });
+    rawQuote(c, { quoteId: "q-rod", dealerId: "d-rod", otd: 25450, selling: null, doc: null, receivedAt: NOW - 1 * DAY });
+
+    const detail = readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-kirk", nowMs: NOW })!;
+    expect(detail).not.toBeNull();
+    // The advisory must NOT claim "at or below" for a quote $49 ABOVE the best.
+    expect(detail.strategy).not.toContain("at or below");
+    expect(detail.strategy).toContain("close to the best competing"); // moderate tone
+    expect(detail.best_competing_otd).toBe(25450); // the real cheaper number, not null
+    expect(detail.batna_gap_usd).toBe(49); // 25,499 − 25,450
+  });
+
+  it("a $0 hold reply never supersedes the dealer's real OTD on the board or in the advisory (PIC-20260629r2-5)", () => {
+    const c = db.$client;
+    dealer(c, "d-bell", "Bellevue Hyundai");
+    dealer(c, "d-other", "Other Hyundai");
+    bind(c, "d-bell");
+    bind(c, "d-other");
+    thread(c, "t-bell", "d-bell");
+    inbound(c, "in-bell", "t-bell", NOW - 1 * DAY);
+    // d-bell gave a real itemized OTD 26,905, then a NEWER "my number stands, I
+    // won't chase" hold that extracted to $0. d-other is a real cheaper competitor.
+    quote(c, { quoteId: "q-bell", dealerId: "d-bell", otd: 26905, discount: 500, vin: "VB", receivedAt: NOW - 2 * DAY });
+    rawQuote(c, { quoteId: "q-bell-hold", dealerId: "d-bell", otd: 0, receivedAt: NOW - 1 * DAY });
+    quote(c, { quoteId: "q-other", dealerId: "d-other", otd: 26000, discount: 800, vin: "VO", receivedAt: NOW - 1 * DAY });
+
+    // The $0 hold IS recorded (provenance) but never ranks.
+    expect(
+      (c.prepare("SELECT COUNT(*) AS n FROM dealer_quotes WHERE dealer_id = ?").get("d-bell") as { n: number }).n,
+    ).toBe(2);
+
+    // Board best_otd stays the real $26,905 (NULLIF heals the $0), not $0.
+    const board = new Map(
+      listProfileDealerNegotiations(db, PROFILE, { nowMs: NOW }).map((r) => [r.dealer_id, r]),
+    );
+    expect(board.get("d-bell")!.best_otd).toBe(26905);
+
+    // Advisory reads the real $26,905 as current (not $0) → it is ABOVE the
+    // $26,000 competitor, never "at or below best".
+    const detail = readDealerNegotiationDetail(db, { profileId: PROFILE, dealerId: "d-bell", nowMs: NOW })!;
+    expect(detail.strategy).not.toContain("at or below");
+    expect(detail.strategy).toContain("above the best competing"); // assertive (26,905 − 26,000 = 905 > $500)
+    expect(detail.best_competing_otd).toBe(26000);
+    expect(detail.batna_gap_usd).toBe(905);
   });
 
   it("readDealerSubstantiveReplyBodies returns the SAME T2-filtered set, redacted (for T8)", () => {

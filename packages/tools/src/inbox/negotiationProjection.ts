@@ -115,11 +115,14 @@ interface QuoteAgg {
 }
 
 /** The dealer_quotes roll-up per dealer (profile-scoped): MIN(otd_total) and
- *  MAX(dealer_discount). Presence in the map ⇒ quote_sent. */
+ *  MAX(dealer_discount). Presence in the map ⇒ quote_sent. `NULLIF(otd_total, 0)`
+ *  drops a $0 hold/no-number row so it can never rank as the cheapest best_otd and
+ *  hide a dealer's real OTD (PIC-20260629r2-5; new rows are already null-normalized
+ *  at write, this also heals any pre-existing $0 row). */
 function quoteAggByDealer(db: Db, profileId: string): Map<string, QuoteAgg> {
   const rows = db.$client
     .prepare(
-      "SELECT dealer_id AS dealerId, MIN(otd_total) AS bestOtd, MAX(dealer_discount) AS bestDiscount " +
+      "SELECT dealer_id AS dealerId, MIN(NULLIF(otd_total, 0)) AS bestOtd, MAX(dealer_discount) AS bestDiscount " +
         "FROM dealer_quotes WHERE search_profile_id = ? " +
         "GROUP BY dealer_id",
     )
@@ -414,9 +417,21 @@ export function readDealerNegotiationDetail(
   // The give-up inputs (per-dealer): current/prior OTD, itemization, the symmetric
   // BATNA competing OTD. batna_gap_usd is the raw scalar gap per the contract.
   const inputs = readDealerGiveUpInputs(db, { profileId: args.profileId, dealerId: args.dealerId, nowMs });
+  // The give_up_switch VERDICT uses the strict itemized-symmetric BATNA; the
+  // TONE/display "at or below best" claim + the batna gap use the lowest REAL
+  // competing OTD (a bottom-line competitor counts for the advisory but never for
+  // a switch) — so a $49-above quote no longer reads "at or below best"
+  // (PIC-20260629r2-4).
   const bestCompetingOtd = inputs.bestCompetingOtd;
+  const bestCompetingRealOtd = inputs.bestCompetingRealOtd;
   const priorOtd = inputs.otdTrajectory[1] ?? null;
   const batnaGapUsd =
+    inputs.currentOtd !== null && bestCompetingRealOtd !== null
+      ? Math.max(0, inputs.currentOtd - bestCompetingRealOtd)
+      : null;
+  // The strict itemized gap drives ONLY the give_up_switch wording ("a fully
+  // itemized competing quote is $X lower"); the tone/display use the real gap above.
+  const itemizedBatnaGapUsd =
     inputs.currentOtd !== null && bestCompetingOtd !== null
       ? Math.max(0, inputs.currentOtd - bestCompetingOtd)
       : null;
@@ -465,7 +480,7 @@ export function readDealerNegotiationDetail(
 
   const tone = classifyQuoteSituation({
     isItemized: inputs.isItemized,
-    bestCompetingOtd,
+    bestCompetingOtd: bestCompetingRealOtd,
     currentOtd: inputs.currentOtd,
   });
   const giveUp = dealerGiveUpDecision({
@@ -484,6 +499,7 @@ export function readDealerNegotiationDetail(
     verdict: giveUp.verdict,
     reason: giveUp.reason,
     batnaGapUsd,
+    itemizedBatnaGapUsd,
     isItemized: inputs.isItemized,
   });
   const nextSteps = composeNextSteps({
@@ -512,7 +528,7 @@ export function readDealerNegotiationDetail(
     negotiation_status: repStatus,
     email_count: emailCount,
     quote_sent: quoteSent,
-    best_competing_otd: bestCompetingOtd,
+    best_competing_otd: bestCompetingRealOtd,
     batna_gap_usd: batnaGapUsd,
     status_line: statusLine,
     strategy,

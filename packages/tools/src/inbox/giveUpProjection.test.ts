@@ -64,6 +64,18 @@ function quote(
       "VALUES (?, ?, ?, ?, ?, ?, 500, ?, ?, ?, 0.9, 'cash')",
   ).run(q.quoteId, q.dealerId, `m-${q.quoteId}`, `g-${q.quoteId}`, PROFILE, q.otd - 2000, q.otd, q.receivedAt, q.vin);
 }
+/** A NON-itemized (bottom-line) quote: selling_price + doc_fee NULL, so the strict
+ *  give-up BATNA drops it but the real-OTD tone/display baseline counts it. */
+function rawBottomLineQuote(
+  c: Db["$client"],
+  q: { quoteId: string; dealerId: string; otd: number; vin: string; receivedAt: number },
+): void {
+  c.prepare(
+    "INSERT INTO dealer_quotes (quote_id, dealer_id, message_id, source_gmail_message_id, search_profile_id, " +
+      "selling_price, doc_fee, otd_total, quote_received_at, vin, confidence, financing_mode) " +
+      "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 0.9, 'cash')",
+  ).run(q.quoteId, q.dealerId, `m-${q.quoteId}`, `g-${q.quoteId}`, PROFILE, q.otd, q.receivedAt, q.vin);
+}
 
 beforeEach(() => {
   originalDataDir = process.env[DATA_DIR];
@@ -108,6 +120,28 @@ describe("listProfileDealerVerdicts", () => {
     const fresh = byDealer.get(FRESH)!;
     expect(fresh.verdict).toBe("continue"); // recent, and it is the cheaper one (no better alt)
     expect(fresh.reason).toBe("active");
+  });
+
+  it("verdict uses the strict itemized BATNA but the DISPLAYED gap uses the real (cheaper non-itemized) competitor (PIC-20260629r2-4)", () => {
+    const c = db.$client;
+    c.prepare("INSERT INTO dealers (dealer_id, name, country) VALUES ('d-bare', 'Bare Hyundai', 'US')").run();
+    // COLD itemized 46,000 (cold, give-up-worthy). FRESH itemized 45,000 → triggers
+    // give_up_switch (strict gap 1,000). BARE a cheaper NON-itemized 44,500 → the
+    // real best competing OTD (real gap 1,500), dropped by the strict BATNA.
+    thread(c, "t-cold", COLD);
+    inbound(c, "in-cold", "t-cold", NOW - 9 * DAY);
+    quote(c, { quoteId: "q-cold", dealerId: COLD, otd: 46000, vin: "VC", receivedAt: NOW - 9 * DAY });
+    thread(c, "t-fresh", FRESH);
+    inbound(c, "in-fresh", "t-fresh", NOW - 1 * DAY);
+    quote(c, { quoteId: "q-fresh", dealerId: FRESH, otd: 45000, vin: "VF", receivedAt: NOW - 1 * DAY });
+    profileDealer(c, "d-bare");
+    thread(c, "t-bare", "d-bare");
+    inbound(c, "in-bare", "t-bare", NOW - 1 * DAY);
+    rawBottomLineQuote(c, { quoteId: "q-bare", dealerId: "d-bare", otd: 44500, vin: "VG", receivedAt: NOW - 1 * DAY });
+
+    const cold = new Map(listProfileDealerVerdicts(db, PROFILE, { nowMs: NOW }).map((r) => [r.dealerId, r])).get(COLD)!;
+    expect(cold.verdict).toBe("give_up_switch"); // strict BATNA (FRESH itemized $45,000) still triggers
+    expect(cold.batnaGapUsd).toBe(1500); // displayed gap is the REAL gap to BARE ($44,500), not the strict $1,000
   });
 
   it("holds a cold dealer when it is the only quote (no competitor to switch to)", () => {
