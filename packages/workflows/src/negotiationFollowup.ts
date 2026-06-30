@@ -65,6 +65,7 @@ import { z } from "zod";
 
 import {
   assertNoBudget,
+  assertPaymentMethodConsistent,
   buildDraftContext,
   classifyQuoteSituation,
   getDb,
@@ -351,6 +352,10 @@ const FollowupStateSchema = z.object({
    *  dealer's reply_email, is the send `from`. Null falls back to the in-thread
    *  reply_email so a missing buyer address never blocks the reply. */
   followUpEmail: z.string().nullable(),
+  /** The buyer's chosen payment method (search_profiles.financing_preference;
+   *  nullable). Grounds the draft prompt + belts the output so a draft never
+   *  fabricates a payment method the buyer did not choose (CLAUDE.md §9). */
+  financingPreference: z.string().nullable(),
   /** Single-thread mode: follow up just this thread, or null for the full batch. */
   threadIdMode: z.string().nullable(),
   /** Terminal-declined flag (batch_review decline): every later step passes. */
@@ -447,6 +452,11 @@ const resolveProfileStep = createStep({
       // The buyer's reply address — the follow-up is sent FROM the buyer (nullable).
       followUpEmail:
         typeof row["follow_up_email"] === "string" ? (row["follow_up_email"] as string) : null,
+      // The buyer's chosen payment method — grounds the draft (never fabricate one).
+      financingPreference:
+        typeof row["financing_preference"] === "string"
+          ? (row["financing_preference"] as string)
+          : null,
       threadIdMode: inputData.thread_id,
       declined: false,
       noCandidates: false,
@@ -653,6 +663,7 @@ const draftStep = createStep({
         currentOtd: t.current_otd,
         bestCompetingOtd: t.best_competing_otd,
         vehicle: state.vehicle,
+        financingPreference: state.financingPreference,
       });
       // The NO-TOOL prose facade — no emit_result, no schema. #1244 is structurally
       // inapplicable (no tools + no structured output); the detector belt inside
@@ -665,6 +676,11 @@ const draftStep = createStep({
       // BELT: the budget red line. The prompt forbids a budget; this throws LOUD if
       // one slipped into the output anyway (again belted inside sendAndRecord).
       assertNoBudget(body);
+      // BELT: the payment-method red line. The prompt grounds the draft in the
+      // buyer's chosen method; this throws LOUD if the draft asserts a method the
+      // buyer did not choose (a finance buyer must never "pay cash"). Hard
+      // constraint in code, not just prompt (CLAUDE.md §9).
+      assertPaymentMethodConsistent(body, state.financingPreference);
       drafted.push({ ...t, draft_body: body });
     }
 

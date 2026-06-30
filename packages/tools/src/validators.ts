@@ -140,6 +140,119 @@ export function assertNoBudget(text: string): ValidationResult {
 }
 
 /**
+ * Thrown by assertPaymentMethodConsistent when a dealer-facing draft asserts a
+ * payment method the buyer did NOT choose. FAIL-LOUD (hard constraints in code,
+ * CLAUDE.md §9): the buyer's financing preference is internal ground truth; an
+ * LLM prose draft must never fabricate "cash purchase" for a finance buyer (or
+ * the reverse) — that misrepresents the buyer to the dealer and skews the
+ * cash-vs-finance quote. `preference` is the chosen method; `matches` carries the
+ * offending self-claim substrings for audit.
+ */
+export class PaymentMethodMismatchError extends Error {
+  readonly code = "payment_method_mismatch" as const;
+  readonly preference: string;
+  readonly matches: readonly string[];
+  constructor(preference: string, matches: readonly string[]) {
+    super(
+      `payment_method_mismatch: dealer-facing text asserts a payment method ` +
+        `[${matches.join(", ")}] contradicting the buyer's chosen financing ` +
+        `preference "${preference}" — a draft must never state a payment method ` +
+        `the buyer did not choose (CLAUDE.md §9, hard constraints in code).`,
+    );
+    this.name = "PaymentMethodMismatchError";
+    this.preference = preference;
+    this.matches = matches;
+  }
+}
+
+/**
+ * Self-claim patterns for each payment method in BUYER-authored outbound text.
+ * The scanned text is the buyer's own draft (no dealer quotes are spliced in),
+ * so a matched phrase is the buyer self-describing a payment method — not a
+ * question about one. Each pattern is affirmative/intent-anchored so a neutral
+ * QUESTION ("do you offer financing?") is NOT a claim: only first-person intent
+ * ("I'll finance", "plan to lease") or a concrete noun phrase ("cash purchase",
+ * "finance through you") counts.
+ */
+const CASH_CLAIM_PATTERN =
+  /\b(?:cash\s+(?:purchase|buyer|customer|sale|transaction|payment)|(?:pay(?:ing)?|paid)\s+(?:in\s+|with\s+|by\s+)?cash|all[-\s]cash|cash\s+in\s+full)\b/i;
+const FINANCE_CLAIM_PATTERN =
+  /\b(?:(?:i'?(?:ll|m)|we'?(?:ll|re))\s+financ(?:e|es|ed|ing)|(?:plan(?:ning)?|intend(?:ing)?|going|want|hoping|hope|like|prefer)\s+to\s+financ(?:e|ing)|will\s+be\s+financ(?:e|ing)|financ(?:e|es|ed|ing)\s+(?:through|with|this|the)\b)/i;
+const LEASE_CLAIM_PATTERN =
+  /\b(?:(?:i'?(?:ll|m)|we'?(?:ll|re))\s+leas(?:e|es|ed|ing)|(?:plan(?:ning)?|intend(?:ing)?|going|want|hoping|hope|like|prefer)\s+to\s+leas(?:e|ing)|will\s+be\s+leas(?:e|ing)|leas(?:e|es|ed|ing)\s+(?:through|with|this|the|it)\b)/i;
+
+/**
+ * A negation/contrast cue immediately before a claim, within a short same-clause
+ * window (no sentence boundary between). Suppresses a NEGATED or CONTRASTED
+ * mention so it is not read as an affirmative self-claim: "I'm NOT financing it",
+ * "don't pay cash", "RATHER THAN paying cash, I'll finance". Without this, a
+ * consistent draft that negates the other method would falsely abort the batch.
+ */
+const NEGATION_CUE =
+  /\b(?:not|never|no|without|don'?t|doesn'?t|won'?t|wouldn'?t|isn'?t|aren'?t|can'?t|cannot|rather\s+than|instead\s+of)\b[^.?!\n]{0,24}$/i;
+
+/** The first match of `pattern` in `text` that is NOT immediately preceded by a
+ *  negation/contrast cue, or null. */
+function firstUnnegatedClaim(text: string, pattern: RegExp): string | null {
+  const re = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+  for (const m of text.matchAll(re)) {
+    if (!NEGATION_CUE.test(text.slice(0, m.index))) return m[0].trim();
+  }
+  return null;
+}
+
+/**
+ * Reject a dealer-facing draft that asserts a payment method contradicting the
+ * buyer's CHOSEN financing preference. THROWS PaymentMethodMismatchError on a
+ * contradiction (fail-LOUD, like assertNoBudget) so the caller cannot send a
+ * misrepresentation; returns ValidationResult (ok:true) when the draft is silent
+ * on payment method or consistent with the preference.
+ *
+ * Only a buyer who has CHOSEN a method (`cash` / `finance` / `lease`) can be
+ * contradicted; an `undecided`/empty/unknown preference leaves the method open,
+ * so no claim is forbidden (the draft is told it is still comparing). Mirrors
+ * the deterministic initial-email `financingLine` mapping.
+ *
+ * @param text the candidate dealer-facing draft body.
+ * @param financingPreference the buyer's chosen method (search_profiles.financing_preference).
+ */
+export function assertPaymentMethodConsistent(
+  text: string,
+  financingPreference: string | null,
+): ValidationResult {
+  const pref = (financingPreference ?? "").trim().toLowerCase();
+  let forbidden: { label: string; pattern: RegExp }[];
+  if (pref === "finance") {
+    forbidden = [
+      { label: "cash", pattern: CASH_CLAIM_PATTERN },
+      { label: "lease", pattern: LEASE_CLAIM_PATTERN },
+    ];
+  } else if (pref === "lease") {
+    forbidden = [
+      { label: "cash", pattern: CASH_CLAIM_PATTERN },
+      { label: "finance", pattern: FINANCE_CLAIM_PATTERN },
+    ];
+  } else if (pref === "cash") {
+    forbidden = [
+      { label: "finance", pattern: FINANCE_CLAIM_PATTERN },
+      { label: "lease", pattern: LEASE_CLAIM_PATTERN },
+    ];
+  } else {
+    return { ok: true, errors: [] };
+  }
+
+  const matches: string[] = [];
+  for (const f of forbidden) {
+    const claim = firstUnnegatedClaim(text, f.pattern);
+    if (claim !== null) matches.push(claim);
+  }
+  if (matches.length > 0) {
+    throw new PaymentMethodMismatchError(pref, matches);
+  }
+  return { ok: true, errors: [] };
+}
+
+/**
  * Thrown by assertUnicodeSafe when dealer-facing text carries a lone UTF-16
  * surrogate half (an unpaired U+D800–U+DFFF code unit). FAIL-LOUD: a lone
  * surrogate is not valid Unicode and corrupts the assembled RFC-2822 message

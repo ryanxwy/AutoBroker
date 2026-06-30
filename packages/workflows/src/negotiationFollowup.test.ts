@@ -522,6 +522,11 @@ describe("negotiation_followup — SEND n (the fake send happy path)", () => {
     // The prompt embeds the assertive guidance line; the model never chose it.
     expect(prose.prompts.length).toBe(1);
     expect(prose.prompts[0]).toContain("firm, confident register");
+    // The financing preference (profile seeded "finance") reaches the draft prompt
+    // end-to-end, so the draft is grounded and never fabricates a payment method
+    // the buyer did not choose (PIC-20260629r2-3).
+    expect(prose.prompts[0]).toContain("plan to finance");
+    expect(prose.prompts[0]).toMatch(/NEVER state or imply a payment method/i);
 
     const final = await run.resume({
       step: "batchReview",
