@@ -107,8 +107,13 @@ export interface NegotiationStrategyInput {
   verdict: DealerVerdict;
   /** The dominant give-up reason (for the cap-reason override). */
   reason: GiveUpReason;
-  /** Dollars behind the best quality competitor (>= 0), or null. */
+  /** Dollars above the best REAL competing OTD (>= 0), or null — the tone/display
+   *  gap (a cheaper bottom-line competitor counts). Used by the tone wording. */
   batnaGapUsd: number | null;
+  /** Dollars above the strict fully-ITEMIZED BATNA competitor (>= 0), or null —
+   *  the gap that justifies a give_up_switch. Used ONLY by the give_up_switch
+   *  wording, which explicitly cites a "fully itemized competing quote". */
+  itemizedBatnaGapUsd: number | null;
   /** Whether this dealer's current open quote is fully itemized. */
   isItemized: boolean;
 }
@@ -121,9 +126,12 @@ export interface NegotiationStrategyInput {
  */
 export function composeNegotiationStrategy(input: NegotiationStrategyInput): string {
   if (input.verdict === "give_up_switch") {
-    if (input.batnaGapUsd !== null) {
+    // The switch is justified by the strict itemized BATNA, so the cited gap must
+    // be the ITEMIZED gap — not the (possibly larger) real gap to a cheaper
+    // non-itemized competitor that the tone/display uses.
+    if (input.itemizedBatnaGapUsd !== null) {
       return (
-        `A fully itemized competing quote is ${usd(input.batnaGapUsd)} lower ` +
+        `A fully itemized competing quote is ${usd(input.itemizedBatnaGapUsd)} lower ` +
         `out-the-door. Recommend giving up on this dealer and switching to the ` +
         `stronger offer.`
       );

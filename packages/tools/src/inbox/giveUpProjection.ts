@@ -89,13 +89,22 @@ export function listProfileDealerVerdicts(
       currentOtd: inputs.currentOtd,
       bestCompetingOtd: inputs.bestCompetingOtd,
     });
+    // The VERDICT is decided by the strict itemized BATNA, but the DISPLAYED gap
+    // mirrors the detail modal's gap — the lowest REAL competing OTD — so the
+    // board card and the modal never show two different "$N" for one dealer
+    // (PIC-20260629r2-4). Equal to d.batnaGapUsd whenever the cheapest competitor
+    // is itemized; larger only when a cheaper non-itemized competitor exists.
+    const displayedGapUsd =
+      inputs.currentOtd !== null && inputs.bestCompetingRealOtd !== null
+        ? Math.max(0, inputs.currentOtd - inputs.bestCompetingRealOtd)
+        : null;
     const row: DealerVerdictRow = {
       threadId: c.threadId,
       dealerId: c.dealerId,
       dealerName: c.dealerName,
       verdict: d.verdict,
       reason: d.reason,
-      batnaGapUsd: d.batnaGapUsd,
+      batnaGapUsd: displayedGapUsd,
     };
     const prev = byDealer.get(c.dealerId);
     if (prev === undefined || outranks(row, prev)) byDealer.set(c.dealerId, row);
