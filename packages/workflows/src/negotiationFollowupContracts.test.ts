@@ -185,6 +185,7 @@ describe("buildFollowupDraftPrompt", () => {
       currentOtd: 32000,
       bestCompetingOtd: 31200,
       vehicle: "2026 Hyundai Tucson Limited",
+      financingPreference: "finance",
     });
     // Leverage is a NUMBER, never a competing dealer name.
     expect(prompt).toContain("31200");
@@ -209,10 +210,48 @@ describe("buildFollowupDraftPrompt", () => {
       currentOtd: 30000,
       bestCompetingOtd: null,
       vehicle: "2026 Hyundai Tucson Limited",
+      financingPreference: null,
     });
     expect(prompt).toContain("do not invent one");
     // No fabricated competing number leaks into the prompt.
     expect(prompt).not.toContain("out-the-door.\nWrite"); // no dangling number line
+  });
+
+  it("grounds the draft in the buyer's financing preference and forbids an unchosen payment method", () => {
+    const finance = buildFollowupDraftPrompt({
+      tone: "moderate",
+      draftContext: ctx,
+      currentOtd: 32000,
+      bestCompetingOtd: 31200,
+      vehicle: "2026 Hyundai Tucson Limited",
+      financingPreference: "finance",
+    });
+    // The authorized payment line reflects the chosen method (finance), and a red
+    // line forbids stating a method the buyer did not choose (PIC-20260629r2-3).
+    expect(finance).toContain("plan to finance");
+    expect(finance).toMatch(/NEVER state or imply a payment method/i);
+    expect(finance).not.toContain("plan to pay cash");
+
+    // Cash buyer → the cash line; undecided → compare-both copy.
+    const cash = buildFollowupDraftPrompt({
+      tone: "moderate",
+      draftContext: ctx,
+      currentOtd: 32000,
+      bestCompetingOtd: 31200,
+      vehicle: "2026 Hyundai Tucson Limited",
+      financingPreference: "cash",
+    });
+    expect(cash).toContain("plan to pay cash");
+
+    const undecided = buildFollowupDraftPrompt({
+      tone: "moderate",
+      draftContext: ctx,
+      currentOtd: 32000,
+      bestCompetingOtd: 31200,
+      vehicle: "2026 Hyundai Tucson Limited",
+      financingPreference: null,
+    });
+    expect(undecided).toContain("still comparing");
   });
 });
 

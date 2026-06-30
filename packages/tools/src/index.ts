@@ -890,9 +890,11 @@ export {
 export {
   postValidate,
   assertNoBudget,
+  assertPaymentMethodConsistent,
   assertUnicodeSafe,
   assertPhonePolicy,
   BudgetLeakError,
+  PaymentMethodMismatchError,
   UnicodeUnsafeError,
   PhonePolicyViolationError,
   type ValidationResult,
