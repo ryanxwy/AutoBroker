@@ -43,6 +43,11 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/ui-functional-reminder.py\"",
             "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/schema-migration-reminder.py\"",
+            "timeout": 20
           }
         ]
       }
