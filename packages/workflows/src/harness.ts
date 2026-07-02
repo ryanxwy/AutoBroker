@@ -58,9 +58,8 @@
  *      Cost is NULL-not-$0: usage missing → costUsd null + pricingSource
  *      'unavailable'. Wall-clock durationMs is always recorded.
  *
- * Prompt: input.prompt is a flat string; it is routed through the model
- * layer's toModelMessages([{role:'user',...}]) so the canonical-message ↔
- * ModelMessage translator is load-bearing on this lane.
+ * Prompt: input.prompt is a flat string, wrapped inline as a single
+ * user-role ModelMessage on each generate lane.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/model (pure
  * helpers + types), @autobroker/tools (the ledger writer — the ONLY DB path),
@@ -82,7 +81,6 @@ import {
   policy,
   redactMalformedSample,
   resolveModel,
-  toModelMessages,
   type HarnessGenerateInput,
   type HarnessGenerateResult,
   type HarnessSuspend,
@@ -399,8 +397,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
     },
   });
 
-  // Stage 9 — prompt routed through the canonical-message translator.
-  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+  // Stage 9 — prompt wrapped inline as a single user-role message.
+  const messages = [{ role: "user" as const, content: input.prompt }];
 
   // The thinking lane (the malformed-class recovery hop) reasons first, so the
   // model must be free to think BEFORE the tool fires. The default lane forces
@@ -660,9 +658,9 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   startedAt: number,
   _testOverrides: HarnessTestOverrides | undefined,
 ): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
-  // Prompt routed through the canonical-message translator, same as the
+  // Prompt wrapped inline as a single user-role message, same as the
   // emit_result lane.
-  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+  const messages = [{ role: "user" as const, content: input.prompt }];
 
   const agent = new Agent({
     id: "harness-output-object",
@@ -1054,8 +1052,8 @@ async function draftProse(
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 
-  // Stage 9 — prompt routed through the canonical-message translator.
-  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+  // Stage 9 — prompt wrapped inline as a single user-role message.
+  const messages = [{ role: "user" as const, content: input.prompt }];
 
   const agent = new Agent({
     id: "harness-prose",

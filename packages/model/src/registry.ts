@@ -1,7 +1,7 @@
 /**
  * Provider registry (Layer 2).
  *
- * STUB: wires the three first-class api-key providers behind a single
+ * Wires the three first-class api-key providers behind a single
  * `createProviderRegistry`, exposing capability aliases so callers resolve a
  * model by a provider-neutral `{provider}.{tier}` ModelAlias string. Swapping
  * the concrete model behind an alias is a one-string edit here.
@@ -17,7 +17,7 @@
  *     stopWhen/maxSteps, and workflow snapshots.
  *   - subscription/CLI-spawn lanes still do not fire an in-process loop over our
  *     tools (T1), so their side-effect gate routes through the same L2 handler.
- *   - alias = `{provider}.{tier}`, tier in { reasoner, chat, cheap, strong }.
+ *   - alias = `{provider}.{tier}`, tier in { chat, cheap, strong }.
  *     These are model-capability aliases, not the forbidden per-provider L1-L5
  *     harness tiering.
  */
@@ -28,7 +28,7 @@ import { openai } from "@ai-sdk/openai";
 import { createProviderRegistry, customProvider } from "ai";
 import type { LanguageModel, ProviderRegistryProvider } from "ai";
 import type { ProviderV3 } from "@ai-sdk/provider";
-import { DEFAULT_PROVIDER, type ModelAlias, type Provider } from "@autobroker/core";
+import type { ModelAlias } from "@autobroker/core";
 
 /**
  * The registry separator. We use "." so the public alias string is exactly the
@@ -63,9 +63,6 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
         cheap: deepseek("deepseek-v4-flash"), // thinking-off (explicit), temperature:0
         chat: deepseek("deepseek-v4-flash"),
         strong: deepseek("deepseek-v4-pro"), // thinking-off; evaluate per useCase
-        // Same id as cheap/chat — thinking:enabled is a per-request parameter
-        // bound at call time by the reasoner-tier useCases.
-        reasoner: deepseek("deepseek-v4-flash"),
       },
       fallbackProvider: deepseek,
     }),
@@ -76,14 +73,11 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
     // claude-opus-4-1 → superseded by claude-opus-4-8 (and 4-1 is now a $15/MTok
     // legacy model). claude-haiku-4-5 is still current (alias of the dated
     // -20251001 snapshot). All three support tools + structured outputs + vision.
-    // reasoner→sonnet-4-6 (extended thinking; opus-4-8 has adaptive thinking but
-    // we reserve it for the strong tier per cost).
     anthropic: customProvider({
       languageModels: {
         cheap: anthropic("claude-haiku-4-5"),
         chat: anthropic("claude-sonnet-4-6"),
         strong: anthropic("claude-opus-4-8"),
-        reasoner: anthropic("claude-sonnet-4-6"),
       },
       fallbackProvider: anthropic,
     }),
@@ -92,25 +86,19 @@ export const registry: ProviderRegistryProvider<Record<string, ProviderV3>, type
     // developers.openai.com/api/docs/models). The prior strings were STALE: the
     // gpt-4.1 family and o3 are superseded by the GPT-5.x line. gpt-5.4 is the
     // default reasoning workhorse (effort none/low/medium/high/xhigh),
-    // gpt-5.4-mini the cheapest capable tier, gpt-5.5 the strongest. The whole
-    // GPT-5.x family is reasoning-capable, so reasoner→gpt-5.4 (not a separate
-    // o-series id; no o-series model is listed in the current docs). All support
+    // gpt-5.4-mini the cheapest capable tier, gpt-5.5 the strongest. All support
     // tools + structured outputs + vision.
     openai: customProvider({
       languageModels: {
         cheap: openai("gpt-5.4-mini"),
         chat: openai("gpt-5.4"),
         strong: openai("gpt-5.5"),
-        reasoner: openai("gpt-5.4"),
       },
       fallbackProvider: openai,
     }),
   },
   { separator: SEPARATOR },
 );
-
-/** Default provider per the 2026-06-02 override (re-exported for callers). */
-export const defaultProvider: Provider = DEFAULT_PROVIDER;
 
 /**
  * Resolve a `{provider}.{tier}` ModelAlias to a concrete LanguageModel.

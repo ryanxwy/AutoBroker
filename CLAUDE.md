@@ -96,8 +96,7 @@ core  ->  model  ->  workflows  ->  tools  ->  app
   Mastra, Drizzle, Playwright must be invisible here).
 - `packages/model` — AI SDK 6 provider layer: `createProviderRegistry({deepseek,
   anthropic, openai})`, `policy(useCase→ModelAlias→CapabilityFlags)`,
-  `resolveModel(alias)`, canonical-message ↔ ModelMessage translation, and the
-  #1244 fail-closed detector/Processor helpers.
+  `resolveModel(alias)`, and the #1244 fail-closed detector/Processor helpers.
 - `packages/workflows` — Mastra 1.x backbone: each skill is a flat linear
   `createWorkflow`; sessions use Mastra Memory threads/resources plus OM
   auto-compact on the chat lane; durable `suspend()` / resume and app-side

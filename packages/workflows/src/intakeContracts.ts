@@ -137,7 +137,7 @@ export const TrimSuggestionSchema = z
 export type TrimSuggestion = z.infer<typeof TrimSuggestionSchema>;
 
 // ---------------------------------------------------------------------------
-// prompt builders (flat strings; routed via toModelMessages in harness)
+// prompt builders (flat strings; wrapped inline as a user message in harness)
 // ---------------------------------------------------------------------------
 
 /** Build the freeform-prefill prompt from the user's launch prose. */

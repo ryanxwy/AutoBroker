@@ -111,7 +111,7 @@ pnpm --filter @autobroker/model typecheck
 `ai@^6` is intentional (not v7 — `LanguageModelV4` would break V3-spec community
 providers). CI adds a major-bump ignore. Provider adapters: `@ai-sdk/anthropic`,
 `@ai-sdk/openai`, `@ai-sdk/deepseek`. Phase 0 pins DeepSeek aliases to the
-current explicit ids: `deepseek-v4-flash` for default/chat/cheap/reasoner and
+current explicit ids: `deepseek-v4-flash` for default/chat/cheap and
 `deepseek-v4-pro` for strong. Thinking is a per-call parameter: chat/rail
 defaults to thinking ON + `reasoning_effort:"high"`, while schema-bound
 `emit_result` steps force thinking OFF + `temperature:0` because named/forced

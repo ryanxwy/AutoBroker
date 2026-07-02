@@ -10,8 +10,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { aliasForModelId, policy, policyForAlias, withProvider } from "./policy.js";
+import { ALIAS_MODEL_ID, aliasForModelId, policy, policyForAlias, withProvider } from "./policy.js";
 import type { UseCase } from "./policy.js";
+import { registry } from "./registry.js";
+import type { ModelAlias } from "@autobroker/core";
 
 const RETRY_USE_CASES: UseCase[] = [
   "geosearch_extract_retry",
@@ -52,10 +54,12 @@ describe("policyForAlias()", () => {
   });
 
   it("throws loudly on an alias with no capabilities row", () => {
-    // deepseek.reasoner is a valid ModelAlias shape but has no ALIAS_CAPABILITIES entry
-    expect(() => policyForAlias("deepseek.reasoner" as Parameters<typeof policyForAlias>[0])).toThrow(
-      /no CapabilityFlags registered/,
-    );
+    // deepseek.reasoner is no longer a registered tier (removed from MODEL_TIERS),
+    // so it has no ALIAS_CAPABILITIES entry — policyForAlias must fail loud, not
+    // silently down-route. Cast through unknown since it is no longer a ModelAlias.
+    expect(() =>
+      policyForAlias("deepseek.reasoner" as unknown as Parameters<typeof policyForAlias>[0]),
+    ).toThrow(/no CapabilityFlags registered/);
   });
 });
 
@@ -74,7 +78,7 @@ describe("aliasForModelId()", () => {
     expect(aliasForModelId("claude-opus-4-8")).toBe("anthropic.strong");
   });
 
-  it("claude-sonnet-4-6 → anthropic.chat (chat before reasoner)", () => {
+  it("claude-sonnet-4-6 → anthropic.chat", () => {
     expect(aliasForModelId("claude-sonnet-4-6")).toBe("anthropic.chat");
   });
 
@@ -103,4 +107,17 @@ describe("policy() still returns correct resolution after refactor", () => {
     expect(res.provider).toBe("deepseek");
     expect(res.capabilities.supportsOutputObjectWithTools).toBe(false);
   });
+});
+
+describe("ALIAS_MODEL_ID ↔ registry sync guard", () => {
+  // Every alias in the policy map must resolve, in the registry, to the exact
+  // same concrete model id. This catches registry/policy drift at `pnpm test`.
+  it.each(Object.keys(ALIAS_MODEL_ID) as ModelAlias[])(
+    "registry.languageModel(%s).modelId === ALIAS_MODEL_ID[alias]",
+    (alias) => {
+      const model = registry.languageModel(alias);
+      const modelId = typeof model === "string" ? model : model.modelId;
+      expect(modelId).toBe(ALIAS_MODEL_ID[alias]);
+    },
+  );
 });

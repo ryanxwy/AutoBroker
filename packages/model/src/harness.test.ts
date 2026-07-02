@@ -12,11 +12,7 @@ import type { CapabilityFlags } from "@autobroker/core";
 import { chooseStructuredOutputStrategy } from "./harness.js";
 
 const baseCaps: CapabilityFlags = {
-  supportsToolCalls: true,
   supportsOutputObjectWithTools: true,
-  strictJsonSchema: true,
-  supportsVision: true,
-  reportsUsageTokens: true,
 };
 
 describe("chooseStructuredOutputStrategy", () => {
@@ -36,18 +32,5 @@ describe("chooseStructuredOutputStrategy", () => {
         supportsOutputObjectWithTools: true,
       }),
     ).toBe("output_object");
-  });
-
-  it("keys off supportsOutputObjectWithTools alone, ignoring other flags", () => {
-    // Flip every OTHER flag; the strategy must still follow the one flag.
-    expect(
-      chooseStructuredOutputStrategy({
-        supportsToolCalls: false,
-        supportsOutputObjectWithTools: false,
-        strictJsonSchema: false,
-        supportsVision: false,
-        reportsUsageTokens: false,
-      }),
-    ).toBe("emit_result");
   });
 });

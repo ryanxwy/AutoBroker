@@ -28,7 +28,7 @@ export type Provider = (typeof PROVIDERS)[number];
  * Capability tier within a provider. The registry binds each {provider}.{tier}
  * to a concrete model id via `customProvider` aliases in the model layer.
  */
-export const MODEL_TIERS = ["reasoner", "chat", "cheap", "strong"] as const;
+export const MODEL_TIERS = ["chat", "cheap", "strong"] as const;
 export type ModelTier = (typeof MODEL_TIERS)[number];
 
 /** Template-literal alias type: e.g. "deepseek.cheap", "anthropic.strong". */
@@ -74,21 +74,11 @@ export const DEFAULT_PROVIDER: Provider = "deepseek";
 
 export const CapabilityFlagsSchema = z
   .object({
-    /** Provider/model supports structured tool calls in the in-process api-key
-     *  lane. Mastra owns the loop; this flag describes model capability only. */
-    supportsToolCalls: z.boolean(),
     /** Mixing `Output.object` with `tools` is safe (false for DeepSeek per #1244
      *  json_schema-injection text-dump; use emit_result or a two-phase pipeline). */
     supportsOutputObjectWithTools: z.boolean(),
-    /** Honors strict JSON-Schema (rejects recursion / min / max / $ref, etc.). */
-    strictJsonSchema: z.boolean(),
-    /** Native vision input available (else fall back to OCR — transient, traced). */
-    supportsVision: z.boolean(),
-    /** Provider emits usage tokens we can price into cost_usd (else NULL + flag,
-     *  never silently $0). */
-    reportsUsageTokens: z.boolean(),
-    // TODO: add reasoning/thinking budget flags, max context window, JSON-mode
-    // vs tool-call mode, structured-output strictness sub-levels as skills land.
+    // Only the flag with a production reader (the #1244 strategy gate) is kept.
+    // Re-add a capability flag here ONLY when a live case actually reads it.
   })
   .strict()
   .describe("Capabilities of a routed model; drives fail-loud / down-route.");
