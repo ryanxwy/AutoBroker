@@ -26,14 +26,13 @@
 
 import { createHash } from "node:crypto";
 
-import type { HarnessSuspend } from "@autobroker/model";
 import {
   assertNoBudget,
   readDealerSubstantiveReplyBodies as readDealerSubstantiveReplyBodiesImpl,
   type Db,
 } from "@autobroker/tools";
 
-import { harness, type HarnessLedgerContext } from "./harness.js";
+import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
 import {
   NegotiationSummaryEmitSchema,
   buildNegotiationSummaryPrompt,
@@ -116,13 +115,6 @@ export function __resetNegotiationSummaryDepsForTests(): void {
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-/** Narrow a harness.generate result to the HarnessSuspend branch (defensive —
- *  hitlAvailable:false throws rather than suspends, but a suspend-shaped return
- *  still degrades to null). */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
 
 /** The ledger identity for the one test_run_records row this call writes. There
  *  is no Mastra runId here (not a workflow), so the run window is keyed by the

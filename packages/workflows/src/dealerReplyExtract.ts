@@ -88,7 +88,7 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 
 import { reclassifyRule2Failures, type DealerReplyQuoteRow } from "@autobroker/core";
-import { MalformedToolCallAbort, policy, type HarnessSuspend } from "@autobroker/model";
+import { MalformedToolCallAbort, policy } from "@autobroker/model";
 import {
   classifyMessageQuoteClass,
   createGmailAdapter,
@@ -115,7 +115,8 @@ import {
   type MessageIntent,
   type ReplyCandidateState,
 } from "./dealerReplyExtractContracts.js";
-import { harness, type HarnessLedgerContext } from "./harness.js";
+import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
+import { isMalformedToolCallError } from "./recoverEmitWithRetry.js";
 
 // ---------------------------------------------------------------------------
 // dependency-injection seam (test-runner-guarded, mirroring the other skills)
@@ -203,34 +204,6 @@ function dealerReplyExtractLedger(runId: string): HarnessLedgerContext {
 /** Re-hydrate a typed state from a step's loosely-typed inputData. */
 function asState(inputData: unknown): DealerReplyExtractState {
   return DealerReplyExtractStateSchema.parse(inputData);
-}
-
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
-/**
- * The MALFORMED-tool-call failure class — the ONLY class the automatic v4-pro +
- * thinking retry hop fires on. Keyed on the STABLE `err.name` (never a message
- * string-match):
- *   - `MalformedToolCallAbort` — the harness's typed #1244 fail-closed abort
- *     (finish_reason != tool_calls / empty tool_calls / tool-shaped blob).
- *   - `AI_InvalidToolInputError` — the AI SDK's own un-parseable-tool-args throw
- *     (the v4-flash serialization defect: an extra trailing brace closing the
- *     emit_result arguments), re-thrown verbatim by the harness after ledgering.
- *
- * A ZodError (zod_validation — a structurally-valid tool call carrying values the
- * schema rejects) or any transport/provider throw is NOT this class: re-running
- * a deterministic Zod rejection or a 5xx on a different model is not the
- * owner-directed recovery, so those skip the retry and fail closed immediately.
- */
-function isMalformedToolCallError(err: unknown): boolean {
-  if (err instanceof MalformedToolCallAbort) return true;
-  return (
-    err instanceof Error &&
-    (err.name === "MalformedToolCallAbort" || err.name === "AI_InvalidToolInputError")
-  );
 }
 
 /** A human label for the ask-by-vehicle STOP. */

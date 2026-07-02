@@ -30,13 +30,10 @@
 
 import { z } from "zod";
 
-import {
-  MalformedToolCallAbort,
-  type HarnessSuspend,
-} from "@autobroker/model";
+import { MalformedToolCallAbort } from "@autobroker/model";
 import { SKILLS, type SkillDef } from "@autobroker/skills";
 
-import { harness, type HarnessLedgerContext } from "./harness.js";
+import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
 import type { HarnessTestOverrides } from "./harness.js";
 
 /** The sentinel the model emits when no skill fits — maps to `clarify`. */
@@ -115,13 +112,6 @@ export type RouteDecision =
 /** Build the {clarify} verdict with no candidates (the bare fail-closed shape). */
 function clarify(reason: string, candidates: { skillId: string; why: string }[] = []): RouteDecision {
   return { kind: "clarify", reason, candidates };
-}
-
-/** Narrow a harness.generate result to the HarnessSuspend branch (defensive —
- *  hitlAvailable:false should THROW, not suspend, but a suspend-shaped return is
- *  treated identically: fail-closed → clarify). */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
 }
 
 /**

@@ -60,6 +60,7 @@ import {
   type UseCase,
 } from "@autobroker/model";
 
+import { isHarnessSuspend } from "./harness.js";
 import type { harness, HarnessLedgerContext } from "./harness.js";
 
 /** Max malformed-class recovery retries per run window. Once a run consumes K
@@ -86,7 +87,7 @@ const recoveryBudget = new Map<string, number>();
  * A ZodError (a structurally-valid tool call carrying schema-rejected values) or
  * any transport/provider throw is NOT this class — re-running it is not recovery.
  */
-function isMalformedToolCallError(err: unknown): boolean {
+export function isMalformedToolCallError(err: unknown): boolean {
   if (err instanceof MalformedToolCallAbort) return true;
   return (
     err instanceof Error &&
@@ -113,7 +114,7 @@ function shouldRetrySignals(err: unknown): boolean {
  * (mirrors the skills) — a suspend-shaped return still fail-closes identically.
  */
 function narrow<T>(r: HarnessGenerateResult<T> | HarnessSuspend): HarnessGenerateResult<T> {
-  if ("suspended" in r) {
+  if (isHarnessSuspend(r)) {
     throw new MalformedToolCallAbort(r.signals);
   }
   return r;
