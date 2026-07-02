@@ -53,6 +53,16 @@ export interface BuiltServer {
   recovery: BootResult["recovery"];
 }
 
+/**
+ * Anti-DNS-rebinding boundary. This API binds to 127.0.0.1 only, but a malicious
+ * web page can rebind its own hostname to 127.0.0.1 and then reach this local API
+ * with an attacker-controlled Host header — driving endpoints that flip the send
+ * mode, write provider keys, or approve a gated action. Only requests whose Host
+ * is a loopback name are allowed; the same-origin SPA, the vite dev proxy
+ * (changeOrigin → loopback Host), the desktop shell, and inject() all pass.
+ */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
 /** Shape the unified error envelope. */
 function errorEnvelope(
   code: string,
@@ -117,6 +127,27 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
     // unused. Keep the default JSON body parser (8000-char message etc. are
     // enforced by Zod, not by a body-limit here).
     logger: false,
+  });
+
+  // Anti-DNS-rebinding boundary (see LOOPBACK_HOSTS): reject any request whose
+  // Host is not a loopback name BEFORE it can reach a route. Runs first so a
+  // rebound cross-origin page can never drive the local API.
+  app.addHook("onRequest", async (request, reply) => {
+    const host = request.headers.host ?? "";
+    let hostname: string;
+    if (host.startsWith("[")) {
+      // Bracketed IPv6 literal, e.g. "[::1]" or "[::1]:8100".
+      hostname = host.slice(0, host.indexOf("]") + 1);
+    } else if (host.split(":").length === 2) {
+      // hostname:port or 127.0.0.1:port — drop the :port suffix.
+      hostname = host.slice(0, host.lastIndexOf(":"));
+    } else {
+      hostname = host; // bare hostname or a bare IPv6 literal.
+    }
+    if (!LOOPBACK_HOSTS.has(hostname)) {
+      reply.code(403).send(errorEnvelope("forbidden_host", "host not allowed"));
+      return reply; // stop the lifecycle: the route never runs.
+    }
   });
 
   registerRoutes(app, { skillRuns, pubsub, sessions, approvals });

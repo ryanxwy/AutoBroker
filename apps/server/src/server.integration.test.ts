@@ -598,6 +598,27 @@ describe("read-only routes", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Host-header allowlist (anti-DNS-rebinding boundary)
+// ---------------------------------------------------------------------------
+
+describe("Host-header allowlist", () => {
+  it("rejects a non-loopback Host with 403 forbidden_host before the route runs", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    const r = await s.app.inject({ method: "GET", url: "/api/mode", headers: { host: "attacker.com" } });
+    expect(r.statusCode).toBe(403);
+    expect(r.json<{ error: { code: string } }>().error.code).toBe("forbidden_host");
+  });
+
+  it("allows loopback Hosts (127.0.0.1:8100 and localhost) through to the route", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    for (const host of ["127.0.0.1:8100", "localhost"]) {
+      const r = await s.app.inject({ method: "GET", url: "/api/mode", headers: { host } });
+      expect(r.statusCode).toBe(200);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // dealers projection + profile preference write-through
 // ---------------------------------------------------------------------------
 
