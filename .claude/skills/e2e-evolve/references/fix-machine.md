@@ -12,7 +12,8 @@ parallel; any file overlap runs **serial** (a later subagent reads the prior edi
 ## Fix (step 4a) — edits ONLY inside the worktree
 
 Work in a fresh worktree off `origin/main` (copy `.env` in — it is gitignored, so a fresh
-worktree has none, and serve-live needs the DeepSeek key). The fixer applies the **minimal**
+worktree has none, and serve-live needs the run lane's credential — `DEEPSEEK_API_KEY` /
+`CLAUDE_CODE_OAUTH_TOKEN` per `--provider`). The fixer applies the **minimal**
 change inside the worktree. `git status` MUST show **no out-of-worktree absolute-path
 writes** — a subagent writing to the main checkout's absolute path is a real, observed bug.
 Stage explicit paths only; leave unrelated worktree changes alone.
@@ -42,7 +43,9 @@ wall-clock lever, ~5–12 min/fix): restart serve-live in the **same worktree** 
 up the new `pnpm -r build`, reusing the worktree's `node_modules` + prebuilt
 `better-sqlite3` — only `git worktree add` a fresh tree if the base diverged. The verdict
 is a `/__e2e/rows` / `/__e2e/audit` delta, **not** a screenshot. "Needs live verify" is
-never a defer reason — a fresh run is.
+never a defer reason — a fresh run is. Re-verify on the SAME provider lane the finding came
+from — export `AUTOBROKER_AGENT_PROVIDER=<lane>` before the fresh serve-live (`--provider`
+of this session).
 
 ### The fix → seasoned-case PAIRING rule (deterministic-AND-seasoned, never OR)
 

@@ -217,6 +217,12 @@ under-exercised half that this persona+journey rotation is designed to cover.
 
 ## Per-tab frontend-taste invocation cadence (step 3.7)
 
+> **Division of labor: frontend-taste vs ui-monitor.** frontend-taste = usability
+> judgment per data tab (copy, affordances, empty states — advisory). ui-monitor
+> (`references/ui-monitor.md`) = layout/console watchdog at journey checkpoints
+> (geometry, overflow, console — advisory). Different lenses; dedup by surface
+> before recording — one finding, one entry.
+
 Run this sweep **per data tab** after a skill with `Done` + badge count > 0 has
 populated it. Empty tabs: one cheap empty-state read only (heuristic #7).
 
@@ -321,73 +327,32 @@ Each is an **advisory** edge probe layered ON TOP of a fix's deterministic regre
 bias the brand-picker/metro to force it. A seasoned case that repeatedly catches a real
 regression graduates DOWN into a `*.func.toml`.
 
-- **SC-628-1 · inventory recommend-on-unknown** (PIC-20260628-1, `0c61e0d`). Trigger: a
-  live `inventory_site_scan` on a platform whose SRPs expose no availability badge (so
-  listings persist `inventory_status='unknown'` — Dealer.com/Nissan-style). Expected: after
-  `inventory_compare`, ≥1 exact-trim, under-budget, in-radius listing is **recommended**
-  (`recommendedCount>0`, the Recommended filter not greyed) AND each such row carries the
-  `inventory-availability-caveat` chip; the detail modal still says "not confirmed by scan".
-  CONDITIONAL on a scan actually yielding exact-trim in-budget `unknown` rows. Stresses the
-  buyer-value floor (the recommend engine must not go dead on a no-availability platform).
-- **SC-628-2 · honest-dealer dropped title/reg line** (PIC-20260628-2, `1111962`). A dealer
-  archetype (see `dealer-brain.md`) whose itemized OTD is correct but folds a combined
-  "Title & registration: $X" line the live extractor may drop. Expected: `quote_audit` does
-  NOT fire `MATH_SANITY` on that dealer when the OTD residual ≤ $1000, but DOES fire on a
-  dealer with a >$1000 unexplained shortfall. CONDITIONAL on the live extract actually
-  dropping the combined line (the realistic, non-plantable trigger). Stresses the audit
-  TRUST signal (no false "doesn't reconcile" on an honest dealer).
-- **SC-628-4 · off-brand / duplicate rooftop in geosearch** (PIC-20260628-4, `7375aa1`).
-  Trigger: a live `dealer_geosearch` whose Maps results independently include an off-brand
-  store (a different-make rooftop) and/or a duplicate "…Service" card on the same website.
-  Expected: the geosearch headline surfaces "N off-brand dealer(s) excluded" / "N duplicate
-  rooftop(s) merged"; `/api/profiles/:id/dealers` carries no off-brand row and exactly one
-  rooftop per website host. CONDITIONAL — assert ONLY when Maps independently returns such
-  anomalies; never force the metro. Stresses lead-slot quality + the fail-open brand filter
-  (a real dealer of the searched make is NEVER dropped).
-- **Fix-628-5 pairing (deterministic runner-check, NOT LLM-seasoned).** The
-  `inject_replies` dealer-binding fix is a harness mechanic with no realism axis, so it is
-  paired with a runner CHECK, not a seasoned case: in the F4 Dealers/Negotiations pass,
-  assert the `dealer-verdict-hold`/`dealer-verdict-switch` chips render on the **geosearch
-  dealer tiles** (those with a non-null distance), and that `/api/profiles/:id/dealers`
-  count == the geosearch dealer count with **no `live-dealer-*` rows** when the inject
-  payload carried the geosearch `dealer_id` (PIC-20260628-5, `9d518d8`).
+- **SC-628-1 · inventory recommend-on-unknown** (`0c61e0d`). Trigger: a live scan persists
+  exact-trim in-budget `inventory_status='unknown'` rows (no-availability-badge platform).
+  EXPECT: `inventory_compare` recommends ≥1 such row, each with the `inventory-availability-caveat` chip.
+- **SC-628-2 · honest-dealer dropped title/reg line** (`1111962`). Trigger: the live extract
+  drops a dealer's combined "Title & registration: $X" line. EXPECT: no `MATH_SANITY` on an
+  OTD residual ≤ $1000; a >$1000 unexplained shortfall still fires.
+- **SC-628-4 · off-brand / duplicate rooftop in geosearch** (`7375aa1`). Trigger: Maps
+  independently returns an off-brand rooftop and/or a duplicate "…Service" card. EXPECT:
+  headline voices "N excluded/merged"; `/api/profiles/:id/dealers` has no off-brand row, one rooftop per host.
+- **Fix-628-5 pairing (deterministic runner-check, NOT LLM-seasoned)** (`9d518d8`). In the F4
+  Dealers/Negotiations pass assert the `dealer-verdict-hold`/`dealer-verdict-switch` chips render
+  on the **geosearch dealer tiles** (non-null distance), and `/api/profiles/:id/dealers` count ==
+  the geosearch dealer count with **no `live-dealer-*` rows** when the inject payload carried the geosearch `dealer_id`.
 
-### Discovery HARDENERs (advisory, from the 2026-06-28 seasoning pass)
+### Discovery HARDENERs (2026-06-28 seasoning pass)
 
-Surfaced by the bounded generate→soak→triage pass; all passed (no live WINNER), but each is
-a real edge worth probing when its trigger is independently drawn. Advisory only — GRADUATE
-one to a backlog PIC (let the runner bump recurrence) if a live run actually trips it.
+(advisory, conditional — probe only when the trigger is independently drawn; graduate via
+the register if one fires live)
 
-- **H1 · down-payment / trade-equity figure in dealer-facing text.** A buyer who frames
-  money as `"$10k to put down"` or `"~8k in equity"` (NOT a budget ceiling) — the
-  `redactBudget` anchor set keys on budget/cap/ceiling words, so the figure flows into the
-  `tradeInDescription` dealer line un-redacted. NOT an inv #9 breach (inv #9 protects the
-  BUDGET ceiling, not a down-payment), but an OWNER-POLICY question: should private leverage
-  (down-payment/equity/payoff) be redacted too? Probe: assert no such figure on a dealer
-  surface; if one appears, raise the owner question — do not auto-treat as a leak.
-- **H2 · same-vehicle / different-metro 2-active picker is indistinguishable.** Two active
-  profiles for the SAME year/make/model/trim in different metros render two byte-identical
-  `stop-pick-option` rows (the label is `vehicleLabel` only, no city/ZIP), so the buyer
-  picks blind — inv #6 "ask by vehicle name" no longer disambiguates. Probe: when 2 active
-  same-vehicle profiles exist, assert each `stop-pick-option` carries a disambiguator
-  (city/ZIP/created-date). Small, safe fix if it recurs.
-- **H3 · off-brand filter false-drops a sibling-franchise rooftop.** A searched-make rooftop
-  whose Places name advertises only a related franchise (e.g. a **Genesis** search dropping
-  an "…Hyundai" store that retails Genesis) is dropped by the name-only `isOffBrand`. Bounded
-  + voiced ("N off-brand excluded"), but a real false-exclusion of the just-shipped filter.
-  Probe: when `offBrandDropped>0`, spot-check a dropped rooftop's live site lists the searched
-  make; if so, consider a sibling-brand alias (Genesis↔Hyundai) in `MAKE_ALIASES`.
-- **H4 · MATH_SANITY ≤$1000 band can absorb non-govt padding.** A dealer who hides ~$900 of
-  margin in the OTD with no govt-fee line now passes audit-clean (the documented, accepted
-  tradeoff — a trust advisory, not a safety gate; there is no audit-time signal that
-  distinguishes hidden padding from an honestly-dropped govt line). Probe: watch for a clean
-  audit on an OTD whose own prose ("all fees included") contradicts the itemized sum by
-  ≤$1000; if it recurs as genuinely harmful, revisit the band, don't re-introduce the
-  false-positive on honest dealers.
-- **H5 · `unknown` availability could mask an unparsed sold/pending badge.** Adding `unknown`
-  to the recommend set assumes `unknown` == "no badge parsed"; a live SRP/VDP "Sale Pending"
-  badge the scraper's vocabulary misses persists `unknown` and can now be recommended (with
-  the caveat chip). The mitigation is scraper availability-vocabulary breadth, NOT reverting
-  the recommend change. Probe: cross-check a recommended `unknown` row's live VDP DOM for a
-  sold/pending badge; if present, the scraper missed it (backlog: widen the availability
-  vocabulary).
+- **H1** · a down-payment/equity figure (NOT a budget ceiling) flows un-redacted into the dealer-facing
+  `tradeInDescription`. Probe: no such figure on a dealer surface; if seen → owner question, not auto-leak.
+- **H2** · same-vehicle/different-metro 2-active renders byte-identical `stop-pick-option` rows (vehicle-only
+  label). Probe: with 2 active same-vehicle profiles, each option carries a city/ZIP/created-date disambiguator.
+- **H3** · name-only `isOffBrand` false-drops a sibling-franchise rooftop (Genesis search vs "…Hyundai" store).
+  Probe: when `offBrandDropped>0`, spot-check a dropped rooftop's site for the searched make → `MAKE_ALIASES` alias.
+- **H4** · the MATH_SANITY ≤$1000 band can absorb ~$900 of hidden non-govt padding (accepted tradeoff).
+  Probe: watch for a clean audit where the dealer's own "all fees included" prose contradicts the sum by ≤$1000.
+- **H5** · `unknown` availability may mask an unparsed sold/pending badge, now recommendable (with caveat chip).
+  Probe: cross-check a recommended `unknown` row's live VDP for a sold/pending badge → widen scraper vocabulary.

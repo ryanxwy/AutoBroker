@@ -4,9 +4,10 @@ The **concurrent multi-profile** layer of the live e2e. Runs AFTER the pinned
 single-brand pass (steps 3/3.5) reaches terminal+green — the pinned lane is the
 primary 全技能巡检 and is FROZEN and FIRST; 3.9 never runs concurrently with it
 (rulings #4/#7). 3.9 mimics the realities of a real buyer running **several
-searches at once**: different cars, different dealers, overlapping rooftops, and
-ONE human servicing every approval — driven on the REAL DeepSeek lane with a live
-Sonnet dealer, exactly like 3.5 but ×N profiles interleaved.
+searches at once**: competing same-segment cars in ONE metro, overlapping
+rooftops, and ONE human servicing every approval — driven on the run's lane
+(`--provider`) with a live operator-subscription dealer, exactly like 3.5 but
+×N profiles interleaved.
 
 > Spend the LLM calls. The point of 3.9 is to surface the concurrency bugs the
 > single-profile spine cannot: cross-profile bleed, a shared-rooftop double-send,
@@ -14,15 +15,15 @@ Sonnet dealer, exactly like 3.5 but ×N profiles interleaved.
 
 ---
 
-## THE REALITIES TO MIMIC
+## THE REALITIES TO MIMIC (UC3 — same metro, competing models)
 
-A real cross-shopper runs **3 active searches in the same segment, different
-brands** — the headline collision world: **Accord (EX-L) + Camry (XSE) + Mazda6
-(Signature)**. Each profile independently: scans its in-radius dealers, submits
-leads, ingests replies, and negotiates multiple threads to ≥4 rounds. They
-overlap on shared rooftops (a dealer group that sells more than one brand), and
-every parked human gate across all three funnels into ONE "needs you" inbox.
-Mirror all of it:
+A real cross-shopper runs **3 same-segment, different-make searches in ONE metro
+— their home metro** (e.g. Dallas: **Accord EX-L × Camry XSE × Mazda6 Signature**).
+Different makes → three active slots (no `uq_search_profiles_active_account_brand`
+clash); ONE metro → shared multi-brand dealer-group rooftops become the natural
+collision world, and one human services every approval. Each profile
+independently: scans its in-radius dealers, submits leads, ingests replies, and
+negotiates multiple threads to ≥4 rounds. Mirror all of it:
 
 1. **N independent pipelines, bounded.** The real `PortfolioScheduler` fans the
    active set out under a hard concurrency cap (LRU/recency eviction); a profile
@@ -36,13 +37,22 @@ Mirror all of it:
    serviced through the unified `ApprovalInbox`; a decline touches only its own
    profile.
 
+**Journey goal.** The buyer's aim is **the best quote ACROSS the competing
+options**: after all profiles reach terminal, read the portfolio board
+(`portfolio-card-<id>` best-OTD + `portfolio-status-bar` counts) as the buyer's
+comparison surface and record which option won and why (OTD + health) — budget
+never shown (inv #9). If no cross-option comparison surface exists beyond the
+board cards, that observation is a legitimate backlog candidate — record, don't
+build.
+
 ---
 
-## SEED — the 3-brand world via REAL intake
+## SEED — the 3-make one-metro world via REAL intake
 
 Build the world by running **intake live, three times** (Accord, Camry, Mazda6),
-each in its own metro+brand (`references/brand-picker.md`) so all three land
-`status='active'` on the harness account (different `brand`/make → three active
+all in the SAME metro — one `location_query`, the buyer's home metro (pick it per
+`references/brand-picker.md`), three different makes — so all three land
+`status='active'` on the harness account (different make → three active
 slots, no `uq_search_profiles_active_account_brand` clash). This exercises intake
 live AND yields the genuine multi-active world — do NOT shortcut with a fixture in
 the live lane (the deterministic soak lane uses `seedMultiActiveSharedDealer`; the
@@ -52,7 +62,28 @@ lead_submit → inbox_check → reply_extract → negotiation).
 For the **shared rooftop**, call `POST /__e2e/inject_replies` for ≥2 profiles with
 the SAME `dealer_key` (`inventory_site_scan`'s shared-dealer mode → one `dealer_id =
 live-dealer-<key>`, each profile holding a `'candidate'` `profile_dealers` row) so
-the live `claimDealer` step decides the exclusivity winner.
+the live `claimDealer` step decides the exclusivity winner. The `dealer_key` inject
+STAYS the guaranteed collision; the one-metro seed may also produce a natural
+same-website overlap — treat that as bonus coverage, never rely on it.
+
+---
+
+## UC2 — same vehicle, different metro (one-time boundary evaluation)
+
+Premise: ONE active profile per (account, make) — the partial unique index
+`uq_search_profiles_active_account_brand` ON (account_id, brand=make) WHERE
+status='active'; the guarantee assumes a resolved account (serve-live's seed
+account satisfies this). The probe (run ONCE, on the next full run only): after
+the UC1 spine reaches terminal, attempt a second intake for the SAME make in a
+DIFFERENT metro. EXPECT: the `ActiveSlotConflict` is surfaced VOICED with a
+usable path (replace/supersede, or an explicit stop with guidance) — never a
+silent overwrite, never a dead end; decline = Δ0 proven via
+`/__e2e/rows?table=search_profiles`. Classification: the conflict APPEARING =
+correct product behavior (not a finding); the conflict UNUSABLE (un-voiced /
+dead-end / silent overwrite) = file per the three-bucket rules. Graduation:
+after the first evaluation move the observed-correct behavior into the runner's
+known-correct list (+ a func case if the voiced surface is uncovered); re-probe
+ONLY when the intake/profile-slot surface changes — NOT an every-run probe.
 
 ---
 
@@ -213,7 +244,7 @@ Drive it like a real user clearing a shared inbox:
 - **G2 cross-profile thread conflation** — two profiles' threads must never cross-bind.
 
 **CLASSIFICATION (observed-vs-latent ruling):** an **OBSERVED live silent mis-attribution** is a hard
-**blocker** (a safety-or-data-loss breach; `no_cross_profile_bleed`-class, this file's line-142 floor) that
+**blocker** (a safety-or-data-loss breach; `no_cross_profile_bleed`-class, the "ASSERT — the portfolio invariants" floor) that
 **FREEZES the run** — NOT a backlog item. Only the **LATENT/unexercised** G1
 gap (the `LIMIT-1` path exists but no live mis-route triggered this run) is a **backlog
 candidate**. **G2a** (separate threads must each route to their own profile) =

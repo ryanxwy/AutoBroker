@@ -1,15 +1,16 @@
 ---
 name: e2e-loop
 description: Run one manually-triggered, live end-to-end pass of the AutoBroker product
-  as a real car buyer — drive all 17 skills against the real DeepSeek lane through
-  serve-live + a Playwright browser, negotiate for real against resistant LLM dealers,
-  cross-shop several cars at once, and RECORD every blocker / backlog gap / rough edge
-  into an HTML report. The job is to reproduce the real buyer experience and expose its
-  imperfections honestly — NOT to ship a perfect run. Fixing the recorded issues is the
-  companion `e2e-evolve` skill's job (run it in a fresh session). Pass `--light` for a
-  quick read-only sweep. Pass `--provider claude` to drive the WHOLE journey through the
-  Claude OAuth subscription lane (lane B, the official Agent SDK) instead of the default
-  `--provider deepseek` (the DeepSeek API-key lane). Use to run the live e2e / 全技能巡检 on demand.
+  as a real car buyer — drive all 17 skills against the run's live LLM lane (default
+  DeepSeek api-key; `--provider claude` = the Claude OAuth subscription lane, the
+  official Agent SDK) through serve-live + a Playwright browser, negotiate for real
+  against resistant LLM dealers, cross-shop several cars at once, and RECORD every
+  blocker / backlog gap / rough edge into an HTML report. The job is to reproduce the
+  real buyer experience and expose its imperfections honestly — NOT to ship a perfect
+  run. Fixing the recorded issues is the companion `e2e-evolve` skill's job (run it in
+  a fresh session). Pass `--light` for a quick read-only sweep. Use to run the live
+  e2e / 全技能巡检 on demand.
+argument-hint: "[--light] [--provider deepseek|claude]"
 disable-model-invocation: true
 ---
 
@@ -44,6 +45,19 @@ ends with a full report; it does **not** need an empty backlog.
  write the HTML report                  ◄──   write-back lessons
 ```
 
+## The three buyer use-cases
+
+- **UC1 — single-profile pipeline** (every run): one buyer, one search profile, the full
+  pipeline to a negotiated quote — this IS the pinned spine (steps 2–3).
+- **UC2 — same vehicle, different metro** (one-time boundary evaluation): the product
+  holds one active profile per (account, make) — a second same-make intake trips
+  `ActiveSlotConflict` with replace/supersede as the product path. Evaluated ONCE (see
+  `references/multi-profile-lane.md` "UC2"), then graduated to the known-correct list;
+  NOT an every-run probe.
+- **UC3 — same metro, competing models** (portfolio): 3 same-segment different-make
+  searches in ONE metro, concurrent, one approval inbox, goal = best quote across the
+  options — this IS step 4 (`references/multi-profile-lane.md`).
+
 ## Modes
 
 - **Provider lane** (`--provider claude|deepseek`, default `deepseek`): which real LLM
@@ -65,6 +79,7 @@ ends with a full report; it does **not** need an empty backlog.
   already-running) serve-live. If its DB is empty, do a minimal intake first to seed one
   profile (this also exercises intake live). Light still writes a report; it just
   expects fewer findings (a clean read-only sweep may legitimately record zero).
+  (`--light` still runs ONE final ui-monitor checkpoint.)
 - **Buyer-email probe** (optional, owner-run, separate from serve-live): validates the
   REAL Gmail I/O layer — OAuth/refresh, real MIME parse (incl. HTML-only recovery),
   attachment download, historyId — that the test-mode journey can never reach. It is a
@@ -88,19 +103,33 @@ ends with a full report; it does **not** need an empty backlog.
    for a full run** — pick a big metro + high-volume car) — else fail closed. An empty
    metro means a misconfigured `location_query` (see the Irvine fallback trap in
    `references/harness-boundaries.md`); do not drive a vacuous sweep.
+4. **Lane-took-effect verification:** after the FIRST LLM-bearing skill completes, read
+   `test_run_records` in `<dataDir>/autobroker.db` and assert the rows match the
+   requested lane (`--provider claude` → `provider='anthropic' AND
+   pricing_source='subscription'`; `deepseek` → `provider='deepseek' AND
+   pricing_source != 'subscription'` — lane A persists the dated pricing-snapshot
+   label, or `'unavailable'` on a usage-missing row, never `'subscription'`).
+   Mismatch = **STOP**: a mistyped
+   `AUTOBROKER_AGENT_PROVIDER` value silently resolves to the DeepSeek default (exact
+   strings `claude`/`deepseek` only), and a whole run on the wrong lane poisons every
+   cross-lane conclusion.
 
 ## The journey
 
 | step | what you do | how you know it worked | load when you reach it |
 |---|---|---|---|
 | 0 | read the last 1–2 reports, run the safety gate, `touch .claude/.e2e-loop-active` | keys/MCP present; listening line seen | this spine |
-| 1 | (full) fresh worktree off `origin/main` + better-sqlite3 rebuild + `pnpm -r build`, then start `pnpm e2e:serve-live`; pick a realistic buyer (metro, car, finance mode, persona) | build OK; `dataDir` recorded; geosearch ≥1 dealer (≥10 full) | `references/harness-boundaries.md`, `references/brand-picker.md` |
+| 1 | (full) fresh worktree off `origin/main` + better-sqlite3 rebuild + `pnpm -r build`, then start `pnpm e2e:serve-live`; pick a realistic buyer (metro, car, finance mode, persona) | build OK; `dataDir` recorded; geosearch ≥1 dealer (≥10 full) | `references/harness-boundaries.md`, `references/brand-picker.md`, `references/ui-monitor.md` |
 | 2 | live the journey: drive all 17 skills as the buyer — PASS-A in natural language, PASS-B by `/slash` — verifying each skill lands its data AND its UI | terminal skill row + table delta + the right Canvas panel; data-quality coverage (not just a row count) | `references/skill-pipeline.md` (+ `references/ui-lane-personas.md`) |
 | 3 | (full) negotiate for real: deep, multi-thread email negotiation against resistant LLM dealers — ≥10 dealers, front-runners driven to ≥4 rounds, with ghosting and manager escalation | front-runner threads reach ≥4 buyer rounds; ghosts drop after 2 unanswered; revised OTDs extracted | `references/dealer-brain.md` |
 | 4 | (full) cross-shop: run several searches at once (3 different-brand profiles) on the real scheduler — concurrent negotiation, a shared dealer both want, one shared approval inbox | scheduler cap holds; every profile reaches a terminal state; exactly one profile binds each shared dealer, losers voiced + zero send; no budget leak; nothing sent for real | `references/multi-profile-lane.md` |
 | 5 | judge the experience: run `frontend-taste` per data tab | a ranked usability findings list | `references/ui-lane-personas.md` (→ the `frontend-taste` skill by name) |
 | 6 | record everything: classify each imperfection (blocker / backlog / polish), capture telemetry, fix only safety + one-line blockers, write the HTML report + harvest-register | report sections present; ledger rebuilt | `references/recording.md` |
 | 7 | teardown: kill serve-live, remove the worktree, write the memory pointer, `rm .claude/.e2e-loop-active` | marker gone; memory pointer ≤200c | `references/recording.md` |
+
+**UI-monitor checkpoints** (dispatch per `references/ui-monitor.md`, driver idle): after
+step 2 PASS-A · after step 2 PASS-B · after step 3 · after step 4 · at step 5 ·
+pre-teardown final. `--light` = exactly ONE final checkpoint.
 
 **Step 4 ordering:** the single pinned-brand journey (steps 2 and 3) runs FIRST and
 reaches a terminal, healthy state before cross-shop (step 4) begins. Never run them
@@ -128,17 +157,22 @@ rows — and a buyer then sees "0 recommendations". For `inventory_site_scan` an
 `dealer_reply_extract` the verdict is the **coverage** from `/__e2e/dataquality`, not the
 row count. (`references/harness-boundaries.md` has the exact thresholds.)
 
-**Cross-provider isolation — a one-lane failure is not a lane verdict (general rule, both
-lanes).** When a skill misbehaves on the run's provider lane (a 0-yield scan, a malformed
-extract, a dropped field), do NOT conclude "this lane is broken" from that one run — *isolate*
-it first. Re-run that ONE skill on the OTHER provider (`AUTOBROKER_AGENT_PROVIDER` flipped,
-fresh dir): the same fault on both lanes = a general / product / environmental cause (fix it
-provider-agnostically); a fault on only one lane = a genuine lane-specific gap (record it for
-`e2e-evolve`). For a browser-fed 0-yield, read `/__e2e/dataquality … rendered_empty_count`
-FIRST — a blank render is host thrash, provider-independent, and needs no re-run. The browse
-path has no LLM in it, so it is byte-identical across providers; only the EXTRACTION is the
-lane. (Full procedure + the decisive controlled-extraction test:
-`references/harness-boundaries.md`.)
+**Cross-lane triage (the four-exit tree — general rule, both lanes).** A one-lane failure is not a lane
+verdict. When ANY skill misbehaves on the run's lane, classify before you blame:
+
+0. Browser-fed 0-yield? Read /__e2e/dataquality `rendered_empty_count` FIRST —
+   >0 = host thrash (environment; browse has no LLM in it), no re-run needed.
+1. Infra signal (429 / timeout / lane-B subprocess failure / credential)? An
+   availability fault, not a product fault — re-run ONCE on the SAME lane to confirm.
+2. Anything else: re-run that ONE skill on the OTHER provider
+   (`AUTOBROKER_AGENT_PROVIDER` flipped, fresh dir), AT MOST ONCE, as DIAGNOSIS:
+   - fails on BOTH lanes → a general product/environment cause — fix provider-agnostically;
+   - fails on ONE lane only → a genuine lane-specific gap — record it with its lane tag
+     for `e2e-evolve` (which re-verifies its fix on the SAME lane).
+
+Decoupling invariants: the journey NEVER switches lanes mid-run; a missing credential
+is a STOP, never a provider swap; the re-run is a diagnostic, never a retry-to-green.
+(Procedure detail + the decisive controlled-extraction test: `references/harness-boundaries.md`.)
 
 ## How to classify what you find (three buckets)
 
@@ -235,8 +269,8 @@ headline.
   `cold` outcome, never a fabricated quote, never a failure on its own.
 - **Worktree needs `.env`.** `.env` is gitignored, so a fresh worktree has none — copy
   the main checkout's `.env` into the worktree after `git worktree add` (it stays
-  gitignored, never staged), or serve-live reports "add your DeepSeek key" and the
-  router 500s.
+  gitignored, never staged). Without it the run has no lane credential: lane A reports
+  "add your DeepSeek key" and the router 500s; lane B fails closed on every call.
 - **Self-contained `YYYY-MM-DD` HTML report**; `MEMORY.md` pointer ≤200 chars (detail
   lives in the topic file).
 
@@ -251,5 +285,9 @@ headline.
   just the row count.
 - After each of the 3 irreversible sends, you confirmed the **fake** adapter fired (a
   positive check, not just the negative "no real send" counter).
+- UI-monitor checkpoints ran (all six on a full run; ONE final on `--light`) and their
+  findings are folded into the three buckets with a `monitor` provenance tag.
+- The lane-took-effect check was recorded (provider + pricing_source noted in the
+  report header).
 - All cross-session artifacts written: the report, the run-ledger row, the memory pointer.
 - `.claude/.e2e-loop-active` removed (on done AND on any abort).

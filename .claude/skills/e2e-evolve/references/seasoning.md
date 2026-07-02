@@ -75,36 +75,9 @@ routes the runner uses; record the live `/__e2e` deltas / DOM against its contra
 Record the round's WINNER/HARDENER/DUD tally in the evolve-report's **Seasoning coverage**
 section (`references/evolving.md` step 7).
 
-## First candidates (seed the first discovery round with these)
-
-Drawn from this round's research (the A4 / F-series seeds) — author them as seasoned cases:
-
-**Messy-buyer axes** (adversarial-buyer):
-
-- **trim-as-marketing-name** — the buyer names a trim by feel, not the spec name: "the one
-  with leather and the big screen", "the Tech trim", "the sport-looking one". Stresses the
-  intake trim-suggestion picker + `sanitizePrefillTrim` (a non-trim qualifier must NOT seed a
-  bogus trim, the web-grounded picker must fire).
-- **budget-as-monthly / down / trade-equity** — "keep me under $450/mo", "I've got $5k down",
-  "I still owe $4k on my trade". Stresses inv #9: a monthly/down/equity figure IS budget — it
-  must NEVER render on any surface and must not silently become a profile budget field.
-- **contradict-mid-message** — "I want a RAV4… actually make it a CR-V, no wait the hybrid".
-  Stresses the 2-active / mid-flow-correction path (`J3` / `E7`) and the profile-ASK picker.
-
-**Adversarial-dealer behaviors** (adversarial-dealer):
-
-- **wrong-vehicle-binding on the negotiation card** — a dealer reply that references a
-  DIFFERENT model/trim than the profile's, or a shared CRM relay bound to ≥2 rooftops.
-  Stresses same-source routing attribution (the negotiation card must not bind a quote to the
-  wrong dealer; see the harvest-register `PIC-20260625-1/-2` routing items).
-- **HTML-only reply through the LIVE extract path** — a dealer reply that is HTML-only (no
-  text/plain part) carrying an itemized OTD. Stresses the `stripHtmlToText` recovery + the
-  `dealer_reply_extract` extraction so the OTD is not silently lost (the buyer-email-probe
-  proved this is a real failure class; season it on the live extract path).
-- **budget-verbatim / self-contradicting OTD / competitor-name in the body** — a reply that
-  embeds the buyer's budget verbatim, or quotes $42k then "$44k out the door", or names a
-  competing dealer. Stresses the negotiation-summary `assertNoBudget` belt + the
-  no-competing-name redaction + summary coherence (lens 14).
+Seed each round's generators from the CURRENT library (personas / journeys / router edges /
+archetypes), the new-feature surfaces this session touched, the known-correct list, and the
+harvest-register's realized tail. (The original first-round seed list is retired — its round ran.)
 
 ## Over-fit & flakiness guards (load-bearing)
 
@@ -119,6 +92,8 @@ Drawn from this round's research (the A4 / F-series seeds) — author them as se
   run), prove #1244 recovery with a COUNTED forced fault rather than waiting for a rare organic
   malform.
 - **#1244 is request-shape/mixing-triggered, not content-triggered** (the 2026-06-04
-  107-call probe): do NOT try to engineer a malformed tool call from a dealer email's content
-  — a content payload cannot deterministically force #1244. Season the *recovery contract*
-  (fail-closed-then-auto-recover, 2 deepseek rows, no retry button), not a content exploit.
+  107-call probe), and is a **lane-A (deepseek) class** — lane B is structurally exempt
+  (single structured call, Zod belt, no recovery hop). Do NOT try to engineer a malformed
+  tool call from a dealer email's content — a content payload cannot deterministically force
+  #1244. Season the lane-A *recovery contract* (fail-closed-then-auto-recover, 2 deepseek
+  rows, no retry button), not a content exploit; on lane B season nothing here.

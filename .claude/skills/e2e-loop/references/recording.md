@@ -26,6 +26,12 @@ how to **record** each one so `e2e-evolve` can act on it later:
 
 A backlog/polish note can never excuse a blocker (the anti-masking rule in `SKILL.md`).
 
+**UI-monitor findings — same buckets, `monitor` provenance.** Findings returned by the UI-monitor
+subagent (`references/ui-monitor.md`) enter the SAME three buckets, tagged `monitor` as provenance;
+dedup against the driver's findings by surface/testid before recording — one finding, one entry.
+frontend-taste keeps its own report subsection (§6d); the monitor does NOT get a separate findings
+section.
+
 **Diagnosing a "hang" — server-hang vs. slowness (generalizable).** When a browser-heavy
 skill (`inventory_site_scan`, `dealer_web_lead_submit`) appears stuck, distinguish a
 **server-hang** (a BLOCKER — the Node event loop / listener is blocked, e.g. an
@@ -41,138 +47,77 @@ This is the probe that pinpoints an event-loop hang — the class behind the 202
 These have been investigated in prior runs and are **correct product behavior**. Filter
 them out before recording — re-surfacing them wastes a slot and pollutes the register:
 
-- `quote_audit` firing `DOC_FEE_CAP` (capped states: CA/NY/WA + MN/MI/OH/MD) or
-  `DOC_FEE_UNCAPPED` (uncapped states, doc fee over ~$500), `MATH_SANITY` (skips when tax
-  is bundled/null), `MISSING_BREAKDOWN`, `DEALER_FEE_OUTLIER` on the planted dealer
-  archetypes — these are the audit doing its job.
-- `quote_compare` folding cash/unspecified-mode quotes into the right bucket; "best OTD"
-  reconciled to one home across the digest and compare surfaces.
-- `inventory_site_scan` recording a legitimate **subset** (platform-specific: some
-  dealer platforms yield many cars, some none) — not a bug; only a *total* price loss is.
-- `inventory_site_scan`'s "scanned 0" empty-state being distinct from "never scanned".
-- `dealer_closeout_email` counting fake sends correctly under test mode.
-- `incentive_scrape` having OEM sources for Hyundai/Toyota/Honda/Chevrolet; a brand
-  outside that set returning a graceful "no source", not a crash.
-- The geocoder being a fixed metro fixture (no live Geocoding), and an off-allowlist
-  `location_query` resolving to Irvine (a buyer-input trap, not a product bug).
-- A natural-language "what's in stock" routing to `inventory_compare` (read existing),
-  not `inventory_site_scan` — a router choice, not a misroute.
-- `search_profile_intake` freeform prefill leaving `trim` NULL when the buyer states only a
-  price/superlative intent ("cheapest"/"best") or when the LLM emits a placeholder string
-  (`null`/`none`) — `sanitizePrefillTrim` drops it so the web-grounded trimSuggestion picker
-  fires. (A junk trim the buyer never stated, seeded into the collect form and suppressing
-  the picker, WOULD still be a backlog item — the correct behavior is the picker firing.)
-  Shipped 2026-06-26 (`phase0/search_profile_intake`).
-- `dealer_web_lead_submit`'s batch_review card carrying the `summary` preview block
-  (vehicle / buyer email / placeholder-phone note, NEVER budget) — it survives the
-  suspend-schema validation because `summary` is declared on the shared
-  `BatchReviewSuspendSchema`. Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
-- `dealer_web_lead_submit` batch submit staying responsive + bounded under a multi-dealer
-  batch (per-dealer timeout + isolation): a slow/failed dealer becomes a voiced
-  `site_unreachable` row and the batch continues so the reachable dealers still anchor — a
-  partial-failure batch is correct; only a whole-server hang / zero-anchor batch is a bug.
-  Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
-- `quote_audit` NOT advising a manufacturer rebate larger than ~20% of the quote's own
-  price (`selling_price ?? otd_total`): an OEM offers page is multi-model, so
-  `incentive_scrape` can mis-attribute another model's cash (an EV's $7.5k onto a $31k
-  compact SUV); the audit's magnitude guard suppresses the implausible `MISSING_REBATE`
-  rather than advise demanding a phantom rebate. A *plausible* missing rebate (≤20%) still
-  fires; a no-price quote fails open (already `MISSING_BREAKDOWN`). Re-flag ONLY if the
-  audit advises a rebate that is an implausible fraction of the quote price (a regression).
-  Shipped 2026-06-27 (`phase1/quote_audit` + `phase2/incentive_scrape`).
-- `dealer_geosearch` EXCLUDING a cross-border (non-US) dealer from the discovered/ranked
-  set + the DB: a border metro (San Diego/El Paso/Laredo) can surface an in-radius foreign
-  rooftop (e.g. "Hyundai Premier Tijuana", MX) that is non-transactable for a US buyer;
-  `isUsDealer` now detects Mexican border cities (name/city) + a trailing ", Mexico"
-  address word, and the pure filter drops it before ranking (the headline surfaces "N
-  cross-border dealer(s) excluded"). A US dealer on a Spanish-named street ("Ensenada Dr")
-  correctly stays. Re-flag ONLY if a non-US dealer reaches the scan/lead/ranked set.
-  Shipped 2026-06-27 (`phase2/dealer_geosearch`).
-- The `negotiation-detail-modal` closing on Close / Escape / backdrop-click and STAYING
-  closed across a `data.changed` refresh is the now-correct baseline: visibility is gated on
-  `openId` (user intent), not the `useAsync` detail fetch cache. DISMISS-VERIFY it every run
-  (above). Re-flag ONLY if the modal won't dismiss OR auto-reopens with no card re-click —
-  that is a NEW HIGH workbench-blocking regression. Shipped 2026-06-28 (`phase0/ui`, `52d1648`).
-- HTML-only dealer email body is recovered to text via `stripHtmlToText` (the frozen Python
-  oracle silently dropped it — this is a deliberate, beneficial oracle-superseding fix).
-  Re-flag ONLY if a genuine quote-bearing dealer email still persists an empty `body_text`
-  after the mapping step. Honest cost to watch: an HTML-only marketing blast can now yield a
-  deterministic quote-signal/intent where it previously produced none — file as backlog if it
-  materially misleads, not as a blocker.
-- (F1) `inventory_site_scan` listings with **no labeled dealer markup / no add-ons** —
-  `markup_present==0` / `addons_present==0` on `/__e2e/dataquality` is the HEALTHY norm (most
-  honest listings carry neither), NOT data loss. Re-flag ONLY the breakdown total-loss
-  (`vdp_linked>0 AND breakdown_parsed==0`). The labeled-markup detection is conservative (it
-  records only a dealer-LABELED markup, never an inferred selling>MSRP delta).
-- (F2) `dealer_reply_extract` **#1244 fail-closed-THEN-auto-recover**: a malformed hop that
-  fails closed (ledgers `malformed_tool_call`) and then AUTO-RECOVERS via one fresh
-  same-provider deepseek hop (2 `provider=deepseek` ledger rows, redacted `malformed_sample`,
-  NO user-surfaced retry button) is the correct inv #4 bounded recovery — NOT a blocker.
-  Re-flag ONLY a silent tool-SKIP, a regex-executed tool name, a fabricated result, or a
-  recovery that egressed to a non-deepseek provider.
-- (F4) the give-up/switch advisory (`dealer-verdict-hold` "paused"/"gone quiet"/"not moving",
-  `dealer-verdict-switch` "consider switching · $N cheaper elsewhere") + the per-thread
-  `thread-class-chip` negotiation-status overlay firing on a ghosted/retraded dealer is the
-  decision engine doing its job (derived-on-read), NOT a bug. Re-flag ONLY if it leaks a
-  competing dealer NAME or a budget number (inv #9), or advises switching when no cheaper
-  same-mode quote exists.
-- `inventory_compare` RECOMMENDING an exact/near, in-budget, in-radius listing whose
-  `inventory_status` is `'unknown'` (with an `inventory-availability-caveat` "availability
-  unconfirmed" chip) is correct: many dealer platforms list a new car with no availability
-  badge the scraper recognizes, so withholding the recommend purely on an unreadable badge
-  killed the engine. The score>=0.6 + exact/near gates still bound it; `ordered`/`sold` stay
-  excluded; the data layer keeps the `unknown` distinction so the caveat stays honest.
-  Re-flag ONLY if a recommended `unknown` row's own live VDP shows a sold/pending badge the
-  scraper missed (that is the H5 scraper-vocabulary gap, not a recommend bug). Shipped
-  2026-06-28 (`phase1/inventory_compare`, `0c61e0d`).
-- `quote_audit` NOT firing `MATH_SANITY` when the ONLY discrepancy is a small POSITIVE
-  residual (stated OTD exceeds the itemized sum) within ~$1000 with sales tax present — a
-  combined "Title & registration"/"TT&L" line the extractor dropped. MATH_SANITY is a trust
-  advisory, not a safety gate, and a false "doesn't reconcile" on an honest dealer is the
-  larger harm. Re-flag ONLY if it fails to fire on a >$1000 shortfall, or fires on a
-  computed-OVER-stated (visible-lines-over-sum) error. Shipped 2026-06-28
-  (`phase1/quote_audit`, `1111962`).
-- `dealer_geosearch` EXCLUDING an off-brand rooftop (name advertises ONLY a competing make,
-  lacks the searched make) and MERGING a co-located same-website duplicate rooftop (primary
-  + "…Service") — both counted + voiced in the headline ("N off-brand dealer(s) excluded" /
-  "N duplicate rooftop(s) merged"). Fail-open: a neutral/used/multi-brand name, a name
-  carrying the searched make, or an unknown searched make is kept. Re-flag ONLY if a real
-  rooftop of the searched make is dropped (the H3 sibling-franchise edge, e.g. Genesis at a
-  Hyundai store) or two genuinely-distinct rooftops are over-merged. Shipped 2026-06-28
-  (`phase2/dealer_geosearch`, `7375aa1`).
-- Lane-B (Claude OAuth) telemetry is now reliable — do NOT re-file the 2026-06-29 gaps:
-  `test_run_records.input_tokens` for lane B is **cache-inclusive** (sums input + cache_creation
-  + cache_read), so it reads the real prompt size (~26k on a large site_scan prompt), NOT a
-  constant ~3; and `AUTOBROKER_RECORD_TRANSCRIPT` **DOES** capture lane-B calls into a sibling
-  `<path>.laneB.jsonl`. Re-flag ONLY if a lane-B row's `input_tokens` is implausibly tiny on a
-  large prompt (a regression of the cache-sum) or the sibling is missing under RECORD_TRANSCRIPT.
-  Shipped 2026-06-29 (`phase0/provider_select`, `1d679d9`).
-- A `inventory_site_scan` **0-yield with `rendered_empty_count>0`** (via `/__e2e/dataquality`)
-  is **host thrash** (the SRPs rendered blank under CPU load), NOT a product bug, NOT a genuine
-  no-stock, and NOT a lane bug — `rendered_empty` is an environment signal, never a fail. Read it
-  before blaming a provider on a browser-skill 0-yield (the 2026-06-29 trap). A 0-yield with
-  `rendered_empty_count==0` means the dealers genuinely had no parseable stock or were `blocked`.
-  Re-flag ONLY a genuine had-and-lost (`vdp_linked>0 AND breakdown_parsed==0`), never a thrash
-  0-yield. Shipped 2026-06-29 (`phase2/inventory_site_scan`, `44c802c`).
-- `negotiation_followup`'s prose draft GROUNDED in `financing_preference`: a finance buyer's
-  draft says it plans to finance / asks for APR and NEVER fabricates "cash"; a cash buyer's
-  draft never claims financing/lease; the `assertPaymentMethodConsistent` belt fail-CLOSES a
-  contradiction (negation/contrast-guarded so "rather than paying cash, I'll finance" passes).
-  Re-flag ONLY if a draft asserts a payment method contradicting the profile. Shipped
-  2026-06-30 (`phase5/negotiation_followup`, `0a0bdee`).
-- A no-fresh-number reply (a hold / payment-only / come-onsite extraction) persisting
-  `otd_total` **NULL (not $0)** and NEVER superseding the dealer's real OTD on the board /
-  digest / quote-compare / latest-quote views — the reply is still RECORDED (provenance), it
-  just never ranks; migration `0006` healed any pre-existing $0 row. Re-flag ONLY if a
-  $0/null hold reply ranks as a quote or hides a dealer's real OTD. Shipped 2026-06-30
-  (`phase2/negotiation_followup`, `60ae1db`).
-- The negotiation "at or below best" advisory using the **lowest REAL competing OTD** (a
-  cheaper bottom-line / non-itemized competitor counts), so a quote $N above the real best
-  reads "close to" / the signed gap, never "at or below"; the `give_up_switch` VERDICT still
-  fires only on the strict itemized BATNA; the board card and the detail modal show the SAME
-  gap. Re-flag ONLY if the advisory claims "at or below" for an above-best quote, or
-  `give_up_switch` fires on a lone non-itemized lowball. Shipped 2026-06-30
-  (`phase2/negotiation_followup`, `60ae1db`).
+- `quote_audit` firing `DOC_FEE_CAP` (capped CA/NY/WA + MN/MI/OH/MD), `DOC_FEE_UNCAPPED` (uncapped,
+  >~$500), `MATH_SANITY` (skips bundled/null tax), `MISSING_BREAKDOWN`, `DEALER_FEE_OUTLIER` on the
+  planted archetypes = the audit working. Re-flag ONLY a pill contradicting its own state/threshold rule. (baseline)
+- `quote_compare` folding cash/unspecified-mode quotes into the right bucket; one "best OTD" home
+  across digest + compare. Re-flag ONLY if the two surfaces disagree on best OTD. (baseline)
+- `inventory_site_scan` recording a platform-specific **subset** (some platforms yield many cars,
+  some none). Re-flag ONLY a *total* price loss. (baseline)
+- `inventory_site_scan` "scanned 0" empty-state distinct from "never scanned". Re-flag ONLY if the
+  two states render identically. (baseline)
+- `dealer_closeout_email` counting fake sends correctly in test mode. Re-flag ONLY a wrong count
+  (e.g. "0 sent" with fake_mailbox rows written). (baseline)
+- `incentive_scrape` OEM sources = Hyundai/Toyota/Honda/Chevrolet; an off-set brand → graceful
+  "no source". Re-flag ONLY a crash on an off-set brand. (baseline)
+- The geocoder is a fixed metro fixture (no live Geocoding); an off-allowlist `location_query` →
+  Irvine (a buyer-input trap). Re-flag ONLY an allowlisted metro misresolving. (baseline)
+- NL "what's in stock" → `inventory_compare` (read existing), not `inventory_site_scan` — a router
+  choice. Re-flag ONLY an explicit "scan dealer sites" ask landing on compare. (baseline)
+- `search_profile_intake` freeform prefill leaves `trim` NULL on a price/superlative-only intent or an
+  LLM placeholder (`sanitizePrefillTrim`) so the trimSuggestion picker fires. Re-flag ONLY a junk
+  never-stated trim seeded into the form, suppressing the picker. Shipped 2026-06-26 (`phase0/search_profile_intake`).
+- `dealer_web_lead_submit` batch_review card carries the `summary` preview (vehicle / buyer email /
+  placeholder-phone note, NEVER budget), declared on the shared `BatchReviewSuspendSchema`. Re-flag
+  ONLY a budget leak or a suspend-schema validation failure. Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
+- `dealer_web_lead_submit` batch stays responsive + bounded (per-dealer timeout + isolation); a slow
+  dealer → voiced `site_unreachable` row, batch continues. Re-flag ONLY a whole-server hang or a
+  zero-anchor batch. Shipped 2026-06-26 (`phase1/dealer_web_lead_submit`).
+- `quote_audit` suppresses a `MISSING_REBATE` above ~20% of the quote's own price (multi-model OEM-page
+  mis-attribution); a plausible ≤20% rebate still fires; no-price → `MISSING_BREAKDOWN`. Re-flag ONLY
+  advising an implausible-fraction rebate. Shipped 2026-06-27 (`phase1/quote_audit` + `phase2/incentive_scrape`).
+- `dealer_geosearch` EXCLUDES a cross-border (non-US) rooftop (`isUsDealer`: border cities + ", Mexico"),
+  voiced in the headline; a US dealer on a Spanish-named street stays. Re-flag ONLY a non-US dealer
+  reaching the scan/lead/ranked set. Shipped 2026-06-27 (`phase2/dealer_geosearch`).
+- `negotiation-detail-modal` closes on Close/Escape/backdrop and STAYS closed across a `data.changed`
+  refresh (visibility gated on `openId`, not the fetch cache) — DISMISS-VERIFY every run. Re-flag ONLY
+  won't-dismiss or auto-reopen without a re-click (HIGH regression). Shipped 2026-06-28 (`phase0/ui`, `52d1648`).
+- HTML-only dealer email body recovered to text via `stripHtmlToText` (deliberate oracle-superseding fix;
+  a marketing blast now yielding a quote-signal = backlog if misleading, never a blocker). Re-flag ONLY a
+  quote-bearing email still persisting empty `body_text` after mapping. (baseline)
+- (F1) `inventory_site_scan` listings with no labeled markup/add-ons: `markup_present==0` /
+  `addons_present==0` on `/__e2e/dataquality` is the HEALTHY norm (LABELED-only detection, never inferred
+  selling>MSRP). Re-flag ONLY the breakdown total-loss (`vdp_linked>0 AND breakdown_parsed==0`). (baseline)
+- (F2) `dealer_reply_extract` #1244 fail-closed-THEN-auto-recover (ledgered `malformed_tool_call` → one
+  fresh same-provider hop; 2 `provider=deepseek` rows, redacted `malformed_sample`, NO retry button) =
+  inv #4 bounded recovery. Re-flag ONLY a silent tool-SKIP / regex-execute / fabrication / non-deepseek egress. (baseline)
+- (F4) the give-up/switch advisory (`dealer-verdict-hold` / `dealer-verdict-switch`) + per-thread
+  `thread-class-chip` firing on a ghosted/retraded dealer = the derived-on-read engine working. Re-flag
+  ONLY a competing-dealer-NAME/budget leak (inv #9) or switch advice with no cheaper same-mode quote. (baseline)
+- `inventory_compare` RECOMMENDS an in-budget exact/near `inventory_status='unknown'` listing with the
+  `inventory-availability-caveat` chip (score≥0.6 + exact/near gates hold; `ordered`/`sold` stay excluded).
+  Re-flag ONLY a recommended row whose live VDP shows sold/pending (the H5 scraper gap). Shipped 2026-06-28 (`phase1/inventory_compare`, `0c61e0d`).
+- `quote_audit` NOT firing `MATH_SANITY` on a small POSITIVE residual (stated OTD over itemized sum,
+  ≤~$1000, tax present) — a dropped "TT&L" line; trust advisory, not a safety gate. Re-flag ONLY a missed
+  >$1000 shortfall or a fire on computed-OVER-stated. Shipped 2026-06-28 (`phase1/quote_audit`, `1111962`).
+- `dealer_geosearch` EXCLUDES an off-brand-only rooftop + MERGES a co-located same-website duplicate
+  (both counted + voiced; neutral/multi-brand/unknown-make names kept, fail-open). Re-flag ONLY a dropped
+  real searched-make rooftop (H3 sibling-franchise) or an over-merge. Shipped 2026-06-28 (`phase2/dealer_geosearch`, `7375aa1`).
+- Lane-B (Claude OAuth) telemetry: `input_tokens` is cache-INCLUSIVE (input + cache_creation + cache_read)
+  and `AUTOBROKER_RECORD_TRANSCRIPT` tees lane B to a sibling `<path>.laneB.jsonl`. Re-flag ONLY an
+  implausibly-tiny lane-B `input_tokens` on a large prompt, or a missing sibling. Shipped 2026-06-29 (`phase0/provider_select`, `1d679d9`).
+- `inventory_site_scan` 0-yield with `rendered_empty_count>0` = host thrash (an environment signal, NOT a
+  product/lane bug — read it before blaming a provider; `==0` = genuine no-stock or blocked). Re-flag ONLY
+  a had-and-lost (`vdp_linked>0 AND breakdown_parsed==0`), never a thrash 0-yield. Shipped 2026-06-29 (`phase2/inventory_site_scan`, `44c802c`).
+- `negotiation_followup` drafts GROUNDED in `financing_preference` (finance ⇒ plans-to-finance/APR ask,
+  never "cash"; cash ⇒ never financing/lease); `assertPaymentMethodConsistent` fail-CLOSES a contradiction
+  (negation/contrast-guarded). Re-flag ONLY a draft contradicting the profile's payment method. Shipped 2026-06-30 (`phase5/negotiation_followup`, `0a0bdee`).
+- A no-fresh-number reply (hold / payment-only / come-onsite) persists `otd_total` NULL (not $0) and never
+  supersedes the dealer's real OTD on board/digest/compare/latest views (recorded, never ranks; migration
+  `0006` healed $0 rows). Re-flag ONLY a $0/null reply ranking or hiding a real OTD. Shipped 2026-06-30 (`phase2/negotiation_followup`, `60ae1db`).
+- The "at or below best" advisory keys on the lowest REAL competing OTD (non-itemized counts): above-best
+  reads "close to"/signed gap; `give_up_switch` stays strict-itemized-BATNA-only; board + modal show the
+  SAME gap. Re-flag ONLY "at or below" on an above-best quote, or `give_up_switch` on a lone non-itemized lowball. Shipped 2026-06-30 (`phase2/negotiation_followup`, `60ae1db`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
@@ -233,12 +178,12 @@ from the step-1 stdout line.
 SQ=/Users/wangyangxu/opt/anaconda3/bin/sqlite3   # or any sqlite3 on PATH
 DB="<dataDir>/autobroker.db"
 "$SQ" -header -column "$DB" \
-  "SELECT skill, COUNT(*) calls, SUM(cost_usd) cost_usd, SUM(latency_ms) latency_ms,
-          AVG(latency_ms) mean_ms, SUM(input_tokens) input_tok,
+  "SELECT skill, provider, pricing_source, COUNT(*) calls, SUM(cost_usd) cost_usd,
+          SUM(latency_ms) latency_ms, AVG(latency_ms) mean_ms, SUM(input_tokens) input_tok,
           SUM(output_tokens) output_tok,
           SUM(CASE WHEN fail_reason IS NOT NULL THEN 1 ELSE 0 END) fails,
           SUM(CASE WHEN fail_reason='malformed_tool_call' THEN 1 ELSE 0 END) malformed
-   FROM test_run_records GROUP BY skill ORDER BY cost_usd DESC"
+   FROM test_run_records GROUP BY skill, provider, pricing_source ORDER BY cost_usd DESC"
 "$SQ" "$DB" "SELECT printf('\$%.4f',SUM(cost_usd)), SUM(latency_ms) FROM test_run_records"
 ```
 
@@ -246,7 +191,10 @@ If `pipeline_reset` already ran, read the pre-wipe backup:
 `BK=$(ls -t <dataDir>/backups/autobroker-*.db | head -1)` then query `$BK`.
 
 About 6 of the 17 skills emit LLM rows; the other 11 are zero-LLM deterministic (no row =
-correct). The dealer subagents run on the local OAuth subscription — `$0` API-key cost.
+correct). Lane-B (Claude OAuth) rows are `cost_usd` NULL + `pricing_source='subscription'` — an
+honest NULL, never a fabricated $0. Render them `cost=NULL · subscription` and never sum them
+into the $ totals (the `SUM` above skips NULLs — keep it that way). The dealer subagents run on
+the local OAuth subscription — `$0` API-key cost (lane-independent).
 
 ---
 
@@ -258,8 +206,9 @@ re-runs. Self-contained `index.html`, warm-paper ledger CSS, key sections 中文
 
 **Required sections (in order):**
 
-1. **本轮买家档案** — metro / car / finance mode / persona / email (the reproducibility
-   anchor from `references/brand-picker.md`).
+1. **本轮买家档案** — metro / car / finance mode / persona / email / provider lane
+   (deepseek api-key | claude OAuth subscription) — the reproducibility anchor from
+   `references/brand-picker.md`.
 2. **逐技能表** — per skill: NL input · route · did-what · cost · latency · verdict · UI
    observation.
 3. **Live 议价摘要** — per dealer: initial OTD → counter rounds → final OTD (omit if step
@@ -279,7 +228,8 @@ re-runs. Self-contained `index.html`, warm-paper ledger CSS, key sections 中文
    corpus); and `pnpm soak mp-replay` GREEN as the deterministic backstop.
 9. **工件** — branch, commit hashes, any in-loop trivial fix, links.
 
-Copy any screenshots into `<report-dir>/shots/`.
+Copy any screenshots into `<report-dir>/shots/`; the UI-monitor's checkpoint shots land there
+too, named `<checkpoint>-<tab>.png`.
 
 ### Time & Cost — two tables (emit every run)
 
@@ -292,9 +242,10 @@ scraping, human-approval waits, builds.
 TOTAL $. Mark any step where a trivial in-loop fix fired.
 
 **TABLE 1b — per-skill telemetry** (from `test_run_records`, the step-6c dump). Fixed
-columns so the daily sync parses them mechanically: `技能 / Skill` · `调用 / calls` ·
-`成本 / $ (cost_usd)` · `LLM 延迟 / latency_ms` · `均值 / mean_ms` · `输入 tok` ·
-`输出 tok` · `失败 / fails`, plus a TOTAL row.
+columns so the daily sync parses them mechanically: `技能 / Skill` · `provider/lane` ·
+`调用 / calls` · `成本 / $ (cost_usd)` · `LLM 延迟 / latency_ms` · `均值 / mean_ms` ·
+`输入 tok` · `输出 tok` · `失败 / fails`, plus a TOTAL row. Lane-B cost cells read
+`NULL·subscription` (never a fabricated $0; excluded from the $ TOTAL).
 
 **TABLE 2 — 可削减项** (top 3–5 wall-clock sinks). Columns: `本轮慢点 / Slow this run` ·
 `候选削减 / Candidate cut` · `预计节省 / Est. saving (min)` · `覆盖保留? / Coverage-kept
@@ -308,7 +259,9 @@ The ledger at `ts-rebuild/live-e2e/index.html` is auto-built — never hand-edit
    `key=value`, summary last; values must be free of `|`, `--`, and raw `< > &`. All 15
    fields, use `—` when N/A:
    `run | date | vehicle | metro | mode | persona | skills | nego | findings | cost | wall | commit | pr | verdict | summary`
-   - `run` = the run-id · `skills` = `17/17` (or `N/N` for a sub-arc) · `nego` = e.g.
+   - `run` = the run-id · `mode` = `<mode>·<provider>` (e.g. `full·claude`, `light·deepseek`)
+     — the lane rides inside `mode`: still 15 fields, no parser change (values stay free of
+     `|`, `--`, raw `< > &`) · `skills` = `17/17` (or `N/N` for a sub-arc) · `nego` = e.g.
      `2r → $33,400` or `—` · `findings` = the bucket counts, e.g. `0 blk · 5 bklg · 3 pol`
      · `pr` = `—` for the runner (it does not open PRs) · `verdict` = one of
      **`complete` | `partial` | `blocked`** (the journey outcome — `partial` = some step

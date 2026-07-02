@@ -57,9 +57,10 @@ product, ask what the runner missed and close that gap:
 
 - **A blind spot** — a skill "completed but couldn't be verified" because no row / route /
   audit / committed `data-testid` exposed its result → add that verification surface, in
-  the **test host** (`serve-live.mjs` control routes, committed testids), never the product
-  `/api` layer. A new check must **generalize to the next random buyer** (the brand-picker
-  randomness is the held-out set), not over-fit this run's metro.
+  the **test host** (`serve-live.mjs` control routes, committed testids, or a ui-monitor
+  checkpoint/sweep when a UI defect was missed because no checkpoint covered it), never the
+  product `/api` layer. A new check must **generalize to the next random buyer** (the
+  brand-picker randomness is the held-out set), not over-fit this run's metro.
 - **A stale detail** — a drifted testid, a removed route, a changed threshold, a persona
   that no longer triggers its edge → refresh the relevant `/e2e-loop` reference so the next
   run doesn't trip on it.

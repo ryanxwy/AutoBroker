@@ -10,6 +10,7 @@ description: The companion to `/e2e-loop`. Run it in a FRESH session AFTER one o
   Pass `--provider claude|deepseek` (default `deepseek`) to re-verify fixes against the
   same LLM lane the finding came from — `claude` runs the fresh serve-live re-verify on
   the Claude OAuth subscription lane (lane B), `deepseek` on the DeepSeek API-key lane.
+argument-hint: "[--provider deepseek|claude]"
 disable-model-invocation: true
 ---
 
@@ -81,10 +82,12 @@ never left half-done.
   ISOLATED to that lane. Re-run the failing skill on the other provider
   (`AUTOBROKER_AGENT_PROVIDER`): if BOTH lanes fail, the cause is general / environmental and
   the fix is provider-agnostic (or none, when it is host thrash); only a fault that reproduces
-  on one lane AND clears on the other earns a lane-scoped fix. **No fallback method ships
-  without a met live case** — a merely-hypothesised failure mode is a *discovery* job (a
-  seasoned candidate to go find it, `references/seasoning.md`), never pre-emptively-shipped
-  code nor an "assert this someday" probe baked into the runner docs.
+  on one lane AND clears on the other earns a lane-scoped fix. The runner's four-exit triage
+  tree (`e2e-loop` SKILL.md) is the shared classification procedure — the re-run is a one-shot
+  diagnostic, and a fix re-verifies on the SAME lane the finding came from. **No fallback
+  method ships without a met live case** — a merely-hypothesised failure mode is a *discovery*
+  job (a seasoned candidate to go find it, `references/seasoning.md`), never
+  pre-emptively-shipped code nor an "assert this someday" probe baked into the runner docs.
 - **Never** set `AUTOBROKER_TEST_AUTO_APPROVE`; never touch a production DB; isolated
   throwaway data-dir (CLAUDE.md inv #11). The 12 safety invariants hold — your fixes
   strengthen the floor, never lower it.

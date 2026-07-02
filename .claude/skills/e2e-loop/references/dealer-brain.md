@@ -13,8 +13,8 @@ new car. It is NOT a 2-3 round cooperative haggle — see the reality model belo
 
 Dispatch a **local Sonnet subagent** as the dealer actor (`harness/prompts/dealer.md`). It runs on
 YOUR Claude — the operator's subscription (subagents) or a `claude -p` child — entirely
-SEPARATE from the SUT's DeepSeek api-key lane: it never charges the SUT's provider
-budget and never sends real email. All writes flow through `inject_replies` /
+SEPARATE from the SUT's run lane (`--provider deepseek|claude`): it never charges the
+SUT's provider budget and never sends real email. All writes flow through `inject_replies` /
 `inject_reply_to_thread` / `inject_contact`; external SQLite writes are invisible to
 the running server (see `harness-boundaries.md`). The subagent only GENERATES the email
 text; the main agent injects it through the control routes and drives the SUT skills
@@ -41,9 +41,11 @@ that hard-fails the extra children, or a multi-minute hang. So **PACE**: ≤3 co
 rounds sequential, drop ghosts/laggards (fewer emails over more wall-clock — the
 deliberate trade). "Concurrent" buys orchestration shape (interleaved threads, the
 shared-rooftop race, one approval inbox) + ~2-3× overlap, NOT N× parallelism.
-`claude -p` and Claude Code subagents on the subscription are fine for local owner-run
-use; the **Claude Agent SDK requires an api key** (OAuth is blocked there) — do NOT
-route the dealer actor through the SDK on OAuth.
+**The dealer actor stays an operator-subscription subagent, deliberately OFF the SUT's
+`--provider` lane.** The dealer is a test fixture, not the SUT: keeping it on the
+operator's Claude (subagents / `claude -p`) preserves the differential control — a
+lane-B SUT run still negotiates against an independent dealer brain, and dealer costs
+never charge the SUT's provider.
 
 **NON-DETERMINISM (load-bearing).** Every dealer AND buyer MESSAGE is a live LLM
 generation. The ONLY seeded part is the SKELETON — which dealers, archetype assignment,
@@ -55,11 +57,8 @@ gate recorded FROM a live run, never a substitute within it.
 
 ## The reality model (research-grounded — do NOT regress to "cooperative")
 
-Sourced from the 2026-06-22 deep-research report (`AutoBroker-dev-plan/
-ts-rebuild/20260622-email-negotiation-realism-research/`, 90+ cited sources: DAS
-Technology 2025 NADA study, AutoAlert/CDK org charts, CarEdge/Edmunds/Consumer
-Reports buyer guides, Conversica/Impel AI-BDC docs, r/askcarsales). Live-validated
-2026-06-22 (RAV4 XLE / LA, 32 dealers). The dealer side MUST exhibit:
+(Research grounding: `AutoBroker-dev-plan/ts-rebuild/20260622-email-negotiation-realism-research/`;
+live-validated.) The dealer side MUST exhibit:
 
 1. **One dealer ≠ one contact.** A lead flows through a titled hierarchy:
    CRM **auto-responder** (instant, no price) → **BDC rep / Internet Coordinator**
@@ -236,7 +235,7 @@ receipt UI via the Replies tab DOM and `/__e2e/audit`. Decline = Δ0 on `threads
 | each `negotiation_followup` | batch gate rendered BEFORE prose + approved; `threads.state='negotiating'`; "sent N" |
 | `inject_reply_to_thread` (+contact) | `messages` +1; on escalation a new `dealer_contacts` row, `is_primary_reply_target=1` |
 | **the responsive cap (the proof)** | per-thread `COUNT(outbound)` vs unanswered — **active threads reach ≥4 outbound** (past the old flat 3); **silent threads freeze at 2 outbound / unanswered=2 and DROP from the next batch** (12→6 in the live run) |
-| `reply_extract` | `dealer_quotes` grows; revised OTDs grind to the floors; **#1244 CLEAN — or, if it ever trips, fail-closed-THEN-auto-recover** (2 `provider=deepseek` ledger rows, redacted `malformed_sample`, NO user retry button — see `skill-pipeline.md` item 9; a silent tool-SKIP / regex-exec'd name IS still the blocker) on the largest extraction |
+| `reply_extract` | `dealer_quotes` grows; revised OTDs grind to the floors. **Lane A (`--provider deepseek`): #1244 CLEAN — or, if it ever trips, fail-closed-THEN-auto-recover** (2 `provider=deepseek` ledger rows, redacted `malformed_sample`, NO user retry button — see `skill-pipeline.md` item 9). **Lane B (`--provider claude`): typed rows, or a ledgered fail-closed row — structurally #1244-exempt, NO recovery hop.** On either lane a silent tool-SKIP / regex-exec'd name IS still the blocker; check on the largest extraction |
 | **F4 give-up / switch (derived-on-read, NEW)** | after the ghost rounds, a **ghosted/cold** dealer surfaces a `dealer-verdict-hold` chip ("gone quiet" / "paused" / "not moving") on the Dealers tab + its thread reads `thread-class-chip`="gone quiet" (dormant) on Replies. After a **retrade** where a cheaper itemized **same-mode** front-runner exists, the lagging dealer surfaces `dealer-verdict-switch` = "consider switching · $N cheaper elsewhere" where **N == currentOtd − bestCompetingRealOtd** (the DISPLAYED gap = the lowest REAL competing OTD, incl. a cheaper non-itemized bottom-line offer — matches the detail modal so board and modal never show two different $N; the give_up_switch VERDICT still fires only on the strict itemized BATNA), with **NO competing dealer NAME and NO budget** (inv #9). After a **concession** the thread reads `thread-class-chip`="countered". Read the verdict/reason/gap from the product JSON `GET /api/profiles/:id/dealers` (`verdict`/`verdict_reason`/`batna_gap_usd`) + `/threads` (`negotiation_status`) and corroborate with the DOM chip — no new test-host route. **Window note:** the give-up engine's anti-pester cap is `BATCH_SILENCE_WINDOW_DAYS=7` (`dealerComm/constants.ts`), but the inject clock backdates only ~2d (below) — so the DEFAULT run reaches the **'paused'** cap path; to drive the silent **'gone quiet'** path use the already-documented `ageHoursAgo>168` lever (`serve-live.mjs:136-148`). |
 | **come-onsite / ghost (realistic no-OTD)** | the pipeline does NOT fail when most dealers never quote: each come-onsite-only / ghost thread yields **0 `dealer_quotes` rows (`no_quote`, no error — never a fabricated number)**; the data-quality verdict's `nullEscape` / `gated` escape PASSES a realistic low quote-rate; a profile's best OTD may come from only **1-2** dealers, or be legitimately **absent** (a valid terminal — "go visit / keep waiting", not a bug). Distinguish this from the real FAIL: a dealer that DID email a number whose OTD the extractor dropped (`n>0 AND otd_present==0`). |
 | closeout decline | `/__e2e/rows?table=threads` Δ0 |

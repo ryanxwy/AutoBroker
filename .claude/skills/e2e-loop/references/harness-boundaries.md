@@ -25,13 +25,16 @@ Wait for this line; **record `dataDir`**.
 | `NODE_ENV` | `test` — arms the intake-deps seam guard |
 | `AUTOBROKER_TEST_AUTO_APPROVE` | **deleted — NEVER set** (CLAUDE.md inv #11; keeps decline path live) |
 | `AUTOBROKER_MODE` | `"test"` — the sole send-control variable; every send resolves fake/local |
-| `DEEPSEEK_API_KEY` | **not pinned** — boot's `loadDotEnvKeys` reads the real key from `.env` (no-clobber); **LLM lane is live** |
+| `AUTOBROKER_AGENT_PROVIDER` | exported by the runner per `--provider` BEFORE boot; the server reads it as the default agent selection. Exact strings `claude` \| `deepseek` only — **anything else silently resolves to the DeepSeek policy default** (why the spine's lane-took-effect check exists). Unset = DeepSeek |
+| `DEEPSEEK_API_KEY` | lane-A credential — **not pinned**; boot's `loadDotEnvKeys` reads it from `.env` (no-clobber) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | lane-B credential (read from `.env`/keys, no-clobber); absent → every lane-B call fails closed |
 | `AUTOBROKER_RECORD_TRANSCRIPT` | optional; when set, records the SUT's LLM traffic to a JSONL file (the step-3.9 record/replay seam). Lane A (AI-SDK) → `<path>`; lane B (Claude OAuth) → sibling `<path>.laneB.jsonl` (diagnostic-only, since 2026-06-29) |
 | `AUTOBROKER_REPLAY_TRANSCRIPT` | optional; when set, replays a prior transcript with ZERO provider cost (deterministic; dealer replies are frozen as seeds) |
 | `AUTOBROKER_PORTFOLIO_SCHEDULER` | `"1"` arms the real PortfolioScheduler for step 3.9; pair with `MAX_CONCURRENT_ACTIVE_PROFILES` (set below the active count to prove the cap) and `AUTOBROKER_PORTFOLIO_TICK_MS` (e.g. 2000) |
 
 Result: real server + real built UI + isolated throwaway DB (never touches
-`~/.autobroker*`) + real DeepSeek + fake-send floor armed + never auto-approve.
+`~/.autobroker*`) + the run's live LLM lane (`--provider`) + fake-send floor armed +
+never auto-approve.
 
 ### Mode model (test vs buyer)
 
@@ -200,54 +203,30 @@ skill that wrote ≥1 row, BEFORE declaring it PASS.
 
 ---
 
-## Cross-provider data-fetch verification (a 0-yield on a browser skill is NOT a lane verdict)
+## Cross-lane triage support (the spine owns the rule)
 
-**Practice (2026-06-29, owner-directed):** when a browser-fed skill — `inventory_site_scan`,
-`inventory_link_scan`, the `dealer_web_lead_submit` form-scout — fetches **0 usable rows on the
-live lane**, do NOT conclude a provider/lane bug from the live result alone. The browse path is
-**provider-independent** (the tools-layer Playwright has no LLM in it); only the EXTRACTION is the
-LLM. A live 0 has three confounds before "the lane is broken": (1) **browsing variance** (real
-dealer sites flake / anti-bot block run-to-run; repeated scans of the same metro rate-limit the
-scraper); (2) **machine thrash** — over-aggressive concurrency drives the host's load average to
-100+, and under that load the headless browsers can't render pages → car-less SRPs → extraction
-correctly returns `[]` (watch `uptime`; if load ≫ cores, the browser quality has collapsed); (3)
-a genuine extraction-lane bug.
+The four-exit triage tree lives in SKILL.md. This host supplies its three instruments:
 
-**Isolate before you blame the lane — three cheap, deterministic checks:**
-0. **Read `/__e2e/dataquality?skill=inventory_site_scan` first (single-run, no re-run).** If the
-   0-yield carries `rendered_empty_count>0`, the SRPs rendered BLANK (host thrash) — confound (2)
-   is confirmed directly, no cross-provider re-run needed. `rendered_empty_count==0` on a 0-yield
-   means the dealers genuinely had no parseable stock (or were `blocked`), not a thrashed browse.
-1. **Cross-provider re-run.** Run the SAME skill with the other provider (`AUTOBROKER_AGENT_PROVIDER`
-   flipped, fresh dir). If the other provider ALSO depends on browsing (it does) and it fetches while
-   the first didn't, that points to **browsing variance/thrash**, not the lane — same browse code.
-   Confirmed live 2026-06-29: DeepSeek fetched 60 listings; Claude fetched 0 — but only because the
-   Claude runs coincided with a thrashed host (load 122–139) + over-scanned (blocked) sites.
-2. **Controlled extraction test (the decisive one).** Feed a FIXED woven-card snapshot (the exact
-   `weaveCardsForExtraction` `[CARD n]…URL:…` format) to the extractor on the suspect provider,
-   sequentially AND concurrently. If it extracts (e.g. 3/3, 6/6) the extraction lane is FINE and the
-   live 0 was upstream browsing. (2026-06-29: Claude OAuth lane B passed both — no extraction bug.)
+1. **`rendered_empty_count`** (`/__e2e/dataquality?skill=inventory_site_scan`) — a scanned
+   dealer whose SRP resolved un-blocked yet rendered 0 cards + a sub-threshold snapshot.
+   `n==0 AND rendered_empty_count>0` = blank/host-thrash render (environment), NOT no-stock,
+   NOT a lane bug — single-run, deterministic, no cross-lane re-run needed. Informational,
+   never a fail criterion.
+2. **Cross-lane re-run** — same skill, `AUTOBROKER_AGENT_PROVIDER` flipped, fresh dir, at
+   most once. The browse path is provider-independent (tools-layer Playwright, no LLM);
+   only the EXTRACTION is the lane.
+3. **Controlled extraction test (decisive)** — feed a FIXED woven-card snapshot (the exact
+   `weaveCardsForExtraction` `[CARD n]…URL:…` format) to the suspect lane's extractor,
+   sequentially AND concurrently; extraction succeeding proves the lane and points the
+   live 0 upstream at browsing.
 
-**Lane-B (Claude OAuth) diagnostics (2 telemetry gaps FIXED 2026-06-29, PIC-20260629-1/-2):**
-lane-B is a heavier per-call subprocess than the in-process DeepSeek lane, but browse concurrency is
-a HOST property, not a lane property — the flat `scan→extract` chain never runs a live browser and
-an LLM call at the same time, so there is **no per-provider concurrency cap**. (A speculative
-Claude-only cap was tried and removed; both lanes share the host-safe `AUTOBROKER_*_CONCURRENCY`
-defaults, env-raisable on a capable host — past the host's render ceiling more browsers thrash and
-yield blank SRPs, so the default stays conservative.) Two diagnostics that USED to mislead are now
-reliable:
-- `test_run_records.input_tokens` for lane B is now **cache-inclusive** (sums
-  `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) — it reads the REAL
-  prompt size (e.g. ~26k on a large site_scan prompt), no longer a misleading constant ~3. A
-  near-zero lane-B `input_tokens` now genuinely means a near-empty prompt.
-- `AUTOBROKER_RECORD_TRANSCRIPT=<path>` now **DOES** capture lane-B calls — into a **sibling**
-  file `<path>.laneB.jsonl` (one JSON line per call: `{lane:"claudeOAuth", model, prompt,
-  structuredOutput|text, usage}`; the main `<path>` stays the AI-SDK replay file, never polluted).
-  To inspect "was the woven-card input empty, or did the model return empty?" on a Claude-lane
-  0-yield, read the `.laneB.jsonl` sibling — the controlled-extraction test in check (2) is no
-  longer the ONLY window into the lane-B prompt/response.
-
-Record any real provider-specific gap into `harvest-register.md` for `e2e-evolve`.
+Lane-B diagnostics (reliable): `test_run_records.input_tokens` is cache-inclusive (sums
+input + cache_creation + cache_read — reads the real prompt size); with
+`AUTOBROKER_RECORD_TRANSCRIPT=<path>` lane-B calls tee to the sibling `<path>.laneB.jsonl`
+({lane:"claudeOAuth", model, prompt, structuredOutput|text, usage} — the main `<path>`
+stays the lane-A replay file). Concurrency is a HOST property, not a lane property: both
+lanes share the host-safe `AUTOBROKER_*_CONCURRENCY` defaults (env-raisable); there is no
+per-provider cap.
 
 ---
 
@@ -334,11 +313,14 @@ fake-mailbox / watermark assertions.
 SQ=/Users/wangyangxu/opt/anaconda3/bin/sqlite3   # or any sqlite3 on PATH
 DB="<dataDir>/autobroker.db"
 "$SQ" -header -column "$DB" \
-  "SELECT skill,COUNT(*) calls,SUM(cost_usd) cost,SUM(latency_ms) ms \
-   FROM test_run_records GROUP BY skill ORDER BY cost DESC"
+  "SELECT skill,provider,pricing_source,COUNT(*) calls,SUM(cost_usd) cost,SUM(latency_ms) ms \
+   FROM test_run_records GROUP BY skill,provider,pricing_source ORDER BY cost DESC"
 "$SQ" "$DB" \
   "SELECT printf('\$%.4f',SUM(cost_usd)),SUM(latency_ms) FROM test_run_records"
 ```
+
+Lane-B rows carry `cost_usd` NULL + `pricing_source='subscription'` (an honest NULL —
+never a fabricated $0); report the lane column, don't sum NULLs into $.
 
 **Fallback (if already reset):** read from the pre-wipe backup:
 `BK=$(ls -t <dataDir>/backups/autobroker-*.db | head -1)` then query `$BK`.
@@ -350,14 +332,16 @@ Time & Cost tables in the HTML report (see `references/recording.md`).
 
 ## Quick-reference checklist
 
-1. Start: `pnpm e2e:serve-live`; wait for `{"liveE2e":"listening",…}`; record `dataDir`.
-2. Confirm floor automatically set by the host: tmp data-dir (not `~/.autobroker*`), `AUTOBROKER_MODE=test` (fake-send), gmail fake, `AUTO_APPROVE` deleted.
-3. **Seed ONLY via the control routes** (`inject_replies`, `inject_reply_to_thread`, `inject_crm_threads`, `inject_contact`) — never write the DB underneath the server.
-4. `location_query` MUST contain a whitelisted city name or ZIP (else silent Irvine fallback).
-5. After `inject_replies`, **save `applied.threadIds[]`**; dealer counters go to `inject_reply_to_thread` using those `threadId` values.
-6. Call `inject_crm_threads` BEFORE `dealer_hygiene`.
-7. Dump `test_run_records` BEFORE `pipeline_reset`; use backup fallback if missed.
-8. Verify writes and decline-Δ0 via `/__e2e/rows?table=` (whitelist 14 tables) and `/__e2e/audit?action=`.
-9. Per-PASS cleanup: assert `/__e2e/rows?table=search_profiles` returns `0`.
-10. **(Step 3.9 only)** Before launching: set `AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 AUTOBROKER_PORTFOLIO_TICK_MS=2000`; optionally `AUTOBROKER_RECORD_TRANSCRIPT=<path>` to capture a replay corpus.
-11. **Mode is launch-time, immutable.** `AUTOBROKER_MODE=test` is chosen at boot (`assertTestModeSafe` fires only there); **never** PUT/POST `app_mode=buyer` or flip the TopBar on the running host — a live flip arms a real adapter on the next send with no second env ring (see "Mode model").
+1. Export `AUTOBROKER_AGENT_PROVIDER` per `--provider` BEFORE boot (exact `claude`\|`deepseek`; unset = DeepSeek).
+2. Start: `pnpm e2e:serve-live`; wait for `{"liveE2e":"listening",…}`; record `dataDir`.
+3. Confirm floor automatically set by the host: tmp data-dir (not `~/.autobroker*`), `AUTOBROKER_MODE=test` (fake-send), gmail fake, `AUTO_APPROVE` deleted.
+4. Verify lane-took-effect from `test_run_records` after the first LLM skill (`provider` + `pricing_source` match `--provider`).
+5. **Seed ONLY via the control routes** (`inject_replies`, `inject_reply_to_thread`, `inject_crm_threads`, `inject_contact`) — never write the DB underneath the server.
+6. `location_query` MUST contain a whitelisted city name or ZIP (else silent Irvine fallback).
+7. After `inject_replies`, **save `applied.threadIds[]`**; dealer counters go to `inject_reply_to_thread` using those `threadId` values.
+8. Call `inject_crm_threads` BEFORE `dealer_hygiene`.
+9. Dump `test_run_records` BEFORE `pipeline_reset`; use backup fallback if missed.
+10. Verify writes and decline-Δ0 via `/__e2e/rows?table=` (whitelist 14 tables) and `/__e2e/audit?action=`.
+11. Per-PASS cleanup: assert `/__e2e/rows?table=search_profiles` returns `0`.
+12. **(Step 3.9 only)** Before launching: set `AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 AUTOBROKER_PORTFOLIO_TICK_MS=2000`; optionally `AUTOBROKER_RECORD_TRANSCRIPT=<path>` to capture a replay corpus.
+13. **Mode is launch-time, immutable.** `AUTOBROKER_MODE=test` is chosen at boot (`assertTestModeSafe` fires only there); **never** PUT/POST `app_mode=buyer` or flip the TopBar on the running host — a live flip arms a real adapter on the next send with no second env ring (see "Mode model").

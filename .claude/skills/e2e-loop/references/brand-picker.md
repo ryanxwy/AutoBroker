@@ -96,6 +96,12 @@ To exercise `multiple_active_profiles` (edge behavior E7 in
 Cheapest path: mid-sweep the persona says "actually I want a RAV4 not a CR-V"
 (journey variation 3).
 
+**UC3 cross-shop picks (step 4 only):** the two EXTRA profiles use the SAME
+metro as the spine pick and two DIFFERENT-make, same-segment competitors from
+the rotation pool (e.g. Camry spine → Accord + Mazda6). Different makes = no
+active-slot clash; one metro = the natural shared-rooftop world
+(`references/multi-profile-lane.md`).
+
 ---
 
 ## 6. Record picks before PASS-A (reproducibility anchor)
@@ -109,4 +115,5 @@ finance:  <finance | lease | cash>
 persona:  <P1–P9>
 email:    <buyer email>
 2nd profile (opt): <year brand model>
+UC3 cross-shop (opt): <make model> + <make model>   # same metro, same segment
 ```
