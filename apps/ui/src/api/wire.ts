@@ -520,6 +520,11 @@ export const InventoryCandidateRowSchema = z
     dealer_id: z.string(),
     dealer_name: z.string().nullable(),
     distance_miles: z.number().nullable(),
+    // Provenance from the source-row join: 'aggregator_srp' + the source host for
+    // a shopping-site listing, both null for a dealer-site row. Drives the muted
+    // "via {host}" line + the modal "Found on" row. Optional for older payloads.
+    source_type: z.string().nullable().optional(),
+    source_host: z.string().nullable().optional(),
     score: z.number(),
     reasons: z.array(z.string()),
     match_status: z.string(),
@@ -550,6 +555,13 @@ export const InventoryCompareResultSchema = z
     // vs blocked. Drives the "scanned, found 0" vs "never scanned" empty-state.
     sourcesScanned: z.number().optional(),
     sourcesBlocked: z.number().optional(),
+    // Shopping-site (Cars.com/Edmunds) scan provenance, counted separately from
+    // dealer sites so the empty-state can name them plainly. Optional for tolerance.
+    shoppingSourcesScanned: z.number().optional(),
+    shoppingSourcesBlocked: z.number().optional(),
+    // # of same-(profile,VIN) rows collapsed across dealers in the projection
+    // (the aggregator/dealer duplicate belt). Optional for tolerance.
+    sameVinCollapsed: z.number().optional(),
     // Color config cross-check advisory: per loose preferred color the ranker's
     // EXACT colorAxis won't match, the real stocked names to offer (one-tap add).
     // Optional for tolerance of older payloads.

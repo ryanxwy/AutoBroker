@@ -1,8 +1,10 @@
 /**
  * Listings read helper for /inventory_compare — the DB-read side of the
  * deterministic ranker. Reads the live (non-superseded) inventory listings for
- * one profile and staples each listing's dealer distance via a LEFT JOIN, so
- * the pure ranker can score without re-opening the connection.
+ * one profile and staples each listing's dealer distance via a LEFT JOIN, plus
+ * the listing's source_type/source_url via a second LEFT JOIN on the source row
+ * (so a shopping-site listing can render its "via {host}" provenance), so the
+ * pure ranker can score without re-opening the connection.
  *
  * SQLITE INVARIANT: only packages/tools (and db beneath it) touch the product
  * DB. Raw better-sqlite3 statements via db.$client — NO drizzle-orm import.
@@ -21,9 +23,11 @@ export interface ProfileListingsRead {
 }
 
 const SELECT_LISTINGS =
-  "SELECT inventory_listings.*, d.name AS dealer_name, d.distance_miles AS distance_miles " +
+  "SELECT inventory_listings.*, d.name AS dealer_name, d.distance_miles AS distance_miles, " +
+  "dis.source_type AS source_type, dis.source_url AS source_url " +
   "FROM inventory_listings " +
   "LEFT JOIN dealers d ON d.dealer_id = inventory_listings.dealer_id " +
+  "LEFT JOIN dealer_inventory_sources dis ON dis.source_id = inventory_listings.source_id " +
   "WHERE inventory_listings.search_profile_id = ? " +
   "AND inventory_listings.superseded_at IS NULL " +
   "ORDER BY inventory_listings.listing_id";

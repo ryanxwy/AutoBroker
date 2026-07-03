@@ -78,6 +78,11 @@ export const RankedCandidateSchema = z
     dealer_id: z.string(),
     dealer_name: z.string().nullable(),
     distance_miles: z.number().nullable(),
+    /** The joined source row's type — 'aggregator_srp' for a shopping-site
+     *  listing, null for a dealer-site listing. Drives the "via {host}" line. */
+    source_type: z.string().nullable(),
+    /** The hostname of the joined source_url (e.g. "www.cars.com"), or null. */
+    source_host: z.string().nullable(),
     score: z.number(),
     reasons: z.array(z.string()),
     match_status: z.enum(["exact", "near", "mismatch", "unknown"]),

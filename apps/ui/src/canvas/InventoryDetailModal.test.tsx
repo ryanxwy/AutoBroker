@@ -44,6 +44,8 @@ function makeRow(overrides: Partial<InventoryCandidate> = {}): InventoryCandidat
     inventory_status: "in_stock",
     dealer_name: "Jim Click Hyundai",
     distance_miles: 4.2,
+    source_type: null,
+    source_host: null,
     reasons: [],
     match_status: "exact",
     recommended: true,
@@ -289,5 +291,31 @@ describe("InventoryDetailModal — interior color / availability / caveat / gate
     const close2 = open(makeRow({ price_gated: false }));
     expect(doc("inventory-detail-price-gated")).toBeNull();
     close2();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Found on" provenance row (aggregator rows only)
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — Found-on provenance row", () => {
+  it("renders the Found-on row with the host for an aggregator_srp row", () => {
+    const close = open(makeRow({ source_type: "aggregator_srp", source_host: "www.cars.com" }));
+    const foundOn = doc("inventory-detail-found-on");
+    expect(foundOn).not.toBeNull();
+    expect(foundOn!.textContent).toBe("www.cars.com");
+    close();
+  });
+
+  it("omits the Found-on row for a dealer-site row (source_type null)", () => {
+    const close = open(makeRow({ source_type: null, source_host: null }));
+    expect(doc("inventory-detail-found-on")).toBeNull();
+    close();
+  });
+
+  it("omits the Found-on row when source_host is null despite an aggregator type", () => {
+    const close = open(makeRow({ source_type: "aggregator_srp", source_host: null }));
+    expect(doc("inventory-detail-found-on")).toBeNull();
+    close();
   });
 });

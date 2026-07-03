@@ -66,6 +66,11 @@ export interface InventoryCandidate {
   inventory_status: string;
   dealer_name: string | null;
   distance_miles: number | null;
+  /** 'aggregator_srp' for a shopping-site (Cars.com/Edmunds) listing, else null.
+   *  Gates the muted "via {host}" provenance line (dealer-site rows show nothing). */
+  source_type: string | null;
+  /** The source host (e.g. "www.cars.com") the "via {host}" line renders, or null. */
+  source_host: string | null;
   reasons: string[];
   match_status: string;
   recommended: boolean;
@@ -121,6 +126,53 @@ export function vehicleHeader(c: InventoryCandidate): string {
   return [c.year !== null ? String(c.year) : null, c.make, c.model, c.trim]
     .filter((x): x is string => x !== null && x !== "")
     .join(" ");
+}
+
+/** A plain-words clause counting the shopping sites (Cars.com/Edmunds) a scan
+ *  reached — "shopping sites", never the "aggregator" jargon. A blocked count
+ *  renders even when nothing was successfully scanned. */
+function shoppingClause(scanned: number, blocked: number): string {
+  const sitesScanned = `${scanned} shopping site${scanned === 1 ? "" : "s"} had no matching listings`;
+  const sitesBlocked = `${blocked} shopping site${blocked === 1 ? "" : "s"} blocked automated scanning`;
+  if (scanned > 0 && blocked > 0) return `${sitesScanned}, and ${blocked} blocked automated scanning`;
+  return scanned > 0 ? sitesScanned : sitesBlocked;
+}
+
+/**
+ * The empty-state hint sentence — honest about what a scan actually reached.
+ * Dealer sites keep their existing wording; shopping sites are counted separately
+ * in plain words; and a blocked count renders even when nothing was successfully
+ * scanned (so "N shopping sites blocked" is never silently swallowed).
+ */
+export function emptyStateHint(counts: {
+  dealerScanned: number;
+  dealerBlocked: number;
+  shoppingScanned: number;
+  shoppingBlocked: number;
+}): string {
+  const { dealerScanned, dealerBlocked, shoppingScanned, shoppingBlocked } = counts;
+  const shoppingTouched = shoppingScanned > 0 || shoppingBlocked > 0;
+
+  if (dealerScanned > 0) {
+    // A dealer-site scan ran — the existing sentence, verbatim, plus a plain
+    // shopping-sites clause when shopping sites were also involved.
+    const base =
+      `Your last scan of ${dealerScanned} dealer site${dealerScanned === 1 ? "" : "s"} found no matching cars in stock` +
+      (dealerBlocked > 0
+        ? ` (${dealerBlocked} site${dealerBlocked === 1 ? "" : "s"} blocked automated scanning)`
+        : "") +
+      ". Try widening the trim, or check back later.";
+    return shoppingTouched ? `${base} Also, ${shoppingClause(shoppingScanned, shoppingBlocked)}.` : base;
+  }
+
+  if (shoppingTouched) {
+    // Only shopping sites were reached (no dealer scan yet) — count them plainly;
+    // the blocked count renders even when scanned=0.
+    return `Nothing found yet — ${shoppingClause(shoppingScanned, shoppingBlocked)}. Try again later or run a dealer site scan.`;
+  }
+
+  // Nothing has ever been scanned.
+  return "No inventory yet — run a site scan to find matching cars on dealer lots.";
 }
 
 function CandidateRow({
@@ -210,6 +262,16 @@ function CandidateRow({
           </>
         )}
       </div>
+      {/* Provenance for a shopping-site listing — the muted "via {host}" line
+          (the same t-status muted pattern the Incentives source line uses).
+          Dealer-site rows carry no aggregator source, so nothing renders. */}
+      {row.source_type === "aggregator_srp" &&
+        row.source_host !== null &&
+        row.source_host !== "" && (
+          <div className="t-status muted" data-testid="inventory-source-line">
+            via {row.source_host}
+          </div>
+        )}
       {markup !== null ? (
         <div className="chip-row">
           <span className="mini-chip flag-chip flag-red" data-testid="inventory-markup-flag">
@@ -339,8 +401,13 @@ export function InventoryCandidates({
   const scannedAtMax = inventory.kind === "ok" ? inventory.data.scannedAtMax : null;
   // Scan provenance: distinguishes "a scan ran, found 0" from "never scanned"
   // so the empty-state doesn't tell a user who just scanned to scan again.
+  // Dealer sites and shopping sites (Cars.com/Edmunds) are counted separately.
   const sourcesScanned = inventory.kind === "ok" ? (inventory.data.sourcesScanned ?? 0) : 0;
   const sourcesBlocked = inventory.kind === "ok" ? (inventory.data.sourcesBlocked ?? 0) : 0;
+  const shoppingSourcesScanned =
+    inventory.kind === "ok" ? (inventory.data.shoppingSourcesScanned ?? 0) : 0;
+  const shoppingSourcesBlocked =
+    inventory.kind === "ok" ? (inventory.data.shoppingSourcesBlocked ?? 0) : 0;
 
   // Default to "recommended" when there are any recommended candidates; else "all".
   const [filter, setFilter] = useState<"recommended" | "all">(
@@ -417,13 +484,12 @@ export function InventoryCandidates({
             Listed 0 inventory candidates (recommended: 0).
           </p>
           <p className="muted" data-testid="inventory-empty-hint">
-            {sourcesScanned > 0
-              ? `Your last scan of ${sourcesScanned} dealer site${sourcesScanned === 1 ? "" : "s"} found no matching cars in stock` +
-                (sourcesBlocked > 0
-                  ? ` (${sourcesBlocked} site${sourcesBlocked === 1 ? "" : "s"} blocked automated scanning)`
-                  : "") +
-                ". Try widening the trim, or check back later."
-              : "No inventory yet — run a site scan to find matching cars on dealer lots."}
+            {emptyStateHint({
+              dealerScanned: sourcesScanned,
+              dealerBlocked: sourcesBlocked,
+              shoppingScanned: shoppingSourcesScanned,
+              shoppingBlocked: shoppingSourcesBlocked,
+            })}
           </p>
         </>
       )}

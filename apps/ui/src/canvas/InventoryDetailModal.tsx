@@ -116,6 +116,17 @@ export function InventoryDetailModal({
           )}
           <DetailRow label="Dealer" value={row.dealer_name} />
           <DetailRow label="Distance" value={distance} />
+          {/* Provenance for a shopping-site listing — the host it was found on
+              (null-omit discipline like the other detail rows; dealer-site rows
+              have no aggregator source, so the row is absent). */}
+          {row.source_type === "aggregator_srp" &&
+            row.source_host !== null &&
+            row.source_host !== "" && (
+              <>
+                <dt>Found on</dt>
+                <dd data-testid="inventory-detail-found-on">{row.source_host}</dd>
+              </>
+            )}
           {availabilityUnknown ? (
             <>
               <dt>Availability</dt>

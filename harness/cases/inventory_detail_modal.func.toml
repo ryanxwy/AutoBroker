@@ -77,3 +77,18 @@ expect = "visible"
 kind = "dom_state"
 testid = "inventory-detail-markup"
 expect = "visible"
+
+# PROVENANCE: lst_strong joins to a Cars.com aggregator source, so the recommended
+# card renders the muted "via {host}" line (still in the DOM behind the modal) and
+# the modal a "Found on" row. Both are the one representative offline proof of the
+# shopping-site provenance surface (the null-omit variants are pinned in the
+# InventoryCandidates + InventoryDetailModal vitest tests).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-source-line"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-detail-found-on"
+expect = "visible"

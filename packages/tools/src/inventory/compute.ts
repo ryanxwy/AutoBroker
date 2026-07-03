@@ -14,6 +14,7 @@
 import type { Db } from "@autobroker/db";
 
 import { listListingsForProfile } from "./read.js";
+import { collapseSameVinAcrossDealers } from "./aggregatorPersist.js";
 import { classifyColorAvailability, normalizeColor } from "./colorMatch.js";
 import {
   rankListings,
@@ -83,6 +84,13 @@ export interface RankedCandidate {
   dealer_id: string;
   dealer_name: string | null;
   distance_miles: number | null;
+  /** The joined source row's type — 'aggregator_srp' for a shopping-site listing
+   *  (Cars.com/Edmunds), null for a dealer-site listing (no aggregator source).
+   *  Drives the "via {host}" provenance line. */
+  source_type: string | null;
+  /** The hostname of the joined source_url (e.g. "www.cars.com"), or null — the
+   *  host-only text the provenance line renders. Computed in code from source_url. */
+  source_host: string | null;
   score: number;
   reasons: string[];
   match_status: "exact" | "near" | "mismatch" | "unknown";
@@ -111,6 +119,18 @@ export interface RankInventoryResult {
   /** # of dealer_inventory_sources rows with last_status='blocked' (sites that
    *  blocked automated scanning). */
   sourcesBlocked: number;
+  /** # of shopping-site sources (source_type='aggregator_srp') with
+   *  last_status='scanned' — Cars.com/Edmunds an aggregator scan reached, counted
+   *  SEPARATELY from dealer sites so the empty-state can say "shopping sites"
+   *  distinctly. */
+  shoppingSourcesScanned: number;
+  /** # of shopping-site sources (source_type='aggregator_srp') with
+   *  last_status='blocked' — shopping sites that blocked automated scanning. */
+  shoppingSourcesBlocked: number;
+  /** # of same-(profile, VIN) rows collapsed across different dealer_ids in this
+   *  projection (the aggregator/dealer duplicate belt — a VIN under both a minted
+   *  aggregator rooftop and the real dealer rooftop shows once), or 0. */
+  sameVinCollapsed: number;
   /** Distinct trim strings over ALL of the profile's live listings — the
    *  UNFILTERED set (before the budget/availability hard-filter), so trim
    *  grounding sees a trim a dealer stocks even when it is over budget or
@@ -140,6 +160,18 @@ function asString(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** The hostname of a listing's joined source_url (e.g. "www.cars.com"), or null
+ *  when there is no source join or the value is absent/unparseable. Host-only —
+ *  never the full path (the provenance line shows just the site). */
+function sourceHostOf(sourceUrl: string | null): string | null {
+  if (sourceUrl === null || sourceUrl.trim() === "") return null;
+  try {
+    return new URL(sourceUrl).hostname;
+  } catch {
+    return null;
+  }
 }
 
 /** Defensive JSON-array parse for the profile's `*_json` blobs: a malformed or
@@ -281,6 +313,9 @@ function toCandidate(ranked: RankedRow): RankedCandidate {
     dealer_id: asString(listing["dealer_id"]) ?? "",
     dealer_name: asString(listing["dealer_name"]),
     distance_miles: asNumber(listing["distance_miles"]),
+    // Provenance from the source-row join (both null for a dealer-site listing).
+    source_type: asString(listing["source_type"]),
+    source_host: sourceHostOf(asString(listing["source_url"])),
     score,
     reasons: ranked.reasons,
     match_status,
@@ -308,30 +343,52 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
       recommendedCount: 0,
       sourcesScanned: 0,
       sourcesBlocked: 0,
+      shoppingSourcesScanned: 0,
+      shoppingSourcesBlocked: 0,
+      sameVinCollapsed: 0,
       allInventoryTrims: [],
       allInventoryColors: [],
       colorCrossCheck: [],
     };
   }
 
-  // Scan provenance: how many dealer sites a site_scan actually reached vs were
-  // blocked. Lets the empty-state distinguish "scan ran, found 0" from "never
-  // scanned" (read-only; dealer_inventory_sources is written only by site_scan).
+  // Scan provenance: how many sources a scan actually reached vs were blocked,
+  // SPLIT by source_type so the empty-state can speak of dealer sites and
+  // shopping sites (Cars.com/Edmunds) distinctly. Dealer sources keep the
+  // sourcesScanned/sourcesBlocked meaning (backward compat); aggregator_srp
+  // sources feed the shopping* counts. Read-only.
   const sourceTally = db.$client
     .prepare(
       "SELECT " +
-        "SUM(CASE WHEN last_status = 'scanned' THEN 1 ELSE 0 END) AS scanned, " +
-        "SUM(CASE WHEN last_status = 'blocked' THEN 1 ELSE 0 END) AS blocked " +
+        "SUM(CASE WHEN source_type != 'aggregator_srp' AND last_status = 'scanned' THEN 1 ELSE 0 END) AS dealer_scanned, " +
+        "SUM(CASE WHEN source_type != 'aggregator_srp' AND last_status = 'blocked' THEN 1 ELSE 0 END) AS dealer_blocked, " +
+        "SUM(CASE WHEN source_type = 'aggregator_srp' AND last_status = 'scanned' THEN 1 ELSE 0 END) AS shopping_scanned, " +
+        "SUM(CASE WHEN source_type = 'aggregator_srp' AND last_status = 'blocked' THEN 1 ELSE 0 END) AS shopping_blocked " +
         "FROM dealer_inventory_sources WHERE search_profile_id = ?",
     )
-    .get(profileId) as { scanned: number | null; blocked: number | null } | undefined;
-  const sourcesScanned = Number(sourceTally?.scanned ?? 0);
-  const sourcesBlocked = Number(sourceTally?.blocked ?? 0);
+    .get(profileId) as
+    | {
+        dealer_scanned: number | null;
+        dealer_blocked: number | null;
+        shopping_scanned: number | null;
+        shopping_blocked: number | null;
+      }
+    | undefined;
+  const sourcesScanned = Number(sourceTally?.dealer_scanned ?? 0);
+  const sourcesBlocked = Number(sourceTally?.dealer_blocked ?? 0);
+  const shoppingSourcesScanned = Number(sourceTally?.shopping_scanned ?? 0);
+  const shoppingSourcesBlocked = Number(sourceTally?.shopping_blocked ?? 0);
 
   const ctx = buildMatchCtx(profileRow);
   const { listings, dealerDistances } = listListingsForProfile(db, profileId);
   const ranked = rankListings(ctx, listings, dealerDistances);
-  const candidates = ranked.map(toCandidate);
+  // Read-time same-VIN collapse belt: a VIN that lives under both a minted
+  // aggregator rooftop and the real dealer rooftop shows once (the richer,
+  // non-aggregator row wins). Applied AFTER ranking so the collapse follows the
+  // ranked order; the counts below reflect the collapsed (shown) set.
+  const { rows: candidates, collapsedCount: sameVinCollapsed } = collapseSameVinAcrossDealers(
+    ranked.map(toCandidate),
+  );
 
   // Distinct trims over the UNFILTERED listings (before the budget/availability
   // hard-filter) — so trim grounding sees a trim a dealer stocks even when it is
@@ -397,6 +454,9 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
     recommendedCount,
     sourcesScanned,
     sourcesBlocked,
+    shoppingSourcesScanned,
+    shoppingSourcesBlocked,
+    sameVinCollapsed,
     allInventoryTrims,
     allInventoryColors,
     colorCrossCheck,

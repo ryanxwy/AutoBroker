@@ -8,6 +8,9 @@
  *   - 1 search_profiles row (status='active', account=acct-harness-1, brand=make,
  *     trim='Limited', budget_max so the over-budget filter has a cap)
  *   - 2 dealers + 2 profile_dealers bindings (for the distance axis + dealer name)
+ *   - 1 dealer_inventory_sources row (source_type='aggregator_srp', Cars.com) that
+ *     lst_strong joins to, so the recommended card carries a "via cars.com"
+ *     provenance line + the detail modal a "Found on" row
  *   - inventory_listings spanning the ranker's branches: an exact-trim in-stock
  *     row with a FULL 17-char VIN, a NULL listed_price row (the "incomplete"
  *     badge), a NULL stock_number row (the em-dash), an ORDERED row (dropped by
@@ -83,13 +86,33 @@ export const inventoryListings: FixtureState = {
       bind.run(PROFILE_ID, id);
     }
 
-    // The inventory listings spanning the ranker branches.
+    // A shopping-site (Cars.com) source row lst_strong joins to via source_id, so
+    // the recommended card renders the muted "via www.cars.com" provenance line
+    // and the detail modal a "Found on" row (source_type='aggregator_srp' feeds
+    // the shopping* empty-state tally; last_status='scanned'). One compact fixture
+    // proves BOTH the honest price breakdown AND the aggregator provenance.
+    const AGG_SOURCE_ID = "src-cars-strong";
+    c.prepare(
+      "INSERT INTO dealer_inventory_sources " +
+        "(source_id, search_profile_id, dealer_id, source_type, source_url, normalized_url, " +
+        "discovery_method, first_seen_at, last_status) " +
+        "VALUES (?, ?, ?, 'aggregator_srp', ?, ?, 'aggregator_cars_com', '2026-06-01', 'scanned')",
+    ).run(
+      AGG_SOURCE_ID,
+      PROFILE_ID,
+      DEALER_NEAR,
+      "https://www.cars.com/vehicledetail/km8jbcae3ru000042/",
+      "https://www.cars.com/vehicledetail/km8jbcae3ru000042/",
+    );
+
+    // The inventory listings spanning the ranker branches. source_id ties a
+    // listing to a scanned source row (only lst_strong carries the aggregator one).
     const insertListing = c.prepare(
       "INSERT INTO inventory_listings " +
         "(listing_id, search_profile_id, dealer_id, vin, stock_number, year, make, model, trim, " +
         "exterior_color, msrp, listed_price, inventory_status, match_status, raw_listing_json, " +
-        "first_seen_at, last_seen_at, observed_at, interior_color, dealer_markup, pricing_breakdown_json) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?)",
+        "first_seen_at, last_seen_at, observed_at, interior_color, dealer_markup, pricing_breakdown_json, source_id) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?)",
     );
     // The strong candidate carries a LABELED dealer markup + a parsed add-on so
     // the Inventory detail modal has honest red/amber data to surface (the func
@@ -125,6 +148,7 @@ export const inventoryListings: FixtureState = {
       "Gray Cloth",
       2500,
       STRONG_BREAKDOWN,
+      AGG_SOURCE_ID,
     );
     // (b) a NULL listed_price row → the "incomplete" badge (passes the budget filter).
     insertListing.run(
@@ -145,6 +169,7 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-05",
       "2026-06-01",
+      null,
       null,
       null,
       null,
@@ -171,6 +196,7 @@ export const inventoryListings: FixtureState = {
       null,
       null,
       null,
+      null,
     );
     // (d) an ORDERED row → dropped by the hard filter (never a candidate).
     insertListing.run(
@@ -194,6 +220,7 @@ export const inventoryListings: FixtureState = {
       null,
       null,
       null,
+      null,
     );
     // (e) an over-budget row (53000 > 1.10 * 45000 = 49500) → dropped.
     insertListing.run(
@@ -214,6 +241,7 @@ export const inventoryListings: FixtureState = {
       "2026-06-01",
       "2026-06-04",
       "2026-06-01",
+      null,
       null,
       null,
       null,

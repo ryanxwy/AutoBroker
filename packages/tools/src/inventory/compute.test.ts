@@ -69,8 +69,39 @@ function insertDealer(dealerId: string, name: string, distanceMiles: number | nu
     .run(dealerId, name, distanceMiles);
 }
 
+/** Insert one dealer_inventory_sources row (the provenance a listing joins to via
+ *  source_id). `sourceType` splits the empty-state tally (dealer sites vs shopping
+ *  sites); `sourceUrl` is where source_host is derived from. */
+function insertSource(opts: {
+  sourceId: string;
+  dealerId?: string;
+  sourceType: string;
+  sourceUrl: string;
+  lastStatus?: string;
+}): void {
+  db.$client
+    .prepare(
+      "INSERT INTO dealer_inventory_sources " +
+        "(source_id, search_profile_id, dealer_id, source_type, source_url, normalized_url, " +
+        "discovery_method, first_seen_at, last_status) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, '2026-06-01', ?)",
+    )
+    .run(
+      opts.sourceId,
+      PROFILE_ID,
+      opts.dealerId ?? DEALER_NEAR,
+      opts.sourceType,
+      opts.sourceUrl,
+      opts.sourceUrl,
+      opts.sourceType,
+      opts.lastStatus ?? "scanned",
+    );
+}
+
 function insertListing(opts: {
   listingId: string;
+  dealerId?: string;
+  sourceId?: string | null;
   vin?: string | null;
   stockNumber?: string | null;
   year?: number | null;
@@ -89,15 +120,16 @@ function insertListing(opts: {
   db.$client
     .prepare(
       "INSERT INTO inventory_listings " +
-        "(listing_id, search_profile_id, dealer_id, vin, stock_number, year, make, model, trim, " +
+        "(listing_id, search_profile_id, dealer_id, source_id, vin, stock_number, year, make, model, trim, " +
         "exterior_color, interior_color, msrp, listed_price, dealer_markup, pricing_breakdown_json, " +
         "inventory_status, match_status, raw_listing_json, first_seen_at, last_seen_at, observed_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'exact', '{}', '2026-06-01', ?, '2026-06-01')",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'exact', '{}', '2026-06-01', ?, '2026-06-01')",
     )
     .run(
       opts.listingId,
       PROFILE_ID,
-      DEALER_NEAR,
+      opts.dealerId ?? DEALER_NEAR,
+      opts.sourceId ?? null,
       opts.vin ?? null,
       opts.stockNumber ?? null,
       opts.year ?? 2026,
@@ -140,7 +172,8 @@ afterAll(() => {
 
 beforeEach(() => {
   db.$client.exec(
-    "DELETE FROM inventory_listings; DELETE FROM dealers; DELETE FROM search_profiles;",
+    "DELETE FROM inventory_listings; DELETE FROM dealers; DELETE FROM search_profiles; " +
+      "DELETE FROM dealer_inventory_sources;",
   );
 });
 
@@ -477,9 +510,157 @@ describe("rankInventoryForProfile", () => {
       recommendedCount: 0,
       sourcesScanned: 0,
       sourcesBlocked: 0,
+      shoppingSourcesScanned: 0,
+      shoppingSourcesBlocked: 0,
+      sameVinCollapsed: 0,
       allInventoryTrims: [],
       allInventoryColors: [],
       colorCrossCheck: [],
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Source provenance projection (aggregator shopping-site rows)
+  // -------------------------------------------------------------------------
+
+  it("projects source_type + source_host from the joined source row, null when there is no join", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertSource({
+      sourceId: "src_agg_1",
+      sourceType: "aggregator_srp",
+      sourceUrl: "https://www.cars.com/vehicledetail/abc123/",
+    });
+    // (a) a listing joined to the aggregator source → source_type + host projected.
+    insertListing({
+      listingId: "lst_agg",
+      vin: FULL_VIN,
+      sourceId: "src_agg_1",
+      listedPrice: 30000,
+    });
+    // (b) a listing with no source_id → both null (a dealer-site row).
+    insertListing({
+      listingId: "lst_dealer",
+      vin: "KM8JBCAE3RU000099",
+      sourceId: null,
+      listedPrice: 30000,
+    });
+
+    const { candidates } = rankInventoryForProfile(db, PROFILE_ID);
+    const agg = candidates.find((c) => c.listing_id === "lst_agg")!;
+    expect(agg.source_type).toBe("aggregator_srp");
+    // Host-only — never the full path.
+    expect(agg.source_host).toBe("www.cars.com");
+
+    const dealer = candidates.find((c) => c.listing_id === "lst_dealer")!;
+    expect(dealer.source_type).toBeNull();
+    expect(dealer.source_host).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Source tally split — dealer sites vs shopping sites
+  // -------------------------------------------------------------------------
+
+  it("splits the source tally: dealer-only sources fill sourcesScanned/Blocked, shopping* stay 0", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertSource({ sourceId: "src_d1", sourceType: "dealer_site", sourceUrl: "https://d1.example/inv", lastStatus: "scanned" });
+    insertSource({ sourceId: "src_d2", sourceType: "dealer_site", sourceUrl: "https://d2.example/inv", lastStatus: "blocked" });
+
+    const r = rankInventoryForProfile(db, PROFILE_ID);
+    expect(r.sourcesScanned).toBe(1);
+    expect(r.sourcesBlocked).toBe(1);
+    expect(r.shoppingSourcesScanned).toBe(0);
+    expect(r.shoppingSourcesBlocked).toBe(0);
+  });
+
+  it("splits the source tally: aggregator sources fill shopping*, dealer counts stay 0", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertSource({ sourceId: "src_s1", sourceType: "aggregator_srp", sourceUrl: "https://www.cars.com/results/", lastStatus: "scanned" });
+    insertSource({ sourceId: "src_s2", sourceType: "aggregator_srp", sourceUrl: "https://www.edmunds.com/srp", lastStatus: "blocked" });
+
+    const r = rankInventoryForProfile(db, PROFILE_ID);
+    expect(r.sourcesScanned).toBe(0);
+    expect(r.sourcesBlocked).toBe(0);
+    expect(r.shoppingSourcesScanned).toBe(1);
+    expect(r.shoppingSourcesBlocked).toBe(1);
+  });
+
+  it("splits the source tally under a mixed dealer + shopping source set", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertSource({ sourceId: "src_d1", sourceType: "dealer_site", sourceUrl: "https://d1.example/inv", lastStatus: "scanned" });
+    insertSource({ sourceId: "src_s1", sourceType: "aggregator_srp", sourceUrl: "https://www.cars.com/results/", lastStatus: "scanned" });
+    insertSource({ sourceId: "src_s2", sourceType: "aggregator_srp", sourceUrl: "https://www.edmunds.com/srp", lastStatus: "blocked" });
+
+    const r = rankInventoryForProfile(db, PROFILE_ID);
+    expect(r.sourcesScanned).toBe(1);
+    expect(r.sourcesBlocked).toBe(0);
+    expect(r.shoppingSourcesScanned).toBe(1);
+    expect(r.shoppingSourcesBlocked).toBe(1);
+  });
+
+  it("counts only blocked shopping sources when scanned=0 (the all-blocked empty-state input)", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    for (const id of ["a", "b", "c"]) {
+      insertSource({ sourceId: `src_${id}`, sourceType: "aggregator_srp", sourceUrl: `https://www.cars.com/${id}`, lastStatus: "blocked" });
+    }
+    const r = rankInventoryForProfile(db, PROFILE_ID);
+    expect(r.shoppingSourcesScanned).toBe(0);
+    expect(r.shoppingSourcesBlocked).toBe(3);
+    expect(r.sourcesScanned).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Read-time same-VIN collapse (the aggregator/dealer duplicate belt)
+  // -------------------------------------------------------------------------
+
+  it("collapses the same VIN across dealers to the non-aggregator row and counts the collapse", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Real Rooftop Hyundai", 0.0);
+    insertDealer("dealer-minted-agg", "Minted Aggregator Rooftop", 3.0);
+    insertSource({
+      sourceId: "src_agg_dup",
+      dealerId: "dealer-minted-agg",
+      sourceType: "aggregator_srp",
+      sourceUrl: "https://www.cars.com/vehicledetail/dup/",
+    });
+    // The aggregator row (minted rooftop) and the real dealer row share a VIN.
+    insertListing({
+      listingId: "lst_agg_dup",
+      dealerId: "dealer-minted-agg",
+      sourceId: "src_agg_dup",
+      vin: FULL_VIN,
+      listedPrice: 30000,
+    });
+    insertListing({
+      listingId: "lst_dealer_dup",
+      dealerId: DEALER_NEAR,
+      sourceId: null,
+      vin: FULL_VIN,
+      listedPrice: 30000,
+    });
+
+    const r = rankInventoryForProfile(db, PROFILE_ID);
+    // Only one row for that VIN survives, and it is the non-aggregator (dealer) row.
+    const forVin = r.candidates.filter((c) => c.vin === FULL_VIN);
+    expect(forVin).toHaveLength(1);
+    expect(forVin[0]!.listing_id).toBe("lst_dealer_dup");
+    expect(forVin[0]!.source_type).toBeNull();
+    expect(r.sameVinCollapsed).toBe(1);
+    expect(r.totalListings).toBe(1);
+  });
+
+  it("does not collapse distinct VINs (sameVinCollapsed stays 0)", () => {
+    seedProfile({ budgetMax: null });
+    insertDealer(DEALER_NEAR, "Near Hyundai", 0.0);
+    insertListing({ listingId: "lst_1", vin: FULL_VIN, listedPrice: 30000 });
+    insertListing({ listingId: "lst_2", vin: "KM8JBCAE3RU000099", listedPrice: 31000 });
+
+    const r = rankInventoryForProfile(db, PROFILE_ID);
+    expect(r.sameVinCollapsed).toBe(0);
+    expect(r.totalListings).toBe(2);
   });
 });

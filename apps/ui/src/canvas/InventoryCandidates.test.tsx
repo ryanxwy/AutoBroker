@@ -57,6 +57,8 @@ function makeCandidate(
     dealer_id: string;
     dealer_name: string | null;
     distance_miles: number | null;
+    source_type: string | null;
+    source_host: string | null;
     score: number;
     reasons: string[];
     match_status: string;
@@ -87,6 +89,8 @@ function makeCandidate(
     dealer_id: "dealer-1",
     dealer_name: "Jim Click Hyundai",
     distance_miles: 4.2,
+    source_type: null,
+    source_host: null,
     score: 0.85,
     reasons: ["trim_exact", "preferred_color"],
     match_status: "exact",
@@ -102,6 +106,10 @@ function makeResult(
     totalListings: number;
     scannedAtMax: string | null;
     colorCrossCheck: { requested: string; suggestions: string[] }[];
+    sourcesScanned: number;
+    sourcesBlocked: number;
+    shoppingSourcesScanned: number;
+    shoppingSourcesBlocked: number;
   }> = {},
 ): InventoryCompareResult {
   return {
@@ -149,6 +157,90 @@ describe("InventoryCandidates — empty state", () => {
     expect(query("inventory-filter-recommended")).toBeNull();
     expect(query("inventory-filter-all")).toBeNull();
     expect(query("inventory-tally")).toBeNull();
+  });
+
+  it("counts blocked shopping sites when scanned=0 (the all-blocked copy) — never 'aggregator' jargon", () => {
+    const { query } = render(
+      <InventoryCandidates
+        inventory={ok(
+          makeResult([], {
+            totalListings: 0,
+            recommendedCount: 0,
+            shoppingSourcesScanned: 0,
+            shoppingSourcesBlocked: 3,
+          }),
+        )}
+      />,
+    );
+    const hint = query("inventory-empty-hint")!;
+    expect(hint.textContent).toBe(
+      "Nothing found yet — 3 shopping sites blocked automated scanning. Try again later or run a dealer site scan.",
+    );
+    expect(hint.textContent).not.toContain("aggregator");
+  });
+
+  it("keeps the dealer-site sentence unchanged when only dealer sources exist", () => {
+    const { query } = render(
+      <InventoryCandidates
+        inventory={ok(
+          makeResult([], { totalListings: 0, recommendedCount: 0, sourcesScanned: 2 }),
+        )}
+      />,
+    );
+    const hint = query("inventory-empty-hint")!;
+    expect(hint.textContent).toBe(
+      "Your last scan of 2 dealer sites found no matching cars in stock. Try widening the trim, or check back later.",
+    );
+  });
+
+  it("appends a plain shopping clause when both dealer and shopping sources were reached", () => {
+    const { query } = render(
+      <InventoryCandidates
+        inventory={ok(
+          makeResult([], {
+            totalListings: 0,
+            recommendedCount: 0,
+            sourcesScanned: 1,
+            shoppingSourcesBlocked: 2,
+          }),
+        )}
+      />,
+    );
+    const hint = query("inventory-empty-hint")!.textContent ?? "";
+    expect(hint).toContain("1 dealer site found no matching cars in stock");
+    expect(hint).toContain("2 shopping sites blocked automated scanning");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provenance line (shopping-site listings render "via {host}")
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — source provenance line", () => {
+  it("renders the muted 'via {host}' line for an aggregator_srp row", () => {
+    const row = makeCandidate({
+      source_type: "aggregator_srp",
+      source_host: "www.cars.com",
+    });
+    const { query } = render(<InventoryCandidates inventory={ok(makeResult([row]))} />);
+    const line = query("inventory-source-line");
+    expect(line).not.toBeNull();
+    expect(line!.textContent).toBe("via www.cars.com");
+    // The Incentives muted-line pattern: a t-status muted div (no new chip class).
+    expect(line!.className).toContain("muted");
+    expect(line!.className).toContain("t-status");
+  });
+
+  it("does NOT render the source line for a dealer-site row (source_type null)", () => {
+    const row = makeCandidate({ source_type: null, source_host: null });
+    const { query } = render(<InventoryCandidates inventory={ok(makeResult([row]))} />);
+    expect(query("inventory-source-line")).toBeNull();
+  });
+
+  it("does NOT render the source line when source_host is null despite an aggregator type", () => {
+    const row = makeCandidate({ source_type: "aggregator_srp", source_host: null });
+    const { query } = render(<InventoryCandidates inventory={ok(makeResult([row]))} />);
+    expect(query("inventory-source-line")).toBeNull();
   });
 });
 
