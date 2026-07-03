@@ -285,6 +285,16 @@ export {
   type SupersedeReason,
 } from "./inventory/persist.js";
 export {
+  resolveOrMintDealer,
+  selectExistingVinOwners,
+  capTopListings,
+  collapseSameVinAcrossDealers,
+  type ResolveOrMintDealerArgs,
+  type ResolveOrMintDealerResult,
+  type CapListingCandidate,
+  type VinCollapseCandidate,
+} from "./inventory/aggregatorPersist.js";
+export {
   readInventoryChangesSince,
   emitInventoryPriceChange,
   INVENTORY_PRICE_CHANGE_ACTION,

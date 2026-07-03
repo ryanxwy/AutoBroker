@@ -109,13 +109,15 @@ export interface PersistRunResult {
 
 /** Idempotent source insert: source_id is the hash of exactly the conflict
  *  key (profile, dealer, normalized_url), so PK conflict == natural-key
- *  conflict. Existing rows keep their first_seen_at and status fields. */
+ *  conflict. Existing rows keep their first_seen_at and status fields.
+ *  source_type + discovery_method are bound per run (defaults 'srp' /
+ *  'geosearch_website' reproduce the site_scan grain). */
 const INSERT_SOURCE = `
 INSERT INTO dealer_inventory_sources (
   source_id, search_profile_id, dealer_id, source_type, source_url,
   normalized_url, discovery_method, parent_source_id, first_seen_at,
   last_status, blocked_count
-) VALUES (?, ?, ?, 'srp', ?, ?, 'geosearch_website', NULL, ?, 'pending', 0)
+) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'pending', 0)
 ON CONFLICT(source_id) DO NOTHING
 `;
 
@@ -247,6 +249,82 @@ UPDATE inventory_listings SET
 WHERE listing_id = ?
 `;
 
+// ---------------------------------------------------------------------------
+// Enrich-only conflict bodies (conflictMode === "enrich_only"). A collision
+// NEVER overwrites an existing non-null column: every fill-if-null COALESCE is
+// existing-first (COALESCE(existing, incoming) keeps a known value, fills only a
+// null). inventory_status never downgrades — an incoming value replaces the
+// existing one ONLY when the existing is 'unknown' and the incoming is not.
+// match_status + raw_listing_json are preserved verbatim (both NOT NULL), and
+// superseded_at / superseded_reason are left untouched (no reactivation). Only
+// last_seen_at / observed_at are bumped. Fresh inserts still land full data via
+// the shared INSERT column list; only the DO UPDATE body differs here.
+const LISTING_ON_CONFLICT_BODY_ENRICH = `
+  source_id              = COALESCE(inventory_listings.source_id, excluded.source_id),
+  stock_number           = COALESCE(inventory_listings.stock_number, excluded.stock_number),
+  year                   = COALESCE(inventory_listings.year, excluded.year),
+  make                   = COALESCE(inventory_listings.make, excluded.make),
+  model                  = COALESCE(inventory_listings.model, excluded.model),
+  trim                   = COALESCE(inventory_listings.trim, excluded.trim),
+  exterior_color         = COALESCE(inventory_listings.exterior_color, excluded.exterior_color),
+  interior_color         = COALESCE(inventory_listings.interior_color, excluded.interior_color),
+  listed_price           = COALESCE(inventory_listings.listed_price, excluded.listed_price),
+  msrp                   = COALESCE(inventory_listings.msrp, excluded.msrp),
+  dealer_markup          = COALESCE(inventory_listings.dealer_markup, excluded.dealer_markup),
+  pricing_breakdown_json = COALESCE(inventory_listings.pricing_breakdown_json, excluded.pricing_breakdown_json),
+  inventory_status       = CASE
+    WHEN inventory_listings.inventory_status = 'unknown' AND excluded.inventory_status <> 'unknown'
+    THEN excluded.inventory_status
+    ELSE inventory_listings.inventory_status END,
+  listing_url            = COALESCE(inventory_listings.listing_url, excluded.listing_url),
+  normalized_listing_url = COALESCE(inventory_listings.normalized_listing_url, excluded.normalized_listing_url),
+  match_status           = inventory_listings.match_status,
+  raw_listing_json       = inventory_listings.raw_listing_json,
+  last_seen_at           = excluded.last_seen_at,
+  observed_at            = excluded.observed_at
+`;
+
+const UPSERT_VIN_ARM_ENRICH = `
+INSERT INTO inventory_listings ${LISTING_INSERT_COLS}
+ON CONFLICT (search_profile_id, dealer_id, vin) DO UPDATE SET ${LISTING_ON_CONFLICT_BODY_ENRICH}
+`;
+
+const UPSERT_URL_ARM_ENRICH = `
+INSERT INTO inventory_listings ${LISTING_INSERT_COLS}
+ON CONFLICT (search_profile_id, dealer_id, normalized_listing_url) WHERE vin IS NULL
+DO UPDATE SET ${LISTING_ON_CONFLICT_BODY_ENRICH}
+`;
+
+/** Enrich-only positional twin of UPDATE_LIVE_ROW (orphan-prevention path). Same
+ *  20-param order as UPDATE_LIVE_ROW so the caller builds ONE param array: every
+ *  fill-if-null column is existing-first COALESCE, the inventory_status guard is
+ *  a single-bind NULLIF (never-downgrade), and match_status / raw_listing_json
+ *  keep the existing value (COALESCE over a NOT NULL column ignores the bind). */
+const UPDATE_LIVE_ROW_ENRICH = `
+UPDATE inventory_listings SET
+  source_id              = COALESCE(source_id, ?),
+  stock_number           = COALESCE(stock_number, ?),
+  year                   = COALESCE(year, ?),
+  make                   = COALESCE(make, ?),
+  model                  = COALESCE(model, ?),
+  trim                   = COALESCE(trim, ?),
+  exterior_color         = COALESCE(exterior_color, ?),
+  interior_color         = COALESCE(interior_color, ?),
+  listed_price           = COALESCE(listed_price, ?),
+  msrp                   = COALESCE(msrp, ?),
+  dealer_markup          = COALESCE(dealer_markup, ?),
+  pricing_breakdown_json = COALESCE(pricing_breakdown_json, ?),
+  inventory_status       = CASE WHEN inventory_status = 'unknown'
+    THEN COALESCE(NULLIF(?, 'unknown'), 'unknown') ELSE inventory_status END,
+  listing_url            = COALESCE(listing_url, ?),
+  normalized_listing_url = COALESCE(normalized_listing_url, ?),
+  match_status           = COALESCE(match_status, ?),
+  raw_listing_json       = COALESCE(raw_listing_json, ?),
+  last_seen_at           = ?,
+  observed_at            = ?
+WHERE listing_id = ?
+`;
+
 const SELECT_SOURCE_STATUS = `
 SELECT last_status FROM dealer_inventory_sources WHERE source_id = ?
 `;
@@ -345,19 +423,37 @@ export function persistScanResults(opts: {
   outcomes: readonly DealerScanOutcome[];
   db?: Db;
   now?: string;
+  /** source_type + discovery_method for freshly-inserted source rows. Defaults
+   *  ('srp' / 'geosearch_website') reproduce the site_scan source grain. */
+  sourceType?: string;
+  discoveryMethod?: string;
+  /** When false, skip the stale sweep AND its coverage-collapse bookkeeping
+   *  entirely (staleSuperseded / sourcesQuarantined stay 0). Aggregator writes
+   *  pass false — absence from a top-N shopping-site slice is not lot absence. */
+  staleSweep?: boolean;
+  /** "enrich_only" turns every collision into a fill-if-null / never-downgrade
+   *  merge that never overwrites an existing non-null column and emits NO
+   *  price_change audit (cross-source disagreement is feed lag, not movement);
+   *  fresh inserts still carry full data. Default reproduces the site_scan
+   *  new-wins merge. */
+  conflictMode?: "default" | "enrich_only";
 }): PersistRunResult {
   const db = opts.db ?? getDb();
   const now = opts.now ?? new Date().toISOString();
   const profileId = opts.searchProfileId;
+  const sourceType = opts.sourceType ?? "srp";
+  const discoveryMethod = opts.discoveryMethod ?? "geosearch_website";
+  const staleSweep = opts.staleSweep ?? true;
+  const enrichMode = opts.conflictMode === "enrich_only";
 
   const insertSource = db.$client.prepare(INSERT_SOURCE);
   const markSource = db.$client.prepare(MARK_SOURCE);
   const selectLiveNullVin = db.$client.prepare(SELECT_LIVE_NULL_VIN_ROW);
   const supersedePromoted = db.$client.prepare(SUPERSEDE_VIN_PROMOTED);
-  const upsertVinArm = db.$client.prepare(UPSERT_VIN_ARM);
+  const upsertVinArm = db.$client.prepare(enrichMode ? UPSERT_VIN_ARM_ENRICH : UPSERT_VIN_ARM);
   const selectLiveUrlRow = db.$client.prepare(SELECT_LIVE_URL_ROW);
-  const updateLiveRow = db.$client.prepare(UPDATE_LIVE_ROW);
-  const upsertUrlArm = db.$client.prepare(UPSERT_URL_ARM);
+  const updateLiveRow = db.$client.prepare(enrichMode ? UPDATE_LIVE_ROW_ENRICH : UPDATE_LIVE_ROW);
+  const upsertUrlArm = db.$client.prepare(enrichMode ? UPSERT_URL_ARM_ENRICH : UPSERT_URL_ARM);
   const countLive = db.$client.prepare(COUNT_LIVE_FOR_SOURCE);
   const countFreshObserved = db.$client.prepare(COUNT_FRESH_OBSERVED_FOR_SOURCE);
   const selectPriceById = db.$client.prepare(
@@ -418,7 +514,16 @@ export function persistScanResults(opts: {
 
       const normalizedUrl = urlNormalize(outcome.sourceUrl);
       const sourceId = computeSourceId(profileId, outcome.dealerId, normalizedUrl);
-      insertSource.run(sourceId, profileId, outcome.dealerId, outcome.sourceUrl, normalizedUrl, now);
+      insertSource.run(
+        sourceId,
+        profileId,
+        outcome.dealerId,
+        sourceType,
+        outcome.sourceUrl,
+        normalizedUrl,
+        discoveryMethod,
+        now,
+      );
       markSource.run(
         outcome.status,
         now,
@@ -495,10 +600,12 @@ export function persistScanResults(opts: {
             }
           }
           const vinListingId = computeListingId(profileId, outcome.dealerId, vin, nlurl);
-          const oldPriceVin = priceBefore(vinListingId);
+          // enrich_only never emits a price_change (cross-source disagreement is
+          // feed lag) — skip the priceBefore/recordPriceChange machinery entirely.
+          const oldPriceVin = enrichMode ? null : priceBefore(vinListingId);
           upsertVinArm.run(...insertParams(vinListingId));
           result.listingsWritten += 1;
-          recordPriceChange(vinListingId, oldPriceVin, row.listing.price, outcome.dealerId, vin);
+          if (!enrichMode) recordPriceChange(vinListingId, oldPriceVin, row.listing.price, outcome.dealerId, vin);
         } else {
           // VIN-absent arm, with orphan prevention: a live row already owning
           // this URL (possibly VIN-bearing, from the other capture order) is
@@ -507,7 +614,7 @@ export function persistScanResults(opts: {
             | { listing_id: string }
             | undefined;
           if (existing !== undefined) {
-            const oldPriceUrl = priceBefore(existing.listing_id);
+            const oldPriceUrl = enrichMode ? null : priceBefore(existing.listing_id);
             updateLiveRow.run(
               sourceId,
               row.listing.stock_number,
@@ -532,12 +639,13 @@ export function persistScanResults(opts: {
               now,
               existing.listing_id,
             );
-            recordPriceChange(existing.listing_id, oldPriceUrl, row.listing.price, outcome.dealerId, null);
+            if (!enrichMode) recordPriceChange(existing.listing_id, oldPriceUrl, row.listing.price, outcome.dealerId, null);
           } else {
             const urlListingId = computeListingId(profileId, outcome.dealerId, null, nlurl);
-            const oldPriceNew = priceBefore(urlListingId); // a reactivated row carries a prior price
+            // a reactivated row carries a prior price (default mode only)
+            const oldPriceNew = enrichMode ? null : priceBefore(urlListingId);
             upsertUrlArm.run(...insertParams(urlListingId));
-            recordPriceChange(urlListingId, oldPriceNew, row.listing.price, outcome.dealerId, null);
+            if (!enrichMode) recordPriceChange(urlListingId, oldPriceNew, row.listing.price, outcome.dealerId, null);
           }
           result.listingsWritten += 1;
         }
@@ -556,6 +664,11 @@ export function persistScanResults(opts: {
       // tradeoff (keep stale-but-present data over mass-false-sold). The
       // quarantine is surfaced via result.sourcesQuarantined for visibility; an
       // auto-resolving age / consecutive-quarantine backstop is a follow-up.
+      //
+      // staleSweep === false skips the sweep AND its bookkeeping entirely: a
+      // shopping-site scan only ever sees a top-N slice, so absence from it is
+      // never absence-from-lot evidence (those rows age via last_seen_at only).
+      if (!staleSweep) continue;
       const liveNow = (countLive.get(profileId, sourceId) as { n: number }).n;
       const freshObserved = (
         countFreshObserved.get(profileId, sourceId, opts.runStartedAt) as { n: number }

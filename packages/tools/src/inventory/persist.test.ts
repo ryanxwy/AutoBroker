@@ -878,3 +878,258 @@ describe("persistScanResults — dealer_markup + pricing_breakdown_json (harvest
     expect(JSON.parse(r.pricing_breakdown_json as string).dealerDiscount).toBe(1500);
   });
 });
+
+describe("persistScanResults — persist options (sourceType / discoveryMethod / staleSweep / conflictMode)", () => {
+  function auditPriceChangeCount(): number {
+    return (
+      db.$client
+        .prepare("SELECT count(*) AS n FROM audit_log WHERE action = 'inventory.price_change'")
+        .get() as { n: number }
+    ).n;
+  }
+
+  it("DEFAULT PATH regression: no options → source_type='srp', discovery_method='geosearch_website', sweep still runs", () => {
+    // Two cars in run 1, one re-observed in run 2 → the un-observed one retires
+    // exactly as before the parametrization (byte-identical default behavior).
+    const keepUrl = "https://alpha-hyundai.example/vdp/opt-keep";
+    const goneUrl = "https://alpha-hyundai.example/vdp/opt-gone";
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl }), row({ listing_url: goneUrl })])],
+      db,
+      now: T1,
+    });
+    const src = sourceRow(DEALER_A, SRP_A)!;
+    expect(src.source_type).toBe("srp");
+    expect(src.discovery_method).toBe("geosearch_website");
+
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl })])],
+      db,
+      now: T3,
+    });
+    expect(r2.staleSuperseded).toBe(1); // sweep unchanged by the new options
+    expect(liveListings()).toHaveLength(1);
+  });
+
+  it("sourceType / discoveryMethod thread into the freshly-inserted source row", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ vin: VIN })])],
+      db,
+      now: T1,
+      sourceType: "aggregator_srp",
+      discoveryMethod: "aggregator_carscom",
+    });
+    const src = sourceRow(DEALER_A, SRP_A)!;
+    expect(src.source_type).toBe("aggregator_srp");
+    expect(src.discovery_method).toBe("aggregator_carscom");
+  });
+
+  it("staleSweep:false → previously-live rows are NOT retired and the counters stay 0", () => {
+    const keepUrl = "https://alpha-hyundai.example/vdp/sweepoff-keep";
+    const goneUrl = "https://alpha-hyundai.example/vdp/sweepoff-gone";
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl }), row({ listing_url: goneUrl })])],
+      db,
+      now: T1,
+    });
+    expect(liveListings()).toHaveLength(2);
+
+    // Re-scan sees only one car, but with the sweep OFF the un-observed row is
+    // NOT retired (a top-N shopping slice is never absence-from-lot evidence).
+    const r2 = persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T2,
+      outcomes: [scanned(DEALER_A, SRP_A, [row({ listing_url: keepUrl })])],
+      db,
+      now: T3,
+      staleSweep: false,
+    });
+    expect(r2.staleSuperseded).toBe(0);
+    expect(r2.sourcesQuarantined).toBe(0);
+    expect(liveListings()).toHaveLength(2); // both survive
+  });
+
+  describe("conflictMode: enrich_only — per-column fill-if-null / never-downgrade merge", () => {
+    const SITE_SOURCE_URL = SRP_A;
+    const AGG_SOURCE_URL = "https://www.cars.com/shopping/results/?zip=92626";
+    // Distinct-typed raw blobs so a kept-vs-clobbered check is unambiguous.
+    const SITE_RAW = '{"via":"siteScan"}';
+
+    function siteRow(overrides: Partial<InventoryListing>): ClassifiedListingRow {
+      return { listing: listing(overrides), matchStatus: "exact", raw: { via: "siteScan" } };
+    }
+    function aggRow(overrides: Partial<InventoryListing>, msrp?: number | null): ClassifiedListingRow {
+      return { listing: listing(overrides), matchStatus: "near", raw: { via: "aggregator" }, msrp: msrp ?? null };
+    }
+
+    const VIN_E1 = "KM8J33A2XPU1E0001";
+    const VIN_E2 = "KM8J33A2XPU1E0002";
+
+    it("keeps existing non-null columns, fills nulls, never downgrades status, bumps timestamps, emits NO price_change", () => {
+      // Existing rows via the DEFAULT (site_scan-like) path.
+      persistScanResults({
+        searchProfileId: PROFILE_ID,
+        runStartedAt: T0,
+        outcomes: [
+          scanned(DEALER_A, SITE_SOURCE_URL, [
+            siteRow({
+              vin: VIN_E1,
+              price: 35000,
+              exterior_color: "White",
+              inventory_status: "in_stock",
+              listing_url: "https://alpha-hyundai.example/vdp/e1-site",
+            }),
+            // E2 seeds the FILL side: null price + unknown status get populated.
+            siteRow({
+              vin: VIN_E2,
+              price: null,
+              inventory_status: "unknown",
+              listing_url: "https://alpha-hyundai.example/vdp/e2-site",
+            }),
+          ]),
+        ],
+        db,
+        now: T1,
+      });
+      const siteSourceId = computeSourceId(PROFILE_ID, DEALER_A, urlNormalize(SITE_SOURCE_URL));
+
+      // Aggregator write: SAME profile+dealer+VIN, a DIFFERENT source URL, enrich
+      // mode + sweep off. Every collision must leave the site_scan row's non-null
+      // data intact and only fill the genuinely-null holes.
+      const agg = persistScanResults({
+        searchProfileId: PROFILE_ID,
+        runStartedAt: T2,
+        outcomes: [
+          scanned(DEALER_A, AGG_SOURCE_URL, [
+            aggRow(
+              {
+                vin: VIN_E1,
+                price: 33000, // must NOT overwrite the existing 35000
+                exterior_color: "Blue", // must NOT overwrite "White"
+                inventory_status: "unknown", // must NOT downgrade in_stock
+                listing_url: "https://alpha-hyundai.example/vdp/e1-agg",
+              },
+              36000, // msrp fills a prior null
+            ),
+            aggRow({
+              vin: VIN_E2,
+              price: 33000, // fills the prior null price
+              inventory_status: "in_stock", // upgrades a prior unknown
+              listing_url: "https://alpha-hyundai.example/vdp/e2-agg",
+            }),
+          ]),
+        ],
+        db,
+        now: T3,
+        sourceType: "aggregator_srp",
+        discoveryMethod: "aggregator_carscom",
+        staleSweep: false,
+        conflictMode: "enrich_only",
+      });
+      expect(agg.priceChanges).toBe(0);
+      expect(agg.staleSuperseded).toBe(0);
+      expect(agg.sourcesQuarantined).toBe(0);
+
+      const rows = allListings();
+      expect(rows).toHaveLength(2); // no new rows minted — both collided
+      const e1 = rows.find((r) => r.vin === VIN_E1)!;
+      expect(e1.source_id).toBe(siteSourceId); // fill-if-null kept the non-null source_id
+      expect(e1.listing_url).toBe("https://alpha-hyundai.example/vdp/e1-site"); // kept
+      expect(e1.listed_price).toBe(35000); // kept (non-null)
+      expect(e1.msrp).toBe(36000); // filled (was null)
+      expect(e1.exterior_color).toBe("White"); // identity fill-if-null → kept
+      expect(e1.inventory_status).toBe("in_stock"); // never downgraded
+      expect(e1.raw_listing_json).toBe(SITE_RAW); // raw kept, not clobbered
+      expect(e1.match_status).toBe("exact"); // preserved verbatim
+      expect(e1.first_seen_at).toBe(T1); // insert time survives
+      expect(e1.last_seen_at).toBe(T3); // bumped
+      expect(e1.observed_at).toBe(T3); // bumped
+
+      const e2 = rows.find((r) => r.vin === VIN_E2)!;
+      expect(e2.listed_price).toBe(33000); // filled from null
+      expect(e2.inventory_status).toBe("in_stock"); // upgraded from unknown
+
+      expect(auditPriceChangeCount()).toBe(0); // cross-source lag is not a price change
+    });
+
+    it("URL arm: a VIN-absent aggregator write onto a live URL-keyed row also fills-if-null / never-downgrades", () => {
+      const urlC = "https://alpha-hyundai.example/vdp/e-url";
+      // Existing URL-keyed (VIN-absent) row via the default path.
+      persistScanResults({
+        searchProfileId: PROFILE_ID,
+        runStartedAt: T0,
+        outcomes: [
+          scanned(DEALER_A, SITE_SOURCE_URL, [
+            siteRow({ vin: null, price: 30000, inventory_status: "in_stock", listing_url: urlC }),
+          ]),
+        ],
+        db,
+        now: T1,
+      });
+
+      // Aggregator enrich write, same URL, cheaper + "unknown" — the orphan-path
+      // UPDATE_LIVE_ROW_ENRICH must keep the price and not downgrade the status.
+      const agg = persistScanResults({
+        searchProfileId: PROFILE_ID,
+        runStartedAt: T2,
+        outcomes: [
+          scanned(DEALER_A, AGG_SOURCE_URL, [
+            aggRow({ vin: null, price: 28000, inventory_status: "unknown", listing_url: urlC }),
+          ]),
+        ],
+        db,
+        now: T3,
+        staleSweep: false,
+        conflictMode: "enrich_only",
+      });
+      expect(agg.priceChanges).toBe(0);
+
+      const rows = allListings();
+      expect(rows).toHaveLength(1); // updated in place, no companion
+      const r = rows[0]!;
+      expect(r.listed_price).toBe(30000); // kept (non-null)
+      expect(r.inventory_status).toBe("in_stock"); // never downgraded
+      expect(r.raw_listing_json).toBe(SITE_RAW); // raw kept
+      expect(r.last_seen_at).toBe(T3);
+      expect(r.observed_at).toBe(T3);
+      expect(auditPriceChangeCount()).toBe(0);
+    });
+
+    it("enrich_only leaves dealer_markup / pricing_breakdown_json untouched (PRESERVE, never cleared)", () => {
+      const REAL_BLOB = '{"addOns":[{"label":"nitrogen","amount":299}],"addonsTotal":299}';
+      // Seed a markup + breakdown via the default (site_scan) path.
+      persistScanResults({
+        searchProfileId: PROFILE_ID,
+        runStartedAt: T0,
+        outcomes: [
+          scanned(DEALER_A, SITE_SOURCE_URL, [
+            { listing: listing({ vin: VIN_E1 }), matchStatus: "exact", raw: { via: "siteScan" }, dealerMarkup: 4995, pricingBreakdownJson: REAL_BLOB },
+          ]),
+        ],
+        db,
+        now: T1,
+      });
+      // Aggregator enrich write carries no pricing siblings (undefined → PRESERVE).
+      persistScanResults({
+        searchProfileId: PROFILE_ID,
+        runStartedAt: T2,
+        outcomes: [scanned(DEALER_A, AGG_SOURCE_URL, [{ listing: listing({ vin: VIN_E1 }), matchStatus: "near", raw: { via: "aggregator" } }])],
+        db,
+        now: T3,
+        staleSweep: false,
+        conflictMode: "enrich_only",
+      });
+      const r = allListings()[0]!;
+      expect(r.dealer_markup).toBe(4995); // preserved
+      expect(r.pricing_breakdown_json).toBe(REAL_BLOB); // preserved
+    });
+  });
+});
