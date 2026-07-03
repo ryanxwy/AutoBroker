@@ -71,6 +71,7 @@ import {
   getDb,
   listFollowupCandidateThreads as listFollowupCandidateThreadsImpl,
   listProfileRows as listProfileRowsImpl,
+  readProfileRow,
   readQuoteSituationForThread as readQuoteSituationForThreadImpl,
   readReplyTargetInputs as readReplyTargetInputsImpl,
   readThreadSnapshotForDraft as readThreadSnapshotForDraftImpl,
@@ -80,6 +81,7 @@ import {
   selectNextReplyTargets,
   sendAndRecord as sendAndRecordImpl,
   setPrimaryReplyTarget as setPrimaryReplyTargetImpl,
+  setThreadState as setThreadStateImpl,
   subjectForFollowup,
   gateDecisionForTarget,
   followupCapDecision,
@@ -175,19 +177,14 @@ const realDeps: NegotiationFollowupWorkflowDeps = {
   draftProse: harness.draftProse,
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
-  readProfileById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
+  readProfileById: readProfileRow,
   listCandidateThreads: listFollowupCandidateThreadsImpl,
   readThreadSnapshot: readThreadSnapshotForDraftImpl,
   readQuoteSituation: readQuoteSituationForThreadImpl,
   readReplyTargetInputs: readReplyTargetInputsImpl,
   sendAndRecord: sendAndRecordImpl,
   setPrimaryReplyTarget: setPrimaryReplyTargetImpl,
-  updateThreadState: (db, threadId, state) => {
-    db.$client.prepare("UPDATE threads SET state = ? WHERE thread_id = ?").run(state, threadId);
-  },
+  updateThreadState: setThreadStateImpl,
   getDb,
 };
 

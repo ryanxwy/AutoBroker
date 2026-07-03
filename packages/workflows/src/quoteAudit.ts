@@ -59,6 +59,8 @@ import {
   listIncentivesSlice as listIncentivesSliceImpl,
   listPeerQuotes as listPeerQuotesImpl,
   listQuotesForProfile as listQuotesForProfileImpl,
+  readDealerDisplayName,
+  readProfileRow,
   resolveActiveProfile as resolveActiveProfileImpl,
   upsertAudit as upsertAuditImpl,
   DEFAULT_AUDIT_PASS_VERSION,
@@ -323,11 +325,6 @@ const resolveProfileStep = createStep({
 // step 1 — loadQuotes (tools reads; the ONLY DB read)
 // ---------------------------------------------------------------------------
 
-const SELECT_PROFILE = "SELECT * FROM search_profiles WHERE search_profile_id = ?";
-const SELECT_DEALER_NAME =
-  "SELECT COALESCE(d.name, dq.dealer_id) AS dealer_name FROM dealer_quotes dq " +
-  "LEFT JOIN dealers d ON d.dealer_id = dq.dealer_id WHERE dq.quote_id = ?";
-
 const loadQuotesStep = createStep({
   id: "loadQuotes",
   inputSchema: QuoteAuditStateSchema,
@@ -336,11 +333,9 @@ const loadQuotesStep = createStep({
     const state = asState(inputData);
 
     return withDb((db) => {
-      const profileRow = db.$client.prepare(SELECT_PROFILE).get(state.searchProfileId) as
-        | Record<string, unknown>
-        | undefined;
+      const profileRow = readProfileRow(db, state.searchProfileId);
       const auditProfile: AuditProfile =
-        profileRow !== undefined
+        profileRow !== null
           ? rowToAuditProfile(profileRow)
           : {
               state: null,
@@ -382,11 +377,8 @@ const loadQuotesStep = createStep({
       // Dealer display name + otd_total per audited quote (for the output rail).
       const dealerNames: Record<string, string> = {};
       const otdByQuote: Record<string, number | null> = {};
-      const nameStmt = db.$client.prepare(SELECT_DEALER_NAME);
       for (const q of candidates) {
-        const nameRow = nameStmt.get(q.quote_id) as { dealer_name?: unknown } | undefined;
-        dealerNames[q.quote_id] =
-          typeof nameRow?.dealer_name === "string" ? nameRow.dealer_name : q.quote_id;
+        dealerNames[q.quote_id] = readDealerDisplayName(db, q.quote_id) ?? q.quote_id;
         otdByQuote[q.quote_id] = q.otd_total;
       }
 

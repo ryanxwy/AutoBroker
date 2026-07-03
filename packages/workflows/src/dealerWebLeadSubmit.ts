@@ -84,11 +84,14 @@ import {
   NULL_EMITTER,
   partitionUsDealers,
   platformOf,
+  readListingRowById,
+  readProfileRow,
   recordSubmission as recordSubmissionImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   safeBodyTemplate,
   safeSubjectLine,
   sendAndRecord as sendAndRecordImpl,
+  upsertDealerContactEmail as upsertDealerContactEmailImpl,
   withBrowserContext,
   type Approver,
   type BrowserEmitter,
@@ -526,21 +529,11 @@ const realDeps: DealerWebLeadSubmitWorkflowDeps = {
   harnessGenerate: harness.generate,
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
-  readProfileById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
-  readListingById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM inventory_listings WHERE listing_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
+  readProfileById: readProfileRow,
+  readListingById: readListingRowById,
   listProfileDealers: listProfileDealerRowsImpl,
   scoutForms: scoutFormsImpl,
-  upsertDealerContactEmail: (db, dealerId, email) => {
-    db.$client
-      .prepare("UPDATE dealers SET contact_email = ? WHERE dealer_id = ?")
-      .run(email, dealerId);
-  },
+  upsertDealerContactEmail: upsertDealerContactEmailImpl,
   checkSubmissionPrecondition: checkSubmissionPreconditionImpl,
   claimDealer: claimDealerImpl,
   recordSubmission: recordSubmissionImpl,

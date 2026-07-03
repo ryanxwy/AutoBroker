@@ -547,6 +547,20 @@ export function close(db: Db, id: string, opts: { actor?: string; reason?: strin
 }
 
 /**
+ * The PLAIN status→'closed' write for a skill's OWN lifecycle completion (the
+ * closeout run's final flip). Sets ONLY the `status` column — NO `updated_at`
+ * bump, NO audit row, NO slot/claim release. This is deliberately DISTINCT from
+ * close() / SET_STATUS above (the soft-delete close lifecycle with its audit +
+ * dealer-claim machinery): reproduces exactly the plain single-column UPDATE the
+ * closeout workflow needs, no more.
+ */
+export function closeProfileStatusPlain(db: Db, id: string): void {
+  db.$client
+    .prepare("UPDATE search_profiles SET status = 'closed' WHERE search_profile_id = ?")
+    .run(id);
+}
+
+/**
  * Restore a closed/superseded profile to 'active', writing a 'profile_restore'
  * audit row in the SAME transaction. If the (account, brand) slot is taken →
  * ActiveSlotConflict (the UI offers replace/remove-the-other).

@@ -51,3 +51,13 @@ export function listListingsForProfile(db: Db, profileId: string): ProfileListin
 
   return { listings, dealerDistances };
 }
+
+/** Read one inventory listing row by id as the raw snake_case view; null when
+ *  absent. The single-store lead-submit path resolves a listing's own dealer +
+ *  profile through this. */
+export function readListingRowById(db: Db, listingId: string): Record<string, unknown> | null {
+  const row = db.$client
+    .prepare("SELECT * FROM inventory_listings WHERE listing_id = ?")
+    .get(listingId) as Record<string, unknown> | undefined;
+  return row ?? null;
+}

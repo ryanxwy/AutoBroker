@@ -233,7 +233,11 @@ export {
   type MapsDomDocument,
   type MapsDomElement,
 } from "./geosearch/mapsExtractor.js";
-export { upsertDealers, type UpsertDealersResult } from "./geosearch/upsertDealers.js";
+export {
+  upsertDealers,
+  upsertDealerContactEmail,
+  type UpsertDealersResult,
+} from "./geosearch/upsertDealers.js";
 
 // Outbound-URL SSRF validator (9 ordered rules, fail-closed).
 export {
@@ -345,6 +349,7 @@ export {
 } from "./inventory/inventory_rank.js";
 export {
   listListingsForProfile,
+  readListingRowById,
   type ProfileListingsRead,
 } from "./inventory/read.js";
 export {
@@ -549,6 +554,7 @@ export {
   type ThreadSnapshotRead,
   type ReplyTargetInputsRead,
 } from "./inbox/followupReads.js";
+export { setThreadState } from "./inbox/threadWrites.js";
 export {
   listProfileDealerVerdicts,
   listProfileDealerRowsWithVerdicts,
@@ -854,6 +860,7 @@ export {
 export {
   listQuotesForProfile,
   getQuote,
+  readDealerDisplayName,
   listPeerQuotes,
   listIncentivesSlice,
   DEFAULT_AUDIT_PASS_VERSION,
@@ -977,6 +984,7 @@ export {
   parseLocation,
   synthProfileId,
   readProfileRow,
+  closeProfileStatusPlain,
   listProfileRows,
   listProfileDealerRows,
   resolveActiveProfile,

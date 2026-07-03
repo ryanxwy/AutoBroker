@@ -115,6 +115,20 @@ export function getQuote(db: Db, quoteId: string): AuditQuoteWithId | null {
   return row ? rowToAuditQuoteWithId(row) : null;
 }
 
+const SELECT_DEALER_NAME =
+  "SELECT COALESCE(d.name, dq.dealer_id) AS dealer_name FROM dealer_quotes dq " +
+  "LEFT JOIN dealers d ON d.dealer_id = dq.dealer_id WHERE dq.quote_id = ?";
+
+/** The dealer display name for one quote — COALESCE(dealers.name, dealer_id) off
+ *  the quote's dealer_quotes row. Returns null when the quote has no
+ *  dealer_quotes row (the caller falls back to the quote id). */
+export function readDealerDisplayName(db: Db, quoteId: string): string | null {
+  const row = db.$client.prepare(SELECT_DEALER_NAME).get(quoteId) as
+    | { dealer_name?: unknown }
+    | undefined;
+  return typeof row?.dealer_name === "string" ? row.dealer_name : null;
+}
+
 /**
  * The peer set for the median checks: ALL of the profile's quotes (not the
  * recent-filtered set). The audit caller excludes the quote under audit itself

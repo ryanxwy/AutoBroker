@@ -62,8 +62,10 @@ import {
   assembleCloseoutTargets as assembleCloseoutTargetsImpl,
   buildCloseoutDraft,
   closeAndSuppressDealer as closeAndSuppressDealerImpl,
+  closeProfileStatusPlain,
   getDb,
   listProfileRows as listProfileRowsImpl,
+  readProfileRow,
   releaseDealerClaims as releaseDealerClaimsImpl,
   renderCloseoutSubject,
   resolveActiveProfile as resolveActiveProfileImpl,
@@ -135,18 +137,13 @@ export interface DealerCloseoutEmailWorkflowDeps {
 const realDeps: DealerCloseoutEmailWorkflowDeps = {
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
-  readProfileById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
+  readProfileById: readProfileRow,
   assembleCloseoutTargets: assembleCloseoutTargetsImpl,
   closeAndSuppressDealer: closeAndSuppressDealerImpl,
-  closeProfileStatus: (db, id) => {
-    // State-only: the run's completion flips the profile to 'closed'. (This is the
-    // skill's own lifecycle transition — a plain status write, not the soft-delete
-    // close lifecycle with its audit/slot machinery.)
-    db.$client.prepare("UPDATE search_profiles SET status = 'closed' WHERE search_profile_id = ?").run(id);
-  },
+  // State-only: the run's completion flips the profile to 'closed' — a plain
+  // status write (no updated_at bump / audit), NOT the soft-delete close
+  // lifecycle with its audit/slot/claim machinery.
+  closeProfileStatus: closeProfileStatusPlain,
   releaseDealerClaims: releaseDealerClaimsImpl,
   getDb,
 };

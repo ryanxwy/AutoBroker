@@ -21,6 +21,7 @@ export {
   parseLocation,
   synthProfileId,
   readProfileRow,
+  closeProfileStatusPlain,
   listProfileRows,
   listProfileDealerRows,
   type PurgeResult,
