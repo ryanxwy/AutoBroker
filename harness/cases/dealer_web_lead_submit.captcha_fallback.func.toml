@@ -24,9 +24,9 @@
 #           (email_fallback_reason='captcha_fallback') AND one fake outbound
 #           messages row. Terminal `done`; +1 lead_submissions EXACT (the
 #           captcha email-fallback row); messages Δ=1 EXACT (the fake gmail.send);
-#           keystone clean with allow_fake_outbound; the sensitive approval card
-#           carried NO approve-all affordance (asserted DRIVER-SIDE on the
-#           approval resume); no malformed call.
+#           keystone clean with allow_fake_outbound; the approval card carried
+#           NO approve-all affordance (there is none — asserted DRIVER-SIDE on
+#           the approval resume); no malformed call.
 #
 # (The captcha_fallback REASON + captcha_manual_count===1 are proven by the
 #  offline workflow test; this func case proves the end-to-end UI-lane shape.)
@@ -96,10 +96,10 @@ expect = ["done"]
 [[steps.anchors]]
 kind = "approval_gate"      # BOTH suspends rendered (the batch card + the re-confirm).
 
-# The sensitive email re-confirm card must NOT expose an approve-all affordance
-# (sensitive=true → no bulk-approve of a mutating scope). That assertion is made
-# DRIVER-SIDE during the approval resume (checkApprovalApproveAllForSensitivity
-# reads the live card's data-sensitive + counts approval-approve-all controls and
+# The email re-confirm card must NOT expose an approve-all affordance — there is
+# no bulk-approve control on the approval card at all (it was removed as dead).
+# That assertion is made DRIVER-SIDE during the approval resume
+# (checkApprovalApproveAllForSensitivity counts approval-approve-all controls and
 # records a REAL ui_check — a failure RED-outs the verdict via failedUi).
 
 [[steps.anchors]]

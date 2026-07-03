@@ -27,7 +27,7 @@
  * raw run id surfaced.
  */
 
-import { useState } from "react";
+import { ReviewDecisionList } from "./ReviewDecisionList.js";
 
 type InboxClassification = "quoted" | "replied";
 
@@ -126,8 +126,6 @@ function threadCountLabel(n: number): string {
   return n === 1 ? "1 thread" : `${n} threads`;
 }
 
-type RowDecision = "approve" | "skip";
-
 export function InboxReviewCard({
   spec,
   submitting,
@@ -141,115 +139,45 @@ export function InboxReviewCard({
   /** action "decline" — terminal, zero writes. */
   onDecline: () => void;
 }): JSX.Element {
-  // Row decisions, keyed by dealer_id; an ABSENT key is the undecided default.
-  const [decisions, setDecisions] = useState<Record<string, RowDecision>>({});
-
-  const decide = (dealerId: string, decision: RowDecision): void =>
-    setDecisions((d) => ({ ...d, [dealerId]: decision }));
-  const selectAll = (): void =>
-    setDecisions(Object.fromEntries(spec.targets.map((t) => [t.dealer_id, "approve" as const])));
-
-  const decidedCount = spec.targets.filter((t) => decisions[t.dealer_id] !== undefined).length;
-  const approvedIds = spec.targets
-    .filter((t) => decisions[t.dealer_id] === "approve")
-    .map((t) => t.dealer_id);
-  const allDecided = decidedCount === spec.targets.length;
-  // Submit needs every row decided AND >=1 approve (the resume schema's min-1:
-  // an all-skip batch has nothing to ingest — Decline is the stop verb).
-  const canSubmit = allDecided && approvedIds.length > 0 && !submitting;
-
   return (
-    <div className="gate-card sensitive" data-testid="inbox-review-card" role="alertdialog" aria-label="Inbox review">
-      <strong>{spec.question}</strong>
-
-      <div className="batch-rows">
-        {spec.targets.map((t) => {
-          const decision = decisions[t.dealer_id];
-          return (
-            <div
-              className="batch-row"
-              key={t.dealer_id}
-              data-testid={`inbox-row-${t.dealer_id}`}
-              data-decision={decision ?? "undecided"}
-            >
-              <span className="batch-row-text">
-                <strong>{t.name}</strong>{" "}
-                <span className="muted" data-testid={`inbox-class-${t.dealer_id}`} data-classification={t.classification}>
-                  {t.classification === "quoted" ? "quoted" : "replied"}
-                </span>{" "}
-                <span className="muted">{threadCountLabel(t.thread_ids.length)}</span>
-                <br />
-                <span className="muted">{t.snippet}</span>
-              </span>
-              <button
-                type="button"
-                data-testid={`inbox-approve-${t.dealer_id}`}
-                aria-pressed={decision === "approve"}
-                className={decision === "approve" ? "on" : ""}
-                disabled={submitting}
-                onClick={() => decide(t.dealer_id, "approve")}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                data-testid={`inbox-skip-${t.dealer_id}`}
-                aria-pressed={decision === "skip"}
-                className={decision === "skip" ? "on" : ""}
-                disabled={submitting}
-                onClick={() => decide(t.dealer_id, "skip")}
-              >
-                Skip
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {spec.unrouted.length > 0 && (
-        <details className="muted" data-testid="inbox-unrouted">
-          <summary>{spec.unrouted.length} couldn&apos;t match to a dealer</summary>
-          <ul>
-            {spec.unrouted.map((u) => (
-              <li key={u.thread_id} data-testid={`inbox-unrouted-row-${u.thread_id}`}>
-                Couldn&apos;t match to a dealer — from {u.sender_email}: {u.snippet}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      <div className="gate-actions">
-        <button type="button" data-testid="inbox-select-all" disabled={submitting} onClick={selectAll}>
-          Select all
-        </button>
-        <span className="muted" data-testid="inbox-counter">
-          {decidedCount}/{spec.targets.length} decided
-        </span>
-        <button
-          type="button"
-          className="btn-primary"
-          data-testid="inbox-submit"
-          disabled={!canSubmit}
-          onClick={() => onApprove(approvedIds)}
-        >
-          Ingest approved replies
-        </button>
-        <button
-          type="button"
-          className="btn-danger"
-          data-testid="inbox-decline"
-          disabled={submitting}
-          onClick={onDecline}
-        >
-          Decline
-        </button>
-      </div>
-      {allDecided && approvedIds.length === 0 && (
-        <p className="muted" data-testid="inbox-zero-approved-hint">
-          Nothing approved — use Decline to cancel ingest.
-        </p>
-      )}
-    </div>
+    <ReviewDecisionList
+      cardTestId="inbox-review-card"
+      ariaLabel="Inbox review"
+      testidPrefix="inbox"
+      submitLabel="Ingest approved replies"
+      zeroApprovedHint="Nothing approved — use Decline to cancel ingest."
+      submitting={submitting}
+      onApprove={onApprove}
+      onDecline={onDecline}
+      beforeRows={<strong>{spec.question}</strong>}
+      rows={spec.targets.map((t) => ({
+        id: t.dealer_id,
+        body: (
+          <span className="batch-row-text">
+            <strong>{t.name}</strong>{" "}
+            <span className="muted" data-testid={`inbox-class-${t.dealer_id}`} data-classification={t.classification}>
+              {t.classification === "quoted" ? "quoted" : "replied"}
+            </span>{" "}
+            <span className="muted">{threadCountLabel(t.thread_ids.length)}</span>
+            <br />
+            <span className="muted">{t.snippet}</span>
+          </span>
+        ),
+      }))}
+      afterRows={
+        spec.unrouted.length > 0 ? (
+          <details className="muted" data-testid="inbox-unrouted">
+            <summary>{spec.unrouted.length} couldn&apos;t match to a dealer</summary>
+            <ul>
+              {spec.unrouted.map((u) => (
+                <li key={u.thread_id} data-testid={`inbox-unrouted-row-${u.thread_id}`}>
+                  Couldn&apos;t match to a dealer — from {u.sender_email}: {u.snippet}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : undefined
+      }
+    />
   );
 }

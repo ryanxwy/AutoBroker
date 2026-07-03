@@ -147,7 +147,6 @@ export function GateCardSwitch({
         }}
         submitting={decision.submitting}
         onApprove={() => decision.decide("accept")}
-        onApproveAll={() => decision.decide("accept")}
         onDeny={() => decision.decide("decline")}
         onCancel={() => decision.decide("cancel")}
       />

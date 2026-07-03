@@ -1254,14 +1254,13 @@ async function driveResumeScriptDom(
       // action), Deny = decline (terminal/skip, zero writes). The send-skill
       // re-confirms ride this card — dealer_web_lead_submit's single_store /
       // email_fallback approval and negotiation_followup's contact-flip
-      // re-confirm (all sensitive=true → the approve-all affordance is
-      // structurally absent, which the case asserts via a dom_state anchor).
+      // re-confirm (all sensitive=true → the danger frame is on; there is no
+      // approve-all affordance on this card at all).
       await driver.waitForApprovalPrompt(maxMs);
       await driver.checkBannerGateBeforeProse();
-      // The bulk affordance must match the card's sensitivity: a sensitive
-      // event (a mutating scope switch / send re-confirm) carries ZERO
-      // approve-all controls; a non-sensitive one carries exactly one. A REAL
-      // DOM read recorded into ui_checks (not a vacuous anchor passthrough).
+      // The approval card exposes NO approve-all affordance — unconditionally
+      // (the dead bulk-approve was removed). A REAL DOM read recorded into
+      // ui_checks (not a vacuous anchor passthrough).
       await driver.checkApprovalApproveAllForSensitivity();
       if (resume.action === "accept") {
         await driver.screenshot("approval-approve");

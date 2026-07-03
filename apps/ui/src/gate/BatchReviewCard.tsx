@@ -21,7 +21,7 @@
  * the server descriptor maps it onto the workflow's {action:"approve"} resume.
  */
 
-import { useState } from "react";
+import { ReviewDecisionList } from "./ReviewDecisionList.js";
 
 /** The parsed suspend spec_inline this card renders. */
 export interface BatchReviewSpec {
@@ -119,8 +119,6 @@ function websiteHost(website: string): string {
   }
 }
 
-type RowDecision = "approve" | "skip";
-
 export function BatchReviewCard({
   spec,
   submitting,
@@ -139,123 +137,67 @@ export function BatchReviewCard({
    *  when spec.allowSkipAll is set, so an absent handler ⇒ no button. */
   onSkipAll?: () => void;
 }): JSX.Element {
-  // Row decisions, keyed by dealer_id; an ABSENT key is the undecided default.
-  const [decisions, setDecisions] = useState<Record<string, RowDecision>>({});
-
-  const decide = (dealerId: string, decision: RowDecision): void =>
-    setDecisions((d) => ({ ...d, [dealerId]: decision }));
-  const selectAll = (): void =>
-    setDecisions(Object.fromEntries(spec.targets.map((t) => [t.dealer_id, "approve" as const])));
-
-  const decidedCount = spec.targets.filter((t) => decisions[t.dealer_id] !== undefined).length;
-  const approvedIds = spec.targets
-    .filter((t) => decisions[t.dealer_id] === "approve")
-    .map((t) => t.dealer_id);
-  const allDecided = decidedCount === spec.targets.length;
-  // Submit needs every row decided AND >=1 approve (the resume schema's min-1:
-  // an all-skip batch has nothing to scan — Decline is the stop verb).
-  const canSubmit = allDecided && approvedIds.length > 0 && !submitting;
-
   return (
-    <div className="gate-card sensitive" data-testid="batch-review-card" role="alertdialog" aria-label="Batch review">
-      <strong>{spec.question}</strong>
-      <p className="muted" data-testid="batch-header">
-        {batchHeaderLine(spec)}
-      </p>
+    <ReviewDecisionList
+      cardTestId="batch-review-card"
+      ariaLabel="Batch review"
+      testidPrefix="batch"
+      rowsTestId="batch-rows"
+      submitLabel={spec.submitLabel ?? "Scan approved dealers"}
+      zeroApprovedHint="Nothing approved — use Decline to cancel the scan."
+      submitting={submitting}
+      onApprove={onApprove}
+      onDecline={onDecline}
+      beforeRows={
+        <>
+          <strong>{spec.question}</strong>
+          <p className="muted" data-testid="batch-header">
+            {batchHeaderLine(spec)}
+          </p>
 
-      {spec.summary && (
-        <div className="batch-summary" data-testid="batch-summary">
-          <p className="batch-summary-heading">{spec.summary.heading}</p>
-          <dl>
-            {spec.summary.lines.map((line) => (
-              <div className="batch-summary-line" key={line.label} data-testid={`batch-summary-${line.label}`}>
-                <dt>{line.label}</dt>
-                <dd>{line.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
-
-      <div className="batch-rows" data-testid="batch-rows">
-        {spec.targets.map((t) => {
-          const decision = decisions[t.dealer_id];
-          return (
-            <div
-              className="batch-row"
-              key={t.dealer_id}
-              data-testid={`batch-row-${t.dealer_id}`}
-              data-decision={decision ?? "undecided"}
-            >
-              <span className="batch-row-text">
-                <strong>{t.name}</strong> <span className="muted">{websiteHost(t.website)}</span>
-              </span>
-              <button
-                type="button"
-                data-testid={`batch-approve-${t.dealer_id}`}
-                aria-pressed={decision === "approve"}
-                className={decision === "approve" ? "on" : ""}
-                disabled={submitting}
-                onClick={() => decide(t.dealer_id, "approve")}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                data-testid={`batch-skip-${t.dealer_id}`}
-                aria-pressed={decision === "skip"}
-                className={decision === "skip" ? "on" : ""}
-                disabled={submitting}
-                onClick={() => decide(t.dealer_id, "skip")}
-              >
-                Skip
-              </button>
+          {spec.summary && (
+            <div className="batch-summary" data-testid="batch-summary">
+              <p className="batch-summary-heading">{spec.summary.heading}</p>
+              <dl>
+                {spec.summary.lines.map((line) => (
+                  <div className="batch-summary-line" key={line.label} data-testid={`batch-summary-${line.label}`}>
+                    <dt>{line.label}</dt>
+                    <dd>{line.value}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
-          );
-        })}
-      </div>
-
-      {spec.skipped.length > 0 && (
-        <details className="muted" data-testid="batch-skipped">
-          <summary>{spec.skipped.length} skipped (not scannable)</summary>
-          <ul>
-            {spec.skipped.map((s) => (
-              <li key={s.dealer_id} data-testid={`batch-skipped-${s.dealer_id}`}>
-                {s.name} — {s.reason}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      <div className="gate-actions">
-        <button type="button" data-testid="batch-select-all" disabled={submitting} onClick={selectAll}>
-          Select all
-        </button>
-        <span className="muted" data-testid="batch-counter">
-          {decidedCount}/{spec.targets.length} decided
-        </span>
-        <button
-          type="button"
-          className="btn-primary"
-          data-testid="batch-submit"
-          disabled={!canSubmit}
-          onClick={() => onApprove(approvedIds)}
-        >
-          {spec.submitLabel ?? "Scan approved dealers"}
-        </button>
-        <button
-          type="button"
-          className="btn-danger"
-          data-testid="batch-decline"
-          disabled={submitting}
-          onClick={onDecline}
-        >
-          Decline
-        </button>
-        {spec.allowSkipAll && onSkipAll && (
-          // A DISTINCT terminal intent: "send none AND hand off to reset" — its
-          // own verb (like Decline), always enabled, independent of row decisions.
+          )}
+        </>
+      }
+      rows={spec.targets.map((t) => ({
+        id: t.dealer_id,
+        body: (
+          <span className="batch-row-text">
+            <strong>{t.name}</strong> <span className="muted">{websiteHost(t.website)}</span>
+          </span>
+        ),
+      }))}
+      afterRows={
+        spec.skipped.length > 0 ? (
+          <details className="muted" data-testid="batch-skipped">
+            <summary>{spec.skipped.length} skipped (not scannable)</summary>
+            <ul>
+              {spec.skipped.map((s) => (
+                <li key={s.dealer_id} data-testid={`batch-skipped-${s.dealer_id}`}>
+                  {s.name} — {s.reason}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : undefined
+      }
+      footerExtra={
+        // A DISTINCT terminal intent: "send none AND hand off to reset" — its
+        // own verb (like Decline), always enabled, independent of row decisions.
+        // Closeout-only: renders only when allowSkipAll is set AND a handler is
+        // passed, so an absent handler ⇒ no button.
+        spec.allowSkipAll && onSkipAll ? (
           <button
             type="button"
             className="btn-danger"
@@ -265,13 +207,8 @@ export function BatchReviewCard({
           >
             Skip all &amp; reset
           </button>
-        )}
-      </div>
-      {allDecided && approvedIds.length === 0 && (
-        <p className="muted" data-testid="batch-zero-approved-hint">
-          Nothing approved — use Decline to cancel the scan.
-        </p>
-      )}
-    </div>
+        ) : undefined
+      }
+    />
   );
 }
