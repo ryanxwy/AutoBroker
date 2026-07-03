@@ -1076,12 +1076,23 @@ export class UiDriver {
   /** checkMismatchBanner: the resolution-provenance meta tag on the rendered
    *  turn matches the expected branch — `pinned` when an explicit pin was
    *  honored, `inferred_newest` when the single-active inference ran. */
-  async checkMismatchBanner(pinned: boolean, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+  async checkMismatchBanner(
+    pinned: boolean,
+    timeoutMs = DEFAULT_TIMEOUT,
+    runId?: string,
+  ): Promise<void> {
     const expected = pinned ? "pinned" : "inferred_newest";
+    // Scoped to the run's own turn when known — an earlier step's resolution
+    // meta must never satisfy this check (`.last()` alone stale-matches on
+    // multi-step journeys where a prior turn carries provenance).
+    const sel =
+      runId === undefined
+        ? tid("turn-resolution")
+        : `${tid("assistant-turn")}[data-run-id="${runId}"] ${tid("turn-resolution")}`;
     let observed: string | null = null;
     try {
-      await this.page.waitForSelector(tid("turn-resolution"), { timeout: timeoutMs });
-      observed = await this.page.locator(tid("turn-resolution")).last().getAttribute("data-resolution");
+      await this.page.waitForSelector(sel, { timeout: timeoutMs });
+      observed = await this.page.locator(sel).last().getAttribute("data-resolution");
     } catch {
       observed = null;
     }
@@ -1097,8 +1108,17 @@ export class UiDriver {
 
   /** Wait until the active assistant turn reaches a terminal rendering
    *  (data-status done|declined|error) and return which. */
-  async waitForTerminal(timeoutMs = DEFAULT_TIMEOUT): Promise<UiTerminal> {
-    const el = await this.page.waitForSelector(TERMINAL_SELECTOR, { timeout: timeoutMs });
+  async waitForTerminal(timeoutMs = DEFAULT_TIMEOUT, runId?: string): Promise<UiTerminal> {
+    // Scoped to the run's OWN turn when the caller knows the runId — an earlier
+    // step's terminal turn must never satisfy this wait (the multi-step rail
+    // keeps every prior turn's data-status="done" in the DOM).
+    const selector =
+      runId === undefined
+        ? TERMINAL_SELECTOR
+        : (["done", "declined", "error"] as const)
+            .map((s) => `${tid("assistant-turn")}[data-run-id="${runId}"][data-status="${s}"]`)
+            .join(", ");
+    const el = await this.page.waitForSelector(selector, { timeout: timeoutMs });
     const status = await el.getAttribute("data-status");
     if (status === "done" || status === "declined" || status === "error") return status;
     throw new Error(`uiDriver: unexpected terminal data-status "${String(status)}"`);
@@ -1228,12 +1248,19 @@ export class UiDriver {
   /** terminal_summary_visible: the terminal rendering matches the terminal kind
    *  (done → non-empty prose summary; declined → the cancelled line; error →
    *  the error line). Call after waitForTerminal. */
-  async checkTerminalSummaryVisible(terminal: UiTerminal): Promise<void> {
+  async checkTerminalSummaryVisible(terminal: UiTerminal, runId?: string): Promise<void> {
+    // Scoped to the run's own turn when known — a prior step's summary text
+    // must never satisfy a later step's terminal-rendering check.
+    const root =
+      runId === undefined
+        ? "document"
+        : `(document.querySelector('[data-testid="assistant-turn"][data-run-id="${runId}"]') ?? document)`;
     const observed = (await this.page.evaluate(
       `(() => {
-        const text = document.querySelector('[data-testid="turn-zone-text"]');
-        const declined = document.querySelector('[data-testid="turn-declined"]');
-        const error = document.querySelector('[data-testid="turn-error"]');
+        const root = ${root};
+        const text = root.querySelector('[data-testid="turn-zone-text"]');
+        const declined = root.querySelector('[data-testid="turn-declined"]');
+        const error = root.querySelector('[data-testid="turn-error"]');
         return {
           proseText: text === null ? "" : (text.textContent ?? "").trim(),
           declinedVisible: declined !== null,

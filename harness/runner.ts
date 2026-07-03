@@ -1803,7 +1803,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         await driver.setOffline(false);
         await driver.screenshot("post-sse-break");
       }
-      const uiTerminal = await driver.waitForTerminal(stepMaxMs);
+      const uiTerminal = await driver.waitForTerminal(stepMaxMs, runId);
       // A FRIENDLY typed STOP (no_lead_submitted) terminates `error` but the UI
       // deliberately renders a calm StopCard INSTEAD OF the turn-error line — so
       // the terminal-summary error check would falsely RED. The checkStopCard
@@ -1811,7 +1811,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
       // still render turn-error alongside the card, so they keep this check).
       const friendlyStop = step.expectStop === "no_lead_submitted";
       if (!friendlyStop) {
-        await driver.checkTerminalSummaryVisible(uiTerminal);
+        await driver.checkTerminalSummaryVisible(uiTerminal, runId);
       }
       if (step.edge === "sse_break" && uiTerminal === "done") {
         // The recovery must not have duplicated the rendering: the geosearch
@@ -1837,7 +1837,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
           a.kind === "resolution",
       );
       if (resolutionAnchor !== undefined && uiTerminal === "done") {
-        await driver.checkMismatchBanner(resolutionAnchor.expect === "pinned");
+        await driver.checkMismatchBanner(resolutionAnchor.expect === "pinned", undefined, runId);
       }
       // ---- the explicit Pin verb (pin_label — attached to this step's
       // post-checks). Pins the rail session to the labeled profile through the

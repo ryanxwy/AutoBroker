@@ -91,7 +91,12 @@ export function AssistantTurn({
   const friendlyStop = stopCode === "no_lead_submitted";
 
   return (
-    <div className="turn assistant" data-testid="assistant-turn" data-status={turn.status}>
+    <div
+      className="turn assistant"
+      data-testid="assistant-turn"
+      data-status={turn.status}
+      data-run-id={turn.runId ?? undefined}
+    >
       {/* ZONE 1 — GATE (structurally first; gate-before-prose). The batch-review
           family renders the shared GateCardSwitch (inventory batch / inbox /
           hygiene cards); every other rail-tracked kind is the IntakeForm. */}
