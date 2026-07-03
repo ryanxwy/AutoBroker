@@ -42,7 +42,7 @@ export function NegotiationDetailModal({
    *  omitted the section shows only the deterministic status_line. */
   fetchSummary?: () => Promise<DealerNegotiationSummary>;
   onClose: () => void;
-}): JSX.Element {
+}): JSX.Element | null {
   const titleId = useId();
   // The lazily-fetched LLM summary, fetched on open. Null until/unless it
   // resolves to a non-null string; any failure degrades to null (→ status_line).
@@ -78,15 +78,7 @@ export function NegotiationDetailModal({
     };
   }, [dealerId]);
 
-  if (detail === null) {
-    // Closed: render an inert Modal (returns null while open=false) so the hook
-    // order stays stable across open/closed.
-    return (
-      <Modal open={false} onClose={onClose} labelId={titleId} variant="dialog">
-        <></>
-      </Modal>
-    );
-  }
+  if (detail === null) return null;
 
   const name = detail.name;
   const location = [detail.city, detail.state].filter((p): p is string => p !== null && p !== "").join(", ");

@@ -41,57 +41,22 @@
  * NEVER @mastra, NEVER the product DB.
  */
 
-import { DEFAULT_PROVIDER, providerDriverKind, type HarnessDriverKind } from "@autobroker/core";
+import {
+  DEFAULT_PROVIDER,
+  EVENT_KINDS,
+  TERMINAL_EVENT_KINDS,
+  isEventKind,
+  isTerminalKind,
+  providerDriverKind,
+  type EventKind,
+  type HarnessDriverKind,
+} from "@autobroker/core";
 
-/**
- * The closed EVENT_KINDS set. Intake emits a subset; the full set is declared so
- * an unknown kind throws (no drift). browser.* and the SDK-only
- * approval/permission kinds are listed for completeness but never emitted by
- * intake.
- */
-export const EVENT_KINDS = [
-  "init",
-  "text",
-  "tool_call",
-  "tool_result",
-  "awaiting_user",
-  "awaiting_permission",
-  "approval_required",
-  "approval_response",
-  "reasoning_full",
-  "reasoning_summary",
-  "refusal",
-  "browser.opened",
-  "browser.action",
-  "browser.error",
-  "browser.closed",
-  // browser.acquire.progress — a NON-terminal pulse fired only on the cold path
-  // where the Playwright browser binary is absent and is being installed before
-  // the first launch. Payload { message:string, progress?:number } (progress is
-  // a 0..1 fraction when known) drives an install bar in the UI. NOT in
-  // TERMINAL_EVENT_KINDS.
-  "browser.acquire.progress",
-  // data.changed — a NON-terminal "a write landed" pulse the UI uses for
-  // fresh-by-default auto-refresh: payload {profile_id, kinds:string[]} names
-  // the data families a just-completed skill touched (e.g. ["dealers"]). It
-  // rides the RUN channel (no per-resource stream) and is emitted BEFORE the
-  // terminal `done` (after `done` the single-terminal invariant would discard
-  // it). NOT in TERMINAL_EVENT_KINDS.
-  "data.changed",
-  "done",
-  "error",
-  "aborted",
-  "runs.list_changed",
-  "runs.run_updated",
-] as const;
-export type EventKind = (typeof EVENT_KINDS)[number];
-
-/** The three terminal wire kinds. A run's stream ends after exactly one. */
-export const TERMINAL_EVENT_KINDS = ["done", "error", "aborted"] as const;
-export type TerminalEventKind = (typeof TERMINAL_EVENT_KINDS)[number];
-
-const EVENT_KIND_SET = new Set<string>(EVENT_KINDS);
-const TERMINAL_SET = new Set<string>(TERMINAL_EVENT_KINDS);
+// The SSE wire-event vocabulary lives in @autobroker/core (one definition shared
+// by the server emitter, the UI decoder, and the harness). Re-exported here so
+// this module + apps/server/src/index.ts stay the package surface for the kinds.
+export { EVENT_KINDS, TERMINAL_EVENT_KINDS };
+export type { EventKind, TerminalEventKind } from "@autobroker/core";
 
 /** One SSE frame. */
 export interface SseEvent {
@@ -220,7 +185,7 @@ export class RunPubSub {
     if (channel === undefined) {
       throw new Error(`runPubSub.append: no channel for run '${runId}' (attachInit first)`);
     }
-    if (!EVENT_KIND_SET.has(ev.kind)) {
+    if (!isEventKind(ev.kind)) {
       // Caller cannot drift the closed kind set.
       throw new Error(`runPubSub.append: unknown event kind '${ev.kind}'`);
     }
@@ -239,7 +204,7 @@ export class RunPubSub {
     };
     channel.log.push(frame);
 
-    if (TERMINAL_SET.has(ev.kind)) {
+    if (isTerminalKind(ev.kind)) {
       channel.terminal = true;
     }
 
@@ -271,10 +236,10 @@ export class RunPubSub {
     if (channel === undefined) {
       throw new Error(`runPubSub.appendTransient: no channel for run '${runId}' (attachInit first)`);
     }
-    if (!EVENT_KIND_SET.has(ev.kind)) {
+    if (!isEventKind(ev.kind)) {
       throw new Error(`runPubSub.appendTransient: unknown event kind '${ev.kind}'`);
     }
-    if (TERMINAL_SET.has(ev.kind)) {
+    if (isTerminalKind(ev.kind)) {
       throw new Error(
         `runPubSub.appendTransient: terminal kind '${ev.kind}' must go through append() (log is the terminal truth)`,
       );

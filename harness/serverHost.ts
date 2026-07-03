@@ -1,14 +1,14 @@
 /**
  * serverHost — boot the REAL @autobroker/server on an ephemeral 127.0.0.1 port for
- * the live harness. Spawned as a CHILD PROCESS by runner.ts
- * (the e2e serve.mjs pattern) so the harness drives a genuine HTTP/SSE server in a
- * separate process — black-box, exactly the SUT a user runs.
+ * the live harness. Spawned as a CHILD PROCESS by runner.ts so the harness drives a
+ * genuine HTTP/SSE server in a separate process — black-box, exactly the SUT a user
+ * runs.
  *
- * KEY DIFFERENCE FROM apps/ui/e2e/serve.mjs: the live harness boots WITHOUT the DI
- * stubs — `live = real geocode + real DeepSeek`. The two external
- * collaborators (resolveLocation / harnessGenerate) keep their REAL implementations.
- * The only thing this host arranges is ISOLATION (a throwaway DB under
- * ~/.autobroker-ts) + the migration + a seed account, and it prints the port.
+ * The live harness boots WITHOUT the DI stubs — `live = real geocode + real
+ * DeepSeek`. The two external collaborators (resolveLocation / harnessGenerate) keep
+ * their REAL implementations. The only thing this host arranges is ISOLATION (a
+ * throwaway DB under ~/.autobroker-ts) + the migration + a seed account, and it
+ * prints the port.
  *
  * DRY-RUN MODE (--dry-run): boot the server with the test DI seam
  * DISABLED (NOT stubbed) but STOP before the first live call — i.e. boot, print the
@@ -19,11 +19,11 @@
  *
  * FIXTURE MODE (AUTOBROKER_HARNESS_FIXTURE=1, set by the functional lane): boot
  * with the DETERMINISTIC DI stubs injected (resolveLocation + harnessGenerate —
- * NO live geocode, NO live LLM) and register three test-only routes OUTSIDE /api
- * (mirroring apps/ui/e2e/serve.mjs): POST /__e2e/scenario (flip the stub
- * scenario), POST /__e2e/apply-fixture (install a named FixtureState — its seed +
- * scenario), GET /__e2e/audit (count audit_log rows). The live path is unchanged:
- * when the flag is absent NONE of this runs (no stubs, no extra routes).
+ * NO live geocode, NO live LLM) and register three test-only routes OUTSIDE /api:
+ * POST /__e2e/scenario (flip the stub scenario), POST /__e2e/apply-fixture (install
+ * a named FixtureState — its seed + scenario), GET /__e2e/audit (count audit_log
+ * rows). The live path is unchanged: when the flag is absent NONE of this runs (no
+ * stubs, no extra routes).
  *
  * ISOLATION: AUTOBROKER_DATA_DIR is set by the INVOKING runner (under
  * ~/.autobroker-ts/harness-runs/<ts>/); this host honors it (never overrides to a
@@ -33,7 +33,7 @@
  * is never set here.
  *
  * Output: a single JSON line on stdout once listening: { harness_host:"listening",
- * port, dataDir } — the runner parses it (mirrors serve.mjs's contract).
+ * port, dataDir } — the runner parses that line to learn the port + data dir.
  *
  * Run: node --import tsx/esm harness/serverHost.ts  (the runner spawns it).
  *

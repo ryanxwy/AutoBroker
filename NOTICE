@@ -52,7 +52,7 @@ MIT Licensed Components
 The following components are distributed under the MIT License:
 
   zod, fastify, @fastify/static, croner, react, react-dom, vite,
-  @vitejs/plugin-react, zustand, better-sqlite3, @libsql/client,
+  @vitejs/plugin-react, better-sqlite3, @libsql/client,
   @libsql/darwin-arm64, drizzle-kit, esbuild, tsx, dependency-cruiser,
   vitest, happy-dom, @types/node, @types/react, @types/react-dom,
   @types/better-sqlite3, electron (JavaScript layer)

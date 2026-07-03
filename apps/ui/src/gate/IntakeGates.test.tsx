@@ -30,7 +30,7 @@ describe("AmbiguousLocationPicker", () => {
       effectiveQuery: "Irvine",
     };
     const r = render(
-      <AmbiguousLocationPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
+      <AmbiguousLocationPicker gate={gate} submitting={false} onResume={onResume} onDecline={noop} />,
     );
     expect(r.query("gate-location-candidate-0")).not.toBeNull();
     expect(r.query("gate-location-candidate-1")).not.toBeNull();
@@ -57,7 +57,7 @@ describe("TrimSuggestionPicker", () => {
   it("starts UNSELECTED (no auto-pick); pick enables after a deliberate selection and dispatches {action:'pick'}", () => {
     const onResume = vi.fn();
     const r = render(
-      <TrimSuggestionPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
+      <TrimSuggestionPicker gate={gate} submitting={false} onResume={onResume} onDecline={noop} />,
     );
     expect(r.query("gate-trim-option-0")).not.toBeNull();
     expect(r.query("gate-trim-option-1")).not.toBeNull();
@@ -74,7 +74,7 @@ describe("TrimSuggestionPicker", () => {
     const onResume = vi.fn();
     const onDecline = vi.fn();
     const r = render(
-      <TrimSuggestionPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={onDecline} />,
+      <TrimSuggestionPicker gate={gate} submitting={false} onResume={onResume} onDecline={onDecline} />,
     );
     click(r.get("gate-trim-skip"));
     expect(onResume).toHaveBeenCalledWith({ action: "skip" });
@@ -86,7 +86,7 @@ describe("TrimSuggestionPicker", () => {
     const onResume = vi.fn();
     const onDecline = vi.fn();
     const r = render(
-      <TrimSuggestionPicker gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={onDecline} />,
+      <TrimSuggestionPicker gate={gate} submitting={false} onResume={onResume} onDecline={onDecline} />,
     );
     click(r.get("gate-trim-retry"));
     expect(onResume).toHaveBeenCalledWith({ action: "retry", refine_query: null });
@@ -108,7 +108,7 @@ describe("LocationFailureBanner (coordinate-resolution invariant)", () => {
       effectiveQuery: "asdfghjkl",
     };
     const r = render(
-      <LocationFailureBanner gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
+      <LocationFailureBanner gate={gate} submitting={false} onResume={onResume} onDecline={noop} />,
     );
     // failure reason shown.
     expect(r.get("gate-location-failure-reason").textContent).toContain("no_result");
@@ -129,7 +129,7 @@ describe("IntakeConfirmCard", () => {
   it("shows the resolved vehicle and dispatches accept", () => {
     const onResume = vi.fn();
     const r = render(
-      <IntakeConfirmCard gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={noop} />,
+      <IntakeConfirmCard gate={gate} submitting={false} onResume={onResume} onDecline={noop} />,
     );
     expect(r.get("gate-intake-confirm-vehicle").textContent).toContain("2026 Hyundai Tucson SEL");
     click(r.get("gate-intake-confirm-accept"));
@@ -141,7 +141,7 @@ describe("IntakeConfirmCard", () => {
     const onResume = vi.fn();
     const onDecline = vi.fn();
     const r = render(
-      <IntakeConfirmCard gate={gate} decisionId="d1" submitting={false} onResume={onResume} onDecline={onDecline} />,
+      <IntakeConfirmCard gate={gate} submitting={false} onResume={onResume} onDecline={onDecline} />,
     );
     click(r.get("gate-intake-confirm-edit"));
     expect(onResume).toHaveBeenCalledWith({ action: "edit" });

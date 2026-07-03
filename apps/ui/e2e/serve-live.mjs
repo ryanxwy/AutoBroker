@@ -6,8 +6,9 @@
  * walkthrough (the loop e2e), NOT the deterministic UI lane:
  *
  *   - DeepSeek is REAL: we do NOT pin a dummy key, so boot's loadDotEnvKeys
- *     loads DEEPSEEK_API_KEY from .env and every LLM step (intake trim-verify,
- *     dealer_reply_extract, negotiation drafts) talks to the real provider.
+ *     loads DEEPSEEK_API_KEY from .env and every LLM step (intake freeform prefill
+ *     / trim lookup, dealer_reply_extract, negotiation drafts) talks to the real
+ *     provider.
  *   - The geocoder is a query-HONORING fixture map (resolveLocation → the metro
  *     allowlist's real coords): the Places key has no Geocoding entitlement (a
  *     live geocode blocks) and the 巡检 stays hermetic, yet ANY allowlist city

@@ -264,7 +264,7 @@ function CanvasFeed({
   const next: string[] =
     dealerCount === null || dealerCount === 0
       ? ["Find dealers near you to get started."]
-      : ["Quotes land here as the email pipeline skills come online."];
+      : ["Quotes land here as dealers reply."];
 
   return (
     <section className="card feed" data-testid="canvas-feed">

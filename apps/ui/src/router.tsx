@@ -1,10 +1,10 @@
 /**
- * router — a tiny hand-rolled client-side router (two real routes + a
- * placeholder). Three route shapes only — home '/', run view '/runs/:id',
- * profile '/profiles/:id' — with no nested routing, no loaders, and no data
- * APIs. We do NOT pull in react-router-dom (a real runtime dependency) for three
- * static patterns: a ~50-line History-API matcher is less code than the
- * library's setup and has zero new deps. It exposes a `useRoute()` hook
+ * router — a tiny hand-rolled client-side router. Seven flat route shapes —
+ * home '/', run view '/runs/:id', profile '/profiles/:id', settings, digest,
+ * portfolio, and a not_found fallback — with no nested routing, no loaders, and
+ * no data APIs. We do NOT pull in react-router-dom (a real runtime dependency)
+ * for a handful of static patterns: a ~50-line History-API matcher is less code
+ * than the library's setup and has zero new deps. It exposes a `useRoute()` hook
  * (re-renders on popstate + programmatic navigate) and a `navigate(path)`
  * helper.
  *

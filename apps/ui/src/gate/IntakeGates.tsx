@@ -28,7 +28,6 @@ import type { GateModel, LocationCandidate } from "../intake/gateModel.js";
 export type ResumeContent = Record<string, unknown>;
 
 export interface GateProps {
-  decisionId: string;
   submitting: boolean;
   /** action 'accept' with the typed resume content (mapped to a resume schema). */
   onResume: (content: ResumeContent) => void;

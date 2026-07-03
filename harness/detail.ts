@@ -27,7 +27,7 @@
  * call, no @mastra/@ai-sdk/playwright import.
  */
 
-import type { HarnessDriverKind } from "@autobroker/core";
+import { TERMINAL_EVENT_KINDS, type HarnessDriverKind } from "@autobroker/core";
 
 /** One SSE frame, mirroring the backend SseEvent shape (runPubSub.ts). */
 export interface SseEnvelope {
@@ -68,9 +68,9 @@ export interface RunDetail {
 /** SSE kinds that count as an approval/HITL gate render (approval_gate anchor). */
 const APPROVAL_KINDS = new Set(["awaiting_user", "awaiting_permission", "approval_required"]);
 
-/** Terminal WIRE kinds (runPubSub TERMINAL_EVENT_KINDS). `declined` is NOT here —
+/** Terminal WIRE kinds (core TERMINAL_EVENT_KINDS). `declined` is NOT here —
  *  it is a status projection of an `aborted{user_declined}` frame. */
-const TERMINAL_WIRE_KINDS = new Set(["done", "error", "aborted"]);
+const TERMINAL_WIRE_KINDS = new Set<string>(TERMINAL_EVENT_KINDS);
 
 /** A browser.* frame or a tool_call whose name matches a browser driver (browser_activity anchor). */
 function isBrowserEvent(ev: SseEnvelope): boolean {

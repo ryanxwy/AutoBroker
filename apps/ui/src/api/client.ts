@@ -540,7 +540,7 @@ export class ApiClient {
     return decode(res, KeyProbeResultSchema);
   }
 
-  // ---- settings / environment (curated env vars; read-write the 2 editable) --
+  // ---- settings / environment (curated env vars; read-write the 4 editable) --
 
   /** GET /api/settings/env → the whole curated set { vars: EnvVarState[] } (the
    *  editable values + the read-only status/path rows). */
@@ -551,7 +551,7 @@ export class ApiClient {
 
   /** PUT /api/settings/env → { ok:true, vars } on a stored value. Sets ONE
    *  editable var + the live env so the next run sees it (no restart), mirroring
-   *  saveKey. The read-only ids (block_external_mutations / paths) are rejected.
+   *  saveKey. The read-only ids (demo_seed / data_dir / db_path) are rejected.
    *  The refreshed `vars` echo is decoded (and discarded) — callers refetch. */
   async setEnvConfig(id: EnvEditableId, value: string): Promise<void> {
     const res = await this.fetchImpl(this.url("/api/settings/env"), {

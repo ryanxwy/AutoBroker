@@ -30,6 +30,7 @@ import {
   buildFormDecisionContent,
   fieldsForSection,
   REQUIRED_FIELD_NAMES,
+  requiredCompleteCount,
   SECTION_ORDER,
   validateField,
   type FieldDescriptor,
@@ -104,9 +105,7 @@ export function SchemaForm({
     setTouched((t) => (t.has(name) ? t : new Set(t).add(name)));
   };
 
-  const completeCount = REQUIRED_FIELD_NAMES.filter(
-    (n) => validateField(n, values[n]) === null,
-  ).length;
+  const completeCount = requiredCompleteCount(values);
   const canSubmit = allRequiredValid(values) && !submitting;
 
   const handleSubmit = (e: React.FormEvent): void => {

@@ -304,20 +304,20 @@ export function __resetRouteClassifierForTests(): void {
 type SuggestFn = (ctx: SuggestContext) => Promise<SkillSuggestion[] | null>;
 
 /** Whether the conversation-aware re-rank should NOT make a real model call.
- *  TRUE in the deterministic UI lanes — the functional lane (AUTOBROKER_HARNESS
- *  / fixture, set by serverHost) and the e2e/serve.mjs lane (an obviously-fake
- *  DeepSeek key) — so they make ZERO provider calls. FALSE in serve-live and
- *  buyer (a real key, no harness sentinel), where the model fires. NOTE we do
- *  NOT key off NODE_ENV: serve-live sets NODE_ENV=test yet IS the live lane. */
+ *  TRUE in the deterministic UI lane — the functional lane (AUTOBROKER_HARNESS
+ *  / fixture, set by serverHost, booted with an obviously-fake DeepSeek key) —
+ *  so it makes ZERO provider calls. FALSE in serve-live and buyer (a real key,
+ *  no harness sentinel), where the model fires. NOTE we do NOT key off NODE_ENV:
+ *  serve-live sets NODE_ENV=test yet IS the live lane. */
 function suggestionsDisabled(): boolean {
   if (process.env["AUTOBROKER_HARNESS"] === "1" || process.env["AUTOBROKER_HARNESS_FIXTURE"] === "1") {
     return true;
   }
   const key = (process.env["DEEPSEEK_API_KEY"] ?? "").trim();
-  // The deterministic lanes use an obviously-fake key (serve.mjs → "e2e-dummy-
-  // not-used", the func lane → "functional-dummy-not-used"); both carry "dummy".
-  // A real DeepSeek key (sk-… hex) never matches, so this is a safe secondary
-  // gate behind the AUTOBROKER_HARNESS sentinel above.
+  // The deterministic functional lane uses an obviously-fake key
+  // (DEEPSEEK_API_KEY="functional-dummy-not-used", carrying "dummy"). A real
+  // DeepSeek key (sk-… hex) never matches, so this is a safe secondary gate
+  // behind the AUTOBROKER_HARNESS sentinel above.
   return key === "" || /dummy|not[-_]?used/i.test(key);
 }
 

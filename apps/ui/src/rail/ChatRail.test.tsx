@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { ChatRail } from "./ChatRail.js";
 import { ApiClient } from "../api/client.js";
 import { EMPTY_BROWSER_VIEW } from "../chat/browserView.js";
+import type { TurnView } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
 import { render } from "../test/render.js";
 
@@ -186,6 +187,85 @@ describe("ChatRail — SOFT-BLOCK: composer locked while a run is in flight", ()
   it("leaves the textarea live once the run is terminal (runActive === false)", () => {
     const r = renderRunActive(false);
     expect((r.get("chat-input-textarea") as HTMLTextAreaElement).disabled).toBe(false);
+    r.unmount();
+  });
+});
+
+/** An assistant turn parked on a gate of the given kind (spec_inline.kind). */
+function gateTurn(gateKind: string): TurnView {
+  return {
+    kind: "assistant",
+    id: "run-1",
+    turn: {
+      runId: "run-1",
+      skill: "search_profile_intake",
+      status: "awaiting_approval",
+      text: "",
+      milestones: [],
+      currentActivity: null,
+      driverKind: null,
+      awaitingUser: { decisionId: "d-1", formKind: null, step: "collect", specInline: { kind: gateKind } },
+      error: null,
+      errorName: null,
+      errorCode: null,
+      resolution: null,
+      suggestedSkill: null,
+    },
+  };
+}
+
+/** Render with a gate parked on the active run and a decision error set. */
+function renderGateError(gateKind: string) {
+  const decisionErr: DecisionController = {
+    submitting: false,
+    decisionError: "gate_conflict: another decision already landed",
+    decide: () => {},
+  };
+  return render(
+    <ChatRail
+      title="Search"
+      turns={[gateTurn(gateKind)]}
+      activeRunId="run-1"
+      runActive={true}
+      browserView={EMPTY_BROWSER_VIEW}
+      decision={decisionErr}
+      knownSkills={["search_profile_intake"]}
+      client={new ApiClient()}
+      scopeNotice={null}
+      pinnedProfileId={null}
+      pinLabel={null}
+      pinZip={null}
+      currentSessionId={null}
+      skills={[]}
+      hasActiveProfile={false}
+      deepseekReady={true}
+      agentSelection={{ provider: "deepseek", method: "apikey", model: "deepseek-v4-flash", effort: "off" }}
+      agentPresence={{ deepseek: true, anthropic: true, claudeOauth: true }}
+      onAgentChange={() => {}}
+      onSlash={() => {}}
+      onFreeform={() => {}}
+      onUnpin={() => {}}
+      onPin={() => {}}
+      onViewProfile={() => {}}
+      onStartIntake={() => {}}
+      onStopPick={() => {}}
+      onSelectSession={() => {}}
+      onRunSkill={() => {}}
+      onRunSuggested={() => {}}
+    />,
+  );
+}
+
+describe("ChatRail — rail-level decision error de-duplicates the per-card error", () => {
+  it("SUPPRESSES the rail-level error when a batch_review gate is active (GateCardSwitch owns it)", () => {
+    const r = renderGateError("batch_review");
+    expect(r.query("decision-error")).toBeNull();
+    r.unmount();
+  });
+
+  it("SHOWS the rail-level error for an intake-family gate (no per-card error surface)", () => {
+    const r = renderGateError("intake_confirm");
+    expect(r.query("decision-error")).not.toBeNull();
     r.unmount();
   });
 });

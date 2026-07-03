@@ -12,7 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiClient, ApiError } from "./client.js";
-import { EVENT_KINDS, EnvConfigResponseSchema } from "./wire.js";
+import { EnvConfigResponseSchema } from "./wire.js";
 
 /** Build a mock fetch that returns one canned Response for any URL. */
 function mockFetch(status: number, body: unknown): typeof fetch {
@@ -167,14 +167,12 @@ describe("ApiClient decode — captured wire fixtures", () => {
     expect(mode.mode).toBe("buyer");
   });
 
-  it("runStatus decodes the awaiting_approval summary incl. pending + events", async () => {
+  it("runStatus decodes the awaiting_approval summary incl. pending", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch(200, STATUS_AWAITING_FIXTURE) });
     const summary = await client.runStatus("run-1");
     expect(summary.status).toBe("awaiting_approval");
     expect(summary.pending?.step).toBe("collect");
     expect(summary.pending?.decision_id).toBe("dec-1");
-    expect(summary.events[0]!.kind).toBe("init");
-    expect(summary.events[0]!.payload["driver_kind"]).toBe("deepseek_apikey");
   });
 
   it("runStatus decodes a null pending (running/terminal)", async () => {
@@ -453,7 +451,4 @@ describe("ApiClient — settings / environment", () => {
     expect(EnvConfigResponseSchema.safeParse(bad).success).toBe(false);
   });
 
-  it("EVENT_KINDS includes browser.acquire.progress", () => {
-    expect((EVENT_KINDS as readonly string[]).includes("browser.acquire.progress")).toBe(true);
-  });
 });

@@ -17,6 +17,7 @@ import type { IntakeScopeNotice, SkillManifest } from "../api/wire.js";
 import type { BrowserView } from "../chat/browserView.js";
 import type { TurnView } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
+import { gateTrack } from "../gate/gateTrack.js";
 import { HistoryIcon, PinIcon } from "../shell/icons.js";
 import { Popover } from "../shell/Popover.js";
 import { SearchPicker } from "../shell/SearchPicker.js";
@@ -127,6 +128,23 @@ export function ChatRail({
   // the last turn's skill if the last turn is an assistant run, else null.
   const lastTurn = turns[turns.length - 1];
   const lastSkill = lastTurn?.kind === "assistant" ? lastTurn.turn.skill : null;
+
+  // The rail-level decision error is the ONLY error surface for the IntakeForm
+  // family (rail-tracked, non-batch_review gates render no per-card error line).
+  // For the batch_review family (GateCardSwitch) and the banner-tracked approval/
+  // confirmation gates (GateBannerHost) the per-card error already shows — so
+  // suppress the rail-level duplicate there. Shown too when no gate is pending
+  // (the decisionId-less "nothing to respond to" fallback).
+  const activeTurn = turns.find(
+    (t): t is Extract<TurnView, { kind: "assistant" }> => t.kind === "assistant" && t.id === activeRunId,
+  );
+  const activeAwaiting = activeTurn?.turn.status === "awaiting_approval" ? activeTurn.turn.awaitingUser : null;
+  const activeGateKind =
+    typeof activeAwaiting?.specInline?.["kind"] === "string"
+      ? (activeAwaiting.specInline["kind"] as string)
+      : null;
+  const railErrorVisible =
+    activeAwaiting === null || (gateTrack(activeGateKind) === "rail" && activeGateKind !== "batch_review");
   return (
     <aside className="chat-rail" id="chat-rail" data-testid="chat-rail" aria-label="Conversation">
       <div className="rail-header">
@@ -245,7 +263,7 @@ export function ChatRail({
           ),
         )}
 
-        {decision.decisionError !== null && (
+        {decision.decisionError !== null && railErrorVisible && (
           <p className="danger-text" data-testid="decision-error" role="alert">
             {decision.decisionError}
           </p>
