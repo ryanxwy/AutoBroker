@@ -112,10 +112,10 @@ import {
   LeadApprovalResumeSchema,
   LeadApprovalSuspendSchema,
   LeadFormMapSchema,
-  profileStopCode,
 } from "./dealerWebLeadSubmitContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { envConcurrency } from "./inventorySiteScan.js";
+import { runWorkerPool, envConcurrency } from "./inventorySiteScan.js";
+import { resolvePinnedProfileRowOrStop } from "./profilePinShared.js";
 import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 export { DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID };
@@ -305,67 +305,39 @@ const SCOUT_CONCURRENCY = envConcurrency("AUTOBROKER_SCOUT_CONCURRENCY", 4);
 const SUBMIT_PER_DEALER_TIMEOUT_MS = 45_000;
 
 /**
- * A tiny inline bounded-concurrency map (no new dependency): run `fn` over `items`
- * with at most `limit` in flight, writing each result into a pre-sized array AT ITS
- * INPUT INDEX so the output order EXACTLY mirrors the input — completion order never
- * leaks into the result. A fixed pool of `limit` workers pulls the next free index
- * off a shared cursor; each worker awaits its task before taking another, so no more
- * than `limit` run concurrently.
- */
-export async function boundedConcurrentMap<T, R>(
-  items: ReadonlyArray<T>,
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    for (;;) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      results[index] = await fn(items[index]!, index);
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
-  await Promise.all(workers);
-  return results;
-}
-
-/**
  * The production scout boundary: ONE isolated read-only browser PER dealer
  * (named so trace files never collide), each scouted via scoutOneWithSession,
- * now run with bounded concurrency (SCOUT_CONCURRENCY) — see that constant for
- * why parallelizing the scout is safe. Output order mirrors input order so the
- * downstream batch stays deterministic. The whole browser tree tears down in
- * withBrowserContext's own finally. A throwing dealer degrades to a
+ * now run with bounded concurrency (SCOUT_CONCURRENCY) via the shared
+ * runWorkerPool — see that constant for why parallelizing the scout is safe.
+ * Output order mirrors input order (runWorkerPool writes each result at its input
+ * index) so the downstream batch stays deterministic. The whole browser tree
+ * tears down in withBrowserContext's own finally. A throwing dealer degrades to a
  * no-form/no-email outcome — it never kills the batch. Holds NO Approver and
  * reaches NO mutating face. Offline tests inject a stub through the deps seam.
  */
 async function scoutFormsImpl(args: ScoutFormsArgs): Promise<ScoutOutcome[]> {
-  const outcomes = await boundedConcurrentMap(
-    args.dealers,
-    SCOUT_CONCURRENCY,
-    (dealer) =>
-      withBrowserContext(
-        `${args.runId}-leadscout-${dealer.dealerId}`,
-        { emitter: args.emitter },
-        (session) => scoutOneWithSession({ session, emitter: args.emitter, dealer }),
-      ).catch(
-        // Per-dealer isolation: a dead scout is a no-form/no-email outcome (it is
-        // dropped as unreachable downstream), never a batch-killing throw.
-        (): ScoutOutcome => ({
-          dealerId: dealer.dealerId,
-          name: dealer.name,
-          website: dealer.website,
-          form: null,
-          platform: "custom",
-          fieldMap: null,
-          formSnapshot: null,
-          contactEmail: null,
-          captcha: false,
-        }),
-      ),
-  );
+  const outcomes = await runWorkerPool(SCOUT_CONCURRENCY, args.dealers.length, (i) => {
+    const dealer = args.dealers[i]!;
+    return withBrowserContext(
+      `${args.runId}-leadscout-${dealer.dealerId}`,
+      { emitter: args.emitter },
+      (session) => scoutOneWithSession({ session, emitter: args.emitter, dealer }),
+    ).catch(
+      // Per-dealer isolation: a dead scout is a no-form/no-email outcome (it is
+      // dropped as unreachable downstream), never a batch-killing throw.
+      (): ScoutOutcome => ({
+        dealerId: dealer.dealerId,
+        name: dealer.name,
+        website: dealer.website,
+        form: null,
+        platform: "custom",
+        fieldMap: null,
+        formSnapshot: null,
+        contactEmail: null,
+        captcha: false,
+      }),
+    );
+  });
   // Progress signal: a single end-of-scout summary so the UI turn shows that the
   // (now-parallel) pre-gate scout actually ran, instead of sitting on "RUNNING".
   // Same emitter channel as scout_probe_blocked / scout_captcha_form above.
@@ -768,13 +740,6 @@ function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
 }
 
-/** "2026 Hyundai Tucson SEL"-style label for ask/pin stops. */
-function rowVehicleLabel(row: Record<string, unknown>): string {
-  return [row["year"], row["make"], row["model"], row["trim"]]
-    .filter((x) => x !== null && x !== undefined && x !== "")
-    .join(" ");
-}
-
 /** The minimal LeadPayloadProfile from the threaded message profile + email. */
 function payloadProfileOf(state: LeadSubmitState): LeadPayloadProfile {
   return {
@@ -856,37 +821,20 @@ const resolveProfileStep = createStep({
       // Full-batch mode: EXPLICIT-PIN REQUIRED (this skill never infers, not even
       // the single-active case — that is the thin edge of "pick newest" it must
       // not take). A pin-less input STOPs by the generalized classifier.
-      if (inputData.search_profile_id === null) {
-        const active = withDb((db) => deps().listActiveProfiles(db));
-        const code = profileStopCode(active.length);
-        if (code === "no_active_profile") {
-          throw new DealerWebLeadSubmitStopError(
-            "no_active_profile",
-            "No active search profile found — dealer_web_lead_submit needs one to " +
-              "know which dealers to submit leads to. Run /search_profile_intake to " +
-              "create a profile, then re-run /dealer_web_lead_submit.",
-          );
-        }
-        const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
-        throw new DealerWebLeadSubmitStopError(
-          code, // pin_required (1 active) | multiple_active_profiles (2+)
-          `Pin a search first: ${labels}. dealer_web_lead_submit only submits leads ` +
-            "for a search you have explicitly pinned — pick one from the Searches " +
-            "list, then re-run /dealer_web_lead_submit.",
-        );
-      }
-      // A supplied pin must still be active; a stale/closed/missing pin is rejected.
-      const resolved = withDb((db) =>
-        deps().resolveProfile(db, { threadPin: inputData.search_profile_id! }),
-      );
-      if (resolved.kind !== "pinned") {
-        throw new DealerWebLeadSubmitStopError(
-          "pin_required",
-          "That pinned search is no longer active. Pick an active search from the " +
-            "Searches list and re-run /dealer_web_lead_submit.",
-        );
-      }
-      profileRow = withDb((db) => deps().readProfileById(db, resolved.profile.id));
+      const d = deps();
+      profileRow = resolvePinnedProfileRowOrStop({
+        withDb,
+        resolvers: {
+          listActiveProfiles: d.listActiveProfiles,
+          resolveProfile: d.resolveProfile,
+          readProfileById: d.readProfileById,
+        },
+        pin: inputData.search_profile_id,
+        skillSlash: "/dealer_web_lead_submit",
+        purposeClause: "dealers to submit leads to",
+        pinClause: "submits leads for a search you have explicitly pinned",
+        makeError: (code, message) => new DealerWebLeadSubmitStopError(code, message),
+      }).row;
     }
 
     const row = profileRow ?? {};

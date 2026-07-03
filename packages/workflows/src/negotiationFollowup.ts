@@ -99,12 +99,12 @@ import {
   NegotiationFollowupInputSchema,
   NegotiationFollowupOutputSchema,
   NegotiationFollowupStopError,
-  profileStopCode,
   SevenDaySilenceError,
   FollowupCapError,
   type FollowupTone,
 } from "./negotiationFollowupContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { resolvePinnedProfileRowOrStop, rowVehicleLabel } from "./profilePinShared.js";
 
 export { NEGOTIATION_FOLLOWUP_WORKFLOW_ID };
 
@@ -387,13 +387,6 @@ function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
 }
 
-/** "2026 Hyundai Tucson SEL"-style label for ask/pin stops + the prompt vehicle. */
-function rowVehicleLabel(row: Record<string, unknown>): string {
-  return [row["year"], row["make"], row["model"], row["trim"]]
-    .filter((x) => x !== null && x !== undefined && x !== "")
-    .join(" ");
-}
-
 /** The TRUNCATED first-line preview of a draft (≤120 chars) — small payload only;
  *  the full body is asserted from the DB on send, never carried in the suspend. */
 function firstLinePreview(body: string): string {
@@ -413,41 +406,24 @@ const resolveProfileStep = createStep({
     // EXPLICIT-PIN REQUIRED (this skill never infers, not even the single-active
     // case). A pin-less input STOPs by the generalized classifier. thread_id mode
     // still requires a pinned profile — the named thread must live under the pin.
-    if (inputData.search_profile_id === null) {
-      const active = withDb((db) => deps().listActiveProfiles(db));
-      const code = profileStopCode(active.length);
-      if (code === "no_active_profile") {
-        throw new NegotiationFollowupStopError(
-          "no_active_profile",
-          "No active search profile found — negotiation_followup needs one to know " +
-            "which dealer threads to follow up. Run /search_profile_intake to create " +
-            "a profile, then re-run /negotiation_followup.",
-        );
-      }
-      const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
-      throw new NegotiationFollowupStopError(
-        code, // pin_required (1 active) | multiple_active_profiles (2+)
-        `Pin a search first: ${labels}. negotiation_followup only follows up threads ` +
-          "for a search you have explicitly pinned — pick one from the Searches list, " +
-          "then re-run /negotiation_followup.",
-      );
-    }
+    const d = deps();
+    const { row: profileRow, profileId } = resolvePinnedProfileRowOrStop({
+      withDb,
+      resolvers: {
+        listActiveProfiles: d.listActiveProfiles,
+        resolveProfile: d.resolveProfile,
+        readProfileById: d.readProfileById,
+      },
+      pin: inputData.search_profile_id,
+      skillSlash: "/negotiation_followup",
+      purposeClause: "dealer threads to follow up",
+      pinClause: "follows up threads for a search you have explicitly pinned",
+      makeError: (code, message) => new NegotiationFollowupStopError(code, message),
+    });
 
-    // A supplied pin must still be active; a stale/closed/missing pin is rejected.
-    const resolved = withDb((db) =>
-      deps().resolveProfile(db, { threadPin: inputData.search_profile_id! }),
-    );
-    if (resolved.kind !== "pinned") {
-      throw new NegotiationFollowupStopError(
-        "pin_required",
-        "That pinned search is no longer active. Pick an active search from the " +
-          "Searches list and re-run /negotiation_followup.",
-      );
-    }
-
-    const row = withDb((db) => deps().readProfileById(db, resolved.profile.id)) ?? {};
+    const row = profileRow ?? {};
     return {
-      searchProfileId: String(row["search_profile_id"] ?? resolved.profile.id),
+      searchProfileId: String(row["search_profile_id"] ?? profileId),
       vehicle: rowVehicleLabel(row) || "vehicle",
       // The buyer's reply address — the follow-up is sent FROM the buyer (nullable).
       followUpEmail:

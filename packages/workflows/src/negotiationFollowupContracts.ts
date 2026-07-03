@@ -23,6 +23,7 @@
 import { z } from "zod";
 
 import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./batchReviewContracts.js";
+import type { ProfilePinStopCode } from "./profilePinShared.js";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -68,10 +69,8 @@ export type NegotiationFollowupOutput = z.infer<typeof NegotiationFollowupOutput
 // typed STOP codes (pin-required skill) + the generalized classifier
 // ---------------------------------------------------------------------------
 
-export type NegotiationFollowupStopCode =
-  | "pin_required"
-  | "no_active_profile"
-  | "multiple_active_profiles";
+/** This skill's STOP vocabulary is exactly the shared pin-required set. */
+export type NegotiationFollowupStopCode = ProfilePinStopCode;
 
 /** Typed STOP from the resolve step. The message is the user-facing wording —
  *  the server surfaces it verbatim on the run's error frame. */
@@ -84,18 +83,8 @@ export class NegotiationFollowupStopError extends Error {
   }
 }
 
-/**
- * The generalized profile-STOP classifier for a pin-less input. 0 active →
- * no_active_profile (point at intake CTA); exactly 1 active → pin_required (one
- * active is still not silently run — the user must explicitly pin); 2+ active →
- * multiple_active_profiles (ask by vehicle name). Returns the typed code only;
- * the resolve step supplies the wording.
- */
-export function profileStopCode(activeCount: number): NegotiationFollowupStopCode {
-  if (activeCount <= 0) return "no_active_profile";
-  if (activeCount === 1) return "pin_required";
-  return "multiple_active_profiles";
-}
+/** The generalized profile-STOP classifier (shared across the 3 send skills). */
+export { profileStopCode } from "./profilePinShared.js";
 
 // ---------------------------------------------------------------------------
 // TOOL PRECONDITION errors — thrown ONLY in single-thread (thread_id) mode

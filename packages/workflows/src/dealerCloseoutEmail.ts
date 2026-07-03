@@ -79,8 +79,8 @@ import {
   DealerCloseoutEmailInputSchema,
   DealerCloseoutEmailOutputSchema,
   DealerCloseoutEmailStopError,
-  profileStopCode,
 } from "./dealerCloseoutEmailContracts.js";
+import { resolvePinnedProfileRowOrStop } from "./profilePinShared.js";
 
 export { DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID };
 
@@ -241,13 +241,6 @@ function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
 }
 
-/** "2026 Hyundai Tucson"-style label for the ask/pin stops. */
-function rowVehicleLabel(row: Record<string, unknown>): string {
-  return [row["year"], row["make"], row["model"], row["trim"]]
-    .filter((x) => x !== null && x !== undefined && x !== "")
-    .join(" ");
-}
-
 /** Map the tool's CloseoutTarget into the threaded state shape (snapshot-safe). */
 function targetStateFrom(t: CloseoutTarget): CloseoutTargetState {
   return {
@@ -286,42 +279,25 @@ const resolveProfileStep = createStep({
     // EXPLICIT-PIN REQUIRED (this skill never infers, not even the single-active
     // case — that is the thin edge of "pick newest" an exit skill must not take).
     // A pin-less input STOPs by the generalized classifier.
-    if (inputData.search_profile_id === null) {
-      const active = withDb((db) => deps().listActiveProfiles(db));
-      const code = profileStopCode(active.length);
-      if (code === "no_active_profile") {
-        throw new DealerCloseoutEmailStopError(
-          "no_active_profile",
-          "No active search profile found — dealer_closeout_email needs one to know " +
-            "which dealers to close out. Run /search_profile_intake to create a " +
-            "profile, then re-run /dealer_closeout_email.",
-        );
-      }
-      const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
-      throw new DealerCloseoutEmailStopError(
-        code, // pin_required (1 active) | multiple_active_profiles (2+)
-        `Pin a search first: ${labels}. dealer_closeout_email only closes out a search ` +
-          "you have explicitly pinned — pick one from the Searches list, then re-run " +
-          "/dealer_closeout_email.",
-      );
-    }
+    const d = deps();
+    const { row: profileRow, profileId } = resolvePinnedProfileRowOrStop({
+      withDb,
+      resolvers: {
+        listActiveProfiles: d.listActiveProfiles,
+        resolveProfile: d.resolveProfile,
+        readProfileById: d.readProfileById,
+      },
+      pin: inputData.search_profile_id,
+      skillSlash: "/dealer_closeout_email",
+      purposeClause: "dealers to close out",
+      pinClause: "closes out a search you have explicitly pinned",
+      makeError: (code, message) => new DealerCloseoutEmailStopError(code, message),
+    });
 
-    // A supplied pin must still be active; a stale/closed/missing pin is rejected.
-    const resolved = withDb((db) =>
-      deps().resolveProfile(db, { threadPin: inputData.search_profile_id! }),
-    );
-    if (resolved.kind !== "pinned") {
-      throw new DealerCloseoutEmailStopError(
-        "pin_required",
-        "That pinned search is no longer active. Pick an active search from the " +
-          "Searches list and re-run /dealer_closeout_email.",
-      );
-    }
-
-    const row = withDb((db) => deps().readProfileById(db, resolved.profile.id)) ?? {};
+    const row = profileRow ?? {};
     const yearRaw = row["year"];
     return {
-      searchProfileId: String(row["search_profile_id"] ?? resolved.profile.id),
+      searchProfileId: String(row["search_profile_id"] ?? profileId),
       messageProfile: {
         year: typeof yearRaw === "number" ? yearRaw : null,
         make: typeof row["make"] === "string" ? (row["make"] as string) : null,
