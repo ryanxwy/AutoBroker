@@ -1,43 +1,13 @@
 /**
- * policy() routing — the four shared malformed-class recovery hops, plus
- * policyForAlias() and withProvider() helper coverage.
- *
- * Each *_retry useCase must route to the `deepseek.strong` alias on the deepseek
- * provider: the recoverEmitWithRetry helper asserts the provider is deepseek
- * (same-provider, privacy-clean — no cross-provider egress), so this binding is
- * load-bearing for the closure.
+ * policy() routing — policyForAlias() and withProvider() helper coverage plus the
+ * ALIAS_MODEL_ID ↔ registry sync guard.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { ALIAS_MODEL_ID, aliasForModelId, policy, policyForAlias, withProvider } from "./policy.js";
-import type { UseCase } from "./policy.js";
 import { registry } from "./registry.js";
 import type { ModelAlias } from "@autobroker/core";
-
-const RETRY_USE_CASES: UseCase[] = [
-  "geosearch_extract_retry",
-  "inventory_extract_retry",
-  "incentive_extract_retry",
-  "lead_form_map_retry",
-];
-
-describe("policy() — malformed-class recovery routes", () => {
-  it.each(RETRY_USE_CASES)(
-    "%s routes to deepseek.strong on the deepseek provider",
-    (useCase) => {
-      const resolved = policy(useCase);
-      expect(resolved.alias).toBe("deepseek.strong");
-      expect(resolved.provider).toBe("deepseek");
-    },
-  );
-
-  it("the original dealer_reply_extract_retry still routes to deepseek.strong", () => {
-    const resolved = policy("dealer_reply_extract_retry");
-    expect(resolved.alias).toBe("deepseek.strong");
-    expect(resolved.provider).toBe("deepseek");
-  });
-});
 
 describe("policyForAlias()", () => {
   it("resolves anthropic.chat → provider anthropic + supportsOutputObjectWithTools true", () => {

@@ -25,11 +25,9 @@
  *                      eligible; a no-form dealer with a contact email is an
  *                      email-fallback candidate.
  *   1b scoutMapCustom — the ONLY LLM step: a single emit_result field-map for
- *                      Custom-platform forms (hitlAvailable:false → a malformed
- *                      first hop is retried ONCE on the lead_form_map_retry lane
- *                      via recoverEmitWithRetry, else fail-closes as a thrown
- *                      MalformedToolCallAbort, never a prose fallthrough). Known
- *                      platforms skip it.
+ *                      Custom-platform forms (fail-closes as a thrown
+ *                      EmitResultNotCalledError when the tool never fires, never a
+ *                      prose fallthrough). Known platforms skip it.
  *   2 buildPayloads — buildLeadPayload (fake phone LOCKED, budget redacted,
  *                      consent CHECKED, sms_optin OMITTED) + the duplicate-skip /
  *                      force_retry precondition (a prior submitted row → skip,
@@ -61,10 +59,8 @@
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/tools
  * (resolver + dealer-row read + the scout + the gated browser session +
- * recordSubmission + sendAndRecord — the ONLY DB/side-effect paths), this
- * layer's harness facade + the skill contracts, and the recoverEmitWithRetry
- * recovery helper (which owns the @autobroker/model contact for the
- * malformed-class retry hop).
+ * recordSubmission + sendAndRecord — the ONLY DB/side-effect paths), and this
+ * layer's harness facade + the skill contracts.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -119,7 +115,6 @@ import {
 import { harness, type HarnessLedgerContext } from "./harness.js";
 import { runWorkerPool, envConcurrency } from "./inventorySiteScan.js";
 import { resolvePinnedProfileRowOrStop } from "./profilePinShared.js";
-import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 export { DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID };
 
@@ -1010,20 +1005,14 @@ const scoutMapCustomStep = createStep({
         continue;
       }
 
-      const result = await recoverEmitWithRetry({
-        harnessGenerate: deps().harnessGenerate,
-        input: {
+      const result = await deps().harnessGenerate(
+        {
           useCase: "lead_form_map",
           schema: LeadFormMapSchema,
           prompt: buildLeadFormMapPrompt(dealer.form_snapshot),
-          // FAIL-CLOSED: a malformed tool call retries ONCE on the strong+
-          // thinking lane, else fail-closes (never a prose fallthrough, never a
-          // regexed-out tool call).
-          hitlAvailable: false,
         },
-        retryUseCase: "lead_form_map_retry",
-        ledger: leadSubmitLedger(runId),
-      });
+        leadSubmitLedger(runId),
+      );
       const map = LeadFormMapSchema.parse(result.object); // Zod post-validate.
       mapped.push({
         ...dealer,

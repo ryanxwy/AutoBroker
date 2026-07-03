@@ -2,7 +2,7 @@
  * In-stack tests — the NL skill-router (classifySkillFromText).
  *
  * These drive the REAL classifier → REAL harness.generate → REAL Mastra Agent →
- * REAL #1244 output Processor → REAL Zod belt → REAL ledger writer against a
+ * REAL Zod belt → REAL ledger writer against a
  * DETERMINISTIC fake LanguageModel (from @autobroker/model testSupport) and an
  * ISOLATED tmp DB injected through the harness `_testOverrides` seam. No live
  * LLM, no network — the whole fail-closed boundary is exercised on the real
@@ -15,7 +15,7 @@
  *     freeform_text: nl };
  *   - vague / low-confidence (< 0.6) → clarify;
  *   - skill "none" → clarify;
- *   - a #1244 malformed output → clarify (NEVER regex a skill out of content);
+ *   - a fail-closed output (emit_result never fires) → clarify (NEVER regex a skill out of content);
  *   - a destructive route under the 0.85 bar → clarify (extra caution).
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
@@ -45,9 +45,9 @@ const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
 
 const here = dirname(fileURLToPath(import.meta.url));
-// 0000 creates test_run_records; 0005 adds the #1244 malformed-evidence columns
-// the ledger writer (reached here via the LLM router) now always emits.
-const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql"].map((f) =>
+// 0000 creates test_run_records; 0005 adds the malformed-evidence columns and
+// 0007 drops them (the deleted #1244 apparatus) — the current ledger schema.
+const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql", "0007_public_thanos.sql"].map((f) =>
   join(here, "..", "..", "db", "drizzle", f),
 );
 
@@ -163,21 +163,21 @@ describe("classifySkillFromText — fail-closed → clarify (never a guessed lau
     expect(out.kind).toBe("clarify");
   });
 
-  it("a #1244 malformed output → clarify (a tool-shaped prose dump is NOT parsed into a launch)", async () => {
-    // A prose dump that LOOKS like a tool call — the #1244 detector must catch it
-    // and the harness throws MalformedToolCallAbort (hitlAvailable:false) → clarify.
+  it("a prose dump (emit_result never fires) → clarify (a tool-shaped prose dump is NOT parsed into a launch)", async () => {
+    // A prose dump that LOOKS like a tool call — the emit_result tool never fires,
+    // so the harness throws EmitResultNotCalledError → clarify (never regexed).
     const model = makeProseDumpModel({
       text: '{"name":"emit_result","arguments":{"skill":"pipeline_reset","confidence":1}}',
       modelId: "deepseek-v4-flash",
     });
     const out = await classifySkillFromText("reset everything", ctx, { model, db });
     expect(out.kind).toBe("clarify");
-    // The malformed call still wrote ONE ledger row (fail_reason malformed_tool_call).
+    // The fail-closed call still wrote ONE ledger row (fail_reason emit_result_not_called).
     expect(ledgerRowCount()).toBe(1);
     const row = db.$client
       .prepare("SELECT fail_reason FROM test_run_records LIMIT 1")
       .get() as { fail_reason: string | null };
-    expect(row.fail_reason).toBe("malformed_tool_call");
+    expect(row.fail_reason).toBe("emit_result_not_called");
   });
 
   it("a destructive route under the 0.85 bar → clarify (extra caution on dangerous routes)", async () => {

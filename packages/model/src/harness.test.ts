@@ -1,5 +1,5 @@
 /**
- * L1 unit tests — chooseStructuredOutputStrategy (the #1244 strategy gate).
+ * L1 unit tests — chooseStructuredOutputStrategy (the structured-output strategy gate).
  *
  * Freezes the pure decision (the layer-ownership decision): the model layer
  * picks emit_result vs output_object SOLELY from the capability flag
@@ -16,7 +16,7 @@ const baseCaps: CapabilityFlags = {
 };
 
 describe("chooseStructuredOutputStrategy", () => {
-  it("returns 'emit_result' when the model CANNOT mix object output + tools (DeepSeek/#1244)", () => {
+  it("returns 'emit_result' when the model CANNOT mix object output + tools (DeepSeek)", () => {
     expect(
       chooseStructuredOutputStrategy({
         ...baseCaps,

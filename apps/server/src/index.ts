@@ -58,7 +58,7 @@ export { catchUpDecision, mostRecentScheduledFire, type CatchUpDecision } from "
 // the functional-lane host injects a deterministic NL-route classifier so freeform
 // (chat_freeform) func cases exercise the POST /api/route → intake wiring WITHOUT a
 // live router LLM call. Keyless (as CI is) that call returns empty tool_calls and
-// trips the #1244 fail-closed abort before the gate renders, hanging the case.
+// trips the fail-closed abort before the gate renders, hanging the case.
 export { __setRouteClassifierForTests } from "./routes.js";
 
 /** Default bind: 127.0.0.1:8100 (the trust-boundary host). */

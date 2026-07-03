@@ -5,9 +5,9 @@
  * is the framework that drives that loop. `@mastra/*` may only be imported in
  * `@autobroker/workflows` (the five-layer wall), so the runnable facade — the
  * Mastra Agent loop end-to-end — lives HERE. `@autobroker/model` keeps only the
- * pure pieces and the signature types (HarnessGenerateInput/Result/Suspend,
- * chooseStructuredOutputStrategy, the #1244 detector, pricing, the
- * canonical-message translator); this file imports them and wires the loop.
+ * pure pieces and the signature types (HarnessGenerateInput/Result,
+ * chooseStructuredOutputStrategy, pricing, the canonical-message translator);
+ * this file imports them and wires the loop.
  *
  * CONTROL FLOW:
  *   1. policy(useCase) → alias + capabilities; resolveModel(alias) → LanguageModel
@@ -27,32 +27,21 @@
  *      thinking per-request. The real provider key is `@ai-sdk/deepseek`'s
  *      `deepseekLanguageModelOptions.thinking.type` = 'disabled' (confirmed in the
  *      .d.ts, not guessed).
- *   4. Construct a Mastra Agent and call agent.generate with
- *      outputProcessors:[malformedToolCallProcessor({hitlAvailable, expectsToolCall:()=>true})].
- *   4b/5. #1244 fail-closed. CRITICAL behavioral fact (live-probed against
- *      @mastra/core@1.41.0, offline fake-model probe 2026-06-04): a tripped
- *      output Processor does NOT reject agent.generate(); the Agent CATCHES the
- *      processor TripWire and RESOLVES the result with `result.tripwire`
- *      populated and `result.finishReason === 'tripwire'`. So we inspect the
- *      RESOLVED field — we do not try/catch a throw on this lane. When
- *      result.tripwire.metadata.reason === 'malformed_tool_call':
- *        hitlAvailable → return HarnessSuspend; no HITL → throw the typed
- *        MalformedToolCallAbort(signals). (The alternate workflow-step path DOES
- *        throw — that is not the path agent.generate takes.)
- *      Belt (stage 4b): if the run did NOT trip yet the emit_result capture is
- *      still empty, run the pure detector over the real finishReason /
- *      toolCallCount / final text — ledger first, then suspend or abort, NEVER
- *      fall through to prose (detect→ledger→act ordering).
- *   6. (Zod authority) the model output is advisory; input.schema is the
+ *   4. Construct a Mastra Agent and call agent.generate.
+ *   4b. Fail-closed: if the terminal emit_result tool never fired (no
+ *      tool-boundary validation rejection either), REFUSE to fall through to
+ *      prose — ledger `emit_result_not_called` and throw the typed
+ *      EmitResultNotCalledError. Never regex a tool name out of content.
+ *   5. (Zod authority) the model output is advisory; input.schema is the
  *      law. Mastra validates emit_result's args against that schema at the TOOL
  *      BOUNDARY before execute (live-probed) — a contract violation is recorded
  *      as a typed ValidationError in toolResults with finishReason still
- *      'tool-calls' (so #1244 correctly does NOT trip; a tool WAS called). The
- *      harness detects that rejection (Mastra's isValidationError guard, never a
- *      message string-match) and surfaces it as a ZodError, fail_reason
- *      'zod_validation'. On the success path it additionally re-runs
- *      input.schema.parse(captured) as defense-in-depth (same verdict on drift).
- *   7. (ledger) EVERY call — success AND every failure branch — writes
+ *      'tool-calls'. The harness detects that rejection (Mastra's
+ *      isValidationError guard, never a message string-match) and surfaces it as
+ *      a ZodError, fail_reason 'zod_validation'. On the success path it
+ *      additionally re-runs input.schema.parse(captured) as defense-in-depth
+ *      (same verdict on drift).
+ *   6. (ledger) EVERY call — success AND every failure branch — writes
  *      exactly ONE test_run_records row through @autobroker/tools'
  *      writeTestRunRecord (the single ledger write path; SQLite invariant).
  *      Cost is NULL-not-$0: usage missing → costUsd null + pricingSource
@@ -69,31 +58,36 @@
 
 import { Agent } from "@mastra/core/agent";
 import { createTool, isValidationError } from "@mastra/core/tools";
-import type { OutputProcessorOrWorkflow } from "@mastra/core/processors";
 import { z } from "zod";
 
 import {
   chooseStructuredOutputStrategy,
   claudeOAuthQuery,
   computeCostUsd,
-  detectMalformedToolCall,
-  MalformedToolCallAbort,
   policy,
-  redactMalformedSample,
   resolveModel,
   type HarnessGenerateInput,
   type HarnessGenerateResult,
-  type HarnessSuspend,
   type PolicyResolution,
   type UseCase,
 } from "@autobroker/model";
 import { llmLimiter, writeTestRunRecord, type Db, type TestRunRecordInsert } from "@autobroker/tools";
 
 import { applySelection, resolveSelectionForRun } from "./agentSelection.js";
-import {
-  malformedToolCallProcessor,
-  type MalformedToolCallTripMetadata,
-} from "./malformedToolCallProcessor.js";
+
+/**
+ * Typed fail-closed error thrown when the single `emit_result` tool never fired
+ * on the DeepSeek emit_result lane (no tool-boundary Zod rejection either). The
+ * harness refuses to fall through to prose or regex a tool name out of content;
+ * it lives HERE because the only thrower and only catcher are both in this
+ * package (harness throws it; router.ts maps it to `clarify`).
+ */
+export class EmitResultNotCalledError extends Error {
+  constructor(public readonly useCase: string) {
+    super(`emit_result tool was not called (useCase: ${useCase})`);
+    this.name = "EmitResultNotCalledError";
+  }
+}
 
 /** The Mastra `model` config slot, narrowed off the Agent constructor so the
  *  `unknown` fake/resolved model can be handed to `new Agent({ model })` without
@@ -129,45 +123,10 @@ export interface HarnessLedgerContext {
 const EMIT_RESULT_TOOL = "emit_result" as const;
 
 /**
- * The useCases that run the emit_result tool on the THINKING lane instead of the
- * default forced-emit lane: thinking ON + tool_choice:"auto" rather than thinking
- * DISABLED + a named/forced tool_choice. The members are the malformed-class
- * recovery hops (the *_retry useCases → deepseek-v4-pro WITH thinking).
- *
- * Why a separate lane: DeepSeek thinking mode REJECTS a named/forced tool_choice
- * ("Thinking mode does not support this tool_choice"), so an emit_result step
- * that wants the model to REASON first cannot force the tool. With tool_choice
- * "auto" the model reasons (thinking) then voluntarily calls the single
- * emit_result tool — structurally the same clean thinking-ON + auto lane the
- * chat/rail runs. The single-tool discipline, the #1244 fail-closed detector and
- * the Zod post-validation belt are IDENTICAL on both lanes; ONLY the toolChoice
- * + thinking switch differ.
- */
-export const THINKING_AUTO_EMIT_USE_CASES: ReadonlySet<UseCase> = new Set<UseCase>([
-  "dealer_reply_extract_retry",
-  "geosearch_extract_retry",
-  "inventory_extract_retry",
-  "incentive_extract_retry",
-  "lead_form_map_retry",
-]);
-
-/**
- * Per-useCase reasoning effort on the thinking-emit lane. The original
- * dealer_reply_extract_retry hop stays "high" (its dealer-reply extraction is the
- * heaviest schema). The shared-helper hops recover a SERIALIZATION defect, not a
- * reasoning-difficulty one, so they fall through to "medium" (the `?? "medium"`
- * at the call site). Adding a member here is the only way to raise a hop above
- * "medium".
- */
-export const THINKING_EMIT_EFFORT: Partial<Record<UseCase, "high" | "medium">> = {
-  dealer_reply_extract_retry: "high",
-};
-
-/**
  * Input to the PROSE facade `draftProse` — a strict subset of
- * HarnessGenerateInput with NO schema and NO hitlAvailable: a no-tool plain text
- * generation. The negotiation-follow-up draft step is the only caller; the tone
- * is decided in CODE and the prompt carries the chosen register.
+ * HarnessGenerateInput with NO schema: a no-tool plain text generation. The
+ * negotiation-follow-up draft step is the only caller; the tone is decided in
+ * CODE and the prompt carries the chosen register.
  */
 export interface DraftProseInput {
   /** Provider-neutral use-case; policy() maps it to a ModelAlias. */
@@ -233,7 +192,7 @@ export interface HarnessTestOverrides {
 }
 
 /** The per-write-site VARYING columns of one ledger row; the stable identity
- *  columns come from `ledger` + `route`. malformed* default to explicit NULL. */
+ *  columns come from `ledger` + `route`. */
 interface LedgerRowOverrides {
   costUsd: number | null;
   latencyMs: number;
@@ -243,8 +202,6 @@ interface LedgerRowOverrides {
   priceInputPerMtok: number | null;
   priceOutputPerMtok: number | null;
   failReason: string | null;
-  malformedSignals?: string | null;
-  malformedSample?: string | null;
 }
 
 /** Assemble the ONE common TestRunRecordInsert every write site shares. Route
@@ -271,10 +228,6 @@ function ledgerRow(
     promptVersion: ledger.promptVersion,
     schemaVersion: ledger.schemaVersion,
     failReason: overrides.failReason,
-    // #1244 evidence — only the malformed branch passes a payload (redacted at the
-    // call site, inv #9); every other row leaves both columns NULL.
-    malformedSignals: overrides.malformedSignals ?? null,
-    malformedSample: overrides.malformedSample ?? null,
   };
 }
 
@@ -290,17 +243,15 @@ interface CostCapture {
   completionTokens: number | null;
 }
 
-/** Build the per-run `writeLedger(failReason, malformed?)` closure shared by all
- *  three facades (the 3 byte-identical inline copies collapse here). The malformed
- *  branch is the only one that carries evidence: signals joined, sample
- *  redactMalformedSample'd (inv #9) BEFORE persist. */
+/** Build the per-run `writeLedger(failReason)` closure shared by all three
+ *  facades (the 3 byte-identical inline copies collapse here). */
 function makeWriteLedger(
   ledger: HarnessLedgerContext,
   route: PolicyResolution,
   cost: CostCapture,
   _testOverrides: HarnessTestOverrides | undefined,
-): (failReason: string | null, malformed?: { signals: ReadonlyArray<string>; text: string }) => void {
-  return (failReason, malformed) => {
+): (failReason: string | null) => void {
+  return (failReason) => {
     writeTestRunRecord(
       ledgerRow(ledger, route, {
         costUsd: cost.costUsd,
@@ -311,8 +262,6 @@ function makeWriteLedger(
         priceInputPerMtok: cost.priceInputPerMtok,
         priceOutputPerMtok: cost.priceOutputPerMtok,
         failReason,
-        malformedSignals: malformed ? malformed.signals.join(",") : null,
-        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
       }),
       ..._dbArg(_testOverrides),
     );
@@ -393,28 +342,20 @@ async function runLaneBOAuth<T>(
   };
 }
 
-/** Narrow a harness.generate result to the fail-closed HarnessSuspend branch
- *  (defensive — hitlAvailable:false should THROW, not suspend, but a suspend-shaped
- *  return is treated identically). The single shared copy for every skill + the
- *  recovery helper. */
-export function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
-}
-
 /**
  * Run one structured generation: resolve route → force the emit_result discipline
- * → drive the Mastra Agent through the #1244 fail-closed processor → assert the
- * tool turn (belt) → Zod-validate the captured args → price + write one ledger
- * row. Resolves to a Zod-validated object, or a HarnessSuspend (HITL fail-closed),
- * or throws MalformedToolCallAbort / ZodError (each recorded with its own
- * fail_reason). Dispatches to the native output_object path when the routed model
- * supports structured object output with tools (Anthropic / OpenAI).
+ * → drive the Mastra Agent → fail closed if the emit_result tool never fired →
+ * Zod-validate the captured args → price + write one ledger row. Resolves to a
+ * Zod-validated object, or throws EmitResultNotCalledError / ZodError (each
+ * recorded with its own fail_reason). Dispatches to the native output_object path
+ * when the routed model supports structured object output with tools (Anthropic /
+ * OpenAI).
  */
 async function generate<TSchema extends z.ZodTypeAny>(
   input: HarnessGenerateInput<TSchema>,
   ledger: HarnessLedgerContext,
   _testOverrides?: HarnessTestOverrides,
-): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
+): Promise<HarnessGenerateResult<z.infer<TSchema>>> {
   const startedAt = Date.now();
 
   // Test-seam guard (review F3, 2026-06-05): the override param is structurally
@@ -445,10 +386,9 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // Lane B — Claude OAuth via the official Agent SDK (subscription token). When
   // the run's selection is anthropic+oauth the api-key Mastra loop does NOT fire:
   // a single tool-disabled, min-env subprocess query serves the call (native
-  // outputFormat:json_schema → structured_output). Structurally exempt from #1244
-  // (no api-key tool loop; native structured output), so there is NO
-  // detector/recovery here — Zod `.parse` THROWS as the fail-closed belt. The
-  // model id is the concrete claude-* id behind the (re-homed) anthropic alias.
+  // outputFormat:json_schema → structured_output). No api-key tool loop here —
+  // Zod `.parse` THROWS as the fail-closed belt. The model id is the concrete
+  // claude-* id behind the (re-homed) anthropic alias.
   if (sel?.provider === "anthropic" && sel?.method === "oauth") {
     // Zod `.parse` inside the callback is the fail-closed belt; runLaneBOAuth owns
     // the ledger asymmetry (throw → 'unavailable'+failReason+rethrow; success →
@@ -514,30 +454,18 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // Stage 9 — prompt wrapped inline as a single user-role message.
   const messages = [{ role: "user" as const, content: input.prompt }];
 
-  // The thinking lane (the malformed-class recovery hop) reasons first, so the
-  // model must be free to think BEFORE the tool fires. The default lane forces
-  // the tool and disables thinking (a forced tool_choice is rejected in DeepSeek
-  // thinking mode). Both lanes bind the SAME single emit_result tool, run the
-  // SAME #1244 processor, and Zod-validate the SAME captured args — only the
-  // toolChoice + thinking switch differ.
-  const thinkingLane = THINKING_AUTO_EMIT_USE_CASES.has(input.useCase);
-
   const agent = new Agent({
     id: "harness-emit",
     name: "harness-emit",
-    instructions: thinkingLane
-      ? "Reason about the input, then produce the final result by calling the emit_result tool exactly once. Do not answer in prose."
-      : "You must produce the final result by calling the emit_result tool exactly once. Do not answer in prose.",
+    instructions:
+      "You must produce the final result by calling the emit_result tool exactly once. Do not answer in prose.",
     model: model as AgentModelConfig,
     tools: { [EMIT_RESULT_TOOL]: emitResult },
   });
 
-  // Stage 4 — the agent call. Default lane: force the emit_result discipline
-  // per-request (named tool_choice + DeepSeek thinking disabled). Thinking lane:
-  // tool_choice "auto" + thinking ENABLED (forced tool_choice is rejected in
-  // thinking mode); the model reasons then voluntarily calls emit_result. Both
-  // lanes keep temperature 0 and run the #1244 processor on every output step
-  // (expectsToolCall defaults to () => true) — fail-closed is identical.
+  // Stage 4 — the agent call. Force the emit_result discipline per-request (named
+  // tool_choice + DeepSeek thinking disabled — a forced tool_choice is rejected in
+  // DeepSeek thinking mode) at temperature 0.
   // Review F1 (2026-06-05): a THROW from the model call itself (provider 5xx,
   // transport failure, retry exhaustion) is a run that HAPPENED — record one
   // ledger row (usage unknown ⇒ NULL-not-$0) before propagating the error. If
@@ -545,38 +473,11 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // local faults and neither may be swallowed.
   const result = await agent
     .generate(messages, {
-      toolChoice: thinkingLane ? "auto" : { type: "tool", toolName: EMIT_RESULT_TOOL },
-      // The processor's `processOutputStep` is declared optional on the broad
-      // `Processor` interface but the agent's `OutputProcessor` slot wants it
-      // present; our processor always defines it (live-probed clean). Cast to the
-      // exact expected union — faithful, not an `any` escape.
-      outputProcessors: [
-        malformedToolCallProcessor({
-          hitlAvailable: input.hitlAvailable,
-        }) as OutputProcessorOrWorkflow<MalformedToolCallTripMetadata>,
-      ],
+      toolChoice: { type: "tool", toolName: EMIT_RESULT_TOOL },
       // DeepSeek per-request thinking switch — real provider keys from the .d.ts
-      // (deepseekLanguageModelOptions: thinking.type + reasoningEffort). Harmless
-      // on providers that ignore an unknown providerOptions namespace. The
-      // recovery hop turns thinking ON (its whole point is to reason past the
-      // serialization defect that failed the thinking-OFF first hop). reasoningEffort
-      // is per-useCase via THINKING_EMIT_EFFORT (dealer_reply_extract_retry stays
-      // "high"; the other recovery hops fall through to "medium").
-      //
-      // Cast note: Mastra vendors a NARROWER `@ai-sdk_deepseek-v5` provider-options
-      // type (reasoningEffort only "high"|"max") than the RESOLVED runtime provider
-      // @ai-sdk/deepseek@2.0.x, whose schema is the full low|medium|high|xhigh|max
-      // scale. "medium" is therefore runtime-valid (the resolved provider executes
-      // the call) but rejected by Mastra's stale compile-time slot — bridge the
-      // effort literal across that single stale union here.
-      providerOptions: thinkingLane
-        ? {
-            deepseek: {
-              thinking: { type: "enabled" },
-              reasoningEffort: (THINKING_EMIT_EFFORT[input.useCase] ?? "medium") as "high" | "max",
-            },
-          }
-        : { deepseek: { thinking: { type: "disabled" } } },
+      // (deepseekLanguageModelOptions.thinking.type). Harmless on providers that
+      // ignore an unknown providerOptions namespace.
+      providerOptions: { deepseek: { thinking: { type: "disabled" } } },
       modelSettings: { temperature: 0 },
     })
     .catch((err: unknown) => {
@@ -622,26 +523,13 @@ async function generate<TSchema extends z.ZodTypeAny>(
     _testOverrides,
   );
 
-  // Stage 4b/5 — #1244 fail-closed. A tripped processor RESOLVES with
-  // result.tripwire populated (live-probed; NOT a throw on this lane). The
-  // metadata IS our MalformedToolCallTripMetadata.
-  const trip = readMalformedTrip(result.tripwire);
-  if (trip !== null) {
-    writeLedger("malformed_tool_call", { signals: trip.signals, text: result.text ?? "" });
-    if (input.hitlAvailable) {
-      return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
-    }
-    throw new MalformedToolCallAbort(trip.signals);
-  }
-
   // Stage 5 — Zod authority (tool-boundary). Mastra validates emit_result's args
   // against input.schema BEFORE calling execute (live-probed). If the model's
   // args violate the contract, execute never captures and Mastra records a typed
-  // ValidationError in toolResults while finishReason stays 'tool-calls' (so the
-  // #1244 processor correctly does NOT trip — a tool WAS called). That rejection
-  // IS the Zod-authority failure ("hallucinated/invalid fields fail loud"); we
-  // surface it as a ZodError and ledger it 'zod_validation'. (model output is
-  // advisory; the schema is the law.)
+  // ValidationError in toolResults while finishReason stays 'tool-calls' (a tool
+  // WAS called). That rejection IS the Zod-authority failure ("hallucinated/
+  // invalid fields fail loud"); we surface it as a ZodError and ledger it
+  // 'zod_validation'. (model output is advisory; the schema is the law.)
   if (!capturedSeen) {
     const validationError = findToolInputValidationError(result.toolResults);
     if (validationError !== null) {
@@ -650,33 +538,12 @@ async function generate<TSchema extends z.ZodTypeAny>(
     }
   }
 
-  // Belt (stage 4b): no validation rejection either, yet the terminal tool never
-  // fired — refuse to fall through to prose. The belt runs the same pure detector
-  // over the REAL turn view (real finishReason + real tool-call count + final
-  // text). Review F2 (2026-06-05): ledger BEFORE the fail-closed action — the
-  // earlier assertToolTurnOrFailClosed call threw internally on the no-HITL
-  // branch, skipping the row; detect-then-ledger-then-act keeps the
-  // one-row-per-call contract on every sub-branch.
+  // Stage 4b — fail-closed: no validation rejection either, yet the terminal tool
+  // never fired. Refuse to fall through to prose (never regex a tool name out of
+  // content). Ledger BEFORE the throw so the one-row-per-call contract holds.
   if (!capturedSeen) {
-    const signals = detectMalformedToolCall({
-      finishReason: normalizeFinishReason(result.finishReason),
-      expectsToolCall: true,
-      toolCallCount: result.toolCalls?.length ?? 0,
-      content: result.text ?? "",
-    });
-    if (signals.length === 0) {
-      // Defensive: detector found nothing yet no tool result captured. Fail
-      // CLOSED rather than parse an undefined capture (silent prose-fallthrough
-      // is forbidden). Unreachable in practice (a captured-less turn always
-      // raises a signal), but never let an empty capture reach success.
-      writeLedger("empty_tool_call_no_signal");
-      throw new MalformedToolCallAbort(["empty_tool_calls"]);
-    }
-    writeLedger("malformed_tool_call", { signals, text: result.text ?? "" });
-    if (input.hitlAvailable) {
-      return { suspended: true, reason: "malformed_tool_call", signals };
-    }
-    throw new MalformedToolCallAbort(signals);
+    writeLedger("emit_result_not_called");
+    throw new EmitResultNotCalledError(input.useCase);
   }
 
   // Stage 5 belt — re-validate the captured args with Zod. The tool boundary
@@ -723,17 +590,10 @@ async function generate<TSchema extends z.ZodTypeAny>(
  * Same discipline as emit_result on every cross-cutting axis:
  *   - Zod AUTHORITY (stage 5): `result.object` is advisory; we re-run
  *     input.schema.parse over it and fail 'zod_validation' on drift.
- *   - #1244 processor STILL attached, but with `expectsToolCall: () => false`:
- *     this lane legitimately finishes with `stop` + no tool call, so the
- *     finish_reason / empty-tool-calls signals must NOT fire (they would
- *     false-trip every clean structured turn — live-probed C2). Only a
- *     tool-shaped blob in content can still trip, which is harmless on a clean
- *     provider and a real #1244 catch if one ever appears. Fail-closed mapping
- *     (HITL suspend / no-HITL MalformedToolCallAbort) is identical.
  *   - LEDGER: exactly ONE test_run_records row on every branch (success AND every
  *     failure), cost NULL-not-$0, wall-clock always recorded — same writer path.
  *   - NO DeepSeek thinking providerOptions here (this lane is never DeepSeek; the
- *     #1244 emit_result thinking-off constraint is a DeepSeek-only concern).
+ *     emit_result thinking-off constraint is a DeepSeek-only concern).
  */
 async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   input: HarnessGenerateInput<TSchema>,
@@ -743,7 +603,7 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   modelId: string,
   startedAt: number,
   _testOverrides: HarnessTestOverrides | undefined,
-): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
+): Promise<HarnessGenerateResult<z.infer<TSchema>>> {
   // Prompt wrapped inline as a single user-role message, same as the
   // emit_result lane.
   const messages = [{ role: "user" as const, content: input.prompt }];
@@ -758,19 +618,12 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   });
 
   // Stage 4 — the agent call. structuredOutput drives the native responseFormat.
-  // The #1244 processor runs with expectsToolCall:false (this lane's legitimate
-  // finish is `stop` + object, not a tool call). Review F1 parity: a THROW from
-  // the model call (provider 5xx / transport) is a run that HAPPENED — ledger one
-  // row (usage unknown ⇒ NULL-not-$0) before propagating.
+  // Review F1 parity: a THROW from the model call (provider 5xx / transport) is a
+  // run that HAPPENED — ledger one row (usage unknown ⇒ NULL-not-$0) before
+  // propagating.
   const result = await agent
     .generate(messages, {
       structuredOutput: { schema: input.schema, jsonPromptInjection: false },
-      outputProcessors: [
-        malformedToolCallProcessor({
-          hitlAvailable: input.hitlAvailable,
-          expectsToolCall: () => false,
-        }) as OutputProcessorOrWorkflow<MalformedToolCallTripMetadata>,
-      ],
       modelSettings: { temperature: 0 },
     })
     .catch((err: unknown) => {
@@ -824,17 +677,6 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
     _testOverrides,
   );
 
-  // Stage 4b/5 — #1244 fail-closed (same mapping as emit_result). A tripped
-  // processor RESOLVES with result.tripwire populated (live-probed; not a throw).
-  const trip = readMalformedTrip(result.tripwire);
-  if (trip !== null) {
-    writeLedger("malformed_tool_call", { signals: trip.signals, text: result.text ?? "" });
-    if (input.hitlAvailable) {
-      return { suspended: true, reason: "malformed_tool_call", signals: trip.signals };
-    }
-    throw new MalformedToolCallAbort(trip.signals);
-  }
-
   // Stage 5 — Zod AUTHORITY. result.object is advisory; input.schema is the law.
   // A missing object (clean finish but no parsed structure) or a schema violation
   // both fail 'zod_validation' — never fall through to an unvalidated object.
@@ -863,30 +705,6 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
       completionTokens,
     },
   };
-}
-
-/**
- * Read a malformed-tool-call trip out of the resolved result's `tripwire` field.
- * Returns the typed metadata when this processor fired, else null. We trust the
- * STRUCTURED metadata our own processor set (reason + signals), never string-match
- * the tripwire reason text.
- */
-function readMalformedTrip(
-  tripwire: { metadata?: unknown } | undefined,
-): MalformedToolCallTripMetadata | null {
-  if (tripwire === undefined) return null;
-  const metadata = tripwire.metadata;
-  if (
-    metadata !== null &&
-    typeof metadata === "object" &&
-    "reason" in metadata &&
-    (metadata as { reason: unknown }).reason === "malformed_tool_call" &&
-    "signals" in metadata &&
-    Array.isArray((metadata as { signals: unknown }).signals)
-  ) {
-    return metadata as MalformedToolCallTripMetadata;
-  }
-  return null;
 }
 
 /**
@@ -955,16 +773,6 @@ function structuredOutputZodCause(err: unknown): z.ZodError | null {
 }
 
 /**
- * Mastra/AI-SDK report the hyphenated 'tool-calls'; the pure detector speaks the
- * provider-raw 'tool_calls'. Same normalization the processor applies, so the
- * belt assertion agrees with the inline #1244 path.
- */
-function normalizeFinishReason(finishReason: string | undefined): string {
-  if (finishReason === undefined) return "";
-  return finishReason === "tool-calls" ? "tool_calls" : finishReason;
-}
-
-/**
  * Snapshot the per-MTok rate columns for the ledger row. Only populated when the
  * run was actually priced off the table (pricingSource !== 'unavailable'); else
  * null so an unpriced row carries no misleading rate snapshot.
@@ -994,15 +802,8 @@ function _dbArg(overrides: HarnessTestOverrides | undefined): [Db] | [] {
  * Run one PROSE generation: resolve route → drive a no-tool Mastra Agent → return
  * the model's text + usage, after writing exactly ONE ledger row. A strict subset
  * of `generate`: NO emit_result tool, NO structuredOutput, NO toolChoice, NO Zod.
- *
- * #1244 is STRUCTURALLY INAPPLICABLE here — the mixing failure is "structured
- * output (response_format/json_schema) WITH tools"; this call has neither tools
- * nor structured output, so a clean prose turn finishes `stop` with text and
- * never carries a tool call. We still pass the result through the pure detector
- * belt with `expectsToolCall:false` for discipline: that gate only fires on a
- * tool-shaped blob in the content (a real escape), in which case we fail CLOSED
- * with a typed MalformedToolCallAbort — never fall through to the prose. A clean
- * prose stop always returns [] from the detector.
+ * This call has neither tools nor structured output, so a clean prose turn
+ * finishes `stop` with text — the mixing failure never applies here.
  *
  * Ledger discipline mirrors `generate` verbatim: a THROW from the model call
  * (provider 5xx / transport) still writes one row (usage unknown ⇒ NULL-not-$0)
@@ -1121,21 +922,6 @@ async function draftProse(
   );
 
   const text = result.text ?? "";
-
-  // Detector belt — discipline only. expectsToolCall:false, so the
-  // finish_reason / empty-tool-call signals are gated off (a prose stop is the
-  // legitimate finish here); only a tool-shaped blob in content can still fire.
-  // On any signal we fail CLOSED (typed abort) — never return the blob as prose.
-  const signals = detectMalformedToolCall({
-    finishReason: normalizeFinishReason(result.finishReason),
-    expectsToolCall: false,
-    toolCallCount: result.toolCalls?.length ?? 0,
-    content: text,
-  });
-  if (signals.length > 0) {
-    writeLedger("malformed_tool_call", { signals, text });
-    throw new MalformedToolCallAbort(signals);
-  }
 
   writeLedger(null);
 

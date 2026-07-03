@@ -13,10 +13,10 @@
  * SAFETY (load-bearing — do not weaken):
  *   - The router only CHOOSES + LAUNCHES. It NEVER executes a side effect and
  *     NEVER pre-approves anything; the skill's own gates are the floor.
- *   - #1244 fail-closed: one `emit_result` tool + Zod via
- *     `harness.generate(hitlAvailable:false)`. A malformed/tool-skip output
- *     throws MalformedToolCallAbort → mapped to `clarify`. We NEVER regex a skill
- *     name out of content; we never mix structured-output + tools.
+ *   - fail-closed: one `emit_result` tool + Zod via `harness.generate`. When the
+ *     emit_result tool never fires the harness throws EmitResultNotCalledError →
+ *     mapped to `clarify`. We NEVER regex a skill name out of content; we never
+ *     mix structured-output + tools.
  *   - Fail-closed routing: skill="none" → clarify; confidence < 0.6 → clarify; a
  *     DESTRUCTIVE/IRREVERSIBLE skill under confidence 0.85 → clarify (extra
  *     caution on the dangerous routes — never guess a destructive launch).
@@ -30,10 +30,9 @@
 
 import { z } from "zod";
 
-import { MalformedToolCallAbort } from "@autobroker/model";
 import { SKILLS, type SkillDef } from "@autobroker/skills";
 
-import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
+import { EmitResultNotCalledError, harness, type HarnessLedgerContext } from "./harness.js";
 import type { HarnessTestOverrides } from "./harness.js";
 
 /** The sentinel the model emits when no skill fits — maps to `clarify`. */
@@ -191,9 +190,9 @@ export function buildRoutePrompt(nl: string, ctx: RouterContext): string {
  * Classify a free-form chat message into a launch / clarify decision.
  *
  * Calls `harness.generate({ useCase:"chat_route", schema: ChatRouteEmitSchema,
- * prompt, hitlAvailable:false }, ctx.ledger)` — a single emit_result + Zod,
- * #1244 fail-closed automatic. EVERY fail-closed branch degrades to `clarify`;
- * the router never guesses a launch.
+ * prompt }, ctx.ledger)` — a single emit_result + Zod, fail-closed automatic.
+ * EVERY fail-closed branch degrades to `clarify`; the router never guesses a
+ * launch.
  *
  * `_testOverrides` is the harness test-only seam (a deterministic fake model +
  * an isolated ledger DB) — refused outside a test runner by the harness itself.
@@ -212,22 +211,16 @@ export async function classifySkillFromText(
         useCase: "chat_route",
         schema: ChatRouteEmitSchema,
         prompt,
-        hitlAvailable: false,
       },
       ctx.ledger,
       _testOverrides,
     );
-    // hitlAvailable:false never suspends (it throws), but a suspend-shaped
-    // return is fail-closed identically → clarify.
-    if (isHarnessSuspend(result)) {
-      return clarify("I could not read that clearly enough to act on it. Could you rephrase?");
-    }
     emitted = result.object;
   } catch (err) {
-    // #1244 fail-closed (MalformedToolCallAbort) OR a Zod-authority rejection OR
-    // a transport failure → clarify, NEVER a guessed launch. We never regex a
-    // skill name out of content.
-    if (err instanceof MalformedToolCallAbort) {
+    // fail-closed (emit_result never fired) OR a Zod-authority rejection →
+    // clarify, NEVER a guessed launch. We never regex a skill name out of
+    // content. A transport failure still propagates.
+    if (err instanceof EmitResultNotCalledError) {
       return clarify("I could not read that clearly enough to act on it. Could you rephrase?");
     }
     if (err instanceof z.ZodError) {
@@ -282,8 +275,8 @@ export async function classifySkillFromText(
 //     the candidates only) → the visible set can't widen, so the popover's
 //     reachability invariant and the skills' own gates are untouched;
 //   - it NEVER launches anything (suggestion only) — pure advisory;
-//   - #1244 fail-closed: one emit_result + Zod via harness.generate; ANY
-//     malformed/zod/suspend outcome returns null → the caller keeps the
+//   - fail-closed: one emit_result + Zod via harness.generate; ANY
+//     emit-not-called/zod/transport outcome returns null → the caller keeps the
 //     deterministic order + curated reasons (no UI flake, no error);
 //   - the conversation summary is budget-REDACTED before it reaches the model
 //     (inv #9 discipline — the rank never needs a dollar figure).
@@ -374,8 +367,8 @@ export function buildSuggestPrompt(ctx: SuggestContext): string {
 /**
  * Re-rank the deterministic candidate skills by the live conversation and attach
  * a one-line reason to each. Returns the ranked {skillId, reason}[] on success,
- * or `null` on ANY fail-closed outcome (malformed tool call, zod rejection,
- * suspend, transport error) so the caller falls back to the deterministic order.
+ * or `null` on ANY fail-closed outcome (emit_result never fired, zod rejection,
+ * transport error) so the caller falls back to the deterministic order.
  * Suggestions naming a non-candidate are dropped; duplicates are de-duped.
  */
 export async function suggestNextSkills(
@@ -389,11 +382,10 @@ export async function suggestNextSkills(
 
   try {
     const result = await harness.generate(
-      { useCase: "chat_route", schema, prompt, hitlAvailable: false },
+      { useCase: "chat_route", schema, prompt },
       ctx.ledger,
       _testOverrides,
     );
-    if (isHarnessSuspend(result)) return null;
     const emitted = result.object as { suggestions: { skill_id: string; reason: string }[] };
     const seen = new Set<string>();
     const out: SkillSuggestion[] = [];
@@ -404,11 +396,11 @@ export async function suggestNextSkills(
     }
     return out;
   } catch {
-    // Suggestions are ADVISORY — ANY failure (#1244 malformed, zod-authority,
-    // transport/auth, anything) degrades to null so the caller keeps the
-    // deterministic order. Unlike the router (which surfaces routing errors),
-    // a failed suggestion must never throw into the page. We never guess an
-    // order or fabricate a reason from content.
+    // Suggestions are ADVISORY — ANY failure (emit_result never fired,
+    // zod-authority, transport/auth, anything) degrades to null so the caller
+    // keeps the deterministic order. Unlike the router (which surfaces routing
+    // errors), a failed suggestion must never throw into the page. We never guess
+    // an order or fabricate a reason from content.
     return null;
   }
 }

@@ -8,15 +8,15 @@
  * STEP MAP:
  *   0 prefill           — conditional (freeform launch only): harness.generate
  *                         (intake_freeform_prefill) seeds the form. Slash launch
- *                         passes through. Prefill OUTPUT NEVER PERSISTS. #1244 on
- *                         this call fails CLOSED to a malformed_tool_call suspend.
+ *                         passes through. Prefill OUTPUT NEVER PERSISTS. A
+ *                         fail-closed prefill generation THROWS → the run errors.
  *   0.5 trimSuggestion  — conditional (freeform + make/model/year present + trim
  *                         null): fetchTrimSources (tools, web) → intake_trim_lookup
  *                         extraction → suspend a trim_suggestion picker. resume
  *                         pick (seeds trim) | skip (manual) | retry (re-lookup) |
  *                         decline (terminal). Web/LLM failure or 0 trims passes
  *                         through → blank-trim form (never blocks; non-authoritative
- *                         helper, so a #1244 here degrades, never gates).
+ *                         helper, so a fail-closed generation here degrades, never gates).
  *   1 collect           — suspend ① (data_collection). resume submit|decline|cancel.
  *                         decline/cancel → terminal {outcome:'declined'}, and every
  *                         later step short-circuits → ZERO writes.
@@ -61,13 +61,11 @@
  * `runId` directly (ExecuteFunctionParams.runId) — that is the ledger runId for
  * each harness.generate call.
  *
- * #1244: harness.generate returns a HarnessSuspend (not a throw) when a
- * malformed tool call is detected and hitlAvailable=true; the prefill LLM step maps
- * that to a malformed_tool_call suspend with a {retry_step|decline} resume. With no
- * HITL it throws MalformedToolCallAbort and the run fails — but intake always runs
- * with hitlAvailable=true (the rail/form is the human). The trimSuggestion LLM step
- * is a non-authoritative helper, so a #1244 there degrades to the blank-trim form
- * (never gates).
+ * FAIL-CLOSED: harness.generate throws EmitResultNotCalledError when the single
+ * emit_result tool never fires. The prefill LLM step lets that propagate → the run
+ * errors (no new degrade). The trimSuggestion LLM step is a non-authoritative
+ * helper, so it CATCHES that (and a ZodError) and degrades to the blank-trim form
+ * (never gates, never blocks intake — product rule 1).
  *
  * CONFIRMATION (owner ruling): trim is required info the buyer must PROVIDE AND
  * CONFIRM on every path. The single unconditional confirmVehicle suspend (step 4)
@@ -77,10 +75,9 @@
  * write is persist (step 5).
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core (types),
- * @autobroker/model (HarnessSuspend type), @autobroker/tools (goplaces +
- * profileService + getDb — the ONLY DB path), and this layer's
- * harness facade + intake contracts. NEVER opens the product DB directly: the
- * tools closures (create / resolveLocation) own every side effect.
+ * @autobroker/tools (goplaces + profileService + getDb — the ONLY DB path), and
+ * this layer's harness facade + intake contracts. NEVER opens the product DB
+ * directly: the tools closures (create / resolveLocation) own every side effect.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -99,7 +96,7 @@ import {
   type ResolvedCoordinates,
 } from "@autobroker/tools";
 
-import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
+import { EmitResultNotCalledError, harness, type HarnessLedgerContext } from "./harness.js";
 import {
   AmbiguousLocationResumeSchema,
   buildPrefillPrompt,
@@ -107,7 +104,6 @@ import {
   CollectResumeSchema,
   IntakeConfirmSuspendSchema,
   IntakePrefillSchema,
-  MalformedRetryResumeSchema,
   PartialIntakeSchema,
   sanitizePrefillTrim,
   TrimSuggestionResumeSchema,
@@ -297,9 +293,7 @@ const prefillStep = createStep({
   id: "prefill",
   inputSchema: IntakeInputSchema,
   outputSchema: IntakeStateSchema,
-  resumeSchema: MalformedRetryResumeSchema,
-  suspendSchema: z.object({ kind: z.literal("malformed_tool_call"), signals: z.array(z.string()) }),
-  execute: async ({ inputData, runId, resumeData, suspend }) => {
+  execute: async ({ inputData, runId }) => {
     const base: IntakeState = {
       inputMode: inputData.input_mode,
       freeformText: inputData.freeform_text,
@@ -319,22 +313,12 @@ const prefillStep = createStep({
       return base;
     }
 
-    // On resume from a malformed_tool_call suspend: decline → pass through with an
-    // empty seed (prefill failure is transient/recoverable — the form fills it).
-    // retry falls through to re-run the generate below.
-    if (resumeData !== undefined && resumeData.action === "decline") {
-      return base;
-    }
-
+    // A fail-closed prefill generation (emit_result never fired) or a Zod-authority
+    // rejection THROWS → the run errors. Prefill is not gated behind a suspend.
     const result = await deps().harnessGenerate(
-      { useCase: "intake_freeform_prefill", schema: IntakePrefillSchema, prompt: buildPrefillPrompt(inputData.freeform_text), hitlAvailable: true },
+      { useCase: "intake_freeform_prefill", schema: IntakePrefillSchema, prompt: buildPrefillPrompt(inputData.freeform_text) },
       intakeLedger(runId),
     );
-
-    // #1244 fail-closed: a malformed tool call suspends to the human.
-    if (isHarnessSuspend(result)) {
-      return (await suspend({ kind: "malformed_tool_call", signals: result.signals })) as never;
-    }
 
     // Prefill OUTPUT ONLY SEEDS THE FORM (never persists). Drop nulls so the seed
     // carries only what the model actually saw. Sanitize trim FIRST: a price/superlative
@@ -444,22 +428,28 @@ const trimSuggestionStep = createStep({
     );
     if (sources.kind !== "resolved") return state;
 
-    // STRUCTURED EXTRACTION (workflow layer; #1244-safe single emit_result tool).
-    const result = await deps().harnessGenerate(
-      {
-        useCase: "intake_trim_lookup",
-        schema: TrimSuggestionSchema,
-        prompt: buildTrimSuggestionPrompt({ year, make, model, sourceText: sources.text }),
-        hitlAvailable: true,
-      },
-      intakeLedger(runId),
-    );
-    // #1244 on a non-authoritative helper → degrade to the blank-trim form (do not
-    // hard-fail intake, do not surface a malformed gate for an optional suggestion).
-    if (isHarnessSuspend(result)) return state;
+    // STRUCTURED EXTRACTION (workflow layer; single emit_result tool). A
+    // fail-closed generation (emit_result never fired) or a Zod-authority rejection
+    // degrades to the blank-trim form — the suggestion is a non-authoritative helper
+    // and must NEVER block intake (product rule 1). No retry, no suspend; the ledger
+    // row is already written by the harness. Do NOT catch other error types.
+    let sug: TrimSuggestion;
+    try {
+      const result = await deps().harnessGenerate(
+        {
+          useCase: "intake_trim_lookup",
+          schema: TrimSuggestionSchema,
+          prompt: buildTrimSuggestionPrompt({ year, make, model, sourceText: sources.text }),
+        },
+        intakeLedger(runId),
+      );
+      sug = result.object;
+    } catch (err) {
+      if (err instanceof EmitResultNotCalledError || err instanceof z.ZodError) return state;
+      throw err;
+    }
 
     // Zip parallel arrays (tolerate length mismatch), dedup by normalized name, cap.
-    const sug: TrimSuggestion = result.object;
     const n = Math.min(sug.trim_names.length, sug.trim_summaries.length);
     const seen = new Set<string>();
     const candidates: { index: number; name: string; summary: string }[] = [];

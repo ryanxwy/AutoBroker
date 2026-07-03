@@ -17,7 +17,6 @@ import {
   AmbiguousLocationPicker,
   IntakeConfirmCard,
   LocationFailureBanner,
-  MalformedRetryGate,
   TrimSuggestionPicker,
 } from "../gate/IntakeGates.js";
 import { FormBoundary } from "./FormBoundary.js";
@@ -79,14 +78,6 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "location_failure":
       return (
         <LocationFailureBanner
-          gate={gate}          submitting={submitting}
-          onResume={resume}
-          onDecline={decline}
-        />
-      );
-    case "malformed_tool_call":
-      return (
-        <MalformedRetryGate
           gate={gate}          submitting={submitting}
           onResume={resume}
           onDecline={decline}

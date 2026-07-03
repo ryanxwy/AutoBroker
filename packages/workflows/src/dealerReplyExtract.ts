@@ -28,16 +28,11 @@
  *                              never OCR'd; an OCR-unavailable image degrades to
  *                              a typed failure, the body can still extract);
  *                           c. extract — the ONE LLM step: a single emit_result
- *                              tool bound to the Zod emit schema,
- *                              hitlAvailable=false, WITH an automatic ONE-hop
- *                              recovery: the first hop is deepseek-v4-flash
- *                              (forced emit, thinking OFF); on the malformed
- *                              class (#1244) it retries ONCE on deepseek-v4-pro
- *                              WITH thinking (tool_choice:"auto"), SAME provider
- *                              (privacy-clean). A retry that ALSO fails malformed
- *                              hard-aborts as a typed MalformedToolCallAbort
- *                              (NEVER a prose fallthrough, NEVER a regexed-out
- *                              tool name);
+ *                              tool bound to the Zod emit schema (deepseek-v4-flash,
+ *                              forced emit, thinking OFF). When the emit_result
+ *                              tool never fires it hard-aborts as a typed
+ *                              EmitResultNotCalledError (NEVER a prose fallthrough,
+ *                              NEVER a regexed-out tool name);
  *                           d. validatePersist — reclassifyRule2Failures →
  *                              build the full row + provenance →
  *                              DealerQuoteSchema.parse (Rule1/Rule2 belt) BEFORE
@@ -56,12 +51,13 @@
  *                         failed). Refers to the car, never the budget, never a
  *                         run id.
  *
- * KEYSTONE: #1244 fail-closed. The extract step binds a SINGLE emit_result tool
- * with the flat Zod schema; it NEVER mixes structured-object output + tools,
- * NEVER injects response_format/json_schema per-step. On a malformed tool call
- * the run fails CLOSED (the typed MalformedToolCallAbort), caught per-message →
- * that message is marked `failed`. Communication never includes budget (the
- * confirm copy is structurally budget-free). Gmail is read-only — no send.
+ * KEYSTONE: fail-closed. The extract step binds a SINGLE emit_result tool with
+ * the flat Zod schema; it NEVER mixes structured-object output + tools, NEVER
+ * injects response_format/json_schema per-step. When the emit_result tool never
+ * fires the run fails CLOSED (the typed EmitResultNotCalledError), caught
+ * per-message → that message is marked `failed`. Communication never includes
+ * budget (the confirm copy is structurally budget-free). Gmail is read-only —
+ * no send.
  *
  * FALLBACK GATING MAP:
  *   - image vision → OCR        → AUTO-allowed transient/equivalent read, voiced
@@ -70,25 +66,21 @@
  *   - PDF no text layer / OCR    → an HONEST per-attachment failure (PDFs are
  *     unavailable                  NEVER OCR'd); the message can still extract
  *                                 from its body, else it fails honestly.
- *   - malformed structured call  → AUTOMATIC bounded recovery: one same-provider
- *                                 retry on deepseek-v4-pro WITH thinking
- *                                 (tool_choice:"auto"). Still malformed after the
- *                                 retry → hitlAvailable=false: typed
- *                                 MalformedToolCallAbort, caught per-message →
- *                                 that message marked failed (re-queued), the
- *                                 run continues.
+ *   - emit_result never fired    → typed EmitResultNotCalledError, caught
+ *                                 per-message → that message marked failed
+ *                                 (re-queued), the run continues.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core (the
- * DealerQuote row schemas + reclassify), @autobroker/model (typed abort +
- * suspend type), @autobroker/tools (resolver + candidate reader + classifier +
- * attachment tree + gmail adapter + persist + getDb — the ONLY DB/side-effect
- * paths), the skill contracts module, and this layer's harness facade.
+ * DealerQuote row schemas + reclassify), @autobroker/model (policy), @autobroker/tools
+ * (resolver + candidate reader + classifier + attachment tree + gmail adapter +
+ * persist + getDb — the ONLY DB/side-effect paths), the skill contracts module,
+ * and this layer's harness facade.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 
 import { reclassifyRule2Failures, type DealerReplyQuoteRow } from "@autobroker/core";
-import { MalformedToolCallAbort, policy } from "@autobroker/model";
+import { policy } from "@autobroker/model";
 import {
   classifyMessageQuoteClass,
   createGmailAdapter,
@@ -115,8 +107,7 @@ import {
   type MessageIntent,
   type ReplyCandidateState,
 } from "./dealerReplyExtractContracts.js";
-import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
-import { isMalformedToolCallError } from "./recoverEmitWithRetry.js";
+import { harness, type HarnessLedgerContext } from "./harness.js";
 
 // ---------------------------------------------------------------------------
 // dependency-injection seam (test-runner-guarded, mirroring the other skills)
@@ -211,24 +202,15 @@ function vehicleLabel(p: { year: number | null; make: string; model: string; tri
   return [p.year, p.make, p.model, p.trim].filter((x) => x != null && `${x}`.trim() !== "").join(" ");
 }
 
-/** The default first-hop extraction useCase (deepseek-v4-flash, forced emit,
- *  thinking OFF) and the automatic recovery-hop useCase (deepseek-v4-pro WITH
- *  thinking, tool_choice:"auto"). Same provider on both — privacy-clean. */
+/** The extraction useCase (deepseek-v4-flash, forced emit, thinking OFF). */
 const EXTRACT_USE_CASE = "dealer_reply_extract" as const;
-const EXTRACT_RETRY_USE_CASE = "dealer_reply_extract_retry" as const;
 
-/** Run ONE single-emit_result extraction over one message's snapshot through the
- *  given useCase. A malformed tool call hard-aborts (fail-closed) — never a prose
- *  fallthrough, never a regexed-out tool call.
- *
- *  `useCase` picks the provider route and NOTHING else: `dealer_reply_extract`
- *  (deepseek-v4-flash, forced emit_result, thinking OFF — the first hop) or
- *  `dealer_reply_extract_retry` (deepseek-v4-pro WITH thinking, tool_choice
- *  "auto" — the automatic recovery hop). The emit schema, prompt, single-tool
- *  discipline and #1244 fail-closed handling are IDENTICAL on both routes. */
+/** Run ONE single-emit_result extraction over one message's snapshot. When the
+ *  emit_result tool never fires the harness hard-aborts (typed
+ *  EmitResultNotCalledError) — never a prose fallthrough, never a regexed-out
+ *  tool call. */
 async function extractOneMessage(args: {
   runId: string;
-  useCase: typeof EXTRACT_USE_CASE | typeof EXTRACT_RETRY_USE_CASE;
   messageBody: string;
   attachmentText: string;
 }): Promise<{
@@ -238,62 +220,17 @@ async function extractOneMessage(args: {
 }> {
   const result = await deps().harnessGenerate(
     {
-      useCase: args.useCase,
+      useCase: EXTRACT_USE_CASE,
       schema: DealerReplyExtractEmitSchema,
       prompt: buildDealerReplyExtractPrompt(args.messageBody, args.attachmentText),
-      hitlAvailable: false,
     },
     dealerReplyExtractLedger(args.runId),
   );
-  if (isHarnessSuspend(result)) {
-    // Defensive: with hitlAvailable=false the harness throws rather than
-    // suspends; a suspend-shaped return still fail-closes identically.
-    throw new MalformedToolCallAbort(result.signals);
-  }
   return {
     quotes: result.object.quotes,
     messageIntent: result.object.message_intent,
     contactRole: result.object.contact_role,
   };
-}
-
-/**
- * Extract one message with the AUTOMATIC one-hop recovery (owner-directed F1):
- * the first hop runs the default DeepSeek useCase (v4-flash, forced emit_result,
- * thinking OFF). If THAT hop fails the MALFORMED class (#1244 — the deterministic
- * serialization defect a thinking-OFF retry can't fix), retry EXACTLY ONCE on
- * the same provider's v4-pro WITH thinking (tool_choice:"auto"). The retry is
- * bounded to ONE hop — its own throw (malformed again, ZodError, transport)
- * propagates to the per-message catch and the message stays `failed` (fail-
- * closed, exactly as the v4-flash path). Any NON-malformed first-hop failure
- * (ZodError / transport) skips the retry and propagates immediately.
- *
- * Returns the extracted rows + the useCase whose route actually served the
- * persisted result, so provenance stamps the real model hop.
- */
-async function extractWithRecovery(args: {
-  runId: string;
-  messageBody: string;
-  attachmentText: string;
-}): Promise<{
-  quotes: DealerReplyQuoteRow[];
-  messageIntent: MessageIntent;
-  contactRole: string | null;
-  servedUseCase: typeof EXTRACT_USE_CASE | typeof EXTRACT_RETRY_USE_CASE;
-}> {
-  try {
-    const first = await extractOneMessage({ ...args, useCase: EXTRACT_USE_CASE });
-    return { ...first, servedUseCase: EXTRACT_USE_CASE };
-  } catch (err) {
-    // ONLY the malformed class triggers the bounded recovery hop. A ZodError or a
-    // transport throw is not recoverable by re-running on v4-pro+thinking.
-    if (!isMalformedToolCallError(err)) throw err;
-    // Bounded ONE-hop retry: v4-pro WITH thinking. Its throw is NOT re-caught —
-    // a second malformed (or any) failure propagates and the message stays
-    // failed (fail-closed).
-    const retried = await extractOneMessage({ ...args, useCase: EXTRACT_RETRY_USE_CASE });
-    return { ...retried, servedUseCase: EXTRACT_RETRY_USE_CASE };
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -422,23 +359,20 @@ const extractAndPersistStep = createStep({
         // 'vision' enum member is forward-compat for a vision-capable provider.
         const extractionMethod: "ocr" | "text" = prep.usedOcr ? "ocr" : "text";
 
-        // c. extract — the ONE LLM step (single emit_result tool, fail-closed),
-        //    WITH the automatic owner-directed recovery: the first hop runs
-        //    deepseek-v4-flash (forced emit, thinking OFF); on the MALFORMED
-        //    class (#1244) it retries ONCE on deepseek-v4-pro WITH thinking
-        //    (tool_choice:"auto"), same provider (privacy-clean). A retry that
-        //    ALSO fails malformed (or any other error) propagates to the catch
-        //    below → the message stays `failed`, exactly as the v4-flash path.
-        const extracted = await extractWithRecovery({
+        // c. extract — the ONE LLM step (single emit_result tool, fail-closed):
+        //    deepseek-v4-flash (forced emit, thinking OFF). Any error (emit_result
+        //    never fired, ZodError, transport) propagates to the catch below → the
+        //    message stays `failed`.
+        const extracted = await extractOneMessage({
           runId,
           messageBody: c.body,
           attachmentText: capReplySnapshot(prep.text),
         });
 
-        // Provenance stamps the provider the served route actually used (DeepSeek
-        // on BOTH hops — the recovery is same-provider). Derived from policy so a
-        // registry-string provider swap flips the stamped provenance in lock-step.
-        const extractorProvider = policy(extracted.servedUseCase).provider;
+        // Provenance stamps the provider the extract route used. Derived from
+        // policy so a registry-string provider swap flips the stamped provenance
+        // in lock-step.
+        const extractorProvider = policy("dealer_reply_extract").provider;
 
         // d. validatePersist — reclass Rule2 failures, then persist all-or-
         //    nothing. The persist layer re-validates every row through
@@ -484,7 +418,7 @@ const extractAndPersistStep = createStep({
           processed.push({ ...c, status: "failed", rows_upserted: 0 });
         }
       } catch {
-        // A thrown MalformedToolCallAbort (#1244) or any other per-message error
+        // A thrown EmitResultNotCalledError or any other per-message error
         // (adapter/extract throw) → mark the message failed (intent NULL,
         // processed_at NULL → re-queued) via the persist layer's mark-failed
         // path, write ZERO quotes, then continue. ONE bad message never fails

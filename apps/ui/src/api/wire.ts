@@ -964,8 +964,8 @@ export const DealerNegotiationDetailSchema = z
 export type DealerNegotiationDetail = z.infer<typeof DealerNegotiationDetailSchema>;
 
 // GET /api/profiles/:id/dealer-negotiations/:dealerId/summary → the LLM
-// negotiation-state summary. ALWAYS 200; { summary:null } on any degrade (#1244 /
-// budget-belt / transport). Tolerant passthrough.
+// negotiation-state summary. ALWAYS 200; { summary:null } on any degrade
+// (emit-not-called / budget-belt / transport). Tolerant passthrough.
 export const DealerNegotiationSummarySchema = z
   .object({
     summary: z.string().nullable(),

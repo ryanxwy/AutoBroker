@@ -30,11 +30,14 @@ const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
 
 // The committed migrations needed for test_run_records: 0000 creates the table,
-// 0005 adds the #1244 malformed-evidence columns the writer now always emits.
+// 0005 adds the malformed-evidence columns, 0007 drops them (the deleted #1244
+// apparatus) so the test DB matches the current schema.
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql"].map(
-  (f) => join(here, "..", "..", "db", "drizzle", f),
-);
+const MIGRATION_SQLS = [
+  "0000_military_red_skull.sql",
+  "0005_military_nightshade.sql",
+  "0007_public_thanos.sql",
+].map((f) => join(here, "..", "..", "db", "drizzle", f));
 
 let tmpDir: string;
 let db: Db;
@@ -128,31 +131,6 @@ describe("writeTestRunRecord — NULL-not-$0 round-trip", () => {
     expect(row.input_tokens).toBe(1000);
     expect(row.output_tokens).toBe(250);
     expect(row.pricing_source).toBe("table_v1");
-  });
-
-  it("round-trips the #1244 malformed-evidence columns when present", () => {
-    const id = writeTestRunRecord(
-      baseRow({
-        failReason: "malformed_tool_call",
-        malformedSignals: "empty_tool_calls,tool_shaped_blob_in_content",
-        malformedSample: '{"name":"emit_result","arguments":{"selling_price":#}}',
-      }),
-      db,
-    );
-    const row = db.$client
-      .prepare("SELECT malformed_signals, malformed_sample FROM test_run_records WHERE id = ?")
-      .get(id) as { malformed_signals: string | null; malformed_sample: string | null };
-    expect(row.malformed_signals).toBe("empty_tool_calls,tool_shaped_blob_in_content");
-    expect(row.malformed_sample).toBe('{"name":"emit_result","arguments":{"selling_price":#}}');
-  });
-
-  it("reads the malformed-evidence columns back as NULL when a row omits them", () => {
-    const id = writeTestRunRecord(baseRow(), db); // baseRow carries neither field.
-    const row = db.$client
-      .prepare("SELECT malformed_signals, malformed_sample FROM test_run_records WHERE id = ?")
-      .get(id) as { malformed_signals: unknown; malformed_sample: unknown };
-    expect(row.malformed_signals).toBeNull();
-    expect(row.malformed_sample).toBeNull();
   });
 
   it("returns the DB-assigned autoincrement id", () => {

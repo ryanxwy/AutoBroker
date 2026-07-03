@@ -50,6 +50,13 @@
       "when": 1782787927415,
       "tag": "0006_normalize_zero_otd_to_null",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783121461010,
+      "tag": "0007_public_thanos",
+      "breakpoints": true
     }
   ]
 }

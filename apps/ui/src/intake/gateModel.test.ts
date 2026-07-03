@@ -61,12 +61,6 @@ describe("gateModel — classification", () => {
     }
   });
 
-  it("malformed_tool_call → signals", () => {
-    const g = classifyGate({ kind: "malformed_tool_call", signals: ["finish_reason!=tool_calls"] });
-    expect(g.kind).toBe("malformed_tool_call");
-    if (g.kind === "malformed_tool_call") expect(g.signals).toEqual(["finish_reason!=tool_calls"]);
-  });
-
   it("null / unknown spec → unknown (never throws)", () => {
     expect(classifyGate(null).kind).toBe("unknown");
     expect(classifyGate({ kind: "weird" }).kind).toBe("unknown");

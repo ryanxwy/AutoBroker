@@ -40,10 +40,9 @@
  *                        in-process per-run carry; the step output keeps light
  *                        per-site rows + counts.
  *   3 extract          — the LLM phase: per scanned site ONE separate NO-TOOLS
- *                        structured emit via recoverEmitWithRetry
- *                        (hitlAvailable=false → a malformed first hop retries
- *                        ONCE on the strong lane, else fail-closes as a typed
- *                        MalformedToolCallAbort — never a prose fallthrough).
+ *                        structured emit_result generate (fail-closes as a typed
+ *                        EmitResultNotCalledError when the tool never fires —
+ *                        never a prose fallthrough).
  *                        Zod re-validates every row (invalid dropped + counted);
  *                        an LLM-emitted VIN must appear verbatim in the site's
  *                        provenance text or it is cleared to null + counted; an
@@ -74,8 +73,8 @@
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
  * (AggregatorListing schema), @autobroker/tools (resolver + browser session +
  * the aggregator registry + persist closures — the ONLY DB/side-effect paths),
- * this layer's inventory_site_scan sibling (shared pure browse helpers), the
- * harness facade, and the recoverEmitWithRetry recovery helper.
+ * this layer's inventory_site_scan sibling (shared pure browse helpers), and the
+ * harness facade.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -114,7 +113,6 @@ import {
 
 import { harness, type HarnessLedgerContext } from "./harness.js";
 import { parseAcceptableTrims, runWorkerPool } from "./inventorySiteScan.js";
-import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 /** One deterministic per-tile fact the adapter's collector reads straight from
  *  the site's embedded state (never the LLM). */
@@ -1161,9 +1159,8 @@ const extractStep = createStep({
         const capture = carry.captures.get(row.site_id);
         if (capture === undefined) throw new AggregatorScanCaptureLostError();
 
-        const result = await recoverEmitWithRetry({
-          harnessGenerate: deps().harnessGenerate,
-          input: {
+        const result = await deps().harnessGenerate(
+          {
             useCase: "inventory_extract",
             schema: AggregatorExtractSchema,
             prompt: buildAggregatorExtractPrompt(
@@ -1172,13 +1169,9 @@ const extractStep = createStep({
               state.slice.year,
               capture.weave,
             ),
-            // A malformed tool call retries ONCE on the strong lane, else
-            // fail-closes — never a prose fallthrough.
-            hitlAvailable: false,
           },
-          retryUseCase: "inventory_extract_retry",
-          ledger: aggregatorScanLedger(runId),
-        });
+          aggregatorScanLedger(runId),
+        );
 
         // Provenance text the VIN + dealer_name verbatim checks read: the woven
         // card text ⊕ collected hrefs ⊕ the deterministic {vin, dealer} scalars

@@ -5,8 +5,8 @@
  *   - "rail"   — the assistant turn's gate zone in the chat rail: the intake
  *                form + the semantic gate cards (data_collection /
  *                intake_confirm / ambiguous_location (and its client-side
- *                location_failure split) / malformed_tool_call, plus the
- *                unknown-kind fallback card), AND the per-item batch-review
+ *                location_failure split), plus the unknown-kind fallback card),
+ *                AND the per-item batch-review
  *                family (`batch_review`, shape-disambiguated into the inventory
  *                batch / inbox-check / destructive hygiene cards). These render
  *                inline in the assistant turn so the approval reads as part of

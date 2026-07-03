@@ -19,7 +19,7 @@
  *   - workflow STOPs (0 / 2+ / missing postal_code);
  *   - end-to-end scanned run + the extract-phase provenance guards;
  *   - cross-site dedup reaching the (injected) persist closure in registry order;
- *   - #1244 malformed extract → typed abort, run failed, zero writes.
+ *   - fail-closed extract → typed abort, run failed, zero writes.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
  * mastra.db + autobroker.db both live there; NEVER ~/.autobroker*.
@@ -34,6 +34,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDb, openDb, type Db } from "@autobroker/tools";
 
+import { EmitResultNotCalledError } from "./harness.js";
 import { createMastraInstance } from "./mastra.js";
 import {
   AGGREGATOR_CARD_CAP,
@@ -729,22 +730,20 @@ describe("inventory_aggregator_scan — cross-site dedup into persist", () => {
 });
 
 // ---------------------------------------------------------------------------
-// workflow — #1244 malformed extract fail-closes
+// workflow — fail-closed extract (emit_result never fires)
 // ---------------------------------------------------------------------------
 
-describe("inventory_aggregator_scan — #1244 fail-closed", () => {
-  it("a malformed tool call (suspend-shaped harness return) fails the run with zero writes", async () => {
+describe("inventory_aggregator_scan — fail-closed", () => {
+  it("a fail-closed extract (emit_result never fires) fails the run with zero writes", async () => {
     seedProfile();
-    const harnessGenerate = (async () => ({
-      suspended: true,
-      reason: "malformed_tool_call",
-      signals: ["empty_tool_calls"],
-    })) as unknown as InventoryAggregatorScanWorkflowDeps["harnessGenerate"];
+    const harnessGenerate = (async () => {
+      throw new EmitResultNotCalledError("inventory_extract");
+    }) as unknown as InventoryAggregatorScanWorkflowDeps["harnessGenerate"];
     __setAggregatorScanDepsForTests({
       scanAggregators: scanStub({ calls: [] }, [scannedOutcome()]),
       harnessGenerate,
     });
-    const { result } = await startRun("agg-1244-1");
+    const { result } = await startRun("agg-failclosed-1");
     expect(result.status).toBe("failed");
     expect(rowCount("inventory_listings")).toBe(0);
     expect(rowCount("dealer_inventory_sources")).toBe(0);

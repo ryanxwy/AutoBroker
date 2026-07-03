@@ -2,12 +2,12 @@
  * In-stack tests — the Hybrid skills-popover re-rank (suggestNextSkills).
  *
  * Same real stack as router.test.ts: REAL suggestNextSkills → REAL
- * harness.generate → REAL #1244 Processor → REAL Zod belt against a
+ * harness.generate → REAL Zod belt against a
  * DETERMINISTIC fake LanguageModel + an ISOLATED tmp DB injected through the
  * harness `_testOverrides` seam. The contract under test:
  *   - a well-formed ranking is returned in order, deduped, and bounded;
- *   - a #1244 malformed output returns NULL (fail-closed → caller keeps the
- *     deterministic order), never a guessed rank;
+ *   - a fail-closed output (emit_result never fires) returns NULL (caller keeps
+ *     the deterministic order), never a guessed rank;
  *   - empty candidates short-circuit to [] with no model call;
  *   - the conversation summary is budget-redacted before the prompt.
  *
@@ -39,9 +39,9 @@ const originalDataDir = process.env[DATA_DIR];
 const originalDbOverride = process.env[DB_OVERRIDE];
 
 const here = dirname(fileURLToPath(import.meta.url));
-// 0000 creates test_run_records; 0005 adds the #1244 malformed-evidence columns
-// the ledger writer (reached here via the LLM router) now always emits.
-const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql"].map((f) =>
+// 0000 creates test_run_records; 0005 adds the malformed-evidence columns and
+// 0007 drops them (the deleted #1244 apparatus) — the current ledger schema.
+const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql", "0007_public_thanos.sql"].map((f) =>
   join(here, "..", "..", "db", "drizzle", f),
 );
 
@@ -138,7 +138,7 @@ describe("suggestNextSkills — Hybrid LLM re-rank (advisory, fail-closed)", () 
     expect(out?.map((s) => s.skillId)).toEqual(["inventory_site_scan"]);
   });
 
-  it("a #1244 malformed output returns NULL (fail-closed — caller keeps deterministic order)", async () => {
+  it("a fail-closed output (emit_result never fires) returns NULL (caller keeps deterministic order)", async () => {
     const model = makeProseDumpModel({
       text: '{"name":"emit_result","arguments":{"suggestions":[{"skill_id":"pipeline_reset","reason":"x"}]}}',
       modelId: "deepseek-v4-flash",

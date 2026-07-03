@@ -17,7 +17,7 @@
  *
  * RESUME SCHEMAS — discriminated unions keyed on a literal `action`.
  *
- * #1244 / structured-output discipline: both emit schemas are flat, all-required
+ * Structured-output discipline: both emit schemas are flat, all-required
  * (explicit null over optional), enums where possible — the lowest-common JSON
  * Schema subset DeepSeek tolerates. They are handed to
  * harness.generate as the single emit_result contract; never mixed with other
@@ -122,7 +122,7 @@ export function sanitizePrefillTrim(trim: string | null): string | null {
  * web-fetched trim pages: two PARALLEL string arrays (the i-th name pairs with the
  * i-th summary). Two flat string arrays — not an array of objects — keeps the
  * schema at the DeepSeek-safe lowest common JSON subset (same shape class as
- * suggested_trims), avoiding the nested-object #1244 surface. The summary carries
+ * suggested_trims), avoiding the nested-object structured-output surface. The summary carries
  * the option-difference one-liner shown in the picker. A length mismatch is
  * tolerated by the caller (zipped to the shorter length).
  */
@@ -272,14 +272,3 @@ export const TrimSuggestionResumeSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("decline") }),
 ]);
 export type TrimSuggestionResume = z.infer<typeof TrimSuggestionResumeSchema>;
-
-/**
- * malformed_tool_call (any LLM step, suspend from #1244) resume contract.
- *   - retry_step: re-run the failed LLM step.
- *   - decline: terminal-declined, zero write.
- */
-export const MalformedRetryResumeSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("retry_step") }),
-  z.object({ action: z.literal("decline") }),
-]);
-export type MalformedRetryResume = z.infer<typeof MalformedRetryResumeSchema>;

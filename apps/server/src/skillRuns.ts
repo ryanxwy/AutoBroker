@@ -15,7 +15,7 @@
  * flow in by inference from the workflows exports) and never opens the product DB.
  *
  * RUN DRIVE LOOP: a run can suspend MULTIPLE times (collect form, force-override
- * gate, ambiguous-location ask-pick, #1244 malformed). Each start()/resume()
+ * gate, ambiguous-location ask-pick). Each start()/resume()
  * returns a WorkflowResult discriminated on status:
  *   - suspended → emit awaiting_user{decision_id, form_kind, spec_inline, ...}
  *     from result.steps[suspendedStep].suspendPayload; the run waits for a
@@ -101,7 +101,6 @@ import {
   CollectResumeSchema,
   AmbiguousLocationResumeSchema,
   TrimSuggestionResumeSchema,
-  MalformedRetryResumeSchema,
   BatchReviewResumeSchema,
   HygieneResumeSchema,
   LeadApprovalResumeSchema,
@@ -309,8 +308,6 @@ function intakeResumeSchemaFor(step: string): z.ZodTypeAny {
       return AmbiguousLocationResumeSchema;
     case "trimSuggestion":
       return TrimSuggestionResumeSchema;
-    case "prefill":
-      return MalformedRetryResumeSchema;
     default:
       // An unknown suspend step is a contract breach — fail LOUD (no silent
       // pass-through into a Mastra resume with un-typed data).
@@ -343,7 +340,7 @@ function parseIntakeFormContent(content: unknown): SearchProfileIntakeInput {
  * collect step's submit resumeData; decline/cancel → the step's decline
  * resumeData + a {action, content:null} ack (terminal-non-write).
  *
- * The non-collect suspends (ambiguous-location, trim-suggestion, malformed,
+ * The non-collect suspends (ambiguous-location, trim-suggestion,
  * confirmVehicle) resume with their own typed resume schemas. The confirmVehicle
  * step renders TWO cards (intake_confirm | the re-rendered data_collection edit
  * form), disambiguated by the retained suspend payload's `kind`: an edit-form
@@ -1635,7 +1632,7 @@ function extractSearchProfileId(input: unknown): string | null {
 }
 
 /** Map a suspended step's payload → the awaiting_user form_kind. The gate/
- *  location/malformed suspends are approval-style forms but all resume through
+ *  location suspends are approval-style forms but all resume through
  *  this same channel. */
 function formKindFor(payload: Record<string, unknown>): string {
   const kind = payload["kind"];
@@ -2233,7 +2230,7 @@ export class SkillRunService {
       return;
     }
 
-    // failed | tripwire | bailed → error (the #1244 hard-abort path).
+    // failed | tripwire | bailed → error (the fail-closed hard-abort path).
     if (r.status === "failed" || r.status === "tripwire" || r.status === "bailed") {
       run.terminal = true;
       this.finalizeActivation(runId);

@@ -84,7 +84,7 @@ describe("makeProseDumpModel", () => {
   const blob = '{"name": "gmail_send", "arguments": {"to": "x@y.com"}}';
   const model = makeProseDumpModel({ text: blob }) as LanguageModelV3;
 
-  it("doGenerate returns plain text, finishReason stop, NO tool calls (#1244 dump)", async () => {
+  it("doGenerate returns plain text, finishReason stop, NO tool calls (prose dump)", async () => {
     const result = await model.doGenerate(
       {} as Parameters<LanguageModelV3["doGenerate"]>[0],
     );

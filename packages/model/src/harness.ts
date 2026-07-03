@@ -5,9 +5,8 @@
  * `@autobroker/workflows`; `@autobroker/model` keeps ONLY the pure pieces and
  * the signature types. Concretely:
  *   - model owns: useCase→alias policy, the structured-output STRATEGY choice
- *     (`chooseStructuredOutputStrategy`), the #1244 detector / fail-closed
- *     assertion, Zod post-validation surface, the cost/usage table, and the
- *     canonical-message ↔ ModelMessage translator.
+ *     (`chooseStructuredOutputStrategy`), the Zod post-validation surface, the
+ *     cost/usage table, and the canonical-message ↔ ModelMessage translator.
  *   - workflows owns: the Mastra Agent loop end-to-end AND exports the runnable
  *     `harness.generate` facade. It imports these types + helpers from here.
  *
@@ -17,12 +16,11 @@
  * loop — and therefore the facade `const harness` — cannot live in this layer.
  * This file is the typed seam between the two.
  *
- * Structured-output rule (#1244): when the routed model cannot mix
- * `Output.object` with tools (DeepSeek — per-step
- * json_schema injection provokes the text-dump), the workflows loop uses the
- * single `emit_result` tool (Zod-validated in-process) instead of structured
- * object output. NEVER mix structured object output with tools on such a model.
- * The strategy is chosen HERE from
+ * Structured-output rule: when the routed model cannot mix `Output.object` with
+ * tools (DeepSeek — per-step json_schema injection provokes a text-dump), the
+ * workflows loop uses the single `emit_result` tool (Zod-validated in-process)
+ * instead of structured object output. NEVER mix structured object output with
+ * tools on such a model. The strategy is chosen HERE from
  * `policy(useCase).capabilities.supportsOutputObjectWithTools` via
  * `chooseStructuredOutputStrategy`, then honored by the loop.
  */
@@ -30,7 +28,6 @@
 import { z } from "zod";
 import type { CapabilityFlags } from "@autobroker/core";
 import type { UseCase } from "./policy.js";
-import type { MalformedSignal } from "./malformedToolCall.js";
 
 export interface HarnessGenerateInput<TSchema extends z.ZodTypeAny> {
   /** Provider-neutral use-case; policy() maps it to a ModelAlias. */
@@ -40,9 +37,6 @@ export interface HarnessGenerateInput<TSchema extends z.ZodTypeAny> {
   /** The prompt / messages payload. TODO: type as canonical-message[] once the
    *  canonical-message <-> ModelMessage translator lands in this layer. */
   prompt: string;
-  /** Whether a human is available to suspend to on a fail-closed event. The
-   *  Mastra workflow suspends if true, hard-aborts (typed) if false. */
-  hitlAvailable: boolean;
 }
 
 export interface HarnessGenerateResult<T> {
@@ -58,13 +52,6 @@ export interface HarnessGenerateResult<T> {
     promptTokens: number | null;
     completionTokens: number | null;
   };
-}
-
-/** A fail-closed suspend surfaced to the workflow layer (not thrown). */
-export interface HarnessSuspend {
-  suspended: true;
-  reason: "malformed_tool_call";
-  signals: MalformedSignal[];
 }
 
 /**

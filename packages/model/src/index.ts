@@ -1,7 +1,7 @@
 /**
  * @autobroker/model — Layer 2 public surface (the AI SDK layer).
  *
- * Owns provider routing, structured-output helpers, and #1244 detector helpers.
+ * Owns provider routing and the structured-output strategy helpers.
  * Mastra owns orchestration and the agent loop.
  * Imports `ai` / `@ai-sdk/*` (that is this layer's job) and `@autobroker/core`
  * (Layer 1). MUST NOT import workflows / tools / app (one-way deps).
@@ -54,23 +54,12 @@ export { chooseStructuredOutputStrategy } from "./harness.js";
 export type {
   HarnessGenerateInput,
   HarnessGenerateResult,
-  HarnessSuspend,
   StructuredOutputStrategy,
 } from "./harness.js";
 
 // TEST SUPPORT ONLY — fake LanguageModel factories so other layers can unit-test
 // agent loops without importing `ai` (the dep wall keeps `ai` types in model).
 export { makeStaticToolCallModel, makeProseDumpModel, makeStructuredObjectModel } from "./testSupport.js";
-
-// #1244 fail-closed malformed-tool-call detector (loop-level safety boundary).
-export {
-  detectMalformedToolCall,
-  assertToolTurnOrFailClosed,
-  redactMalformedSample,
-  MalformedToolCallAbort,
-  MALFORMED_TOOL_CALL_REASON,
-} from "./malformedToolCall.js";
-export type { ToolTurnView, MalformedSignal } from "./malformedToolCall.js";
 
 // Self-managed pricing table + usage→cost helper (NULL-not-$0; ledger snapshot).
 export { PRICING, computeCostUsd } from "./pricing.js";

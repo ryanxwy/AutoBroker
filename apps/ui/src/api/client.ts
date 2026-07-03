@@ -368,8 +368,8 @@ export class ApiClient {
 
   /** GET /api/profiles/:id/dealer-negotiations/:dealerId/summary → the LLM
    *  negotiation-state summary ({ summary }). ALWAYS 200 for a bound dealer (the
-   *  workflow degrades to { summary:null } on any #1244 / budget-belt / transport
-   *  failure); only a missing profile is a 404. */
+   *  workflow degrades to { summary:null } on any emit-not-called / budget-belt /
+   *  transport failure); only a missing profile is a 404. */
   async getDealerNegotiationSummary(
     id: string,
     dealerId: string,

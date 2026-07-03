@@ -13,10 +13,10 @@
  *   3. cache: an in-process LRU keyed by `profileId:dealerId:sig`, sig = a hash
  *      of the filtered reply body set (the set changes → a fresh generation; an
  *      unchanged set hits the cache). best_competing_otd is NOT in the key.
- *   4. generate: a SINGLE emit_result (flat .strict() schema), hitlAvailable
- *      false. ONE try/catch wraps generate + the Zod re-validate + the
- *      assertNoBudget belt (assertNoBudget THROWS, so it lives INSIDE the try);
- *      ANY throw → {summary:null} + a voiced degrade trace span.
+ *   4. generate: a SINGLE emit_result (flat .strict() schema). ONE try/catch wraps
+ *      generate + the Zod re-validate + the assertNoBudget belt (assertNoBudget
+ *      THROWS, so it lives INSIDE the try); ANY throw → {summary:null} + a voiced
+ *      degrade trace span.
  *
  * Dependency wall: imports @autobroker/tools (the reply-body read + assertNoBudget
  * — the ONLY DB path) + this layer's harness facade + the skill-local contracts +
@@ -32,7 +32,7 @@ import {
   type Db,
 } from "@autobroker/tools";
 
-import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
+import { harness, type HarnessLedgerContext } from "./harness.js";
 import {
   NegotiationSummaryEmitSchema,
   buildNegotiationSummaryPrompt,
@@ -144,8 +144,8 @@ function traceDegrade(profileId: string, dealerId: string, reason: string): void
 /**
  * Get (cached) or generate the dealer's negotiation-state summary. Returns
  * {summary:null} on an empty input (no LLM call) or on ANY generation failure
- * (malformed #1244, Zod-authority, budget-leak belt, transport) — never throws
- * into the caller.
+ * (emit_result never fired, Zod-authority, budget-leak belt, transport) — never
+ * throws into the caller.
  */
 export async function getOrGenerateDealerNegotiationSummary(
   db: Db,
@@ -171,14 +171,9 @@ export async function getOrGenerateDealerNegotiationSummary(
         useCase: "negotiation_summary",
         schema: NegotiationSummaryEmitSchema,
         prompt: buildNegotiationSummaryPrompt(bodies),
-        hitlAvailable: false,
       },
       summaryLedger(args.profileId, args.dealerId),
     );
-    if (isHarnessSuspend(result)) {
-      traceDegrade(args.profileId, args.dealerId, "suspend");
-      return { summary: null };
-    }
     // Zod re-validate (defense-in-depth) + the budget belt. assertNoBudget THROWS
     // on a leak, so it lives INSIDE the try — a leak degrades to null, never
     // surfaces, and is NEVER cached.

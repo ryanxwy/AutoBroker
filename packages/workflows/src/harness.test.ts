@@ -1,27 +1,23 @@
 /**
  * In-stack tests — harness.generate (the critical path).
  *
- * These drive the REAL Mastra Agent → REAL #1244 output Processor → REAL ledger
- * writer chain against a DETERMINISTIC fake LanguageModel (from @autobroker/model
- * testSupport) and an ISOLATED tmp DB. No live network. The whole
- * agent→processor→tripwire→ledger path is genuinely exercised — that is the
- * in-stack evidence we need (the #1244 fail-closed boundary must be proven on
- * the real stack, not a hand-rolled fake of it).
+ * These drive the REAL Mastra Agent → REAL ledger writer chain against a
+ * DETERMINISTIC fake LanguageModel (from @autobroker/model testSupport) and an
+ * ISOLATED tmp DB. No live network. The whole agent→ledger path is genuinely
+ * exercised — that is the in-stack evidence we need (the fail-closed boundary
+ * must be proven on the real stack, not a hand-rolled fake of it).
  *
  * Coverage:
  *   - clean path: a well-formed emit_result tool call → Zod-validated object,
  *     priced via the real PRICING table, ONE ledger row, fail_reason null;
- *   - in-stack #1244 (a simulated malformed tool call → typed abort): a
- *     prose/tool-blob dump
- *     → no HITL: typed MalformedToolCallAbort + ledger fail_reason
- *     'malformed_tool_call'; HITL: HarnessSuspend + ledger row;
+ *   - fail-closed: the emit_result tool never fires (a prose dump) → typed
+ *     EmitResultNotCalledError + ledger fail_reason 'emit_result_not_called';
  *   - Zod authority: a tool call with schema-violating args → ZodError + ledger
  *     fail_reason 'zod_validation' (model output is advisory, Zod is the law);
  *   - NULL-not-$0: usage undefined → costUsd null + pricingSource 'unavailable';
  *   - output_object lane: a useCase routing to a supportsOutputObjectWithTools
  *     provider drives the NATIVE structured-output path → Zod-validated object,
- *     priced, ONE ledger row; the #1244 processor (expectsToolCall:false) stays
- *     harmless on the clean `stop` finish; Zod authority still rejects drift.
+ *     priced, ONE ledger row; Zod authority still rejects drift.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
  * the committed migration is applied to the throwaway DB; the harness writes
@@ -37,7 +33,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { z } from "zod";
 
 import {
-  MalformedToolCallAbort,
   __resetHarnessGenerateFaultForTests,
   __setHarnessGenerateFaultForTests,
   makeProseDumpModel,
@@ -50,9 +45,8 @@ import { openDb, type Db } from "@autobroker/tools";
 
 import { clearRunSelection, setRunSelection } from "./agentSelection.js";
 import {
+  EmitResultNotCalledError,
   harness,
-  THINKING_AUTO_EMIT_USE_CASES,
-  THINKING_EMIT_EFFORT,
   type HarnessLedgerContext,
 } from "./harness.js";
 
@@ -64,9 +58,9 @@ const originalDbOverride = process.env[DB_OVERRIDE];
 const originalAgentProvider = process.env[AGENT_PROVIDER];
 
 const here = dirname(fileURLToPath(import.meta.url));
-// 0000 creates test_run_records; 0005 adds the #1244 malformed-evidence columns
-// the ledger writer now always emits.
-const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql"].map((f) =>
+// 0000 creates test_run_records; 0005 adds the malformed-evidence columns and
+// 0007 drops them (the deleted #1244 apparatus) — the current ledger schema.
+const MIGRATION_SQLS = ["0000_military_red_skull.sql", "0005_military_nightshade.sql", "0007_public_thanos.sql"].map((f) =>
   join(here, "..", "..", "db", "drizzle", f),
 );
 
@@ -110,7 +104,6 @@ function probeInput(
     useCase: "foundation_probe",
     schema: quoteSchema,
     prompt: "Return the Tucson high temperature as a structured result.",
-    hitlAvailable: false,
     ...over,
   };
 }
@@ -134,12 +127,10 @@ function ledgerRows(): Array<{
   price_input_per_mtok: unknown;
   fail_reason: string | null;
   latency_ms: unknown;
-  malformed_signals: string | null;
-  malformed_sample: string | null;
 }> {
   return db.$client
     .prepare(
-      "SELECT provider, model_alias, cost_usd, input_tokens, output_tokens, pricing_source, price_input_per_mtok, fail_reason, latency_ms, malformed_signals, malformed_sample FROM test_run_records",
+      "SELECT provider, model_alias, cost_usd, input_tokens, output_tokens, pricing_source, price_input_per_mtok, fail_reason, latency_ms FROM test_run_records",
     )
     .all() as ReturnType<typeof ledgerRows>;
 }
@@ -206,56 +197,23 @@ describe("harness.generate — lane-A provider override is OFF by default (DeepS
   });
 });
 
-describe("harness.generate — in-stack #1244 fail-closed", () => {
-  // A tool-shaped blob carrying a SECRET number (selling_price) + email — it both
-  // trips the #1244 detector AND gives the capture layer something to redact, so
-  // the malformed_sample assertions prove redaction ran before persist (inv #9).
-  const SECRET_BLOB = '{"name":"emit_result","arguments":{"selling_price":34250,"contact":"a@b.com"}}';
-
-  it("no HITL: a tool-shaped prose dump throws MalformedToolCallAbort + ledger 'malformed_tool_call'", async () => {
+describe("harness.generate — in-stack fail-closed (emit_result never fires)", () => {
+  it("a prose dump (no tool call) throws EmitResultNotCalledError + ledger 'emit_result_not_called'", async () => {
+    // The model answered in prose instead of calling the emit_result tool. The
+    // harness refuses to fall through to prose (never regexes a tool name out of
+    // content): it fails closed with the typed error and records one ledger row.
     const model = makeProseDumpModel({
-      text: SECRET_BLOB,
+      text: "Sorry, I cannot format that as a tool call.",
       modelId: "deepseek-v4-flash",
     });
 
     await expect(
-      harness.generate(probeInput({ hitlAvailable: false }), ledger, { model, db }),
-    ).rejects.toBeInstanceOf(MalformedToolCallAbort);
+      harness.generate(probeInput(), ledger, { model, db }),
+    ).rejects.toBeInstanceOf(EmitResultNotCalledError);
 
     const rows = ledgerRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.fail_reason).toBe("malformed_tool_call");
-    // Evidence captured: the joined signal names...
-    expect(typeof rows[0]?.malformed_signals).toBe("string");
-    expect(rows[0]?.malformed_signals).toContain("tool_shaped_blob_in_content");
-    // ...and a non-empty, REDACTED sample (no raw budget number, no raw email).
-    expect(rows[0]?.malformed_sample).toBeTruthy();
-    expect(rows[0]?.malformed_sample).not.toContain("34250");
-    expect(rows[0]?.malformed_sample).not.toContain("a@b.com");
-  });
-
-  it("HITL: the same dump resolves to a HarnessSuspend + ledger 'malformed_tool_call'", async () => {
-    const model = makeProseDumpModel({
-      text: SECRET_BLOB,
-      modelId: "deepseek-v4-flash",
-    });
-
-    const out = await harness.generate(probeInput({ hitlAvailable: true }), ledger, { model, db });
-
-    expect("suspended" in out).toBe(true);
-    if (!("suspended" in out)) return; // narrow
-    expect(out.suspended).toBe(true);
-    expect(out.reason).toBe("malformed_tool_call");
-    expect(out.signals.length).toBeGreaterThan(0);
-
-    const rows = ledgerRows();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.fail_reason).toBe("malformed_tool_call");
-    expect(typeof rows[0]?.malformed_signals).toBe("string");
-    expect(rows[0]?.malformed_signals).toContain("tool_shaped_blob_in_content");
-    expect(rows[0]?.malformed_sample).toBeTruthy();
-    expect(rows[0]?.malformed_sample).not.toContain("34250");
-    expect(rows[0]?.malformed_sample).not.toContain("a@b.com");
+    expect(rows[0]?.fail_reason).toBe("emit_result_not_called");
   });
 });
 
@@ -263,11 +221,11 @@ describe("harness.generate — Zod is authoritative", () => {
   it("model args that violate the contract throw ZodError + ledger 'zod_validation'", async () => {
     // Mastra validates emit_result's args against input.schema BEFORE execute
     // (live-probed): a contract violation is rejected at the tool boundary as a
-    // typed ValidationError (finishReason stays 'tool-calls', so #1244 correctly
-    // does NOT trip). The harness detects that rejection via Mastra's
-    // isValidationError guard and surfaces it as the Zod-authority failure — a
-    // ZodError, ledger 'zod_validation'. Here a refinement (high <= 50) is the
-    // contract the model's args (high: 100) violate.
+    // typed ValidationError (finishReason stays 'tool-calls' — a tool WAS called).
+    // The harness detects that rejection via Mastra's isValidationError guard and
+    // surfaces it as the Zod-authority failure — a ZodError, ledger
+    // 'zod_validation'. Here a refinement (high <= 50) is the contract the model's
+    // args (high: 100) violate.
     const strictSchema = z
       .object({ city: z.string(), high: z.number() })
       .refine((v) => v.high <= 50, { message: "high must be <= 50" });
@@ -284,7 +242,6 @@ describe("harness.generate — Zod is authoritative", () => {
           useCase: "foundation_probe",
           schema: strictSchema,
           prompt: "x",
-          hitlAvailable: false,
         },
         ledger,
         { model, db },
@@ -328,9 +285,8 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
   // (supportsOutputObjectWithTools:true), so harness.generate takes the NATIVE
   // structured-output path: Mastra drives `structuredOutput:{schema}`, the fake
   // model returns a JSON-text response (the v3 shape the path consumes,
-  // live-probed 2026-06-05), and result.object is parsed + Zod-validated. The
-  // #1244 processor is attached with expectsToolCall:false so the clean `stop`
-  // finish does NOT false-trip. No live network.
+  // live-probed 2026-06-05), and result.object is parsed + Zod-validated. No
+  // live network.
   const objectLedger: HarnessLedgerContext = {
     runId: "run-output-object-1",
     skill: "cross_provider_smoke",
@@ -346,7 +302,6 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
       useCase: "cross_provider_smoke",
       schema: quoteSchema,
       prompt: "Return the Tucson high temperature as a structured result.",
-      hitlAvailable: false,
       ...over,
     };
   }
@@ -389,7 +344,7 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
 
     await expect(
       harness.generate(
-        { useCase: "cross_provider_smoke", schema: strictSchema, prompt: "x", hitlAvailable: false },
+        { useCase: "cross_provider_smoke", schema: strictSchema, prompt: "x" },
         objectLedger,
         { model, db },
       ),
@@ -400,10 +355,9 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
     expect(rows[0]?.fail_reason).toBe("zod_validation");
   });
 
-  it("#1244 stays harmless: a clean structured `stop` finish does NOT false-trip", async () => {
-    // The processor runs with expectsToolCall:false on this lane, so the
-    // finish_reason/empty-tool-call signals are gated off (live-probed: with
-    // expectsToolCall:true the same turn WOULD trip). The run succeeds, no abort.
+  it("a clean structured `stop` finish succeeds (no false fail-closed)", async () => {
+    // The native output_object lane legitimately finishes with `stop` + object
+    // (no tool call). The run succeeds, no abort.
     const model = makeStructuredObjectModel({
       object: { city: "Tucson", high: 88 },
       modelId: "claude-sonnet-4-6",
@@ -420,9 +374,8 @@ describe("harness.generate — native output_object lane (cross-provider)", () =
 describe("harness.draftProse — no-tool prose facade", () => {
   // draftProse is a strict subset of generate: NO tools, NO structuredOutput, NO
   // toolChoice, NO Zod. negotiation_followup routes to deepseek.chat. A clean
-  // prose `stop` returns { text, usage } + ONE ledger row; a tool-shaped blob in
-  // the content fails CLOSED (typed MalformedToolCallAbort) so the blob is never
-  // returned as prose; a throwing model still writes one NULL-not-$0 row.
+  // prose `stop` returns { text, usage } + ONE ledger row; a throwing model still
+  // writes one NULL-not-$0 row.
   const proseLedger: HarnessLedgerContext = {
     runId: "run-prose-1",
     skill: "negotiation_followup",
@@ -455,27 +408,6 @@ describe("harness.draftProse — no-tool prose facade", () => {
     // negotiation_followup routes to deepseek.chat (the prose lane).
     expect(rows[0]?.provider).toBe("deepseek");
     expect(rows[0]?.model_alias).toBe("deepseek.chat");
-  });
-
-  it("fails CLOSED on a tool-shaped blob in the prose (typed abort + ledger 'malformed_tool_call')", async () => {
-    // A real escape: the model dumped a tool-call shape as text. expectsToolCall
-    // is false on this lane, so finish_reason/empty-tool signals are gated off —
-    // but the tool_shaped_blob signal still fires. Never return the blob as prose.
-    const model = makeProseDumpModel({
-      text: '{"name":"emit_result","arguments":{"body":"x"}}',
-      modelId: "deepseek-v4-flash",
-    });
-
-    await expect(
-      harness.draftProse({ useCase: "negotiation_followup", prompt: "x" }, proseLedger, {
-        model,
-        db,
-      }),
-    ).rejects.toBeInstanceOf(MalformedToolCallAbort);
-
-    const rows = ledgerRows();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.fail_reason).toBe("malformed_tool_call");
   });
 
   it("NULL-not-$0: an unknown model id → costUsd null + pricing_source 'unavailable'", async () => {
@@ -701,7 +633,7 @@ describe("harness.generate — lane B (Claude OAuth) dispatch", () => {
 
     await expect(
       harness.generate(
-        { useCase: "foundation_probe", schema: strictSchema, prompt: "x", hitlAvailable: false },
+        { useCase: "foundation_probe", schema: strictSchema, prompt: "x" },
         laneBLedger,
         { db, claudeOAuthQuery: fakeOAuth },
       ),
@@ -827,35 +759,5 @@ describe("harness.generate — lane B (Claude OAuth) dispatch", () => {
     expect(rows[0]?.cost_usd).toBeNull();
     expect(rows[0]?.input_tokens).toBe(7);
     expect(rows[0]?.fail_reason).toBeNull();
-  });
-});
-
-describe("thinking-emit lane — recovery-hop membership + per-useCase effort", () => {
-  const RECOVERY_HOPS = [
-    "dealer_reply_extract_retry",
-    "geosearch_extract_retry",
-    "inventory_extract_retry",
-    "incentive_extract_retry",
-    "lead_form_map_retry",
-  ] as const;
-
-  it("all five *_retry hops run on the thinking-auto-emit lane", () => {
-    for (const uc of RECOVERY_HOPS) {
-      expect(THINKING_AUTO_EMIT_USE_CASES.has(uc)).toBe(true);
-    }
-  });
-
-  it("dealer_reply_extract_retry stays 'high'; the four shared hops fall through to 'medium'", () => {
-    expect(THINKING_EMIT_EFFORT["dealer_reply_extract_retry"]).toBe("high");
-    // The shared-helper hops are NOT in the map → `?? \"medium\"` resolves them.
-    for (const uc of [
-      "geosearch_extract_retry",
-      "inventory_extract_retry",
-      "incentive_extract_retry",
-      "lead_form_map_retry",
-    ] as const) {
-      expect(THINKING_EMIT_EFFORT[uc]).toBeUndefined();
-      expect(THINKING_EMIT_EFFORT[uc] ?? "medium").toBe("medium");
-    }
   });
 });

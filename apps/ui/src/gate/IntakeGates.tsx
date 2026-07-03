@@ -14,8 +14,6 @@
  *       is flagged, the failure reason shown, the user re-fills (retry_query).
  *       (coordinate-resolution invariant: coordinates must be resolved before
  *       persist; geocode failure suspends, never silently passes.)
- *   - MalformedRetry → MalformedRetryResumeSchema:
- *       {action:'retry_step'} | {action:'decline'}
  *
  * These render as the assistant turn's GATE zone — structurally BEFORE the text
  * zone (gate before prose). Every node has a stable data-testid.
@@ -272,44 +270,6 @@ export function LocationFailureBanner({
         </button>
         <button type="button" className="btn-danger" data-testid="gate-location-failure-decline" disabled={submitting} onClick={onDecline}>
           Cancel search
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** malformed_tool_call: #1244 fail-closed HITL. retry_step | decline. */
-export function MalformedRetryGate({
-  gate,
-  submitting,
-  onResume,
-  onDecline,
-}: GateProps & { gate: Extract<GateModel, { kind: "malformed_tool_call" }> }): JSX.Element {
-  return (
-    <div className="gate-card sensitive" data-testid="gate-malformed" role="alertdialog" aria-label="Tool call needs retry">
-      <strong className="danger-text">The model returned a malformed tool call.</strong>
-      <p className="muted">
-        Stopped to protect against a silent fallback. Retry the step, or cancel.
-      </p>
-      {gate.signals.length > 0 && (
-        <ul className="muted" data-testid="gate-malformed-signals">
-          {gate.signals.map((s, i) => (
-            <li key={i}>{s}</li>
-          ))}
-        </ul>
-      )}
-      <div className="gate-actions">
-        <button
-          type="button"
-          className="btn-primary"
-          data-testid="gate-malformed-retry"
-          disabled={submitting}
-          onClick={() => onResume({ action: "retry_step" })}
-        >
-          Retry
-        </button>
-        <button type="button" className="btn-danger" data-testid="gate-malformed-decline" disabled={submitting} onClick={onDecline}>
-          Cancel
         </button>
       </div>
     </div>

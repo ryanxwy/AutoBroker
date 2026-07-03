@@ -31,7 +31,7 @@
  *   - extract phase        → per-row Zod rejection counting, VIN provenance
  *                            drops, URL provenance strips (out-of-set URL →
  *                            null + counted; in-set persists on the URL arm),
- *                            VDP VIN attach, #1244 fail-closed.
+ *                            VDP VIN attach, fail-closed extract.
  *   - persist              → invoked exactly ONCE, after capture.
  *   - flat-shape structural check (no nested workflow step).
  *
@@ -56,6 +56,7 @@ import {
   type Db,
 } from "@autobroker/tools";
 
+import { EmitResultNotCalledError } from "./harness.js";
 import { createMastraInstance } from "./mastra.js";
 import {
   browserWalkSrp,
@@ -954,7 +955,7 @@ describe("scanDealersParallelImpl — task isolation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extract phase — Zod rejection counting, VIN provenance, VDP attach, #1244
+// extract phase — Zod rejection counting, VIN provenance, VDP attach, fail-closed
 // ---------------------------------------------------------------------------
 
 describe("inventory_site_scan — extract phase", () => {
@@ -1252,18 +1253,16 @@ describe("inventory_site_scan — extract phase", () => {
     expect(row.normalized_listing_url).toBe("https://www.d-a.com/new/Hyundai-Tucson-1.htm");
   });
 
-  it("a malformed tool call (suspend-shaped harness return) fail-closes: run failed, zero listings", async () => {
+  it("a fail-closed extract (emit_result never fires) fail-closes: run failed, zero listings", async () => {
     seedOne();
-    const harnessGenerate = (async () => ({
-      suspended: true,
-      reason: "malformed_tool_call",
-      signals: ["empty_tool_calls"],
-    })) as unknown as InventoryScanWorkflowDeps["harnessGenerate"];
+    const harnessGenerate = (async () => {
+      throw new EmitResultNotCalledError("inventory_extract");
+    }) as unknown as InventoryScanWorkflowDeps["harnessGenerate"];
     __setInventoryScanDepsForTests({
       harnessGenerate,
       scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
     });
-    const final = await runApproved("scan-1244-1");
+    const final = await runApproved("scan-failclosed-1");
     expect(final.status).toBe("failed");
     expect(rowCount("inventory_listings")).toBe(0);
     expect(rowCount("dealer_inventory_sources")).toBe(0);

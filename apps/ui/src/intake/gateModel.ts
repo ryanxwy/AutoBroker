@@ -22,11 +22,9 @@
  *                         re-fill branch (location flagged + reason + retry).
  *                         resume {action:'pick',picked_index} |
  *                         {action:'retry',retry_query} | {action:'decline'}.
- *   - malformed_tool_call → #1244 fail-closed HITL. {kind, signals}. resume
- *                         {action:'retry_step'} | {action:'decline'}.
  *
  * The classification is structural (reads named keys defensively off the open
- * wire record) — never regexes a function name out of prose (#1244 discipline).
+ * wire record) — never regexes a function name out of prose.
  */
 
 export interface LocationCandidate {
@@ -62,7 +60,6 @@ export type GateModel =
   // parse/no-result/retry-exhausted → re-fill the form, location field flagged,
   // failure reason shown, user retries (resume retry_query).
   | { kind: "location_failure"; failureReason: string; effectiveQuery: string | null }
-  | { kind: "malformed_tool_call"; signals: string[] }
   | { kind: "unknown"; raw: Record<string, unknown> | null };
 
 function str(v: unknown): string | null {
@@ -136,14 +133,6 @@ export function classifyGate(specInline: Record<string, unknown> | null): GateMo
       year: num(specInline["year"]),
       candidates,
     };
-  }
-
-  if (kind === "malformed_tool_call") {
-    const rawSignals = specInline["signals"];
-    const signals = Array.isArray(rawSignals)
-      ? rawSignals.filter((s): s is string => typeof s === "string")
-      : [];
-    return { kind: "malformed_tool_call", signals };
   }
 
   return { kind: "unknown", raw: specInline };

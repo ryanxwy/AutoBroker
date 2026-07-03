@@ -75,11 +75,9 @@
  *                      trusted; the row then lives or dies by the usual
  *                      VIN-or-URL key rule at persist); VDP-harvested VINs
  *                      attach to VIN-less rows by normalized listing URL. Extraction
- *                      runs 4 dealers concurrently. hitlAvailable=false: a
- *                      malformed first hop is retried ONCE on the
- *                      inventory_extract_retry lane via recoverEmitWithRetry,
- *                      else fail-closes as a thrown typed MalformedToolCallAbort
- *                      — never a prose fallthrough.
+ *                      runs 4 dealers concurrently. The single emit_result call
+ *                      fails CLOSED as a thrown typed EmitResultNotCalledError
+ *                      when the tool never fires — never a prose fallthrough.
  *   4 persistConfirm — the ONLY DB write: ONE persistScanResults call over
  *                      every dealer outcome (capture-then-serial; the writer
  *                      itself gates supersession to freshly-SCANNED sources,
@@ -104,9 +102,7 @@
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
  * (InventoryListing), @autobroker/tools (resolver + dealer-row read + browser
  * session + pure helpers + the persist writer — the ONLY DB/side-effect
- * paths), this layer's harness facade, and the recoverEmitWithRetry recovery
- * helper (which owns the @autobroker/model contact for the malformed-class
- * retry hop).
+ * paths), and this layer's harness facade.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -145,7 +141,6 @@ import {
 } from "@autobroker/tools";
 
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 /** A page handle as the browser session mints it (no direct playwright import
  *  here — the type flows off the tools session surface). */
@@ -442,11 +437,10 @@ export function validateVdpBreakdown(o: {
 }
 
 /**
- * LLM fallback price extraction over a single VDP snapshot. Reuses the
- * #1244-safe `recoverEmitWithRetry` path (one malformed hop fail-closes then
- * auto-recovers on the strong+thinking lane — never a prose fallthrough), then
- * runs `validateVdpPrice`. Fails CLOSED to all-null on ANY error/malformed —
- * the scan keeps the deterministic null, never blocks, never invents.
+ * LLM fallback price extraction over a single VDP snapshot. Runs the single
+ * emit_result `generate` (fail-closed when the tool never fires — never a prose
+ * fallthrough), then runs `validateVdpPrice`. Fails CLOSED to all-null on ANY
+ * error — the scan keeps the deterministic null, never blocks, never invents.
  */
 export async function llmExtractVdpPrice(args: {
   harnessGenerate: typeof harness.generate;
@@ -457,17 +451,14 @@ export async function llmExtractVdpPrice(args: {
   ledger: HarnessLedgerContext;
 }): Promise<VdpExtract> {
   try {
-    const result = await recoverEmitWithRetry({
-      harnessGenerate: args.harnessGenerate,
-      input: {
+    const result = await args.harnessGenerate(
+      {
         useCase: "inventory_extract",
         schema: VdpPriceExtractSchema,
         prompt: buildVdpPricePrompt(args.year, args.make, args.model, args.snapshotText),
-        hitlAvailable: false,
       },
-      retryUseCase: "inventory_extract_retry",
-      ledger: args.ledger,
-    });
+      args.ledger,
+    );
     return { ...validateVdpPrice(result.object), ...validateVdpBreakdown(result.object) };
   } catch {
     return {
@@ -2082,20 +2073,14 @@ const extractStep = createStep({
         const capture = carry.captures.get(row.dealer_id);
         if (capture === undefined) throw new InventoryScanCaptureLostError();
 
-        const result = await recoverEmitWithRetry({
-          harnessGenerate: deps().harnessGenerate,
-          input: {
+        const result = await deps().harnessGenerate(
+          {
             useCase: "inventory_extract",
             schema: InventoryExtractSchema,
             prompt: buildInventoryExtractPrompt(state.make, state.model, capture.snapshotText),
-            // A malformed tool call retries ONCE on the strong+thinking lane,
-            // else fail-closes — never a prose fallthrough, never a regexed-out
-            // tool call.
-            hitlAvailable: false,
           },
-          retryUseCase: "inventory_extract_retry",
-          ledger: inventoryScanLedger(runId),
-        });
+          inventoryScanLedger(runId),
+        );
 
         const vdpVinByUrl = new Map(
           capture.vdpFacts

@@ -170,7 +170,7 @@ describe("VDP price fallback prompt + schema", () => {
     };
     expect(VdpPriceExtractSchema.safeParse(full).success).toBe(true);
     // FLAT-only: every field is a scalar (number / string / boolean) — proven by
-    // the shape having no array/object values (the #1 #1244 trigger).
+    // the shape having no array/object values (the primary mixing trigger).
     for (const v of Object.values(full)) {
       expect(["number", "boolean", "object" /* null */].includes(typeof v)).toBe(true);
       expect(Array.isArray(v)).toBe(false);

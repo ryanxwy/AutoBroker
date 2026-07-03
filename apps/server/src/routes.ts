@@ -753,7 +753,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       },
     };
 
-    // null == fail-closed (malformed/zod/transport) → empty list (the UI keeps
+    // null == fail-closed (emit-not-called/zod/transport) → empty list (the UI keeps
     // its deterministic order). Only a NON-null result is cached, so a transient
     // model hiccup never poisons the cache for that request shape.
     const raw = await suggestNext(ctx);
@@ -1019,8 +1019,8 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   // ---- GET /api/profiles/:id/dealer-negotiations/:dealerId/summary ----------
   // The LLM negotiation-state summary. Delegates DOWN to the workflows layer (the
   // ONLY caller that may invoke the LLM; tools never do). Returns {summary} and
-  // NEVER 404s on generation failure — the workflow fn degrades to null (#1244 /
-  // budget-belt / transport all resolve {summary:null}).
+  // NEVER 404s on generation failure — the workflow fn degrades to null
+  // (emit-not-called / budget-belt / transport all resolve {summary:null}).
   app.get(
     "/api/profiles/:id/dealer-negotiations/:dealerId/summary",
     async (req: FastifyRequest, _reply: FastifyReply) => {

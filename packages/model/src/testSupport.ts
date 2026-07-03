@@ -8,11 +8,11 @@
  * These factories hand back a real `LanguageModelV3` so they drive a genuine
  * `new Agent({ model })` loop, not a hand-rolled fake of one.
  *
- * Two failure-mode shapes are provided:
- *   - makeStaticToolCallModel — one well-formed tool call (the happy path the
- *     #1244 detector must pass clean).
+ * Two turn shapes are provided:
+ *   - makeStaticToolCallModel — one well-formed tool call (the happy path where
+ *     the emit_result tool fires cleanly).
  *   - makeProseDumpModel      — plain text, finishReason 'stop', no tool calls:
- *     the #1244 text-dump the fail-closed detector must catch.
+ *     the emit_result tool never fires, so the harness fails closed.
  *
  * API surface verified against @ai-sdk/provider@3.0.10 (the version `ai@6.0.195`
  * resolves) `LanguageModelV3`: specificationVersion 'v3'; finishReason is the
@@ -138,7 +138,7 @@ function makeStaticModel(opts: {
 /**
  * A model whose single turn is one WELL-FORMED tool call for `opts.toolName`
  * with `opts.args` serialized as the v3 `input` JSON string, finishReason
- * `tool-calls`. This is the clean path the #1244 detector must pass through.
+ * `tool-calls`. This is the clean path where the emit_result tool fires.
  */
 export function makeStaticToolCallModel(opts: {
   toolName: string;
@@ -163,9 +163,9 @@ export function makeStaticToolCallModel(opts: {
 }
 
 /**
- * A model that dumps plain TEXT (the caller supplies a tool-shaped blob string
- * when simulating the #1244 failure), finishReason `stop`, NO tool calls. The
- * fail-closed detector must catch this on a tool-expecting step.
+ * A model that dumps plain TEXT (the caller supplies the text), finishReason
+ * `stop`, NO tool calls. On a tool-expecting step the emit_result tool never
+ * fires, so the harness fails closed (EmitResultNotCalledError).
  */
 export function makeProseDumpModel(opts: {
   text: string;

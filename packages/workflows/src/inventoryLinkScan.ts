@@ -59,10 +59,8 @@
  *                      the transient equivalent-read fallback class:
  *                      auto-allowed, never silent). Then per scanned link ONE
  *                      separate NO-TOOLS structured `inventory_extract` call
- *                      (emit_result discipline; hitlAvailable=false → a
- *                      malformed first hop is retried ONCE on the
- *                      inventory_extract_retry lane via recoverEmitWithRetry,
- *                      else fail-closes as a typed MalformedToolCallAbort,
+ *                      (emit_result discipline; fail-closes as a typed
+ *                      EmitResultNotCalledError when the tool never fires,
  *                      never a prose fallthrough).
  *                      Zod re-validates every row; an LLM-emitted VIN must
  *                      appear verbatim in the link's snapshot or the row drops
@@ -109,18 +107,10 @@
  *                                        for the rest of the bucket, never
  *                                        retried harder, never escalated;
  *                                        surfaced in the confirm counts.
- *   - malformed structured call (#1244)→ hitlAvailable=false on every extract
- *                                        call: a malformed first hop is retried
- *                                        ONCE on the inventory_extract_retry
- *                                        (v4-pro+thinking) lane via
- *                                        recoverEmitWithRetry and persist IS
- *                                        reached on a clean retry; only a SECOND
- *                                        malformed / blob-only / budget-
- *                                        exhausted failure reaches the fail-
- *                                        closed MalformedToolCallAbort terminus
- *                                        where the run FAILS (zero writes;
- *                                        persist never reached), never a prose
- *                                        fallthrough.
+ *   - emit_result never fired          → the extract call fails CLOSED as a
+ *                                        typed EmitResultNotCalledError where the
+ *                                        run FAILS (zero writes; persist never
+ *                                        reached), never a prose fallthrough.
  *   - unrenderable suspend payload     → the suspend payload is schema-bound
  *                                        (LinkScanReviewSuspendSchema) and the
  *                                        card host falls back to its
@@ -133,9 +123,7 @@
  * (InventoryListing), @autobroker/tools (resolver + source loader + browser
  * session + pure helpers + the persist writer — the ONLY DB/side-effect
  * paths), the sibling skill module (shared capture/extract helpers + the
- * batch_review resume contract), this layer's harness facade, and the
- * recoverEmitWithRetry recovery helper (which owns the @autobroker/model
- * contact for the malformed-class retry hop).
+ * batch_review resume contract), and this layer's harness facade.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -176,7 +164,6 @@ import {
   weaveCardsForExtraction,
 } from "./inventorySiteScan.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 /** A page handle as the browser session mints it (no direct playwright import
  *  here — the type flows off the tools session surface). */
@@ -1169,20 +1156,14 @@ const visitExtractStep = createStep({
         const capture = carry.captures.get(row.source_id);
         if (capture === undefined) throw new InventoryLinkScanCaptureLostError();
 
-        const result = await recoverEmitWithRetry({
-          harnessGenerate: deps().harnessGenerate,
-          input: {
+        const result = await deps().harnessGenerate(
+          {
             useCase: "inventory_extract",
             schema: InventoryExtractSchema,
             prompt: buildInventoryExtractPrompt(state.make, state.model, capture.snapshotText),
-            // A malformed tool call retries ONCE on the strong+thinking lane,
-            // else fail-closes — never a prose fallthrough, never a regexed-out
-            // tool call.
-            hitlAvailable: false,
           },
-          retryUseCase: "inventory_extract_retry",
-          ledger: linkScanLedger(runId),
-        });
+          linkScanLedger(runId),
+        );
 
         // URL-provenance set: the collected card hrefs PLUS the link itself
         // (a card-less VDP capture has no hrefs, but the page's own URL is

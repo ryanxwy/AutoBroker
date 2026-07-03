@@ -2,9 +2,9 @@
 
 > Status: Phase 0 alignment target · 2026-06-03 · Layer 2 of the AutoBroker
 > (TS) five-layer monorepo: **the AI SDK 6 provider layer**. Owns provider
-> routing, model-id policy, provider-neutral structured-generation helpers, and
-> #1244 fail-closed detector/Processor helpers. Mastra owns orchestration and
-> the agent loop; this package supplies `LanguageModel` instances to Mastra.
+> routing, model-id policy, and provider-neutral structured-generation helpers.
+> Mastra owns orchestration and the agent loop; this package supplies
+> `LanguageModel` instances to Mastra.
 
 Layer 2 (`model`) is the only product layer that imports the AI SDK
 (`ai`, `@ai-sdk/*`). It depends on Layer 1 (`@autobroker/core`) and **must not**
@@ -20,8 +20,7 @@ core → model → workflows → tools → app
 | --- | --- |
 | `src/registry.ts` | `createProviderRegistry({ deepseek, anthropic, openai })` with `customProvider` capability aliases; `resolveModel(alias)` returns AI SDK 6 `LanguageModel` instances for Mastra agents |
 | `src/policy.ts` | `policy(useCase) → { alias, provider, capabilities }` — workflows name only a `useCase` |
-| `src/harness.ts` | `harness.generate({ useCase, schema, prompt, hitlAvailable })` — provider-neutral structured-generation/probe helper; Phase 0 wires resolved models into Mastra workflows |
-| `src/malformedToolCall.ts` | the **#1244 fail-closed** malformed-tool-call detector/Processor helpers (`detectMalformedToolCall`, `assertToolTurnOrFailClosed`, `MalformedToolCallAbort`) |
+| `src/harness.ts` | `HarnessGenerateInput/Result` signature types + `chooseStructuredOutputStrategy` — the provider-neutral structured-generation contract; the runnable `harness.generate` facade lives in `@autobroker/workflows` |
 | `src/index.ts` | the public re-export surface |
 
 ## Provider policy (2026-06-04 current)
@@ -80,24 +79,9 @@ Driven by `CapabilityFlags.supportsOutputObjectWithTools`:
 - Always **Zod 4 post-validate** the result against the caller's schema
   (belt-and-suspenders), regardless of provider.
 
-## #1244 fail-closed detector
-
-`malformedToolCall.ts` is a **safety boundary**, not a convenience. Live probes
-on 2026-06-04 narrowed the #1244 trigger: pure tool loops were clean (0/56), but
-mixing structured output (`response_format` / JSON schema) with tools produced
-27/36 silent tool-skips and 2/36 plain-text dumps. If the loop treats that as
-"no tool call → final prose", an approval gate that should fire never does —
-and that lands on the 3 irreversible mutation skills.
-
-Policy, enforced after every tool-expecting step:
-
-- `finish_reason != "tool_calls"` **or** empty/absent `tool_calls` **or** a
-  tool-shaped blob in `content` ⇒ **fail-closed**.
-- Under HITL: **suspend** (`reason: "malformed_tool_call"`), via the Mastra
-  output Processor / post-step detector path.
-- With no HITL: **hard-abort** (throw `MalformedToolCallAbort`).
-- **NEVER** regex-extract a function name from `content` and execute it.
-  fail-open == silent-fallback, which is forbidden.
+The mitigation is the never-mix rule above plus in-process Zod validation; when
+the single `emit_result` tool never fires, the workflows harness fails closed
+(no prose fallthrough, no regex-extract of a tool name from content).
 
 ## Build
 

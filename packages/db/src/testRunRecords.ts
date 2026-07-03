@@ -62,14 +62,6 @@ export const testRunRecords = sqliteTable("test_run_records", {
   promptVersion: text("prompt_version"), // SKILL.md / prompt hash.
   schemaVersion: text("schema_version"), // Zod contract version for the skill.
   failReason: text("fail_reason"), // NULL on GREEN; set on anchor RED or usage-missing flag.
-
-  // ── #1244 malformed-turn evidence (NULL on every non-malformed row) ─────
-  // Captured ONLY when a row's fail_reason is 'malformed_tool_call': the joined
-  // detector signal names + a truncated, PII/budget-REDACTED sample of the
-  // malformed turn (redactMalformedSample runs before this value is persisted,
-  // inv #9 — no email/budget/digit-run ever reaches the row).
-  malformedSignals: text("malformed_signals"),
-  malformedSample: text("malformed_sample"),
 });
 
 // TODO(phase-0): index on (skill, createdAt) and (layer, provider) for the

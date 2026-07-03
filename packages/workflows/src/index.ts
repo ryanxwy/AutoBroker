@@ -116,7 +116,6 @@ export {
 export {
   AmbiguousLocationResumeSchema,
   CollectResumeSchema,
-  MalformedRetryResumeSchema,
   TrimSuggestionResumeSchema,
 } from "./intakeContracts.js";
 
@@ -239,8 +238,8 @@ export {
 export { ContactFlipApprovalResumeSchema } from "./negotiationFollowupContracts.js";
 
 // negotiation_summary — the advisory LLM read of a dealer's negotiation state for
-// the detail modal (single emit_result, hitlAvailable false; ANY failure degrades
-// to {summary:null}). Never surfaces budget.
+// the detail modal (single emit_result; ANY failure degrades to {summary:null}).
+// Never surfaces budget.
 export {
   getOrGenerateDealerNegotiationSummary,
   __setNegotiationSummaryDepsForTests,

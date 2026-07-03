@@ -15,7 +15,6 @@ describe("gateTrack — kind → surface routing", () => {
       "intake_confirm",
       "ambiguous_location",
       "location_failure",
-      "malformed_tool_call",
     ]) {
       expect(gateTrack(kind)).toBe("rail");
     }

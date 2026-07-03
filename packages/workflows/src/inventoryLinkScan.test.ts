@@ -618,7 +618,7 @@ describe("inventory_link_scan — extract guards + profile filter + persist mark
 
 // ---------------------------------------------------------------------------
 // step-④ fallback gating: blocked-at-first-contact, voiced snapshot fallback,
-// per-link isolation, whole-bucket degrade, #1244 hard-abort.
+// per-link isolation, whole-bucket degrade, fail-closed hard-abort.
 // ---------------------------------------------------------------------------
 
 import type { BrowserEmitter, BrowserSession } from "@autobroker/tools";
@@ -810,60 +810,33 @@ describe("inventory_link_scan — capture fallback gating (fake session)", () =>
   });
 });
 
-describe("inventory_link_scan — #1244 hard-abort (fail-closed, zero writes)", () => {
-  it("a malformed structured call aborts the run typed; persist is never reached", async () => {
+describe("inventory_link_scan — hard-abort (fail-closed, zero writes)", () => {
+  it("a fail-closed structured call aborts the run typed; persist is never reached", async () => {
     seedProfile();
     seedDealer({ id: "d-a", name: "Dealer A" });
     const srcA = seedLink("d-a", URL_A);
 
     __setInventoryLinkScanDepsForTests({
-      // hitlAvailable=false on this lane: the facade THROWS the typed abort.
+      // The emit_result tool never fires → the facade THROWS the typed error.
       harnessGenerate: (async () => {
-        const { MalformedToolCallAbort } = await import("@autobroker/model");
-        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+        const { EmitResultNotCalledError } = await import("./harness.js");
+        throw new EmitResultNotCalledError("inventory_extract");
       }) as unknown as InventoryLinkScanWorkflowDeps["harnessGenerate"],
       captureLinks: captureStub({ calls: [] }, (args) =>
         args.targets.map((t) => scannedLink(t.sourceId)),
       ),
     });
 
-    const { run, result } = await startRun("link-1244-1");
+    const { run, result } = await startRun("link-failclosed-1");
     expect(result.status).toBe("suspended");
     const final = await run.resume({
       step: "reviewGate",
       resumeData: { action: "approve", approved_dealer_ids: [srcA] },
     });
     expect(final.status).toBe("failed");
-    expect(errorMessageOf(final)).toContain("Malformed tool call (#1244 fail-closed)");
+    expect(errorMessageOf(final)).toContain("emit_result tool was not called");
 
     // Fail-closed = ZERO writes: the source row stays pending, no listings.
-    expect(sourceStatus(srcA)).toBe("pending");
-    expect(rowCount("inventory_listings")).toBe(0);
-  });
-
-  it("a suspend-SHAPED harness return (defensive branch) also hard-aborts", async () => {
-    seedProfile();
-    seedDealer({ id: "d-a", name: "Dealer A" });
-    const srcA = seedLink("d-a", URL_A);
-
-    __setInventoryLinkScanDepsForTests({
-      harnessGenerate: (async () => ({
-        suspended: true,
-        signals: ["empty_tool_calls"],
-      })) as unknown as InventoryLinkScanWorkflowDeps["harnessGenerate"],
-      captureLinks: captureStub({ calls: [] }, (args) =>
-        args.targets.map((t) => scannedLink(t.sourceId)),
-      ),
-    });
-
-    const { run, result } = await startRun("link-1244-2");
-    expect(result.status).toBe("suspended");
-    const final = await run.resume({
-      step: "reviewGate",
-      resumeData: { action: "approve", approved_dealer_ids: [srcA] },
-    });
-    expect(final.status).toBe("failed");
-    expect(errorMessageOf(final)).toContain("Malformed tool call (#1244 fail-closed)");
     expect(sourceStatus(srcA)).toBe("pending");
     expect(rowCount("inventory_listings")).toBe(0);
   });

@@ -102,11 +102,10 @@ export const SKILL_RUN_STATUSES = [
   "running",
   /** Suspended at a gate; a typed resume_payload is persisted. Set on semantic /
    *  irreversible fallbacks (prose-vs-typed-gate, newest-vs-pinned-profile,
-   *  email_fallback scope switch) and on #1244 fail-closed under HITL. */
+   *  email_fallback scope switch). */
   "awaiting_approval",
   "done",
-  /** Terminal failure (Mastra `failed` → product `error`), incl. typed
-   *  MalformedToolCallAbort with no HITL. */
+  /** Terminal failure (Mastra `failed` → product `error`). */
   "error",
   /** User declined at an approval gate (deny path → zero external calls). */
   "declined",

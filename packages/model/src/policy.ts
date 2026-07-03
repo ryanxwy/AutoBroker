@@ -21,22 +21,6 @@ export const USE_CASES = [
   /** Extract a structured DealerQuote from a dealer reply (Phase 3 template). */
   "dealer_reply_extract",
   /**
-   * AUTOMATIC same-provider RETRY of a malformed dealer_reply_extract (the F1
-   * recovery). Fired ONCE, in-process, by the per-message catch on the
-   * malformed-tool-call failure class (#1244) — NEVER by the user, never cross-
-   * provider. The auto-path's first hop runs deepseek-v4-flash on the forced
-   * emit_result lane (thinking OFF); on the malformed class this useCase retries
-   * the SAME message ONCE on deepseek-v4-pro WITH thinking, same provider
-   * (privacy-clean, no egress to a Western provider). The thinking lane CANNOT
-   * use a forced/named tool_choice (DeepSeek thinking mode rejects it — "Thinking
-   * mode does not support this tool_choice"), so the harness runs this useCase on
-   * the emit_result tool with tool_choice:"auto" + thinking ON (the model reasons,
-   * then voluntarily calls the single emit_result tool). #1244 fail-closed + Zod
-   * post-validation are IDENTICAL on this lane: if the v4-pro+thinking retry ALSO
-   * comes back malformed, the message stays `failed`, exactly as the v4-flash hop.
-   */
-  "dealer_reply_extract_retry",
-  /**
    * Intake freeform prefill: an EXTRACTION pass over a user's one-liner that
    * pre-seeds the intake form. All-nullable subset; never extracts PII/budget.
    * Prefill only seeds the form — it never persists.
@@ -81,38 +65,6 @@ export const USE_CASES = [
    */
   "lead_form_map",
   /**
-   * AUTOMATIC same-provider malformed-class recovery hop for geosearch_extract —
-   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
-   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
-   * serialization defect, not a reasoning-difficulty one). Same provider →
-   * privacy-clean, no cross-provider egress.
-   */
-  "geosearch_extract_retry",
-  /**
-   * AUTOMATIC same-provider malformed-class recovery hop for inventory_extract —
-   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
-   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
-   * serialization defect, not a reasoning-difficulty one). Same provider →
-   * privacy-clean, no cross-provider egress.
-   */
-  "inventory_extract_retry",
-  /**
-   * AUTOMATIC same-provider malformed-class recovery hop for incentive_extract —
-   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
-   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
-   * serialization defect, not a reasoning-difficulty one). Same provider →
-   * privacy-clean, no cross-provider egress.
-   */
-  "incentive_extract_retry",
-  /**
-   * AUTOMATIC same-provider malformed-class recovery hop for lead_form_map —
-   * v4-pro WITH thinking + tool_choice auto; emit_result single-tool + #1244
-   * fail-closed + Zod identical; reasoningEffort medium (the failure is a
-   * serialization defect, not a reasoning-difficulty one). Same provider →
-   * privacy-clean, no cross-provider egress.
-   */
-  "lead_form_map_retry",
-  /**
    * Negotiation follow-up PROSE drafting for the negotiation_followup skill: a
    * plain text generation (NO tools, NO structured output) — the tone is chosen
    * in CODE and the model only writes the chosen register's prose. Because there
@@ -155,15 +107,6 @@ export type UseCase = (typeof USE_CASES)[number];
  */
 const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   dealer_reply_extract: "deepseek.chat",
-  // AUTOMATIC same-provider retry on the malformed class (owner-directed): the
-  // v4-flash forced-emit hop failed, so retry ONCE on deepseek-v4-pro WITH
-  // thinking. Same provider — privacy-clean, no cross-provider egress. v4-pro is
-  // the `strong` tier; thinking is a per-request parameter (NOT a separate model
-  // id), bound by the harness for this useCase. The harness runs this useCase on
-  // the emit_result tool with tool_choice:"auto" + thinking ON (a forced/named
-  // tool_choice is rejected in DeepSeek thinking mode), which is structurally the
-  // chat/rail thinking-ON + auto lane that runs clean.
-  dealer_reply_extract_retry: "deepseek.strong",
   // Both intake LLM passes (prefill + trim lookup) route to deepseek.chat
   // (deepseek-v4-flash, temp 0, per-step thinking:disabled + named tool_choice —
   // emit_result hard constraint: DeepSeek thinking mode rejects a named/forced
@@ -183,16 +126,6 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // Custom lead-form field map (single emit_result tool over the fenced form
   // DOM); same DeepSeek discipline as inventory_extract / incentive_extract.
   lead_form_map: "deepseek.chat",
-  // The four AUTOMATIC malformed-class recovery hops (shared recoverEmitWithRetry
-  // helper). Each retries its primary emit_result useCase ONCE on deepseek-v4-pro
-  // WITH thinking — the `strong` tier, same provider (privacy-clean, no egress).
-  // The harness runs these on the emit_result tool with tool_choice:"auto" +
-  // thinking ON (a forced/named tool_choice is rejected in DeepSeek thinking
-  // mode); the emit schema, #1244 fail-closed and Zod belt are identical.
-  geosearch_extract_retry: "deepseek.strong",
-  inventory_extract_retry: "deepseek.strong",
-  incentive_extract_retry: "deepseek.strong",
-  lead_form_map_retry: "deepseek.strong",
   // Negotiation follow-up PROSE draft (NO tools, NO structured output — the
   // draftProse facade). #1244 is structurally inapplicable; deepseek.chat.
   negotiation_followup: "deepseek.chat",
@@ -226,12 +159,9 @@ const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
   "deepseek.chat": {
     supportsOutputObjectWithTools: false,
   },
-  // deepseek-v4-pro — the dealer_reply_extract_retry target (the malformed-class
-  // recovery hop). Same #1244 discipline as the other DeepSeek rows:
-  // supportsOutputObjectWithTools:false → the harness takes the emit_result lane
-  // (NOT native output_object). This useCase runs that lane with thinking ON +
-  // tool_choice:"auto" (a forced tool_choice is rejected in thinking mode); the
-  // harness decides forced-vs-auto from the useCase, not from this flag.
+  // deepseek-v4-pro (the `strong` tier). Same discipline as the other DeepSeek
+  // rows: supportsOutputObjectWithTools:false → the harness takes the emit_result
+  // lane (NOT native output_object).
   "deepseek.strong": {
     supportsOutputObjectWithTools: false,
   },

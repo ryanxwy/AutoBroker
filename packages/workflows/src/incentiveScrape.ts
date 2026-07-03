@@ -50,12 +50,10 @@
  *                       (`oem_source_fallback`, transient/equivalent class).
  *                       Then per captured source ONE separate NO-TOOLS
  *                       structured `incentive_extract` call (emit_result
- *                       discipline; hitlAvailable=false → a malformed first
- *                       hop is retried ONCE on the incentive_extract_retry
- *                       lane via recoverEmitWithRetry, else fail-closes as a
- *                       typed MalformedToolCallAbort, never a prose
- *                       fallthrough); Zod re-validates every row (drop +
- *                       count); program-identity dedupe.
+ *                       discipline; fail-closes as a typed
+ *                       EmitResultNotCalledError when the tool never fires,
+ *                       never a prose fallthrough); Zod re-validates every row
+ *                       (drop + count); program-identity dedupe.
  *                       Snapshots never leave this step.
  *   4 filterCashTypes — the deterministic 5-class cash whitelist (drop +
  *                       count; the LLM never sees this gate), then the
@@ -98,23 +96,16 @@
  *                                      surfaced in the confirm counts.
  *   - cross-verify mismatch          → AUTO (read-only disagreement), voiced
  *                                      `source_discrepancy` + summarized.
- *   - malformed structured call      → hitlAvailable=false on every extract
- *                                      call: a malformed first hop is retried
- *                                      ONCE on the incentive_extract_retry
- *                                      (v4-pro+thinking) lane via
- *                                      recoverEmitWithRetry and persist IS
- *                                      reached on a clean retry; only a SECOND
- *                                      malformed / blob-only / budget-exhausted
- *                                      failure reaches the fail-closed
- *                                      MalformedToolCallAbort terminus where the
- *                                      run FAILS (persist never reached).
+ *   - emit_result never fired         → the extract call fails CLOSED as a typed
+ *                                      EmitResultNotCalledError where the run
+ *                                      FAILS (persist never reached) — never a
+ *                                      prose fallthrough.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/core
  * (Incentive), @autobroker/tools (resolver + registry + cache + persist +
  * browser session + pure gates — the ONLY DB/side-effect paths), the sibling
- * scan module (host helpers), the skill contracts module, this layer's harness
- * facade, and the recoverEmitWithRetry recovery helper (which owns the
- * @autobroker/model contact for the malformed-class retry hop).
+ * scan module (host helpers), the skill contracts module, and this layer's
+ * harness facade.
  */
 
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -157,7 +148,6 @@ import {
 } from "./incentiveScrapeContracts.js";
 import { isDeniedScanHost, scanHostnameOf } from "./inventorySiteScan.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 // ---------------------------------------------------------------------------
 // tunables (module constants, not env knobs)
@@ -844,19 +834,14 @@ async function extractIncentiveRows(args: {
   model: string;
   snapshotText: string;
 }): Promise<{ rows: Incentive[]; invalidDropped: number }> {
-  const result = await recoverEmitWithRetry({
-    harnessGenerate: deps().harnessGenerate,
-    input: {
+  const result = await deps().harnessGenerate(
+    {
       useCase: "incentive_extract",
       schema: IncentiveExtractSchema,
       prompt: buildIncentiveExtractPrompt(args.make, args.model, capSnapshot(args.snapshotText)),
-      // A malformed tool call retries ONCE on the strong+thinking lane, else
-      // fail-closes — never a prose fallthrough, never a regexed-out tool call.
-      hitlAvailable: false,
     },
-    retryUseCase: "incentive_extract_retry",
-    ledger: incentiveLedger(args.runId),
-  });
+    incentiveLedger(args.runId),
+  );
 
   const scrapedAt = new Date().toISOString();
   const valid: Incentive[] = [];

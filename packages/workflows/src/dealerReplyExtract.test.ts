@@ -10,14 +10,9 @@
  * autobroker.db (the committed migrations applied). NO live LLM, no network.
  *
  * Coverage:
- *   - #1244: an injected harness throwing MalformedToolCallAbort for one message
- *     → that message `failed` (processed_at NULL, re-queued), the run still
- *     completes `extracted`, the OTHER messages succeed, messages_failed === 1.
- *   - AUTOMATIC malformed-class recovery: a v4-flash malformed first hop →
- *     exactly ONE same-provider v4-pro+thinking retry. The retry recovers →
- *     succeeded; the retry also-malformed → failed (fail-closed); the hop is
- *     bounded to ONE; a non-malformed error (ZodError) skips the retry.
- *   - suspend-shaped harness return fail-closes identically (isHarnessSuspend).
+ *   - fail-closed: an injected harness throwing EmitResultNotCalledError for one
+ *     message → that message `failed` (processed_at NULL, re-queued), the run
+ *     still completes `extracted`, the OTHER messages succeed, messages_failed === 1.
  *   - all-or-nothing: an emitted row that fails DealerQuoteSchema (Rule1 bleed)
  *     rolls back the whole message → 0 quotes for it, message `failed`.
  *   - zero-row success: a no_quote reply → `succeeded`, intent set, 0 quotes.
@@ -35,9 +30,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
 
-import { MalformedToolCallAbort } from "@autobroker/model";
 import {
   closeDb,
   openDb,
@@ -48,6 +41,7 @@ import {
   type Message,
 } from "@autobroker/tools";
 
+import { EmitResultNotCalledError } from "./harness.js";
 import { createMastraInstance } from "./mastra.js";
 import {
   dealerReplyExtractWorkflow,
@@ -440,7 +434,7 @@ describe("dealer_reply_extract — happy paths", () => {
   });
 });
 
-describe("dealer_reply_extract — #1244 fail-closed, per-message", () => {
+describe("dealer_reply_extract — fail-closed, per-message", () => {
   it("a harness THROW for one message → that message failed, others succeed, run completes", async () => {
     seedProfile();
     seedDealer();
@@ -461,7 +455,7 @@ describe("dealer_reply_extract — #1244 fail-closed, per-message", () => {
     installDeps({
       harnessGenerate: (async (input: { prompt: string }) => {
         if (input.prompt.includes("BADMARK")) {
-          throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+          throw new EmitResultNotCalledError("dealer_reply_extract");
         }
         return {
           object: { quotes: [row({ financing_mode: "cash", otd_total: 43000 })], message_intent: "real_quote" },
@@ -470,7 +464,7 @@ describe("dealer_reply_extract — #1244 fail-closed, per-message", () => {
       }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
     });
 
-    const { result } = await startRun("run-1244");
+    const { result } = await startRun("run-failclosed");
     expect(statusOf(result)).toBe("success"); // ONE bad message never fails the run
     const out = outputOf(result);
     expect(out["messages_processed"]).toBe(1);
@@ -485,34 +479,6 @@ describe("dealer_reply_extract — #1244 fail-closed, per-message", () => {
     expect(bad["quote_extraction_status"]).toBe("failed");
     expect(bad["quote_extraction_intent"]).toBeNull();
     expect(bad["processed_at"]).toBeNull(); // re-queued
-  });
-
-  it("a suspend-shaped harness return fail-closes identically", async () => {
-    seedProfile();
-    seedDealer();
-    seedThread("thread-1");
-    seedMessage({
-      messageId: "msg-susp",
-      threadId: "thread-1",
-      gmailMessageId: "gmail-susp",
-      body: "anything",
-    });
-    installDeps({
-      harnessGenerate: (async () => ({
-        suspended: true,
-        reason: "malformed_tool_call",
-        signals: ["empty_tool_calls"],
-      })) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
-    });
-
-    const { result } = await startRun("run-susp");
-    expect(statusOf(result)).toBe("success");
-    expect(outputOf(result)["messages_failed"]).toBe(1);
-    expect(quoteRows()).toHaveLength(0);
-
-    const m = messageRow("msg-susp");
-    expect(m["quote_extraction_status"]).toBe("failed");
-    expect(m["processed_at"]).toBeNull();
   });
 });
 
@@ -604,149 +570,6 @@ describe("dealer_reply_extract — idempotent re-extract", () => {
     expect(rows[0]!["quote_id"]).toBe(firstQuoteId); // quote_id preserved
     expect(rows[0]!["otd_total"]).toBe(44000); // value refreshed
     expect(messageRow("msg-re")["quote_extraction_status"]).toBe("succeeded");
-  });
-});
-
-describe("dealer_reply_extract — automatic same-provider malformed-class retry", () => {
-  /** A recovering emit object (a cash OTD quote). */
-  const recoverEmit = {
-    quotes: [row({ financing_mode: "cash", otd_total: 43000 })],
-    message_intent: "real_quote" as const,
-  };
-
-  /** A harness stub recording each call's useCase: the v4-flash hop
-   *  (`dealer_reply_extract`) FAILS malformed; the v4-pro+thinking hop
-   *  (`dealer_reply_extract_retry`) recovers. */
-  function harnessFlashFailsRetrySucceeds(
-    seen: string[],
-  ): DealerReplyExtractWorkflowDeps["harnessGenerate"] {
-    return (async (input: { useCase: string }) => {
-      seen.push(input.useCase);
-      if (input.useCase === "dealer_reply_extract") {
-        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
-      }
-      return { object: recoverEmit, usage: NO_USAGE };
-    }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"];
-  }
-
-  it("(a) v4-flash malformed → auto v4-pro+thinking retry recovers → succeeded with a quote", async () => {
-    seedProfile();
-    seedDealer();
-    seedThread("thread-1");
-    seedMessage({
-      messageId: "msg-recover",
-      threadId: "thread-1",
-      gmailMessageId: "gmail-recover",
-      body: "OTD $43,000 on the Tucson Hybrid Limited.",
-    });
-    const seen: string[] = [];
-    installDeps({ harnessGenerate: harnessFlashFailsRetrySucceeds(seen) });
-
-    const { result } = await startRun("run-recover");
-    expect(statusOf(result)).toBe("success");
-    // BOTH hops fired, in order: the flash hop, then the v4-pro+thinking retry.
-    expect(seen).toEqual(["dealer_reply_extract", "dealer_reply_extract_retry"]);
-
-    const out = outputOf(result);
-    expect(out["messages_processed"]).toBe(1);
-    expect(out["messages_failed"]).toBe(0);
-    expect(out["quotes_upserted"]).toBe(1);
-
-    const m = messageRow("msg-recover");
-    expect(m["quote_extraction_status"]).toBe("succeeded");
-    const rows = quoteRows();
-    expect(rows).toHaveLength(1);
-    // SAME provider on both hops — the recovery is privacy-clean (no Anthropic).
-    expect(rows[0]!["extractor_provider"]).toBe("deepseek");
-  });
-
-  it("(b) retry ALSO malformed → message stays failed (fail-closed), 0 rows", async () => {
-    seedProfile();
-    seedDealer();
-    seedThread("thread-1");
-    seedMessage({
-      messageId: "msg-still-bad",
-      threadId: "thread-1",
-      gmailMessageId: "gmail-still-bad",
-      body: "anything",
-    });
-    const seen: string[] = [];
-    installDeps({
-      // BOTH hops fail malformed → no recovery; the message stays failed.
-      harnessGenerate: (async (input: { useCase: string }) => {
-        seen.push(input.useCase);
-        throw new MalformedToolCallAbort(["empty_tool_calls"]);
-      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
-    });
-
-    const { result } = await startRun("run-still-bad");
-    expect(statusOf(result)).toBe("success"); // ONE bad message never fails the run
-    // The retry hop was attempted exactly once after the flash hop.
-    expect(seen).toEqual(["dealer_reply_extract", "dealer_reply_extract_retry"]);
-    expect(outputOf(result)["messages_failed"]).toBe(1);
-    expect(outputOf(result)["quotes_upserted"]).toBe(0);
-    expect(quoteRows()).toHaveLength(0);
-
-    const m = messageRow("msg-still-bad");
-    expect(m["quote_extraction_status"]).toBe("failed");
-    expect(m["quote_extraction_intent"]).toBeNull();
-    expect(m["processed_at"]).toBeNull(); // re-queued
-  });
-
-  it("(c) the recovery is bounded to ONE retry hop (exactly one retry call)", async () => {
-    seedProfile();
-    seedDealer();
-    seedThread("thread-1");
-    seedMessage({
-      messageId: "msg-bounded",
-      threadId: "thread-1",
-      gmailMessageId: "gmail-bounded",
-      body: "anything",
-    });
-    const seen: string[] = [];
-    installDeps({
-      harnessGenerate: (async (input: { useCase: string }) => {
-        seen.push(input.useCase);
-        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
-      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
-    });
-
-    await startRun("run-bounded");
-    // Exactly TWO calls total — one flash hop + ONE retry hop. The retry's own
-    // malformed throw does NOT spawn a third call (no retry loop).
-    expect(seen).toHaveLength(2);
-    expect(seen.filter((u) => u === "dealer_reply_extract_retry")).toHaveLength(1);
-  });
-
-  it("(d) a NON-malformed error (ZodError) does NOT trigger the retry — fail-closed immediately", async () => {
-    seedProfile();
-    seedDealer();
-    seedThread("thread-1");
-    seedMessage({
-      messageId: "msg-zod",
-      threadId: "thread-1",
-      gmailMessageId: "gmail-zod",
-      body: "anything",
-    });
-    const seen: string[] = [];
-    installDeps({
-      // The flash hop throws a ZodError (zod_validation), NOT a malformed class
-      // — re-running on v4-pro+thinking is not the owner-directed recovery.
-      harnessGenerate: (async (input: { useCase: string }) => {
-        seen.push(input.useCase);
-        throw new z.ZodError([
-          { code: "custom", path: [], message: "schema rejected the args" },
-        ]);
-      }) as unknown as DealerReplyExtractWorkflowDeps["harnessGenerate"],
-    });
-
-    const { result } = await startRun("run-zod");
-    expect(statusOf(result)).toBe("success"); // the per-message catch still completes the run
-    // ONLY the flash hop fired — the ZodError did NOT escalate to the retry.
-    expect(seen).toEqual(["dealer_reply_extract"]);
-    expect(outputOf(result)["messages_failed"]).toBe(1);
-    expect(quoteRows()).toHaveLength(0);
-    expect(messageRow("msg-zod")["quote_extraction_status"]).toBe("failed");
   });
 });
 

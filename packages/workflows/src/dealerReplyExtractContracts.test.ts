@@ -1,6 +1,6 @@
 /**
- * Unit tests — the dealer_reply_extract emit contract. Freezes the #1244-safe
- * shape of DealerReplyExtractEmitSchema: a single flat, all-required, .strict()
+ * Unit tests — the dealer_reply_extract emit contract. Freezes the
+ * structured-output-safe shape of DealerReplyExtractEmitSchema: a single flat, all-required, .strict()
  * tool schema. The LLM title-fallback field (contact_role) — these tests pin
  * that the schema accepts both a null and a value, the prompt asks for it, and
  * the strict shape stays closed.

@@ -23,7 +23,7 @@
  *   - ambiguous location         → suspend → pick(1) → confirm → created.
  *   - geocode failure            → suspend (NOT null coords) → retry → confirm;
  *                                   and decline → zero rows.
- *   - #1244 fail-closed          → freeform prefill malformed → suspend → decline.
+ *   - prefill fail-closed         → a fail-closed prefill generation errors the run.
  *   - flat-shape structural check (no nested workflow step).
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
@@ -41,6 +41,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDb, openDb, type Db, type GoplacesResult } from "@autobroker/tools";
 
+import { EmitResultNotCalledError } from "./harness.js";
 import { createMastraInstance } from "./mastra.js";
 import {
   searchProfileIntakeWorkflow,
@@ -315,7 +316,7 @@ describe("search_profile_intake — freeform path", () => {
       },
     });
 
-    // Prefill ran (no #1244), then collect suspends with the seeded form.
+    // Prefill ran cleanly, then collect suspends with the seeded form.
     expect(started.status).toBe("suspended");
     if (started.status !== "suspended") return;
     // The collect suspend payload carries the prefill seed.
@@ -715,28 +716,16 @@ describe("search_profile_intake — geocode failure (never null coords)", () => 
 });
 
 // ---------------------------------------------------------------------------
-// #1244 fail-closed → suspend
+// prefill fail-closed errors the run
 // ---------------------------------------------------------------------------
 
-describe("search_profile_intake — #1244 malformed_tool_call → suspend", () => {
-  it("freeform prefill malformed → suspend → retry_step → prefill ok → collect → confirm → created", async () => {
-    // The freeform prefill LLM call fail-closed-suspends on the FIRST call
-    // (HarnessSuspend, hitlAvailable true); the retry_step re-runs prefill and the
-    // second call returns a seed. prefill is intake's fail-closed LLM surface.
-    let calls = 0;
+describe("search_profile_intake — prefill fail-closed errors the run", () => {
+  it("a fail-closed prefill generation (emit_result never fires) throws → run errors, zero rows", async () => {
+    // prefill is not gated behind a suspend: a fail-closed generation
+    // (EmitResultNotCalledError) propagates → the run errors (no new degrade path).
     const harnessGenerate = (async (input: { useCase: string }) => {
       if (input.useCase === "intake_freeform_prefill") {
-        calls += 1;
-        if (calls === 1) {
-          return { suspended: true, reason: "malformed_tool_call", signals: ["empty_tool_calls"] };
-        }
-        return {
-          object: IntakePrefillSchema.parse({
-            make: "Hyundai", model: "Tucson", year: 2026, trim: null,
-            location_query: "Irvine, CA", search_radius_miles: null, financing_preference: "finance",
-          }),
-          usage: NO_USAGE,
-        };
+        throw new EmitResultNotCalledError("intake_freeform_prefill");
       }
       throw new Error("unexpected useCase");
     }) as unknown as IntakeWorkflowDeps["harnessGenerate"];
@@ -744,64 +733,13 @@ describe("search_profile_intake — #1244 malformed_tool_call → suspend", () =
     wireDeps({ harnessGenerate, resolveLocation: locationStub([RESOLVED]) });
 
     const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-1244-1" });
+    const run = await wf.createRun({ runId: "intake-prefill-failclosed-1" });
     const started = await run.start({
       inputData: { input_mode: "freeform", freeform_text: "2026 Tucson in Irvine", seed_fields: null },
     });
 
-    // Suspended at prefill with a malformed_tool_call payload (NOT thrown).
-    expect(started.status).toBe("suspended");
-    if (started.status !== "suspended") return;
-    expect(suspendPayloadOf(started, "prefill")["kind"]).toBe("malformed_tool_call");
+    expect(started.status).toBe("failed");
     expect(rowCount("search_profiles")).toBe(0);
-
-    // retry_step → prefill re-runs, seeds, collect form suspends.
-    const afterRetry = await run.resume({ step: "prefill", resumeData: { action: "retry_step" } });
-    expect(afterRetry.status).toBe("suspended");
-    const afterSubmit = await run.resume({ step: "collect", resumeData: { action: "submit", fields: validFields() } });
-    expect(afterSubmit.status).toBe("suspended"); // confirmVehicle card.
-    const resumed = await acceptConfirm(run);
-    expect(resumed.status).toBe("success");
-    if (resumed.status !== "success") return;
-    expect(resumed.result?.outcome).toBe("created");
-    expect(rowCount("search_profiles")).toBe(1);
-  });
-
-  it("freeform prefill malformed → suspend → decline → proceeds to the empty form (recoverable), zero rows until the buyer acts", async () => {
-    // prefill is a SEED helper: a #1244 decline abandons the auto-fill and proceeds
-    // to the EMPTY collect form (the buyer fills it by hand) — it never fabricates a
-    // seed and never persists. Declining the form then ends the run zero-write.
-    const harnessGenerate = (async (input: { useCase: string }) => {
-      if (input.useCase === "intake_freeform_prefill") {
-        return { suspended: true, reason: "malformed_tool_call", signals: ["empty_tool_calls"] };
-      }
-      throw new Error("unexpected useCase");
-    }) as unknown as IntakeWorkflowDeps["harnessGenerate"];
-
-    wireDeps({ harnessGenerate, resolveLocation: locationStub([RESOLVED]) });
-
-    const wf = intakeWorkflow();
-    const run = await wf.createRun({ runId: "intake-1244-decline-1" });
-    const started = await run.start({
-      inputData: { input_mode: "freeform", freeform_text: "2026 Tucson in Irvine", seed_fields: null },
-    });
-    expect(started.status).toBe("suspended");
-    expect(suspendPayloadOf(started, "prefill")["kind"]).toBe("malformed_tool_call");
-
-    // decline the malformed prefill → proceeds to the EMPTY collect form (no seed
-    // fabricated, nothing persisted).
-    const afterDecline = await run.resume({ step: "prefill", resumeData: { action: "decline" } });
-    expect(afterDecline.status).toBe("suspended");
-    expect(suspendPayloadOf(afterDecline, "collect")["kind"]).toBe("data_collection");
-    expect(rowCount("search_profiles")).toBe(0);
-
-    // declining the form ends the run zero-write.
-    const resumed = await run.resume({ step: "collect", resumeData: { action: "decline" } });
-    expect(resumed.status).toBe("success");
-    if (resumed.status !== "success") return;
-    expect(resumed.result.outcome).toBe("declined");
-    expect(rowCount("search_profiles")).toBe(0);
-    expect(rowCount("audit_log")).toBe(0);
   });
 });
 
@@ -1017,10 +955,12 @@ describe("search_profile_intake — trim suggestion", () => {
     expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
   });
 
-  it("#1244 on the lookup extraction → graceful pass-through (non-authoritative helper never blocks intake)", async () => {
-    const malformedLookup = (async (input: { useCase: string }) => {
+  it("a fail-closed lookup extraction → graceful pass-through (non-authoritative helper never blocks intake)", async () => {
+    // The trimSuggestion step CATCHES a fail-closed generation (EmitResultNotCalledError)
+    // and degrades to the blank-trim collect form — never gates, never errors the run.
+    const failClosedLookup = (async (input: { useCase: string }) => {
       if (input.useCase === "intake_trim_lookup") {
-        return { suspended: true, reason: "malformed_tool_call", signals: ["finish_reason_not_tool_calls"] };
+        throw new EmitResultNotCalledError("intake_trim_lookup");
       }
       return {
         object: IntakePrefillSchema.parse({
@@ -1031,7 +971,7 @@ describe("search_profile_intake — trim suggestion", () => {
       };
     }) as unknown as IntakeWorkflowDeps["harnessGenerate"];
     wireDeps({
-      harnessGenerate: malformedLookup,
+      harnessGenerate: failClosedLookup,
       fetchTrimSources: trimSourcesStub(TRIM_TEXT),
       resolveLocation: locationStub([RESOLVED]),
     });
@@ -1039,7 +979,7 @@ describe("search_profile_intake — trim suggestion", () => {
     const run = await wf.createRun({ runId: "intake-trim-suggest-9" });
     const started = await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
     expect(started.status).toBe("suspended");
-    // Degrades to the form (NOT a malformed_tool_call gate) — the suggestion is optional.
+    // Degrades to the blank-trim form — the suggestion is optional.
     expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
   });
 });

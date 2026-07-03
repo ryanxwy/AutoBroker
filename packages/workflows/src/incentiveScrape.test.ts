@@ -47,7 +47,7 @@ import {
   type OfferCaptureArgs,
   type OfferCaptureOutcome,
 } from "./incentiveScrape.js";
-import { __resetRecoveryBudgetForTests } from "./recoverEmitWithRetry.js";
+import { EmitResultNotCalledError } from "./harness.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -338,7 +338,6 @@ describe("incentive_scrape profile resolution", () => {
 // ---------------------------------------------------------------------------
 
 import { NULL_EMITTER, type BrowserEmitter } from "@autobroker/tools";
-import { MalformedToolCallAbort } from "@autobroker/model";
 
 import {
   collectOfferCards,
@@ -592,7 +591,7 @@ describe("collectOfferCards (the in-page collector)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// workflow-level fallback gating (dual source, discrepancy, #1244)
+// workflow-level fallback gating (dual source, discrepancy, fail-closed)
 // ---------------------------------------------------------------------------
 
 function seedRooftopDealer(profileId = "prof-1", website = "https://www.tustinhyundai.com/"): void {
@@ -774,32 +773,18 @@ describe("incentive_scrape dual-source gating (the voiced fallback map)", () => 
   });
 });
 
-describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
-  it("a THROWN MalformedToolCallAbort fails the run — persist never reached, zero rows", async () => {
+describe("incentive_scrape fail-closed (the armed extraction)", () => {
+  it("a THROWN EmitResultNotCalledError fails the run — persist never reached, zero rows", async () => {
     seedProfile();
     installDeps({
       harnessGenerate: (async () => {
-        throw new MalformedToolCallAbort(["finish_reason_not_tool_calls"]);
+        throw new EmitResultNotCalledError("incentive_extract");
       }) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"],
     });
-    const { result } = await startRun("inc-1244-a");
+    const { result } = await startRun("inc-failclosed-a");
     expect((result as { status: string }).status).toBe("failed");
-    expect(errorMessageOf(result)).toMatch(/[Mm]alformed/);
+    expect(errorMessageOf(result)).toMatch(/emit_result/);
     expect(incentiveRows()).toHaveLength(0); // capture happened; persist never did
-  });
-
-  it("a SUSPEND-SHAPED harness return fail-closes identically (the defensive branch)", async () => {
-    seedProfile();
-    installDeps({
-      harnessGenerate: (async () => ({
-        suspended: true,
-        reason: "malformed_tool_call",
-        signals: ["finish_reason_not_tool_calls"],
-      })) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"],
-    });
-    const { result } = await startRun("inc-1244-b");
-    expect((result as { status: string }).status).toBe("failed");
-    expect(incentiveRows()).toHaveLength(0);
   });
 
   it("rows that fail the Zod contract drop + count; the run stays honest", async () => {
@@ -819,48 +804,3 @@ describe("incentive_scrape #1244 fail-closed (the armed extraction)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// #1244 malformed-class recovery — the wired recoverEmitWithRetry hop
-// ---------------------------------------------------------------------------
-
-/** A harness stub that throws a (retry-eligible) MalformedToolCallAbort on the
- *  PRIMARY useCase and returns a clean object on the *_retry useCase — proving
- *  the wired one-hop recovery self-heals a #1244 first hop end-to-end. */
-function recoveringHarnessStub(
-  rows: Record<string, unknown>[],
-  record?: { useCases: string[] },
-): IncentiveScrapeWorkflowDeps["harnessGenerate"] {
-  return (async (input: { useCase: string }) => {
-    record?.useCases.push(input.useCase);
-    if (input.useCase === "incentive_extract") {
-      throw new MalformedToolCallAbort(["finish_reason_not_tool_calls", "empty_tool_calls"]);
-    }
-    return { object: { incentives: rows }, usage: NO_USAGE };
-  }) as unknown as IncentiveScrapeWorkflowDeps["harnessGenerate"];
-}
-
-describe("incentive_scrape #1244 malformed-class recovery (the wired retry hop)", () => {
-  it("a malformed FIRST hop self-heals on the *_retry lane → run completes, rows persist", async () => {
-    __resetRecoveryBudgetForTests(); // deterministic budget window.
-    seedProfile();
-    const seen = { useCases: [] as string[] };
-    installDeps({
-      harnessGenerate: recoveringHarnessStub(
-        [{ type: "customer_cash", amount: 1500, expires: "2026-07-06", eligibility: "all" }],
-        seen,
-      ),
-    });
-
-    const { result } = await startRun("inc-recover-1");
-    expect((result as { status: string }).status).toBe("success");
-
-    const output = IncentiveScrapeOutputSchema.parse(outputOf(result));
-    if (output.outcome !== "scraped") throw new Error("expected scraped outcome");
-    expect(output.incentivesWritten).toBe(1);
-    expect(incentiveRows()).toHaveLength(1);
-
-    // The primary hop ran (and threw malformed); the recovery hop ran the
-    // *_retry useCase that served the clean object — exactly one retry.
-    expect(seen.useCases).toEqual(["incentive_extract", "incentive_extract_retry"]);
-  });
-});
