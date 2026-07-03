@@ -103,7 +103,6 @@ import {
   BatchReviewResumeSchema,
   HygieneResumeSchema,
   LeadApprovalResumeSchema,
-  OemFirstEncounterResumeSchema,
   PipelineResetResumeSchema,
   ContactFlipApprovalResumeSchema,
   QuotePipelineSendResumeSchema,
@@ -230,6 +229,57 @@ export interface RunDescriptor {
 function runDriverKind(descriptor: RunDescriptor, runId: string): HarnessDriverKind {
   const sel = resolveSelectionForRun(runId);
   return sel !== null ? selectionDriverKind(sel.provider, sel.method) : descriptor.driverKind();
+}
+
+/**
+ * Validate a start-request body against a per-skill schema, or throw the
+ * standard 400 content_invalid with a JSON-pointer field on the first issue.
+ * Every descriptor's buildInput funnels through this — the error-envelope shape
+ * is defined once here (the multi-field descriptors keep their own schema + return
+ * mapping but parse through this; the one-field ones use profileScopedBuildInput).
+ */
+function parseStartBody<S extends z.ZodTypeAny>(
+  schema: S,
+  body: Record<string, unknown>,
+): z.infer<S> {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+      ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+      extra: { issues: parsed.error.issues },
+    });
+  }
+  return parsed.data;
+}
+
+/** The shared one-field start body for every profile-scoped skill (only
+ *  `search_profile_id` matters; the start-route envelope fields ride the same
+ *  body and are accepted + ignored — non-strict object). */
+const ProfileScopedStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The shared buildInput for the profile-scoped descriptors (geosearch,
+ *  link_scan, incentive_scrape, inbox_check, hygiene, closeout, pipeline_reset,
+ *  inventory_compare, quote_compare, reply_extract): validate the one-field body
+ *  and return {search_profile_id}. */
+function profileScopedBuildInput(
+  body: Record<string, unknown>,
+): { search_profile_id: string | null } {
+  return {
+    search_profile_id: parseStartBody(ProfileScopedStartBodySchema, body).search_profile_id ?? null,
+  };
+}
+
+/** The identical summaryText passthrough shared by every descriptor whose
+ *  workflow templates its own plain-speak summary: return result.summary, else
+ *  the skill's fallback (declined / short-circuit runs never reach summaryText). */
+function passthroughSummary(fallback: string): RunDescriptor["summaryText"] {
+  return (result: unknown): string => {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? fallback;
+  };
 }
 
 // ===========================================================================
@@ -366,18 +416,11 @@ export const intakeRunDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): IntakeStartInput {
-    const parsed = IntakeStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(IntakeStartBodySchema, body);
     return {
-      input_mode: parsed.data.input_mode,
-      freeform_text: parsed.data.freeform_text ?? null,
-      seed_fields: parsed.data.seed_fields ?? null,
+      input_mode: parsed.input_mode,
+      freeform_text: parsed.freeform_text ?? null,
+      seed_fields: parsed.seed_fields ?? null,
     };
   },
 
@@ -398,18 +441,6 @@ export const intakeRunDescriptor: RunDescriptor = {
 // form-decision against a geosearch run 400s as unsupported_action.
 // ===========================================================================
 
-/** The geosearch start body fields. Only `search_profile_id` matters to the
- *  workflow; the start-route envelope fields (skill, input_mode, session ids…)
- *  ride the same body and are accepted + ignored (non-strict object). */
-const GeosearchStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The geosearch workflow inputData shape. */
-interface GeosearchStartInput {
-  search_profile_id: string | null;
-}
-
 /** The dealer_geosearch descriptor. */
 export const dealerGeosearchDescriptor: RunDescriptor = {
   skillId: GEOSEARCH_SKILL_ID,
@@ -422,31 +453,19 @@ export const dealerGeosearchDescriptor: RunDescriptor = {
     return providerDriverKind(policy("geosearch_extract").provider);
   },
 
-  buildInput(body: Record<string, unknown>): GeosearchStartInput {
-    const parsed = GeosearchStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   // The workflow's confirm step already templates the full plain-speak summary
   // (counts + nearest dealers + the no-auto-chain ending) — pass it through.
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Dealer geosearch complete.";
-  },
+  summaryText: passthroughSummary("Dealer geosearch complete."),
 };
 
 // ===========================================================================
-// inventory_site_scan — the third registered descriptor (browser skill with
-// ONE batch_review suspend). The resume validates the approved id list
-// against the RETAINED suspend payload: ids outside the reviewed targets are
-// a 400 content_invalid (claim rolls back, the suspend stays retryable).
+// inventory_site_scan — the third registered descriptor (READ-ONLY browser
+// skill). It auto-scans every in-radius target (owner directive) — no
+// batch_review suspend, so NO `resume` member: a form-decision against a
+// site-scan run 400s as unsupported_action. The multi-field start body carries
+// the optional hand-picked dealer_ids / audit-metadata / truncation valve.
 // ===========================================================================
 
 /** The inventory-scan start body fields. `dealer_ids` is a csv of dealer ids
@@ -484,9 +503,10 @@ const BatchReviewAcceptContentSchema = z.object({
 });
 
 /**
- * The batch_review resume shaping, shared by BOTH scan skills (one wire
- * contract, two suspended-step names: inventory_site_scan's "batchReview",
- * inventory_link_scan's "reviewGate"). decline/cancel → the step's decline
+ * The batch_review resume shaping, shared by every batch-approve suspend (one
+ * wire contract over several suspended-step names: inventory_link_scan's
+ * "reviewGate", dealer_inbox_check / dealer_web_lead_submit / negotiation_followup
+ * / dealer_closeout_email's "batchReview"). decline/cancel → the step's decline
  * resumeData (cancel normalizes to decline — the step schema has no 'cancel'
  * member); accept → validate {approved_dealer_ids} and require EVERY id to be
  * one of the targets the suspend actually showed (read off the retained
@@ -578,32 +598,24 @@ export const inventorySiteScanDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): InventoryScanStartInput {
-    const parsed = InventoryScanStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(InventoryScanStartBodySchema, body);
     return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-      dealer_ids: parseDealerIdsCsv(parsed.data.dealer_ids),
+      search_profile_id: parsed.search_profile_id ?? null,
+      dealer_ids: parseDealerIdsCsv(parsed.dealer_ids),
       // approved_by is AUDIT METADATA ONLY — it rides into the workflow state
       // for the trail; nothing branches on it (here or in the workflow).
-      approved_by: parsed.data.approved_by ?? null,
-      max_targets: parsed.data.max_targets ?? null,
+      approved_by: parsed.approved_by ?? null,
+      max_targets: parsed.max_targets ?? null,
     };
   },
 
-  resume: batchReviewResumeFor("batchReview"),
+  // No `resume` member — the scan is READ-ONLY and auto-scans every in-radius
+  // target (owner directive), so the workflow has no batch_review suspend; a
+  // form-decision against a site-scan run 400s as unsupported_action.
 
   // The workflow's confirm step templates the full deterministic summary —
   // pass it through (declined runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Inventory site scan complete.";
-  },
+  summaryText: passthroughSummary("Inventory site scan complete."),
 };
 
 // ===========================================================================
@@ -613,18 +625,6 @@ export const inventorySiteScanDescriptor: RunDescriptor = {
 // approved ids are SOURCE ids (validated ⊆ the retained suspend payload's
 // shown rows through the shared batchReviewResume seam).
 // ===========================================================================
-
-/** The link-scan start body fields. Only `search_profile_id` matters to the
- *  workflow — links come from pending dealer_inventory_sources rows, never
- *  from the start body; envelope fields ride the same body and are ignored. */
-const LinkScanStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The link-scan workflow inputData shape. */
-interface LinkScanStartInput {
-  search_profile_id: string | null;
-}
 
 /** The inventory_link_scan descriptor. */
 export const inventoryLinkScanDescriptor: RunDescriptor = {
@@ -638,59 +638,22 @@ export const inventoryLinkScanDescriptor: RunDescriptor = {
     return providerDriverKind(policy("inventory_extract").provider);
   },
 
-  buildInput(body: Record<string, unknown>): LinkScanStartInput {
-    const parsed = LinkScanStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   resume: batchReviewResumeFor("reviewGate"),
 
   // The workflow's confirm step templates the full deterministic summary —
   // pass it through (declined runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Inventory link scan complete.";
-  },
+  summaryText: passthroughSummary("Inventory link scan complete."),
 };
 
 // ===========================================================================
-// incentive_scrape — the fifth registered descriptor (browser skill with ONE
-// first-encounter approval suspend BEFORE any navigation). The resume
-// vocabulary maps the generic form-decision verbs onto the workflow's typed
-// save | skip | decline: decline/cancel = the whole run declines (zero nav,
-// zero writes); accept defaults to save-the-shown-candidate, with an optional
-// content.url correction and an optional content.action="skip" (skip THIS
-// brand, run continues) for non-UI callers.
+// incentive_scrape — the fifth registered descriptor (READ-ONLY browser skill).
+// It auto-approves every new OEM source (owner directive) — no first-encounter
+// approval suspend, so NO `resume` member: a form-decision against an
+// incentive-scrape run 400s as unsupported_action. Targets derive from the
+// active profiles; the one-field start body carries only the profile pin.
 // ===========================================================================
-
-/** The incentive-scrape start body fields. Only `search_profile_id` matters
- *  to the workflow — targets derive from the active profiles; envelope fields
- *  ride the same body and are ignored. */
-const IncentiveScrapeStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The incentive-scrape workflow inputData shape. */
-interface IncentiveScrapeStartInput {
-  search_profile_id: string | null;
-}
-
-/** The accept-content shape for the first-encounter approval form. Both keys
- *  optional: a bare accept approves the SHOWN candidate (the approval card's
- *  Approve button sends no content). */
-const OemFirstEncounterAcceptContentSchema = z
-  .object({
-    action: z.enum(["save", "skip"]).optional(),
-    url: z.string().nullable().optional(),
-  })
-  .strict();
 
 /** The incentive_scrape descriptor. */
 export const incentiveScrapeDescriptor: RunDescriptor = {
@@ -704,62 +667,11 @@ export const incentiveScrapeDescriptor: RunDescriptor = {
     return providerDriverKind(policy("incentive_extract").provider);
   },
 
-  buildInput(body: Record<string, unknown>): IncentiveScrapeStartInput {
-    const parsed = IncentiveScrapeStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
-
-  resume(
-    step: string,
-    decision: FormDecisionBody["decision"],
-    _suspendPayload: Record<string, unknown>,
-  ): { resumeData: unknown; ackBody: Record<string, unknown> } {
-    if (step !== "resolveOemSource") {
-      throw new FormDecisionError(
-        "unsupported_action",
-        400,
-        `no resume schema for suspended step '${step}'`,
-      );
-    }
-    const { action, content } = decision;
-
-    if (action === "decline" || action === "cancel") {
-      return {
-        resumeData: OemFirstEncounterResumeSchema.parse({ action: "decline", url: null }),
-        ackBody: { action, content: null },
-      };
-    }
-
-    const parsed = OemFirstEncounterAcceptContentSchema.safeParse(content ?? {});
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "form content invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    const inner = parsed.data.action ?? "save";
-    const url = inner === "save" ? (parsed.data.url ?? null) : null;
-    const resume = OemFirstEncounterResumeSchema.parse({ action: inner, url });
-    return {
-      resumeData: resume,
-      ackBody: { action: "accept", content: { action: inner, url } },
-    };
-  },
+  buildInput: profileScopedBuildInput,
 
   // The workflow's confirm step templates the full deterministic summary —
   // pass it through (declined runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Incentive scrape complete.";
-  },
+  summaryText: passthroughSummary("Incentive scrape complete."),
 };
 
 // ===========================================================================
@@ -773,18 +685,6 @@ export const incentiveScrapeDescriptor: RunDescriptor = {
 // reject:[]), so the accept content stays the plain {approved_dealer_ids} shape.
 // ===========================================================================
 
-/** The inbox-check start body fields. Only `search_profile_id` matters to the
- *  workflow — the sweep window derives from the per-profile watermark, never
- *  from the start body; envelope fields ride the same body and are ignored. */
-const InboxCheckStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The inbox-check workflow inputData shape. */
-interface InboxCheckStartInput {
-  search_profile_id: string | null;
-}
-
 /** The dealer_inbox_check descriptor. */
 export const dealerInboxCheckDescriptor: RunDescriptor = {
   skillId: INBOX_CHECK_SKILL_ID,
@@ -797,26 +697,13 @@ export const dealerInboxCheckDescriptor: RunDescriptor = {
     return "deepseek_apikey";
   },
 
-  buildInput(body: Record<string, unknown>): InboxCheckStartInput {
-    const parsed = InboxCheckStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   resume: batchReviewResumeFor("batchReview"),
 
   // The workflow's confirm step templates the full deterministic summary — pass
   // it through (declined/no_replies runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Dealer inbox check complete.";
-  },
+  summaryText: passthroughSummary("Dealer inbox check complete."),
 };
 
 // ===========================================================================
@@ -828,18 +715,6 @@ export const dealerInboxCheckDescriptor: RunDescriptor = {
 // stage payload's shown ids, or decline = terminal/zero writes for the WHOLE
 // run). The three suspended step ids are the only ones the resume answers.
 // ===========================================================================
-
-/** The hygiene start body fields. Only `search_profile_id` matters — it is
- *  recorded as provenance but never filters the GLOBAL detection; envelope
- *  fields ride the same body and are ignored. */
-const HygieneStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The hygiene workflow inputData shape. */
-interface HygieneStartInput {
-  search_profile_id: string | null;
-}
 
 /** The accept-content shape for a hygiene stage review (the wire is ALWAYS an
  *  explicit id list — there is no approve-all member). */
@@ -930,26 +805,13 @@ export const dealerHygieneDescriptor: RunDescriptor = {
     return "deepseek_apikey";
   },
 
-  buildInput(body: Record<string, unknown>): HygieneStartInput {
-    const parsed = HygieneStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   resume: hygieneResume,
 
   // The workflow's verify step templates the full deterministic summary — pass
   // it through (declined runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Dealer hygiene complete.";
-  },
+  summaryText: passthroughSummary("Dealer hygiene complete."),
 };
 
 // ===========================================================================
@@ -1016,18 +878,11 @@ export const dealerWebLeadSubmitDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): DealerWebLeadSubmitStartInput {
-    const parsed = DealerWebLeadSubmitStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(DealerWebLeadSubmitStartBodySchema, body);
     return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-      target_listing_id: parsed.data.target_listing_id ?? null,
-      force_retry: parsed.data.force_retry ?? false,
+      search_profile_id: parsed.search_profile_id ?? null,
+      target_listing_id: parsed.target_listing_id ?? null,
+      force_retry: parsed.force_retry ?? false,
     };
   },
 
@@ -1057,10 +912,7 @@ export const dealerWebLeadSubmitDescriptor: RunDescriptor = {
 
   // The workflow's recordConfirm step templates the full deterministic summary —
   // pass it through (declined runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Lead submission complete.";
-  },
+  summaryText: passthroughSummary("Lead submission complete."),
 };
 
 // ===========================================================================
@@ -1094,26 +946,16 @@ export const dailyDigestDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): DailyDigestStartInput {
-    const parsed = DailyDigestStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(DailyDigestStartBodySchema, body);
     return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-      since_hours: parsed.data.since_hours ?? null,
+      search_profile_id: parsed.search_profile_id ?? null,
+      since_hours: parsed.since_hours ?? null,
     };
   },
 
   // The workflow's confirm step templates the deterministic summary; a graceful
   // zero-active "skipped" run carries its own summary too.
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Daily digest ready.";
-  },
+  summaryText: passthroughSummary("Daily digest ready."),
 };
 
 // ===========================================================================
@@ -1215,17 +1057,10 @@ export const negotiationFollowupDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): NegotiationFollowupStartInput {
-    const parsed = NegotiationFollowupStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(NegotiationFollowupStartBodySchema, body);
     return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-      thread_id: parsed.data.thread_id ?? null,
+      search_profile_id: parsed.search_profile_id ?? null,
+      thread_id: parsed.thread_id ?? null,
     };
   },
 
@@ -1256,10 +1091,7 @@ export const negotiationFollowupDescriptor: RunDescriptor = {
     );
   },
 
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Negotiation follow-up complete.";
-  },
+  summaryText: passthroughSummary("Negotiation follow-up complete."),
 };
 
 // ===========================================================================
@@ -1276,17 +1108,6 @@ export const negotiationFollowupDescriptor: RunDescriptor = {
 // batchReviewResume helper would 400 an unknown id, so X3 needs its OWN batch
 // resume shaper (closeoutBatchResume) that allows the skip-all sentinel.
 // ===========================================================================
-
-/** The dealer_closeout_email start body. search_profile_id optional+nullable: a
- *  pin-less input STOPs in the workflow (pin_required). */
-const DealerCloseoutEmailStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The dealer_closeout_email workflow inputData shape. */
-interface DealerCloseoutEmailStartInput {
-  search_profile_id: string | null;
-}
 
 /** The sentinel approved id the SKIP-ALL approve carries: a non-empty list (the
  *  schema requires .min(1)) that intersects no reviewed target → the workflow's
@@ -1346,24 +1167,11 @@ export const dealerCloseoutEmailDescriptor: RunDescriptor = {
     return "deepseek_apikey";
   },
 
-  buildInput(body: Record<string, unknown>): DealerCloseoutEmailStartInput {
-    const parsed = DealerCloseoutEmailStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   resume: closeoutBatchResume,
 
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Dealer closeout complete.";
-  },
+  summaryText: passthroughSummary("Dealer closeout complete."),
 };
 
 // ===========================================================================
@@ -1374,12 +1182,6 @@ export const dealerCloseoutEmailDescriptor: RunDescriptor = {
 // stays answerable. decline/cancel = terminal, ZERO destruction. The wipe
 // itself ignores search_profile_id (a global op — see the registry exception).
 // ===========================================================================
-
-/** The pipeline_reset start body (search_profile_id is pro forma — the wipe is
- *  global and ignores it). */
-const PipelineResetStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
 
 /** Re-validate the typed-YES token IN CODE and shape the resume. A confirm with
  *  a non-YES token is rejected (content_invalid) — never trusted from the wire;
@@ -1425,24 +1227,11 @@ export const pipelineResetDescriptor: RunDescriptor = {
     return "deepseek_apikey";
   },
 
-  buildInput(body: Record<string, unknown>): { search_profile_id: string | null } {
-    const parsed = PipelineResetStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   resume: pipelineResetResume,
 
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Pipeline reset complete.";
-  },
+  summaryText: passthroughSummary("Pipeline reset complete."),
 };
 
 // ===========================================================================
@@ -1452,18 +1241,6 @@ export const pipelineResetDescriptor: RunDescriptor = {
 // as unsupported_action. driver_kind is the constant api-key label (no useCase
 // routes through policy()).
 // ===========================================================================
-
-/** The inventory-compare start body fields. Only `search_profile_id` matters to
- *  the workflow; the start-route envelope fields ride the same body and are
- *  accepted + ignored (non-strict object). */
-const InventoryCompareStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The inventory-compare workflow inputData shape. */
-interface InventoryCompareStartInput {
-  search_profile_id: string | null;
-}
 
 /** The inventory_compare descriptor. */
 export const inventoryCompareDescriptor: RunDescriptor = {
@@ -1476,24 +1253,11 @@ export const inventoryCompareDescriptor: RunDescriptor = {
     return "deepseek_apikey";
   },
 
-  buildInput(body: Record<string, unknown>): InventoryCompareStartInput {
-    const parsed = InventoryCompareStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   // The workflow's render step templates the full deterministic summary — pass
   // it through.
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Inventory compare complete.";
-  },
+  summaryText: passthroughSummary("Inventory compare complete."),
 };
 
 // ===========================================================================
@@ -1531,26 +1295,16 @@ export const quoteAuditDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): QuoteAuditStartInput {
-    const parsed = QuoteAuditStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(QuoteAuditStartBodySchema, body);
     return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-      quote_id: parsed.data.quote_id ?? null,
+      search_profile_id: parsed.search_profile_id ?? null,
+      quote_id: parsed.quote_id ?? null,
     };
   },
 
   // The workflow's confirm step templates the full deterministic summary — pass
   // it through.
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Quote audit complete.";
-  },
+  summaryText: passthroughSummary("Quote audit complete."),
 };
 
 // ===========================================================================
@@ -1560,18 +1314,6 @@ export const quoteAuditDescriptor: RunDescriptor = {
 // unsupported_action. driver_kind is the constant api-key label (no useCase
 // routes through policy()).
 // ===========================================================================
-
-/** The quote-compare start body fields. Only `search_profile_id` matters to the
- *  workflow; the start-route envelope fields ride the same body and are accepted
- *  + ignored (non-strict object). */
-const QuoteCompareStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The quote-compare workflow inputData shape. */
-interface QuoteCompareStartInput {
-  search_profile_id: string | null;
-}
 
 /** The quote_compare descriptor. */
 export const quoteCompareDescriptor: RunDescriptor = {
@@ -1584,24 +1326,11 @@ export const quoteCompareDescriptor: RunDescriptor = {
     return "deepseek_apikey";
   },
 
-  buildInput(body: Record<string, unknown>): QuoteCompareStartInput {
-    const parsed = QuoteCompareStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return { search_profile_id: parsed.data.search_profile_id ?? null };
-  },
+  buildInput: profileScopedBuildInput,
 
   // The workflow's confirm step templates the full deterministic summary — pass
   // it through.
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Quote compare complete.";
-  },
+  summaryText: passthroughSummary("Quote compare complete."),
 };
 
 // ===========================================================================
@@ -1613,20 +1342,6 @@ export const quoteCompareDescriptor: RunDescriptor = {
 // takes — it IS a live-LLM skill, so the label flips in lock-step with a
 // registry-string provider swap (NOT the zero-LLM constant).
 // ===========================================================================
-
-/** The reply-extract start body fields. `search_profile_id` is the profile pin;
- *  the candidate set derives from the per-message extraction status. The
- *  malformed-class recovery (deepseek-v4-pro WITH thinking) is an AUTOMATIC
- *  in-message hop, not a start-body switch. Envelope fields ride the same body
- *  and are ignored (non-strict object). */
-const ReplyExtractStartBodySchema = z.object({
-  search_profile_id: z.string().nullable().optional(),
-});
-
-/** The reply-extract workflow inputData shape. */
-interface ReplyExtractStartInput {
-  search_profile_id: string | null;
-}
 
 /** The dealer_reply_extract descriptor. */
 export const dealerReplyExtractDescriptor: RunDescriptor = {
@@ -1641,29 +1356,14 @@ export const dealerReplyExtractDescriptor: RunDescriptor = {
     return providerDriverKind(policy("dealer_reply_extract").provider);
   },
 
-  buildInput(body: Record<string, unknown>): ReplyExtractStartInput {
-    const parsed = ReplyExtractStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
-    return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-    };
-  },
+  buildInput: profileScopedBuildInput,
 
   // No `resume` member — autonomous, no HITL suspend; a form-decision 400s as
   // unsupported_action through the service's resume===undefined branch.
 
   // The workflow's confirm step templates the full deterministic summary —
   // pass it through.
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Dealer reply extract complete.";
-  },
+  summaryText: passthroughSummary("Dealer reply extract complete."),
 };
 
 // ===========================================================================
@@ -1721,18 +1421,11 @@ export const quotePipelineDescriptor: RunDescriptor = {
   },
 
   buildInput(body: Record<string, unknown>): QuotePipelineStartInput {
-    const parsed = QuotePipelineStartBodySchema.safeParse(body);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
-        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
-        extra: { issues: parsed.error.issues },
-      });
-    }
+    const parsed = parseStartBody(QuotePipelineStartBodySchema, body);
     return {
-      search_profile_id: parsed.data.search_profile_id ?? null,
-      dry_run: coerceDryRun(parsed.data.dry_run),
-      target_listing_id: parsed.data.target_listing_id ?? null,
+      search_profile_id: parsed.search_profile_id ?? null,
+      dry_run: coerceDryRun(parsed.dry_run),
+      target_listing_id: parsed.target_listing_id ?? null,
     };
   },
 
@@ -1762,10 +1455,7 @@ export const quotePipelineDescriptor: RunDescriptor = {
 
   // The workflow's logCompletion step templates the full deterministic summary —
   // pass it through (declined runs never reach summaryText).
-  summaryText(result: unknown): string {
-    const r = result as { summary?: string } | undefined;
-    return r?.summary ?? "Quote pipeline complete.";
-  },
+  summaryText: passthroughSummary("Quote pipeline complete."),
 };
 
 // ===========================================================================

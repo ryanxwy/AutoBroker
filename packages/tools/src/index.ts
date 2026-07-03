@@ -626,7 +626,6 @@ export {
 } from "./inbox/watermark.js";
 export {
   listProfileThreadRows,
-  listProfileMessageRows,
   listProfileQuoteRows,
   listProfileIncentiveRows,
   listProfileContactEmails,

@@ -1,9 +1,9 @@
 /**
- * incentive_scrape contracts — the typed input/output, suspend/resume, emit
- * and stop/skip vocabularies the incentiveScrape workflow and the server
- * descriptor share. Skill-local, single-use contracts (only the workflow file
- * and its tests import them), kept out of the shared core layer like the
- * intake contracts; the core layer owns only the Incentive ROW shape.
+ * incentive_scrape contracts — the typed input/output, emit and stop/skip
+ * vocabularies the incentiveScrape workflow and the server descriptor share.
+ * Skill-local, single-use contracts (only the workflow file and its tests
+ * import them), kept out of the shared core layer like the intake contracts;
+ * the core layer owns only the Incentive ROW shape.
  *
  * PROFILE RESOLUTION — the documented exception: incentive_scrape enumerates
  * EVERY active profile when unpinned (one scrape target per active profile —
@@ -13,18 +13,12 @@
  * `resolution` provenance is therefore `pinned | all_active`, never
  * `inferred_newest` — nothing here ever silently picks "the newest".
  *
- * ONE suspend point (Class 1 — trusting a NEW external source domain): the
- * OEM first-encounter approval. It rides the app's banner-track "approval"
- * gate kind, so the payload leads with kind/summary/sensitive (what the
- * approval card renders) followed by the typed first-encounter fields. The
- * resume vocabulary:
- *   save    — approve the shown source (or a corrected url); the brand's
- *             registry entry is written and the run continues. url=null means
- *             "the shown candidate".
- *   skip    — this BRAND is skipped (counted, zero writes for it); the run
- *             continues with the remaining targets.
- *   decline — the WHOLE run terminates declined: zero navigation, zero DB
- *             writes, no registry entry (the gate's Deny/Cancel verbs).
+ * NO suspend point: incentive_scrape is READ-ONLY (public OEM offers pages →
+ * local manufacturer_incentives rows; no send/submit), so it auto-approves
+ * every new source (owner directive) — a first-encounter source is recorded
+ * and scraped with no human gate. A skipped brand (a per-brand
+ * cache-hit / no-source outcome) is counted with zero writes for it; the run
+ * as a whole only STOPs on the typed no_active_profile branch.
  *
  * #1244 / structured-output discipline: the emit schema is flat,
  * all-required-with-explicit-null, enums where possible — handed to
@@ -146,48 +140,6 @@ export const INCENTIVE_FAIL_REASONS = [
   "missing_zip",
 ] as const;
 export type IncentiveFailReason = (typeof INCENTIVE_FAIL_REASONS)[number];
-
-// ---------------------------------------------------------------------------
-// the OEM first-encounter suspend / resume contracts
-// ---------------------------------------------------------------------------
-
-/**
- * The first-encounter suspend payload (the spec_inline the banner-track
- * approval card renders). kind/summary/sensitive are what the generic
- * approval surface shows; the typed fields are the audit record of WHAT was
- * being approved. IDs + short strings only — the payload stays well under the
- * renderable bound.
- */
-export const OemFirstEncounterSuspendSchema = z
-  .object({
-    kind: z.literal("approval"),
-    /** The one-line question the approval card shows the user. */
-    summary: z.string(),
-    /** Trusting a new external domain is a sensitive decision — the card
-     *  hides batch approval and renders the danger frame. */
-    sensitive: z.literal(true),
-    /** The candidate offers-page URL for THIS target (placeholders already
-     *  substituted), or "" when no candidate exists. */
-    oemUrl: z.string(),
-    /** Normalized form of the candidate (the registry dedupe key). */
-    normalizedUrl: z.string(),
-    make: z.string(),
-    model: z.string(),
-    reason: z.literal("oem_first_encounter"),
-  })
-  .strict();
-export type OemFirstEncounterSuspend = z.infer<typeof OemFirstEncounterSuspendSchema>;
-
-/** The resume vocabulary (see the file header for the three verbs). url is
- *  meaningful only with save: a non-null value overrides the shown candidate
- *  (re-validated before anything trusts it); null = approve the candidate. */
-export const OemFirstEncounterResumeSchema = z
-  .object({
-    action: z.enum(["save", "skip", "decline"]),
-    url: z.string().nullable(),
-  })
-  .strict();
-export type OemFirstEncounterResume = z.infer<typeof OemFirstEncounterResumeSchema>;
 
 // ---------------------------------------------------------------------------
 // the extraction LLM contract (emit shape + fenced prompt)

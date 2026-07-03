@@ -47,7 +47,6 @@ import {
   listProfileThreadRowsWithStatus,
   listProfileDealerNegotiations,
   readDealerNegotiationDetail,
-  listProfileMessageRows,
   buildDigestView,
   profileHealth,
   listActiveProfileIds,
@@ -1035,16 +1034,6 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       );
     },
   );
-
-  // ---- GET /api/profiles/:id/messages — read-only ingested-message projection
-  app.get("/api/profiles/:id/messages", async (req: FastifyRequest, _reply: FastifyReply) => {
-    const { id } = req.params as { id: string };
-    const profile = withDb((db) => readProfileRow(db, id));
-    if (profile === null) {
-      throw new RouteError("not_found", 404, `profile ${id} not found`);
-    }
-    return withDb((db) => listProfileMessageRows(db, id));
-  });
 
   // ---- GET /api/digest — the daily-digest live projection ------------------
   // The /digest page reads this. Optional ?profile_id pins one profile; absent

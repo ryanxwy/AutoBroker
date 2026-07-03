@@ -1,8 +1,8 @@
 /**
  * L1 unit tests — the profile-scoped inbox read closures + the per-profile
  * sweep watermark. Freezes:
- *   - listProfileThreadRows / listProfileMessageRows return ONLY the passed
- *     profile's rows (the orphan-fix read mirror), joined to the dealer name;
+ *   - listProfileThreadRows returns ONLY the passed profile's rows (the
+ *     orphan-fix read mirror), joined to the dealer name;
  *   - readLastInboxCheckAt is null before the first sweep; writeLastInboxCheckAt
  *     upserts (a later write overwrites).
  *
@@ -20,7 +20,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, openDb, type Db } from "../db.js";
 import {
   listProfileDealerDomains,
-  listProfileMessageRows,
   listProfileQuoteRows,
   listProfileThreadRows,
   readFirstLeadSubmitAtMs,
@@ -85,15 +84,6 @@ describe("listProfileThreadRows", () => {
     expect(rows[0]!["thread_id"]).toBe("t-a");
     expect(rows[0]!["dealer_name"]).toBe("Example Hyundai");
     expect(rows[0]!["search_profile_id"]).toBeUndefined(); // not selected — projection stays lean
-  });
-});
-
-describe("listProfileMessageRows", () => {
-  it("returns only the passed profile's inbound messages", () => {
-    const rows = listProfileMessageRows(db, PROFILE_B);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!["message_id"]).toBe("m-b");
-    expect(rows[0]!["quote_extraction_status"]).toBe("pending");
   });
 });
 

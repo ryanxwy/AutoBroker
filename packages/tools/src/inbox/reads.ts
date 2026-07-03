@@ -229,18 +229,3 @@ export function readFirstLeadSubmitAtMs(db: Db, profileId: string): number | nul
   return toEpochMs(row.first_at);
 }
 
-/**
- * The inbound messages ingested for one profile, newest first. snake_case rows
- * for the HTTP view. Read-only.
- */
-export function listProfileMessageRows(db: Db, profileId: string): Record<string, unknown>[] {
-  return db.$client
-    .prepare(
-      "SELECT message_id, thread_id, direction, sender, sender_email, sender_name, " +
-        "subject, received_at, quote_extraction_status " +
-        "FROM messages " +
-        "WHERE search_profile_id = ? " +
-        "ORDER BY received_at DESC, message_id",
-    )
-    .all(profileId) as Record<string, unknown>[];
-}

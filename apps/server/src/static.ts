@@ -36,8 +36,8 @@ function resolveUiDist(): string {
   return resolve(here, "..", "..", "ui", "dist");
 }
 
-/** What registerStatic resolved: the served dist dir + its index.html, or null
- *  when no build artifact exists (the SPA fallback then stays off). */
+/** What resolveStaticServing resolved: the served dist dir + its index.html, or
+ *  null when no build artifact exists (the SPA fallback then stays off). */
 export interface StaticServing {
   distDir: string;
   indexPath: string;
@@ -83,15 +83,6 @@ export async function registerStaticPlugin(
     // notFoundHandler fallback (sendSpaFallback) instead.
     index: ["index.html"],
   });
-}
-
-/** Back-compat shim: resolve + register in one call. Prefer the split form so
- *  handlers can be installed between resolve and register. */
-export async function registerStatic(app: FastifyInstance): Promise<StaticServing | null> {
-  const serving = resolveStaticServing();
-  if (serving === null) return null;
-  await registerStaticPlugin(app, serving);
-  return serving;
 }
 
 /**

@@ -541,8 +541,6 @@ function pendingKind(step: string): string {
     case "batchReview":
     case "reviewGate": // inventory_link_scan's batch_review step
       return "batch_review";
-    case "resolveOemSource": // incentive_scrape's first-encounter approval
-      return "oem_first_encounter";
     case "confirmGate": // pipeline_reset's destructive typed-YES confirm
       return "confirmation_gate";
     default:
@@ -1251,20 +1249,19 @@ async function driveResumeScriptDom(
         await driver.screenshot("confirmation-gate-decline");
         await driver.clickResetCancel(maxMs);
       }
-    } else if (resume.on === "oem_first_encounter" || resume.on === "approval") {
+    } else if (resume.on === "approval") {
       // The banner-track ApprovalPrompt: Approve = accept (approve the shown
-      // action), Deny = decline (terminal/skip, zero writes). Two suspend kinds
-      // ride this same card: incentive_scrape's first-encounter approval
-      // (oem_first_encounter) and dealer_web_lead_submit's email_fallback
-      // re-confirm (approval, sensitive=true → the approve-all affordance is
+      // action), Deny = decline (terminal/skip, zero writes). The send-skill
+      // re-confirms ride this card — dealer_web_lead_submit's single_store /
+      // email_fallback approval and negotiation_followup's contact-flip
+      // re-confirm (all sensitive=true → the approve-all affordance is
       // structurally absent, which the case asserts via a dom_state anchor).
       await driver.waitForApprovalPrompt(maxMs);
       await driver.checkBannerGateBeforeProse();
       // The bulk affordance must match the card's sensitivity: a sensitive
-      // event (dealer_web_lead_submit's email_fallback re-confirm — a mutating
-      // scope switch) carries ZERO approve-all controls; a non-sensitive one
-      // (incentive_scrape's first-encounter approval) carries exactly one. A
-      // REAL DOM read recorded into ui_checks (not a vacuous anchor passthrough).
+      // event (a mutating scope switch / send re-confirm) carries ZERO
+      // approve-all controls; a non-sensitive one carries exactly one. A REAL
+      // DOM read recorded into ui_checks (not a vacuous anchor passthrough).
       await driver.checkApprovalApproveAllForSensitivity();
       if (resume.action === "accept") {
         await driver.screenshot("approval-approve");

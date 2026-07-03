@@ -126,7 +126,8 @@ describe("single-port SPA serving (dist present)", () => {
 
 describe("no dist → fallback off (dev/test default)", () => {
   it("boots without a dist and 404s a client route as JSON", async () => {
-    // Point the override at a dir with NO index.html → registerStatic no-ops.
+    // Point the override at a dir with NO index.html → resolveStaticServing
+    // returns null and the SPA fallback stays off.
     const emptyDir = mkdtempSync(join(tmpdir(), "autobroker-static-empty-"));
     process.env[UI_DIST] = emptyDir;
     try {

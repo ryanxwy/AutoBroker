@@ -151,7 +151,6 @@ export {
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   setIncentiveScrapeBrowserEmitterFactory,
 } from "./incentiveScrape.js";
-export { OemFirstEncounterResumeSchema } from "./incentiveScrapeContracts.js";
 
 // dealer_inbox_check (skill #6, the email-pull skill; batch_review over
 // discovered dealer-reply groups — resume reuses the shared BatchReviewResumeSchema).
