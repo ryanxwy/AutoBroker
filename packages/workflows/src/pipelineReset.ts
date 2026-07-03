@@ -21,7 +21,7 @@
  *   - the close-out runs as the default pre-reset pass; the STUB returns
  *     no_eligible with NO suspend and NO second reset confirmation — the real X3
  *     `dealer_closeout_email` composition (its own batch-review suspend,
- *     fake-send until Phase 5) wires in at the marked point;
+ *     real send in buyer mode / fake in test mode) wires in at the marked point;
  *   - the reset tools REFUSE the production data tree ~/.autobroker;
  *   - notify/confirm are deterministic ZERO-LLM and point at the intake.
  *
@@ -199,8 +199,8 @@ const closeOutStep = createStep({
     // ===== X3 WIRE-POINT =====================================================
     // The default pre-reset close-out pass. When `dealer_closeout_email` (X3,
     // Phase 5) lands, COMPOSE it here as a top-level child step: it carries its
-    // OWN batch-review suspend and is FAKE-SEND until Phase 5 is GREEN (approval
-    // never hidden). Branch on its terminal {no_eligible | skipped_all | sent}.
+    // OWN batch-review suspend and really sends in buyer mode / fakes in test
+    // mode (approval never hidden). Branch on its terminal {no_eligible | skipped_all | sent}.
     // There is NO second reset confirmation after close-out — the typed-YES gate
     // above already authorized the whole run. Until X3 exists, this is a
     // typed-SKIP STUB returning no_eligible (no suspend, no send, no write).

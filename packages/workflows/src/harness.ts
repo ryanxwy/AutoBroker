@@ -58,9 +58,8 @@
  *      Cost is NULL-not-$0: usage missing → costUsd null + pricingSource
  *      'unavailable'. Wall-clock durationMs is always recorded.
  *
- * Prompt: input.prompt is a flat string; it is routed through the model
- * layer's toModelMessages([{role:'user',...}]) so the canonical-message ↔
- * ModelMessage translator is load-bearing on this lane.
+ * Prompt: input.prompt is a flat string, wrapped inline as a single
+ * user-role ModelMessage on each generate lane.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/model (pure
  * helpers + types), @autobroker/tools (the ledger writer — the ONLY DB path),
@@ -82,14 +81,13 @@ import {
   policy,
   redactMalformedSample,
   resolveModel,
-  toModelMessages,
   type HarnessGenerateInput,
   type HarnessGenerateResult,
   type HarnessSuspend,
   type PolicyResolution,
   type UseCase,
 } from "@autobroker/model";
-import { llmLimiter, writeTestRunRecord, type Db } from "@autobroker/tools";
+import { llmLimiter, writeTestRunRecord, type Db, type TestRunRecordInsert } from "@autobroker/tools";
 
 import { applySelection, resolveSelectionForRun } from "./agentSelection.js";
 import {
@@ -234,6 +232,175 @@ export interface HarnessTestOverrides {
   claudeOAuthQuery?: typeof claudeOAuthQuery;
 }
 
+/** The per-write-site VARYING columns of one ledger row; the stable identity
+ *  columns come from `ledger` + `route`. malformed* default to explicit NULL. */
+interface LedgerRowOverrides {
+  costUsd: number | null;
+  latencyMs: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  pricingSource: string;
+  priceInputPerMtok: number | null;
+  priceOutputPerMtok: number | null;
+  failReason: string | null;
+  malformedSignals?: string | null;
+  malformedSample?: string | null;
+}
+
+/** Assemble the ONE common TestRunRecordInsert every write site shares. Route
+ *  identity (provider + alias) is the policy() resolution, never a caller string. */
+function ledgerRow(
+  ledger: HarnessLedgerContext,
+  route: PolicyResolution,
+  overrides: LedgerRowOverrides,
+): TestRunRecordInsert {
+  return {
+    runId: ledger.runId,
+    skill: ledger.skill,
+    createdAt: createdAtBucket(),
+    layer: ledger.layer,
+    provider: route.provider,
+    modelAlias: route.alias,
+    costUsd: overrides.costUsd,
+    latencyMs: overrides.latencyMs,
+    inputTokens: overrides.inputTokens,
+    outputTokens: overrides.outputTokens,
+    pricingSource: overrides.pricingSource,
+    priceInputPerMtok: overrides.priceInputPerMtok,
+    priceOutputPerMtok: overrides.priceOutputPerMtok,
+    promptVersion: ledger.promptVersion,
+    schemaVersion: ledger.schemaVersion,
+    failReason: overrides.failReason,
+    // #1244 evidence — only the malformed branch passes a payload (redacted at the
+    // call site, inv #9); every other row leaves both columns NULL.
+    malformedSignals: overrides.malformedSignals ?? null,
+    malformedSample: overrides.malformedSample ?? null,
+  };
+}
+
+/** The cost/pricing snapshot a run shares across its ledger rows once usage is
+ *  priced (closed over by makeWriteLedger). */
+interface CostCapture {
+  costUsd: number | null;
+  pricingSource: string;
+  priceInputPerMtok: number | null;
+  priceOutputPerMtok: number | null;
+  durationMs: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+}
+
+/** Build the per-run `writeLedger(failReason, malformed?)` closure shared by all
+ *  three facades (the 3 byte-identical inline copies collapse here). The malformed
+ *  branch is the only one that carries evidence: signals joined, sample
+ *  redactMalformedSample'd (inv #9) BEFORE persist. */
+function makeWriteLedger(
+  ledger: HarnessLedgerContext,
+  route: PolicyResolution,
+  cost: CostCapture,
+  _testOverrides: HarnessTestOverrides | undefined,
+): (failReason: string | null, malformed?: { signals: ReadonlyArray<string>; text: string }) => void {
+  return (failReason, malformed) => {
+    writeTestRunRecord(
+      ledgerRow(ledger, route, {
+        costUsd: cost.costUsd,
+        latencyMs: cost.durationMs,
+        inputTokens: cost.promptTokens,
+        outputTokens: cost.completionTokens,
+        pricingSource: cost.pricingSource,
+        priceInputPerMtok: cost.priceInputPerMtok,
+        priceOutputPerMtok: cost.priceOutputPerMtok,
+        failReason,
+        malformedSignals: malformed ? malformed.signals.join(",") : null,
+        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
+      }),
+      ..._dbArg(_testOverrides),
+    );
+  };
+}
+
+/**
+ * Shared lane-B (Claude OAuth subscription) execution + ledger for BOTH facades.
+ * `run` performs the OAuth query and yields the lane-specific payload (parsed
+ * object for generate, text for draftProse) + token usage.
+ *
+ * Ledger asymmetry preserved EXACTLY (load-bearing): a THROW (subprocess failure,
+ * or generate's schema.parse belt inside `run`) writes ONE 'unavailable'+failReason
+ * row then rethrows (fail-closed; no object fabricated); success writes ONE
+ * costUsd-NULL + 'subscription' row (flat-rate, never a fabricated $0) with real
+ * tokens; the RETURNED usage keeps 'unavailable' + costUsd null — the deliberate
+ * ledgered-'subscription' vs returned-'unavailable' asymmetry.
+ */
+async function runLaneBOAuth<T>(
+  ledger: HarnessLedgerContext,
+  route: PolicyResolution,
+  startedAt: number,
+  _testOverrides: HarnessTestOverrides | undefined,
+  run: (
+    oauthQuery: typeof claudeOAuthQuery,
+    oauthModelId: string,
+  ) => Promise<{ payload: T; usage: { inputTokens: number | null; outputTokens: number | null } }>,
+): Promise<{ payload: T; usage: DraftProseResult["usage"] }> {
+  const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
+  const oauthModelId = concreteModelId(resolveModel(route.alias));
+  let payload: T;
+  let usage: { inputTokens: number | null; outputTokens: number | null };
+  try {
+    const r = await run(oauthQuery, oauthModelId);
+    payload = r.payload;
+    usage = r.usage;
+  } catch (err) {
+    writeTestRunRecord(
+      ledgerRow(ledger, route, {
+        costUsd: null,
+        latencyMs: Date.now() - startedAt,
+        inputTokens: null,
+        outputTokens: null,
+        pricingSource: "unavailable",
+        priceInputPerMtok: null,
+        priceOutputPerMtok: null,
+        failReason: err instanceof Error ? err.name : "claude_oauth_failed",
+      }),
+      ..._dbArg(_testOverrides),
+    );
+    throw err;
+  }
+  const laneBDuration = Date.now() - startedAt;
+  // Subscription is flat-rate: cost is NULL + pricing_source 'subscription'
+  // (honest — never a fabricated $0; tokens recorded for volume metering).
+  writeTestRunRecord(
+    ledgerRow(ledger, route, {
+      costUsd: null,
+      latencyMs: laneBDuration,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      pricingSource: "subscription",
+      priceInputPerMtok: null,
+      priceOutputPerMtok: null,
+      failReason: null,
+    }),
+    ..._dbArg(_testOverrides),
+  );
+  return {
+    payload,
+    usage: {
+      costUsd: null,
+      durationMs: laneBDuration,
+      pricingSource: "unavailable",
+      promptTokens: usage.inputTokens,
+      completionTokens: usage.outputTokens,
+    },
+  };
+}
+
+/** Narrow a harness.generate result to the fail-closed HarnessSuspend branch
+ *  (defensive — hitlAvailable:false should THROW, not suspend, but a suspend-shaped
+ *  return is treated identically). The single shared copy for every skill + the
+ *  recovery helper. */
+export function isHarnessSuspend(r: unknown): r is HarnessSuspend {
+  return typeof r === "object" && r !== null && "suspended" in r;
+}
+
 /**
  * Run one structured generation: resolve route → force the emit_result discipline
  * → drive the Mastra Agent through the #1244 fail-closed processor → assert the
@@ -283,82 +450,27 @@ async function generate<TSchema extends z.ZodTypeAny>(
   // detector/recovery here — Zod `.parse` THROWS as the fail-closed belt. The
   // model id is the concrete claude-* id behind the (re-homed) anthropic alias.
   if (sel?.provider === "anthropic" && sel?.method === "oauth") {
-    const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
-    const oauthModelId = concreteModelId(resolveModel(route.alias));
-    // F1 parity: a real subprocess call (or its Zod `.parse` belt) that THROWS is
-    // a run that HAPPENED — record ONE NULL-not-$0 ledger row (failReason set) then
-    // rethrow, mirroring the api-key lane's .catch above. Fail-closed is unchanged:
-    // the error still propagates and no object is ever fabricated.
-    let object: z.infer<TSchema>;
-    let usage: { inputTokens: number | null; outputTokens: number | null };
-    try {
-      const r = await oauthQuery({
-        prompt: input.prompt,
-        jsonSchema: z.toJSONSchema(input.schema),
-        model: oauthModelId,
-      });
-      object = input.schema.parse(r.structuredOutput) as z.infer<TSchema>;
-      usage = r.usage;
-    } catch (err) {
-      writeTestRunRecord(
-        {
-          runId: ledger.runId,
-          skill: ledger.skill,
-          createdAt: createdAtBucket(),
-          layer: ledger.layer,
-          provider: route.provider,
-          modelAlias: route.alias,
-          costUsd: null,
-          latencyMs: Date.now() - startedAt,
-          inputTokens: null,
-          outputTokens: null,
-          pricingSource: "unavailable",
-          priceInputPerMtok: null,
-          priceOutputPerMtok: null,
-          promptVersion: ledger.promptVersion,
-          schemaVersion: ledger.schemaVersion,
-          failReason: err instanceof Error ? err.name : "claude_oauth_failed",
-        },
-        ..._dbArg(_testOverrides),
-      );
-      throw err;
-    }
-    const laneBDuration = Date.now() - startedAt;
-    // Subscription is flat-rate: cost is NULL + pricing_source 'subscription'
-    // (honest — never a fabricated $0; tokens recorded for volume metering).
-    writeTestRunRecord(
-      {
-        runId: ledger.runId,
-        skill: ledger.skill,
-        createdAt: createdAtBucket(),
-        layer: ledger.layer,
-        provider: route.provider,
-        modelAlias: route.alias,
-        costUsd: null,
-        latencyMs: laneBDuration,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        pricingSource: "subscription",
-        priceInputPerMtok: null,
-        priceOutputPerMtok: null,
-        promptVersion: ledger.promptVersion,
-        schemaVersion: ledger.schemaVersion,
-        failReason: null,
-        malformedSignals: null,
-        malformedSample: null,
+    // Zod `.parse` inside the callback is the fail-closed belt; runLaneBOAuth owns
+    // the ledger asymmetry (throw → 'unavailable'+failReason+rethrow; success →
+    // 'subscription').
+    const { payload: object, usage } = await runLaneBOAuth<z.infer<TSchema>>(
+      ledger,
+      route,
+      startedAt,
+      _testOverrides,
+      async (oauthQuery, oauthModelId) => {
+        const r = await oauthQuery({
+          prompt: input.prompt,
+          jsonSchema: z.toJSONSchema(input.schema),
+          model: oauthModelId,
+        });
+        return {
+          payload: input.schema.parse(r.structuredOutput) as z.infer<TSchema>,
+          usage: r.usage,
+        };
       },
-      ..._dbArg(_testOverrides),
     );
-    return {
-      object,
-      usage: {
-        costUsd: null,
-        durationMs: laneBDuration,
-        pricingSource: "unavailable",
-        promptTokens: usage.inputTokens,
-        completionTokens: usage.outputTokens,
-      },
-    };
+    return { object, usage };
   }
 
   const model = _testOverrides?.model ?? resolveModel(route.alias);
@@ -399,8 +511,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
     },
   });
 
-  // Stage 9 — prompt routed through the canonical-message translator.
-  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+  // Stage 9 — prompt wrapped inline as a single user-role message.
+  const messages = [{ role: "user" as const, content: input.prompt }];
 
   // The thinking lane (the malformed-class recovery hop) reasons first, so the
   // model must be free to think BEFORE the tool fires. The default lane forces
@@ -468,15 +580,10 @@ async function generate<TSchema extends z.ZodTypeAny>(
       modelSettings: { temperature: 0 },
     })
     .catch((err: unknown) => {
+      // Review F1: a model-call THROW is a run that HAPPENED — one NULL-not-$0 row
+      // before propagating.
       writeTestRunRecord(
-        {
-          runId: ledger.runId,
-          skill: ledger.skill,
-          createdAt: createdAtBucket(),
-          layer: ledger.layer,
-          // Route identity comes from policy(useCase), never a caller string.
-          provider: route.provider,
-          modelAlias: route.alias,
+        ledgerRow(ledger, route, {
           costUsd: null,
           latencyMs: Date.now() - startedAt,
           inputTokens: null,
@@ -484,10 +591,8 @@ async function generate<TSchema extends z.ZodTypeAny>(
           pricingSource: "unavailable",
           priceInputPerMtok: null,
           priceOutputPerMtok: null,
-          promptVersion: ledger.promptVersion,
-          schemaVersion: ledger.schemaVersion,
           failReason: err instanceof Error ? err.name : "model_call_failed",
-        },
+        }),
         ..._dbArg(_testOverrides),
       );
       throw err;
@@ -502,41 +607,20 @@ async function generate<TSchema extends z.ZodTypeAny>(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  /** Write the one ledger row for this run with the given verdict. The route
-   *  identity (provider + alias) is the policy() resolution, never a caller
-   *  string. */
-  const writeLedger = (
-    failReason: string | null,
-    malformed?: { signals: ReadonlyArray<string>; text: string },
-  ): void => {
-    writeTestRunRecord(
-      {
-        runId: ledger.runId,
-        skill: ledger.skill,
-        createdAt: createdAtBucket(),
-        layer: ledger.layer,
-        provider: route.provider,
-        modelAlias: route.alias,
-        costUsd,
-        latencyMs: durationMs,
-        inputTokens: promptTokens,
-        outputTokens: completionTokens,
-        pricingSource,
-        priceInputPerMtok: priceColumns.input,
-        priceOutputPerMtok: priceColumns.output,
-        promptVersion: ledger.promptVersion,
-        schemaVersion: ledger.schemaVersion,
-        failReason,
-        // #1244 evidence — ONLY the malformed branch passes a payload. The
-        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
-        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
-        // both columns NULL.
-        malformedSignals: malformed ? malformed.signals.join(",") : null,
-        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
-      },
-      ..._dbArg(_testOverrides),
-    );
-  };
+  const writeLedger = makeWriteLedger(
+    ledger,
+    route,
+    {
+      costUsd,
+      pricingSource,
+      priceInputPerMtok: priceColumns.input,
+      priceOutputPerMtok: priceColumns.output,
+      durationMs,
+      promptTokens,
+      completionTokens,
+    },
+    _testOverrides,
+  );
 
   // Stage 4b/5 — #1244 fail-closed. A tripped processor RESOLVES with
   // result.tripwire populated (live-probed; NOT a throw on this lane). The
@@ -660,9 +744,9 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   startedAt: number,
   _testOverrides: HarnessTestOverrides | undefined,
 ): Promise<HarnessGenerateResult<z.infer<TSchema>> | HarnessSuspend> {
-  // Prompt routed through the canonical-message translator, same as the
+  // Prompt wrapped inline as a single user-role message, same as the
   // emit_result lane.
-  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+  const messages = [{ role: "user" as const, content: input.prompt }];
 
   const agent = new Agent({
     id: "harness-output-object",
@@ -702,14 +786,7 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
       // its error name and propagate verbatim.
       const zodCause = structuredOutputZodCause(err);
       writeTestRunRecord(
-        {
-          runId: ledger.runId,
-          skill: ledger.skill,
-          createdAt: createdAtBucket(),
-          layer: ledger.layer,
-          // Route identity comes from policy(useCase), never a caller string.
-          provider: route.provider,
-          modelAlias: route.alias,
+        ledgerRow(ledger, route, {
           costUsd: null,
           latencyMs: Date.now() - startedAt,
           inputTokens: null,
@@ -717,11 +794,9 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
           pricingSource: "unavailable",
           priceInputPerMtok: null,
           priceOutputPerMtok: null,
-          promptVersion: ledger.promptVersion,
-          schemaVersion: ledger.schemaVersion,
           failReason:
             zodCause !== null ? "zod_validation" : err instanceof Error ? err.name : "model_call_failed",
-        },
+        }),
         ..._dbArg(_testOverrides),
       );
       throw zodCause ?? err;
@@ -734,38 +809,20 @@ async function generateOutputObject<TSchema extends z.ZodTypeAny>(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  const writeLedger = (
-    failReason: string | null,
-    malformed?: { signals: ReadonlyArray<string>; text: string },
-  ): void => {
-    writeTestRunRecord(
-      {
-        runId: ledger.runId,
-        skill: ledger.skill,
-        createdAt: createdAtBucket(),
-        layer: ledger.layer,
-        provider: route.provider,
-        modelAlias: route.alias,
-        costUsd,
-        latencyMs: durationMs,
-        inputTokens: promptTokens,
-        outputTokens: completionTokens,
-        pricingSource,
-        priceInputPerMtok: priceColumns.input,
-        priceOutputPerMtok: priceColumns.output,
-        promptVersion: ledger.promptVersion,
-        schemaVersion: ledger.schemaVersion,
-        failReason,
-        // #1244 evidence — ONLY the malformed branch passes a payload. The
-        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
-        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
-        // both columns NULL.
-        malformedSignals: malformed ? malformed.signals.join(",") : null,
-        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
-      },
-      ..._dbArg(_testOverrides),
-    );
-  };
+  const writeLedger = makeWriteLedger(
+    ledger,
+    route,
+    {
+      costUsd,
+      pricingSource,
+      priceInputPerMtok: priceColumns.input,
+      priceOutputPerMtok: priceColumns.output,
+      durationMs,
+      promptTokens,
+      completionTokens,
+    },
+    _testOverrides,
+  );
 
   // Stage 4b/5 — #1244 fail-closed (same mapping as emit_result). A tripped
   // processor RESOLVES with result.tripwire populated (live-probed; not a throw).
@@ -981,81 +1038,31 @@ async function draftProse(
   // ledger shape as generate's lane B; no #1244 detector (no tools, no structured
   // output, and the OAuth lane runs no api-key tool loop).
   if (sel?.provider === "anthropic" && sel?.method === "oauth") {
-    const oauthQuery = _testOverrides?.claudeOAuthQuery ?? claudeOAuthQuery;
-    const oauthModelId = concreteModelId(resolveModel(route.alias));
-    // F1 parity: a throwing subprocess call is a run that HAPPENED — ledger ONE
-    // NULL-not-$0 row (failReason set) then rethrow, mirroring the api-key lane.
-    let text: string;
-    let usage: { inputTokens: number | null; outputTokens: number | null };
-    try {
-      const r = await oauthQuery({ prompt: input.prompt, model: oauthModelId });
-      text = r.text ?? "";
-      usage = r.usage;
-    } catch (err) {
-      writeTestRunRecord(
-        {
-          runId: ledger.runId,
-          skill: ledger.skill,
-          createdAt: createdAtBucket(),
-          layer: ledger.layer,
-          provider: route.provider,
-          modelAlias: route.alias,
-          costUsd: null,
-          latencyMs: Date.now() - startedAt,
-          inputTokens: null,
-          outputTokens: null,
-          pricingSource: "unavailable",
-          priceInputPerMtok: null,
-          priceOutputPerMtok: null,
-          promptVersion: ledger.promptVersion,
-          schemaVersion: ledger.schemaVersion,
-          failReason: err instanceof Error ? err.name : "claude_oauth_failed",
-        },
-        ..._dbArg(_testOverrides),
-      );
-      throw err;
-    }
-    const laneBDuration = Date.now() - startedAt;
-    writeTestRunRecord(
-      {
-        runId: ledger.runId,
-        skill: ledger.skill,
-        createdAt: createdAtBucket(),
-        layer: ledger.layer,
-        provider: route.provider,
-        modelAlias: route.alias,
-        costUsd: null,
-        latencyMs: laneBDuration,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        pricingSource: "subscription",
-        priceInputPerMtok: null,
-        priceOutputPerMtok: null,
-        promptVersion: ledger.promptVersion,
-        schemaVersion: ledger.schemaVersion,
-        failReason: null,
-        malformedSignals: null,
-        malformedSample: null,
+    // No schema → r.text; runLaneBOAuth owns the ledger asymmetry + fail-closed.
+    const { payload: text, usage } = await runLaneBOAuth<string>(
+      ledger,
+      route,
+      startedAt,
+      _testOverrides,
+      async (oauthQuery, oauthModelId) => {
+        const r = await oauthQuery({ prompt: input.prompt, model: oauthModelId });
+        return { payload: r.text ?? "", usage: r.usage };
       },
-      ..._dbArg(_testOverrides),
     );
-    return {
-      text,
-      usage: {
-        costUsd: null,
-        durationMs: laneBDuration,
-        pricingSource: "unavailable",
-        promptTokens: usage.inputTokens,
-        completionTokens: usage.outputTokens,
-      },
-    };
+    return { text, usage };
   }
 
   const model = _testOverrides?.model ?? resolveModel(route.alias);
   const modelId = concreteModelId(model);
 
-  // Stage 9 — prompt routed through the canonical-message translator.
-  const messages = toModelMessages([{ role: "user", content: input.prompt }]);
+  // Per-provider LLM pacing (LimiterRegistry, below the L2 gate): the SAME
+  // host-wide pacing the structured `generate` lane applies — bound the combined
+  // call rate to route.provider so N concurrent pipelines don't burst one
+  // provider. Skipped when a test injects a model, and lane B already returned.
+  if (_testOverrides?.model === undefined) await llmLimiter.acquireLlm(route.provider);
+
+  // Stage 9 — prompt wrapped inline as a single user-role message.
+  const messages = [{ role: "user" as const, content: input.prompt }];
 
   const agent = new Agent({
     id: "harness-prose",
@@ -1075,14 +1082,9 @@ async function draftProse(
       modelSettings: { temperature: 0 },
     })
     .catch((err: unknown) => {
+      // A throw is a run that HAPPENED — ledger one NULL-not-$0 row before rethrow.
       writeTestRunRecord(
-        {
-          runId: ledger.runId,
-          skill: ledger.skill,
-          createdAt: createdAtBucket(),
-          layer: ledger.layer,
-          provider: route.provider,
-          modelAlias: route.alias,
+        ledgerRow(ledger, route, {
           costUsd: null,
           latencyMs: Date.now() - startedAt,
           inputTokens: null,
@@ -1090,10 +1092,8 @@ async function draftProse(
           pricingSource: "unavailable",
           priceInputPerMtok: null,
           priceOutputPerMtok: null,
-          promptVersion: ledger.promptVersion,
-          schemaVersion: ledger.schemaVersion,
           failReason: err instanceof Error ? err.name : "model_call_failed",
-        },
+        }),
         ..._dbArg(_testOverrides),
       );
       throw err;
@@ -1105,38 +1105,20 @@ async function draftProse(
   const { costUsd, pricingSource } = computeCostUsd(modelId, promptTokens, completionTokens);
   const priceColumns = pricingColumns(modelId, pricingSource);
 
-  const writeLedger = (
-    failReason: string | null,
-    malformed?: { signals: ReadonlyArray<string>; text: string },
-  ): void => {
-    writeTestRunRecord(
-      {
-        runId: ledger.runId,
-        skill: ledger.skill,
-        createdAt: createdAtBucket(),
-        layer: ledger.layer,
-        provider: route.provider,
-        modelAlias: route.alias,
-        costUsd,
-        latencyMs: durationMs,
-        inputTokens: promptTokens,
-        outputTokens: completionTokens,
-        pricingSource,
-        priceInputPerMtok: priceColumns.input,
-        priceOutputPerMtok: priceColumns.output,
-        promptVersion: ledger.promptVersion,
-        schemaVersion: ledger.schemaVersion,
-        failReason,
-        // #1244 evidence — ONLY the malformed branch passes a payload. The
-        // untrusted turn text is truncated + PII/budget-REDACTED (inv #9) by
-        // redactMalformedSample BEFORE it is persisted; non-malformed rows leave
-        // both columns NULL.
-        malformedSignals: malformed ? malformed.signals.join(",") : null,
-        malformedSample: malformed ? redactMalformedSample(malformed.text) : null,
-      },
-      ..._dbArg(_testOverrides),
-    );
-  };
+  const writeLedger = makeWriteLedger(
+    ledger,
+    route,
+    {
+      costUsd,
+      pricingSource,
+      priceInputPerMtok: priceColumns.input,
+      priceOutputPerMtok: priceColumns.output,
+      durationMs,
+      promptTokens,
+      completionTokens,
+    },
+    _testOverrides,
+  );
 
   const text = result.text ?? "";
 

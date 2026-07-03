@@ -1,9 +1,10 @@
 /**
  * inventory_site_scan — skill #3 (a browser skill). ONE flat linear Mastra
- * `createWorkflow`: 6 named steps chained with `.then()`, no nested workflow.
+ * `createWorkflow`: 5 named steps chained with `.then()`, no nested workflow.
  * This is a READ-ONLY scan (it browses dealer SRPs for in-stock inventory and
- * never sends email or submits a form), so it runs with NO human gate: every
- * eligible in-radius dealer is auto-approved and the scan proceeds.
+ * never sends email or submits a form), so it runs with NO human gate and no
+ * suspend: every eligible in-radius dealer is auto-approved and the scan
+ * proceeds.
  *
  * STEP MAP:
  *   0 resolveProfile — the SAME typed three-branch resolver every
@@ -25,11 +26,10 @@
  *                      Hard skips (both modes): non-US dealers (ONE batched
  *                      classification call), no/denied website, malformed URL.
  *                      Zero bound dealers at all → typed STOP pointing at
- *                      /dealer_geosearch.
- *   2 batchReview    — auto-approve (no suspend). A read-only scan needs no
- *                      human approval, so every in-radius target from
- *                      buildTargets is approved and the scan proceeds.
- *   3 scanDealers    — PURE CAPTURE, performs NO SQLite writes. One ISOLATED
+ *                      /dealer_geosearch. Auto-approve is FOLDED IN here (a
+ *                      read-only scan needs no human gate): every in-radius
+ *                      target is marked approved in the same step, no suspend.
+ *   2 scanDealers    — PURE CAPTURE, performs NO SQLite writes. One ISOLATED
  *                      throwaway browser per dealer-host bucket
  *                      (withBrowserContext per task), SCAN_CONCURRENCY=4
  *                      Browsers in flight with 3–5s launch stagger. Per
@@ -60,7 +60,7 @@
  *                      the Mastra step output (an in-process per-run carry
  *                      holds it; the step output keeps light per-dealer rows
  *                      + counters).
- *   4 extract        — the LLM phase: per scanned dealer ONE separate NO-TOOLS
+ *   3 extract        — the LLM phase: per scanned dealer ONE separate NO-TOOLS
  *                      structured `inventory_extract` call (emit_result
  *                      single-tool discipline on DeepSeek; native
  *                      output_object on providers that support it — the
@@ -80,7 +80,7 @@
  *                      inventory_extract_retry lane via recoverEmitWithRetry,
  *                      else fail-closes as a thrown typed MalformedToolCallAbort
  *                      — never a prose fallthrough.
- *   5 persistConfirm — the ONLY DB write: ONE persistScanResults call over
+ *   4 persistConfirm — the ONLY DB write: ONE persistScanResults call over
  *                      every dealer outcome (capture-then-serial; the writer
  *                      itself gates supersession to freshly-SCANNED sources,
  *                      so blocked/skipped/failed dealers never retire rows).
@@ -132,7 +132,6 @@ import {
   resolveSrp,
   selectTopListingsForDealer,
   resolvePerDealerRecordCap,
-  PER_DEALER_RECORD_CAP_DEFAULT,
   validateVinProvenance,
   withBrowserContext,
   type BrowserEmitter,
@@ -234,9 +233,6 @@ const EXTRACT_CONCURRENCY = envConcurrency("AUTOBROKER_EXTRACT_CONCURRENCY", 4);
  *  zero-card/unfiltered render and the ladder falls through (a real results
  *  page — even an empty one — carries far more chrome text than this). */
 export const FILTERED_RENDER_MIN_CHARS = 400;
-
-/** The batch_review card question (fixed copy). */
-export const BATCH_REVIEW_QUESTION = "Scan these dealers' inventory now?";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -776,66 +772,10 @@ export function bucketTargetsByHost(targets: readonly ScanTargetRow[]): ScanBuck
   return [...byHost.values()];
 }
 
-// ---------------------------------------------------------------------------
-// the batch_review suspend / resume contracts
-// ---------------------------------------------------------------------------
-
-/** The suspend payload (the spec_inline the review card renders). IDs + short
- *  labels only; skipped rows carry NO website — the payload must stay small
- *  (<8KB at a 40-dealer full-radius batch). */
-export const BatchReviewSuspendSchema = z.object({
-  kind: z.literal("batch_review"),
-  question: z.string(),
-  targets: z.array(
-    z.object({ dealer_id: z.string(), name: z.string(), website: z.string() }),
-  ),
-  skipped: z.array(
-    z.object({
-      dealer_id: z.string(),
-      name: z.string(),
-      reason: z.enum(SCAN_SKIP_REASONS),
-    }),
-  ),
-  total_targets: z.number().int(),
-  total_in_radius: z.number().int(),
-  // Opt-in: render a "Skip all & reset" action on the review card (the closeout
-  // skip-all → pipeline_reset hand-off). OPTIONAL → absent on every other
-  // emitter, so no other batch_review payload changes and the button never
-  // renders there. Backward-compatible (no other suspend gains a field).
-  allow_skip_all: z.boolean().optional(),
-  // The primary submit button's label. lead-submit/closeout/negotiation set their
-  // own send verb so the reused card reads correctly; absent ⇒ the inventory-scan
-  // default ("Scan approved dealers") in the card. OPTIONAL, backward-compatible
-  // (like allow_skip_all above — no other emitter changes).
-  submit_label: z.string().optional(),
-  // Opt-in submission-preview block (lead_submit, owner rule #5): the MINIMAL info
-  // shown above the dealer list so the buyer sees what is sent before approving
-  // (vehicle, buyer email, placeholder-phone note). Budget is NEVER included (inv #9).
-  // MUST be declared here: the step's suspend-schema validation (Mastra
-  // validateStepSuspendData, validateInputs default true) re-parses the payload and
-  // a plain z.object STRIPS undeclared keys — an undeclared `summary` silently
-  // disappears before the card/approval-inbox read it. OPTIONAL → absent on every
-  // read-only/scan emitter, backward-compatible (like allow_skip_all/submit_label).
-  summary: z
-    .object({
-      heading: z.string(),
-      lines: z.array(z.object({ label: z.string(), value: z.string() })),
-    })
-    .optional(),
-});
-export type BatchReviewSuspend = z.infer<typeof BatchReviewSuspendSchema>;
-
-/** The resume vocabulary: an EXPLICIT approved-id list or a decline. There is
- *  no approve-all member — "select all" is a UI affordance that still sends
- *  the full explicit list over the wire. */
-export const BatchReviewResumeSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("approve"),
-    approved_dealer_ids: z.array(z.string()).min(1),
-  }),
-  z.object({ action: z.literal("decline") }),
-]);
-export type BatchReviewResume = z.infer<typeof BatchReviewResumeSchema>;
+// The shared batch_review suspend / resume contracts moved to
+// ./batchReviewContracts.ts — this scan is auto-approve (read-only, no suspend)
+// and no longer defines them. SCAN_SKIP_REASONS (above) is the one piece the
+// shared suspend payload still reuses from here.
 
 // ---------------------------------------------------------------------------
 // the 3-rung filter ladder (pure decision logic over an injectable page IO)
@@ -986,24 +926,6 @@ export interface CollectedCard {
 /** Cap on cards collected per SRP — cards beyond it simply aren't extracted
  *  (the same fate the snapshot char cap already imposes). */
 export const CARD_COLLECT_MAX = 80;
-
-/**
- * Per-dealer (per-website) hard cap on listings RECORDED per scan run.
- * After extraction + classification, only the top-N best-match in-stock rows
- * are persisted (N = the configurable cap, default 20; resolved at scan time via
- * `resolvePerDealerRecordCap()` from the `AUTOBROKER_PER_DEALER_RECORD_CAP`
- * setting); the rest are dropped and counted in `listingsDroppedBeyondCap`.
- * Selection uses the composite key in `selectTopListingsForDealer` (tools layer):
- * availability tier → match tier → score DESC → listing_id ASC.
- *
- * Parity note: the frozen Python oracle records up to 60 listings per dealer,
- * unranked. This cap is an intentional, owner-directed divergence — the parity
- * gate is NOT expected to match the oracle here.
- *
- * Kept as a default-valued alias for readability; the live value comes from
- * `resolvePerDealerRecordCap()` at the call site, not from this constant.
- */
-export const PER_DEALER_RECORD_CAP = PER_DEALER_RECORD_CAP_DEFAULT;
 
 /**
  * In-page probe: collect {href, cardText} for every inventory result card on
@@ -1613,9 +1535,9 @@ export async function scanDealersParallelImpl(
 /** Per-run heavyweight capture data: SRP snapshots + VDP VINs from the scan
  *  step, classified rows from the extract step. Keyed by runId; written by the
  *  scan step, consumed and DELETED by persist (and on any extract/persist
- *  failure). The suspend lives BEFORE the scan step, so no resume boundary
- *  ever sits between producer and consumer — a crash mid-window re-runs the
- *  scan (repopulating) or trips the typed capture-lost guard. */
+ *  failure). This scan never suspends, so no resume boundary ever sits between
+ *  producer and consumer — a crash mid-window re-runs the scan (repopulating)
+ *  or trips the typed capture-lost guard. */
 interface ScanCarry {
   captures: Map<
     string,
@@ -1635,10 +1557,10 @@ const scanCarryByRun = new Map<string, ScanCarry>();
 
 /**
  * The runtime collaborators the workflow steps call. Injectable so the offline
- * tests drive the REAL flat Mastra workflow → REAL suspend/resume chain
- * against deterministic stubs and an isolated tmp DB, WITHOUT module mocks —
- * the steps are constructed once at module load, so a single guarded holder
- * keeps the real wiring as the default.
+ * tests drive the REAL flat Mastra workflow (this scan is auto-approve, so there
+ * is no suspend/resume boundary) against deterministic stubs and an isolated tmp
+ * DB, WITHOUT module mocks — the steps are constructed once at module load, so a
+ * single guarded holder keeps the real wiring as the default.
  */
 export interface InventoryScanWorkflowDeps {
   harnessGenerate: typeof harness.generate;
@@ -1775,8 +1697,6 @@ const InventoryScanStateSchema = z.object({
   approvedBy: z.string().nullable(),
   pinnedDealerIds: z.array(z.string()).nullable(),
   maxTargets: z.number().int().nullable(),
-  /** Terminal-declined flag: once true, every later step passes through. */
-  declined: z.boolean(),
   targets: z.array(ScanTargetStateSchema).nullable(),
   skipped: z.array(SkippedStateSchema).nullable(),
   totalInRadius: z.number().int(),
@@ -1817,38 +1737,37 @@ const InventoryScanInputSchema = z.object({
   max_targets: z.number().int().positive().nullable(),
 });
 
-/** The workflow output — scanned | declined union. */
-const InventoryScanOutputSchema = z.discriminatedUnion("outcome", [
-  z.object({
-    outcome: z.literal("scanned"),
-    searchProfileId: z.string(),
-    /** Profile-resolution provenance, threaded from the resolve step. */
-    resolution: z.enum(["pinned", "inferred_newest"]),
-    targetsApproved: z.number().int(),
-    dealersScanned: z.number().int(),
-    dealersBlocked: z.number().int(),
-    dealersFailed: z.number().int(),
-    /** Scanned dealers whose SRP rendered blank (0 cards + sub-threshold
-     *  snapshot) — host-thrash, distinct from a real 0-stock SRP. */
-    dealersRenderedEmpty: z.number().int(),
-    /** Pre-review skips (non-US / no-website / malformed / valve overflow). */
-    dealersSkipped: z.number().int(),
-    listingsFound: z.number().int(),
-    listingsWritten: z.number().int(),
-    vinPromoted: z.number().int(),
-    staleSuperseded: z.number().int(),
-    rungUrlTemplateHits: z.number().int(),
-    rungDomFilterHits: z.number().int(),
-    rungUnfilteredFallbacks: z.number().int(),
-    rowsInvalidDropped: z.number().int(),
-    vinProvenanceDropped: z.number().int(),
-    urlProvenanceStripped: z.number().int(),
-    /** Listings dropped by the per-dealer best-match record cap (default 20, configurable). */
-    listingsDroppedBeyondCap: z.number().int(),
-    summary: z.string(),
-  }),
-  z.object({ outcome: z.literal("declined") }),
-]);
+/** The workflow output — always `scanned` (this scan is auto-approve, so there
+ *  is no decline branch). `outcome` is kept as a fixed literal so downstream
+ *  consumers that read `.outcome` are unchanged. */
+const InventoryScanOutputSchema = z.object({
+  outcome: z.literal("scanned"),
+  searchProfileId: z.string(),
+  /** Profile-resolution provenance, threaded from the resolve step. */
+  resolution: z.enum(["pinned", "inferred_newest"]),
+  targetsApproved: z.number().int(),
+  dealersScanned: z.number().int(),
+  dealersBlocked: z.number().int(),
+  dealersFailed: z.number().int(),
+  /** Scanned dealers whose SRP rendered blank (0 cards + sub-threshold
+   *  snapshot) — host-thrash, distinct from a real 0-stock SRP. */
+  dealersRenderedEmpty: z.number().int(),
+  /** Pre-review skips (non-US / no-website / malformed / valve overflow). */
+  dealersSkipped: z.number().int(),
+  listingsFound: z.number().int(),
+  listingsWritten: z.number().int(),
+  vinPromoted: z.number().int(),
+  staleSuperseded: z.number().int(),
+  rungUrlTemplateHits: z.number().int(),
+  rungDomFilterHits: z.number().int(),
+  rungUnfilteredFallbacks: z.number().int(),
+  rowsInvalidDropped: z.number().int(),
+  vinProvenanceDropped: z.number().int(),
+  urlProvenanceStripped: z.number().int(),
+  /** Listings dropped by the per-dealer best-match record cap (default 20, configurable). */
+  listingsDroppedBeyondCap: z.number().int(),
+  summary: z.string(),
+});
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -1954,7 +1873,6 @@ const resolveProfileStep = createStep({
       approvedBy: inputData.approved_by,
       pinnedDealerIds: inputData.dealer_ids,
       maxTargets: inputData.max_targets,
-      declined: false,
       targets: null,
       skipped: null,
       totalInRadius: 0,
@@ -2022,33 +1940,23 @@ const buildTargetsStep = createStep({
       maxTargets: state.maxTargets,
     });
 
-    return { ...state, targets, skipped, totalInRadius };
-  },
-});
-
-// ---------------------------------------------------------------------------
-// step 2 — batchReview (auto-approve every in-radius target; NO human gate)
-// ---------------------------------------------------------------------------
-
-const batchReviewStep = createStep({
-  id: "batchReview",
-  inputSchema: InventoryScanStateSchema,
-  outputSchema: InventoryScanStateSchema,
-  execute: async ({ inputData }) => {
-    const state = asState(inputData);
-    const targets = state.targets ?? [];
-
     // This is a READ-ONLY scan: it browses dealer SRPs for in-stock inventory
-    // and never sends email or submits a form, so no human approval is
-    // required. Every eligible in-radius target (the full set already computed
-    // by buildTargets via computeScanTargets) is auto-approved and the scan
-    // proceeds with no suspend.
-    return { ...state, approvedDealerIds: targets.map((t) => t.dealer_id) };
+    // and never sends email or submits a form, so no human approval is required
+    // — there is no batch_review suspend. Every eligible in-radius target (the
+    // full set just computed by computeScanTargets) is auto-approved here and
+    // the scan proceeds with no gate.
+    return {
+      ...state,
+      targets,
+      skipped,
+      totalInRadius,
+      approvedDealerIds: targets.map((t) => t.dealer_id),
+    };
   },
 });
 
 // ---------------------------------------------------------------------------
-// step 3 — scanDealers (PURE CAPTURE — no SQLite writes anywhere in here)
+// step 2 — scanDealers (PURE CAPTURE — no SQLite writes anywhere in here)
 // ---------------------------------------------------------------------------
 
 const scanDealersStep = createStep({
@@ -2057,7 +1965,6 @@ const scanDealersStep = createStep({
   outputSchema: InventoryScanStateSchema,
   execute: async ({ inputData, runId }) => {
     const state = asState(inputData);
-    if (state.declined) return state; // pass-through (zero capture, zero write).
 
     const approvedIds = new Set(state.approvedDealerIds ?? []);
     const approvedTargets = (state.targets ?? []).filter((t) => approvedIds.has(t.dealer_id));
@@ -2126,7 +2033,7 @@ const scanDealersStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 4 — extract (the LLM phase; per-dealer no-tools structured calls)
+// step 3 — extract (the LLM phase; per-dealer no-tools structured calls)
 // ---------------------------------------------------------------------------
 
 const extractStep = createStep({
@@ -2135,7 +2042,6 @@ const extractStep = createStep({
   outputSchema: InventoryScanStateSchema,
   execute: async ({ inputData, runId }) => {
     const state = asState(inputData);
-    if (state.declined) return state;
 
     const carry = scanCarryByRun.get(runId);
     const captured = state.captured ?? [];
@@ -2349,11 +2255,17 @@ const extractStep = createStep({
         }
 
         // Apply per-dealer best-match record cap (default 20, configurable via
-        // resolvePerDealerRecordCap) AFTER extraction + classification, BEFORE
-        // persisting. Dropped rows are never written.
+        // resolvePerDealerRecordCap from the AUTOBROKER_PER_DEALER_RECORD_CAP
+        // setting) AFTER extraction + classification, BEFORE persisting. Only the
+        // top-N best-match in-stock rows are kept (composite key in
+        // selectTopListingsForDealer: availability tier → match tier → score DESC
+        // → listing_id ASC); the rest are dropped and never written.
         // Capped-out rows that were persisted in a prior scan participate in the
         // normal staleSuperseded soft-supersede on the next scan — the cap is a
         // recording gate, not a hard delete of previously persisted rows.
+        // Parity note: the frozen Python oracle records up to 60 listings per
+        // dealer, unranked. This cap is an intentional, owner-directed divergence
+        // — the parity gate is NOT expected to match the oracle here.
         const { kept, dropped } = selectTopListingsForDealer(
           matchCtx,
           classified,
@@ -2382,7 +2294,7 @@ const extractStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 5 — persistConfirm (ONE serial write + the zero-LLM templated summary)
+// step 4 — persistConfirm (ONE serial write + the zero-LLM templated summary)
 // ---------------------------------------------------------------------------
 
 const persistConfirmStep = createStep({
@@ -2391,9 +2303,6 @@ const persistConfirmStep = createStep({
   outputSchema: InventoryScanOutputSchema,
   execute: async ({ inputData, runId }) => {
     const state = asState(inputData);
-    if (state.declined) {
-      return { outcome: "declined" as const };
-    }
 
     const carry = scanCarryByRun.get(runId);
     try {
@@ -2481,7 +2390,7 @@ const persistConfirmStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// the flat workflow (6 steps, .then() chain, .commit())
+// the flat workflow (5 steps, .then() chain, .commit())
 // ---------------------------------------------------------------------------
 
 export const inventorySiteScanWorkflow = createWorkflow({
@@ -2491,7 +2400,6 @@ export const inventorySiteScanWorkflow = createWorkflow({
 })
   .then(resolveProfileStep)
   .then(buildTargetsStep)
-  .then(batchReviewStep)
   .then(scanDealersStep)
   .then(extractStep)
   .then(persistConfirmStep)

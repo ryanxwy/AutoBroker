@@ -1,7 +1,7 @@
 /**
  * Routing policy (Layer 2).
  *
- * STUB: maps a provider-NEUTRAL `useCase` to a concrete `ModelAlias` and the
+ * Maps a provider-NEUTRAL `useCase` to a concrete `ModelAlias` and the
  * `CapabilityFlags` of the model behind it. Workflows/skills only ever name a
  * `useCase`; they never hard-code a provider. Changing which model serves a
  * useCase is an edit here, not in any skill.
@@ -16,10 +16,6 @@ import type { CapabilityFlags, ModelAlias, Provider } from "@autobroker/core";
 /**
  * The closed set of model use-cases skills can request. One per LLM-touching
  * concern, kept coarse so routing stays legible.
- *
- * TODO: expand as skills land — e.g. "incentive_scrape", "negotiation_followup",
- * "closeout_email". Each new useCase needs a policy entry + (if a new model)
- * a registry tier binding + a CapabilityFlags row.
  */
 export const USE_CASES = [
   /** Extract a structured DealerQuote from a dealer reply (Phase 3 template). */
@@ -40,8 +36,6 @@ export const USE_CASES = [
    * comes back malformed, the message stays `failed`, exactly as the v4-flash hop.
    */
   "dealer_reply_extract_retry",
-  /** Render a Telegram headline from already-computed audit flags (Phase 1). */
-  "quote_audit_headline",
   /**
    * Intake freeform prefill: an EXTRACTION pass over a user's one-liner that
    * pre-seeds the intake form. All-nullable subset; never extracts PII/budget.
@@ -157,10 +151,7 @@ export type UseCase = (typeof USE_CASES)[number];
 
 /**
  * useCase -> ModelAlias. Defaults to DeepSeek tiers (override 2026-06-02).
- *
- * TODO: make this overridable per-account/per-run (user switches provider) by
- * threading the chosen `Provider` through and swapping the prefix while keeping
- * the tier. The mapping below is the cheap-model-first default.
+ * The mapping below is the cheap-model-first default.
  */
 const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   dealer_reply_extract: "deepseek.chat",
@@ -173,7 +164,6 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
   // tool_choice is rejected in DeepSeek thinking mode), which is structurally the
   // chat/rail thinking-ON + auto lane that runs clean.
   dealer_reply_extract_retry: "deepseek.strong",
-  quote_audit_headline: "deepseek.cheap",
   // Both intake LLM passes (prefill + trim lookup) route to deepseek.chat
   // (deepseek-v4-flash, temp 0, per-step thinking:disabled + named tool_choice —
   // emit_result hard constraint: DeepSeek thinking mode rejects a named/forced
@@ -228,24 +218,13 @@ const USE_CASE_ALIAS: Record<UseCase, ModelAlias> = {
  * (`supportsOutputObjectWithTools: false`) — per-step json_schema injection
  * provokes the #1244 text-dump (mixing structured output with tools is the
  * trigger; pure tool loops are clean).
- *
- * TODO: fill in real per-alias flags for every registered tier; values below are
- * representative stubs for the DeepSeek defaults.
  */
 const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
   "deepseek.cheap": {
-    supportsToolCalls: true, // Mastra owns the loop; DeepSeek supports tool calls.
     supportsOutputObjectWithTools: false, // #1244 — use emit_result / two-phase
-    strictJsonSchema: false,
-    supportsVision: false,
-    reportsUsageTokens: true,
   },
   "deepseek.chat": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: false,
-    strictJsonSchema: false,
-    supportsVision: false,
-    reportsUsageTokens: true,
   },
   // deepseek-v4-pro — the dealer_reply_extract_retry target (the malformed-class
   // recovery hop). Same #1244 discipline as the other DeepSeek rows:
@@ -254,84 +233,37 @@ const ALIAS_CAPABILITIES: Partial<Record<ModelAlias, CapabilityFlags>> = {
   // tool_choice:"auto" (a forced tool_choice is rejected in thinking mode); the
   // harness decides forced-vs-auto from the useCase, not from this flag.
   "deepseek.strong": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: false,
-    strictJsonSchema: false,
-    supportsVision: false,
-    reportsUsageTokens: true,
   },
 
   // Anthropic rows (cross-provider smoke). Verified 2026-06-05 against the
   // official structured-outputs doc (platform.claude.com/.../structured-outputs):
   // Claude supports structured JSON output (output_config.format json_schema) AND
-  // tool use in the SAME request ("call tools with guaranteed-valid parameters
-  // AND return structured JSON responses"), via constrained decoding / strict
-  // schema. GA on Haiku 4.5 / Sonnet 4.6 / Opus 4.8 (the ids the registry binds).
-  // All current Claude models support vision (model overview: "text and image
-  // input … and vision") and report usage tokens. So:
-  // supportsOutputObjectWithTools:true (→ output_object strategy), strictJsonSchema:true.
+  // tool use in the SAME request, so supportsOutputObjectWithTools:true (→ the
+  // native output_object strategy). GA on Haiku 4.5 / Sonnet 4.6 / Opus 4.8 (the
+  // ids the registry binds).
   "anthropic.cheap": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
   },
   "anthropic.chat": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
   },
   "anthropic.strong": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
-  },
-  "anthropic.reasoner": {
-    supportsToolCalls: true,
-    supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
   },
 
   // OpenAI rows (cross-provider smoke). Verified 2026-06-05 against the
-  // official model docs (developers.openai.com/api/docs/models) + the
-  // structured-outputs/function-calling guides: the GPT-5.x family supports
-  // Structured Outputs (response_format json_schema, strict) together with
-  // function/tool calling, plus vision (text+image input) and usage reporting.
-  // So supportsOutputObjectWithTools:true, strictJsonSchema:true.
+  // official model docs (developers.openai.com/api/docs/models): the GPT-5.x
+  // family supports Structured Outputs (response_format json_schema, strict)
+  // together with function/tool calling, so supportsOutputObjectWithTools:true.
   "openai.cheap": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
   },
   "openai.chat": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
   },
   "openai.strong": {
-    supportsToolCalls: true,
     supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
-  },
-  "openai.reasoner": {
-    supportsToolCalls: true,
-    supportsOutputObjectWithTools: true,
-    strictJsonSchema: true,
-    supportsVision: true,
-    reportsUsageTokens: true,
   },
 };
 
@@ -382,34 +314,33 @@ export function policy(useCase: UseCase): PolicyResolution {
 }
 
 /**
- * Concrete model id for each alias. Kept in sync with registry.ts by hand.
+ * Concrete model id for each alias. Kept in sync with registry.ts by hand; the
+ * policy.test.ts sync-guard asserts registry.languageModel(alias).modelId equals
+ * this map, so drift fails `pnpm test`.
  * When two aliases share the same concrete id (e.g. deepseek.cheap / deepseek.chat
  * both map to deepseek-v4-flash), the FIRST entry wins in aliasForModelId.
  */
-const ALIAS_MODEL_ID: Partial<Record<ModelAlias, string>> = {
+export const ALIAS_MODEL_ID: Partial<Record<ModelAlias, string>> = {
   // DeepSeek
   "deepseek.cheap": "deepseek-v4-flash",
   "deepseek.chat": "deepseek-v4-flash",
   "deepseek.strong": "deepseek-v4-pro",
-  "deepseek.reasoner": "deepseek-v4-flash",
-  // Anthropic — chat before reasoner so claude-sonnet-4-6 → anthropic.chat
+  // Anthropic
   "anthropic.cheap": "claude-haiku-4-5",
   "anthropic.chat": "claude-sonnet-4-6",
   "anthropic.strong": "claude-opus-4-8",
-  "anthropic.reasoner": "claude-sonnet-4-6",
-  // OpenAI — chat before reasoner so gpt-5.4 → openai.chat
+  // OpenAI
   "openai.cheap": "gpt-5.4-mini",
   "openai.chat": "gpt-5.4",
   "openai.strong": "gpt-5.5",
-  "openai.reasoner": "gpt-5.4",
 };
 
 /**
  * Reverse-lookup: returns the FIRST ModelAlias whose concrete model id equals
  * `modelId`, or `null` when no alias is bound to that id.
  *
- * Ambiguity: deepseek-v4-flash maps to deepseek.cheap / .chat / .reasoner —
- * the first entry (deepseek.cheap) is returned; all three resolve the same model.
+ * Ambiguity: deepseek-v4-flash maps to deepseek.cheap / .chat — the first entry
+ * (deepseek.cheap) is returned; both resolve the same model.
  */
 export function aliasForModelId(modelId: string): ModelAlias | null {
   const entry = Object.entries(ALIAS_MODEL_ID).find(([, id]) => id === modelId);

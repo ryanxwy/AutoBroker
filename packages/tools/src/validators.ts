@@ -1,33 +1,16 @@
 /**
- * validators — pure structural/safety validation for tool inputs and dealer
- * outputs. No SQLite, no network. Belt-and-suspenders Zod post-validation that
- * runs AFTER the model produces structured output (schema subsets differ per
- * provider, so post-validation is where the real guarantee lives).
+ * validators — pure safety validation for dealer-facing tool inputs and model
+ * outputs. No SQLite, no network.
  *
- * Two responsibilities:
- *   1. Re-validate model-produced structured output against the canonical Zod
- *      contracts in @autobroker/core (catch over-the-common-subset drift).
- *   2. Enforce safety rules that must hold regardless of the model: fake phone
- *      unless explicitly opted in, no budget in dealer-facing text.
+ * Enforces safety rules that must hold regardless of the model: no budget in
+ * dealer-facing text, no payment method the buyer did not choose, no invalid
+ * Unicode reaching the send path.
  */
 
-// TODO(phase-4): import canonical Zod contracts from @autobroker/core.
-// import { DealerQuoteSchema, type DealerQuote } from "@autobroker/core";
-
-/** Result of a post-validation pass. */
+/** Result of a validation pass. */
 export interface ValidationResult {
   ok: boolean;
   errors: string[];
-}
-
-/**
- * Belt-and-suspenders post-validation of model output against a core Zod schema.
- * TODO(phase-4): run `schema.safeParse(value)` and map issues into `errors`.
- */
-export function postValidate(value: unknown): ValidationResult {
-  // TODO(phase-4): real Zod parse; treat any failure as ok:false (fail-closed).
-  void value;
-  return { ok: true, errors: [] };
 }
 
 /**
@@ -301,42 +284,6 @@ export function assertUnicodeSafe(text: string): ValidationResult {
       // Low surrogate not preceded by a high half (those advance past it above).
       throw new UnicodeUnsafeError(i);
     }
-  }
-  return { ok: true, errors: [] };
-}
-
-/**
- * Thrown by assertPhonePolicy when a REAL phone is present but the user did not
- * opt in to policy 'real'. FAIL-LOUD: fake-by-default is a code-level hard
- * constraint (CLAUDE.md §9), so a real number under a 'fake' policy is an error,
- * not a soft result.
- */
-export class PhonePolicyViolationError extends Error {
-  readonly code = "phone_policy_violation" as const;
-  constructor() {
-    super(
-      `phone_policy_violation: a real phone is only allowed when phone_policy is ` +
-        `'real' (explicit opt-in); the default 'fake' policy stores a fake number.`,
-    );
-    this.name = "PhonePolicyViolationError";
-  }
-}
-
-/**
- * Enforce the fake-phone default: a real phone may be used in dealer-facing
- * surfaces ONLY under policy 'real' (explicit opt-in). Under any other policy a
- * non-empty real phone throws PhonePolicyViolationError. An empty/absent phone is
- * always fine.
- *
- * @param phone  the phone about to be surfaced to a dealer.
- * @param policy the profile's phone_policy ('fake' default | 'real' opt-in).
- */
-export function assertPhonePolicy(
-  phone: string,
-  policy: "fake" | "real",
-): ValidationResult {
-  if (phone !== "" && policy !== "real") {
-    throw new PhonePolicyViolationError();
   }
   return { ok: true, errors: [] };
 }

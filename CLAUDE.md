@@ -96,8 +96,7 @@ core  ->  model  ->  workflows  ->  tools  ->  app
   Mastra, Drizzle, Playwright must be invisible here).
 - `packages/model` — AI SDK 6 provider layer: `createProviderRegistry({deepseek,
   anthropic, openai})`, `policy(useCase→ModelAlias→CapabilityFlags)`,
-  `resolveModel(alias)`, canonical-message ↔ ModelMessage translation, and the
-  #1244 fail-closed detector/Processor helpers.
+  `resolveModel(alias)`, and the #1244 fail-closed detector/Processor helpers.
 - `packages/workflows` — Mastra 1.x backbone: each skill is a flat linear
   `createWorkflow`; sessions use Mastra Memory threads/resources plus OM
   auto-compact on the chat lane; durable `suspend()` / resume and app-side
@@ -255,9 +254,10 @@ These are durable product rules, distinct from the safety invariants above:
    trim, the intake `trimSuggestion` step WEB-LOOKS-UP the real trim lineup
    (`tools` `fetchTrimSources` — allowlisted hosts, SSRF-gated) and the LLM extracts
    it (`intake_trim_lookup`, grounded "only trims in the source text"), then SUSPENDS
-   a `gate-trim-suggestion` picker. The buyer PICKS one (seeds the form, marks
-   `trimGrounded` → trimVerify skips it), or `skip`s to type it manually, or
-   `decline`s (terminal). This ASSISTS the buyer's explicit choice with real data —
+   a `gate-trim-suggestion` picker. The buyer PICKS one (seeds the form only), or
+   `skip`s to type it manually, or `decline`s (terminal); every path then ends at
+   the unconditional `confirmVehicle` suspend before persist (no
+   `trimGrounded`/`trimVerify` skip). This ASSISTS the buyer's explicit choice with real data —
    it never auto-fills (picker starts unselected) and never fabricates; web/LLM
    failure degrades gracefully to the blank-trim form (never blocks intake).
 2. **`inventory_site_scan` scans all in-radius dealers by default — no per-dealer

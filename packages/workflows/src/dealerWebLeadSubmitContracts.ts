@@ -32,7 +32,8 @@
 
 import { z } from "zod";
 
-import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./batchReviewContracts.js";
+import type { ProfilePinStopCode } from "./profilePinShared.js";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -54,14 +55,14 @@ export const DealerWebLeadSubmitInputSchema = z.object({
 export type DealerWebLeadSubmitInput = z.infer<typeof DealerWebLeadSubmitInputSchema>;
 
 /**
- * The workflow output — scanned | declined union. `scanned` carries the audit
+ * The workflow output — submitted | declined union. `submitted` carries the audit
  * tallies the confirm template surfaces (every count is a number, no budget, no
  * hex run id; X1 is pin_required → resolution is always "pinned"). `declined`
  * (batch_review decline) means zero writes and zero sends.
  */
 export const DealerWebLeadSubmitOutputSchema = z.discriminatedUnion("outcome", [
   z.object({
-    outcome: z.literal("scanned"),
+    outcome: z.literal("submitted"),
     resolution: z.enum(["pinned", "inferred_newest"]),
     submissions_successful: z.number().int(),
     email_fallback_count: z.number().int(),
@@ -88,11 +89,10 @@ export type DealerWebLeadSubmitOutput = z.infer<typeof DealerWebLeadSubmitOutput
 // typed STOP codes (pin-required skill) + the generalized classifier
 // ---------------------------------------------------------------------------
 
-export type DealerWebLeadSubmitStopCode =
-  | "pin_required"
-  | "no_active_profile"
-  | "multiple_active_profiles"
-  | "no_us_dealers";
+/** The shared pin-required set PLUS this skill's own scout-stage `no_us_dealers`
+ *  (no US dealer / no bound dealer to submit a lead to) — kept because it differs
+ *  from the shared vocabulary. */
+export type DealerWebLeadSubmitStopCode = ProfilePinStopCode | "no_us_dealers";
 
 /** Typed STOP from the resolve / scout steps. The message is the user-facing
  *  wording — the server surfaces it verbatim on the run's error frame. */
@@ -105,18 +105,8 @@ export class DealerWebLeadSubmitStopError extends Error {
   }
 }
 
-/**
- * The generalized profile-STOP classifier for a pin-less input. 0 active →
- * no_active_profile (point at intake CTA); exactly 1 active → pin_required (one
- * active is still not silently run — the user must explicitly pin); 2+ active →
- * multiple_active_profiles (ask by vehicle name). Returns the typed code only;
- * the resolve step supplies the wording.
- */
-export function profileStopCode(activeCount: number): DealerWebLeadSubmitStopCode {
-  if (activeCount <= 0) return "no_active_profile";
-  if (activeCount === 1) return "pin_required";
-  return "multiple_active_profiles";
-}
+/** The generalized profile-STOP classifier (shared across the 3 send skills). */
+export { profileStopCode } from "./profilePinShared.js";
 
 // ---------------------------------------------------------------------------
 // suspend ① — REUSE the shared batch_review contracts verbatim
@@ -127,7 +117,7 @@ export function profileStopCode(activeCount: number): DealerWebLeadSubmitStopCod
  *  never approve-all). Re-exported so the workflow + descriptor import them from
  *  one place. */
 export { BatchReviewResumeSchema, BatchReviewSuspendSchema };
-export type { BatchReviewResume, BatchReviewSuspend } from "./inventorySiteScan.js";
+export type { BatchReviewResume, BatchReviewSuspend } from "./batchReviewContracts.js";
 
 // ---------------------------------------------------------------------------
 // suspend ② — the email_fallback re-confirm + single-store confirm

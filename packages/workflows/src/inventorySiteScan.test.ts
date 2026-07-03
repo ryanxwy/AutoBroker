@@ -1427,12 +1427,11 @@ describe("harvestVinFromSnapshot — deterministic VIN recovery", () => {
 // ---------------------------------------------------------------------------
 
 describe("inventory_site_scan — flat shape (design convention)", () => {
-  it("registers exactly the 6 named steps, none of them a nested workflow", () => {
+  it("registers exactly the 5 named steps, none of them a nested workflow", () => {
     const wf = scanWorkflow();
     const stepIds = Object.keys(wf.steps);
     expect(stepIds.sort()).toEqual(
       [
-        "batchReview",
         "buildTargets",
         "extract",
         "persistConfirm",

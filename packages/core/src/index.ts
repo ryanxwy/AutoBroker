@@ -123,3 +123,7 @@ export type { SessionThread } from "./schema/sessionThread.js";
 
 export { AgentSelectionSchema, parseAgentSelection } from "./agentSelection.js";
 export type { AgentSelection } from "./agentSelection.js";
+
+// SSE wire-event vocabulary (the one definition shared by server/UI/harness).
+export { EVENT_KINDS, TERMINAL_EVENT_KINDS, isEventKind, isTerminalKind } from "./wireEvents.js";
+export type { EventKind, TerminalEventKind } from "./wireEvents.js";

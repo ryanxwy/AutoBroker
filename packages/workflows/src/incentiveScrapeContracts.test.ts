@@ -8,8 +8,6 @@ import {
   IncentiveScrapeInputSchema,
   IncentiveScrapeOutputSchema,
   IncentiveScrapeStopError,
-  OemFirstEncounterResumeSchema,
-  OemFirstEncounterSuspendSchema,
 } from "./incentiveScrapeContracts.js";
 
 describe("incentive_scrape contracts", () => {
@@ -74,45 +72,6 @@ describe("incentive_scrape contracts", () => {
     const err = new IncentiveScrapeStopError("no_active_profile", "No active search profile.");
     expect(err.name).toBe("IncentiveScrapeStopError");
     expect(err.code).toBe("no_active_profile");
-  });
-
-  it("the first-encounter suspend payload rides the banner approval kind", () => {
-    const payload = {
-      kind: "approval",
-      summary: "Scrape Hyundai Tucson Hybrid incentives from www.hyundaiusa.com?",
-      sensitive: true,
-      oemUrl: "https://www.hyundaiusa.com/us/en/offers?zip=92614&model=Tucson%20Hybrid",
-      normalizedUrl: "https://www.hyundaiusa.com/us/en/offers",
-      make: "Hyundai",
-      model: "Tucson Hybrid",
-      reason: "oem_first_encounter",
-    };
-    expect(OemFirstEncounterSuspendSchema.parse(payload)).toEqual(payload);
-    // The payload is .strict() — nothing unrenderable can ride along.
-    expect(
-      OemFirstEncounterSuspendSchema.safeParse({ ...payload, snapshot: "x".repeat(10) }).success,
-    ).toBe(false);
-    // sensitive is pinned true — the approval card must hide batch approval.
-    expect(
-      OemFirstEncounterSuspendSchema.safeParse({ ...payload, sensitive: false }).success,
-    ).toBe(false);
-  });
-
-  it("the resume vocabulary is save | skip | decline (url meaningful on save)", () => {
-    expect(OemFirstEncounterResumeSchema.parse({ action: "save", url: null })).toEqual({
-      action: "save",
-      url: null,
-    });
-    expect(
-      OemFirstEncounterResumeSchema.parse({ action: "save", url: "https://x.com/offers" }).url,
-    ).toBe("https://x.com/offers");
-    expect(OemFirstEncounterResumeSchema.parse({ action: "skip", url: null }).action).toBe("skip");
-    expect(OemFirstEncounterResumeSchema.parse({ action: "decline", url: null }).action).toBe(
-      "decline",
-    );
-    expect(OemFirstEncounterResumeSchema.safeParse({ action: "approve", url: null }).success).toBe(
-      false,
-    );
   });
 
   it("incentive_extract routes through the model policy (DeepSeek emit_result lane)", () => {

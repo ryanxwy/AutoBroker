@@ -39,7 +39,7 @@ export function QuoteDetailModal({
   row: QuoteRow | null;
   sourceDocUrl?: string | null;
   onClose: () => void;
-}): JSX.Element {
+}): JSX.Element | null {
   const titleId = useId();
   // The original-document blob, fetched on open (same-origin) and turned into an
   // object URL for the <img>/<embed>. Null until/unless the fetch succeeds; on
@@ -80,15 +80,7 @@ export function QuoteDetailModal({
     };
   }, [fetchUrl]);
 
-  if (row === null) {
-    // Closed: render an inert Modal (returns null while open=false) so the hook
-    // order stays stable across open/closed.
-    return (
-      <Modal open={false} onClose={onClose} labelId={titleId} variant="dialog">
-        <></>
-      </Modal>
-    );
-  }
+  if (row === null) return null;
 
   const dealer = row.dealer_name ?? "Dealer quote";
   const otd = dollarLabel(row.otd_total);

@@ -482,15 +482,13 @@ describe("assertFilterTargetAllowed — three fences, denylist first", () => {
   });
 
   it("(b) the lead-form structure fence refuses a clean-worded target", () => {
-    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "checkbox", inPiiForm: true }))).toThrow(
+    expect(() => assertFilterTargetAllowed("select", "select", probe({ tag: "select", inPiiForm: true }))).toThrow(
       /lead-capture form/,
     );
   });
 
-  it("(c) allowlist passes: select on <select>, tick on checkbox/radio, apply on apply-worded buttons", () => {
+  it("(c) allowlist passes: select on <select>, apply on apply-worded buttons", () => {
     expect(() => assertFilterTargetAllowed("select", "select[name='make']", probe())).not.toThrow();
-    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "checkbox", accessibleText: "New" }))).not.toThrow();
-    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "radio", accessibleText: "New" }))).not.toThrow();
     for (const text of ["Apply Filters", "Update Results", "Search Inventory"]) {
       expect(() => assertFilterTargetAllowed("apply", "button.go", probe({ tag: "button", accessibleText: text }))).not.toThrow();
     }
@@ -500,8 +498,6 @@ describe("assertFilterTargetAllowed — three fences, denylist first", () => {
 
   it("(c) allowlist rejections: wrong widget kinds and non-apply button text", () => {
     expect(() => assertFilterTargetAllowed("select", "input", probe({ tag: "input", inputType: "text" }))).toThrow(/only <select>/);
-    expect(() => assertFilterTargetAllowed("tick", "input", probe({ tag: "input", inputType: "text" }))).toThrow(/checkbox\/radio/);
-    expect(() => assertFilterTargetAllowed("tick", "a", probe({ tag: "a" }))).toThrow(/checkbox\/radio/);
     expect(() => assertFilterTargetAllowed("apply", "a.go", probe({ tag: "a", accessibleText: "Update Results" }))).toThrow(/must be a button/);
     expect(() => assertFilterTargetAllowed("apply", "button.go", probe({ tag: "button", accessibleText: "Go" }))).toThrow(
       /apply \/ update results \/ search inventory/,
@@ -522,9 +518,6 @@ describe("runFilterVerb — probe, fence, act; a refusal never touches the page"
         selectOption: async (selector, values) => {
           ops.push(`selectOption:${selector}:${JSON.stringify(values)}`);
           return [];
-        },
-        check: async (selector) => {
-          ops.push(`check:${selector}`);
         },
         click: async (selector) => {
           ops.push(`click:${selector}`);
@@ -584,8 +577,7 @@ describe("runFilterVerb — probe, fence, act; a refusal never touches the page"
     expect(actions).toEqual(["filter_select:select[name='make'] = Hyundai"]);
   });
 
-  it("approved tick checks the box; approved apply clicks the button — both voiced", async () => {
-    const tick = fakeFilterPage(cleanProbe({ tag: "input", inputType: "checkbox", accessibleText: "New" }));
+  it("approved apply clicks the button — voiced", async () => {
     const actions: string[] = [];
     const emitter: BrowserEmitter = {
       ...NULL_EMITTER,
@@ -593,14 +585,11 @@ describe("runFilterVerb — probe, fence, act; a refusal never touches the page"
         actions.push(`${type}:${target}`);
       },
     };
-    await runFilterVerb({ page: tick.page, emitter, verb: "tick", selector: "#cond-new" });
-    expect(tick.ops).toEqual(["check:#cond-new"]);
-
     const apply = fakeFilterPage(cleanProbe({ tag: "button", accessibleText: "Update Results" }));
     await runFilterVerb({ page: apply.page, emitter, verb: "apply", selector: "button.go" });
     expect(apply.ops).toEqual(["click:button.go"]);
 
-    expect(actions).toEqual(["filter_tick:#cond-new", "filter_apply:button.go"]);
+    expect(actions).toEqual(["filter_apply:button.go"]);
   });
 });
 

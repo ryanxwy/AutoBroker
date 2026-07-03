@@ -1,9 +1,11 @@
 /**
  * L1 unit tests — the negotiation-follow-up DB reads. Freezes:
- *   - readQuoteSituationForThread: current = latest open quote for THIS dealer;
- *     best_competing = MIN over OTHER dealers' open quotes for the SAME profile;
- *     itemization needs a selling_price AND ≥1 itemized fee; an expired quote is
- *     excluded; an estimate-only quote reads NOT itemized;
+ *   - the follow-up TONE derivation (readDealerGiveUpInputs → classifyQuoteSituation,
+ *     the SAME mapping the Negotiations board + the negotiation_followup workflow
+ *     use): current = latest OPEN quote for THIS dealer; the tone baseline =
+ *     bestCompetingRealOtd (lowest REAL same-mode competitor); itemization needs a
+ *     selling_price AND ≥1 itemized fee; open-ness is parsed in JS so a FUTURE ISO
+ *     quote_expires_at reads OPEN (the CAST-predicate bug fix), a PAST one expired;
  *   - listFollowupCandidateThreads: per-thread latest inbound / outbound epoch-ms
  *     + outbound round count, dealer name joined, profile-scoped;
  *   - readThreadSnapshotForDraft: subject + ordered messages + the latest inbound
@@ -25,10 +27,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, openDb, type Db } from "../db.js";
 import {
   listFollowupCandidateThreads,
-  readQuoteSituationForThread,
+  readDealerGiveUpInputs,
   readReplyTargetInputs,
   readThreadSnapshotForDraft,
 } from "./followupReads.js";
+import { classifyQuoteSituation, type QuoteTone } from "../dealerComm/quoteSituation.js";
 import { resolveReplyTarget } from "../dealerComm/replyTargets.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
@@ -113,50 +116,145 @@ afterEach(() => {
   else process.env[DB_OVERRIDE] = originalDbOverride;
 });
 
-describe("readQuoteSituationForThread", () => {
-  it("picks the latest open quote and computes the competing MIN", () => {
+// The follow-up TONE derivation the negotiation_followup workflow AND the
+// Negotiations board both use: readDealerGiveUpInputs mapped to the pure
+// classifyQuoteSituation with the lowest REAL same-mode competitor
+// (bestCompetingRealOtd) as the tone baseline. Returns the mapped inputs + the
+// resolved tone, so the open/expired/itemization branches stay frozen at the tone
+// level (where the workflow actually consumes them).
+function situationFor(
+  dealerId: string,
+  nowMs: number,
+): { currentOtd: number | null; isItemized: boolean; bestCompetingOtd: number | null; tone: QuoteTone } {
+  const inputs = readDealerGiveUpInputs(db, { profileId: PROFILE, dealerId, nowMs });
+  const bestCompetingOtd = inputs.bestCompetingRealOtd;
+  const tone = classifyQuoteSituation({
+    isItemized: inputs.isItemized,
+    bestCompetingOtd,
+    currentOtd: inputs.currentOtd,
+  });
+  return { currentOtd: inputs.currentOtd, isItemized: inputs.isItemized, bestCompetingOtd, tone };
+}
+
+describe("readDealerGiveUpInputs → classifyQuoteSituation (the follow-up tone derivation)", () => {
+  it("picks the latest open quote + a lower competitor → assertive tone", () => {
     const c = db.$client;
-    // This dealer: an older quote and a newer (itemized) quote.
+    // This dealer: an older quote and a newer (itemized) quote, both open.
     insertQuote(c, { quoteId: "q-old", dealerId: DEALER, profileId: PROFILE, otd: 33000, selling: 31000, docFee: 500, receivedAt: NOW - 100000 });
-    insertQuote(c, { quoteId: "q-new", dealerId: DEALER, profileId: PROFILE, otd: 32000, selling: 30000, docFee: 499, receivedAt: NOW - 1000 });
-    // Competing dealer: a lower open quote.
+    insertQuote(c, { quoteId: "q-new", dealerId: DEALER, profileId: PROFILE, otd: 33900, selling: 31400, docFee: 499, receivedAt: NOW - 1000 });
+    // Competing dealer: a lower open quote (>$500 below the current → assertive).
     insertQuote(c, { quoteId: "q-comp", dealerId: COMP, profileId: PROFILE, otd: 31200, selling: 29000, docFee: 400, receivedAt: NOW - 5000 });
 
-    const s = readQuoteSituationForThread(db, { profileId: PROFILE, dealerId: DEALER, nowMs: NOW });
-    expect(s.currentOtd).toBe(32000); // the newest open quote
+    const s = situationFor(DEALER, NOW);
+    expect(s.currentOtd).toBe(33900); // the newest open quote
     expect(s.isItemized).toBe(true); // selling_price + doc_fee present
-    expect(s.bestCompetingOtd).toBe(31200); // the only competing open quote
+    expect(s.bestCompetingOtd).toBe(31200); // the only real same-mode competitor
+    expect(s.tone).toBe("assertive"); // 33900 − 31200 = 2700 > the $500 threshold
   });
 
-  it("excludes an expired quote from current and competing", () => {
+  it("excludes an expired quote from current → no current OTD → conservative tone", () => {
     const c = db.$client;
     // Current dealer's only quote is expired → currentOtd null, not itemized.
     insertQuote(c, { quoteId: "q-exp", dealerId: DEALER, profileId: PROFILE, otd: 32000, selling: 30000, docFee: 499, receivedAt: NOW - 1000, expiresAt: NOW - 1 });
-    // Competing dealer: one expired, one open — only the open one counts.
-    insertQuote(c, { quoteId: "q-comp-exp", dealerId: COMP, profileId: PROFILE, otd: 30000, selling: 29000, docFee: 400, receivedAt: NOW - 5000, expiresAt: NOW - 1 });
+    // A competing OPEN quote exists — but with no current quote it is never reached.
     insertQuote(c, { quoteId: "q-comp-open", dealerId: COMP, profileId: PROFILE, otd: 31500, selling: 29500, docFee: 410, receivedAt: NOW - 4000 });
 
-    const s = readQuoteSituationForThread(db, { profileId: PROFILE, dealerId: DEALER, nowMs: NOW });
-    expect(s.currentOtd).toBeNull();
+    const s = situationFor(DEALER, NOW);
+    expect(s.currentOtd).toBeNull(); // the expired quote is excluded from current
     expect(s.isItemized).toBe(false);
-    expect(s.bestCompetingOtd).toBe(31500); // the expired 30000 is excluded
+    expect(s.tone).toBe("conservative"); // no itemized current → nothing to push on
   });
 
-  it("reads NOT itemized when the current quote is estimate-only (no fees / no selling price)", () => {
+  it("reads NOT itemized when the current quote is estimate-only → conservative tone", () => {
     const c = db.$client;
     insertQuote(c, { quoteId: "q-est", dealerId: DEALER, profileId: PROFILE, otd: 32000, selling: null, docFee: null, receivedAt: NOW - 1000 });
-    const s = readQuoteSituationForThread(db, { profileId: PROFILE, dealerId: DEALER, nowMs: NOW });
+    // Even a cheaper competitor cannot make an estimate-only quote assertive.
+    insertQuote(c, { quoteId: "q-comp", dealerId: COMP, profileId: PROFILE, otd: 30000, selling: 28000, docFee: 400, receivedAt: NOW - 2000 });
+
+    const s = situationFor(DEALER, NOW);
     expect(s.currentOtd).toBe(32000);
     expect(s.isItemized).toBe(false);
+    expect(s.tone).toBe("conservative"); // !isItemized short-circuits the ladder
   });
 
-  it("returns null competing when only another PROFILE has competing quotes", () => {
+  it("no competitor for this profile (only another profile has one) → appreciative tone", () => {
     const c = db.$client;
     insertQuote(c, { quoteId: "q-cur", dealerId: DEALER, profileId: PROFILE, otd: 32000, selling: 30000, docFee: 499, receivedAt: NOW - 1000 });
     // A competing quote, but for a DIFFERENT profile — must not leak in.
     insertQuote(c, { quoteId: "q-other", dealerId: COMP, profileId: OTHER_PROFILE, otd: 28000, selling: 26000, docFee: 300, receivedAt: NOW - 1000 });
-    const s = readQuoteSituationForThread(db, { profileId: PROFILE, dealerId: DEALER, nowMs: NOW });
+
+    const s = situationFor(DEALER, NOW);
     expect(s.bestCompetingOtd).toBeNull();
+    expect(s.tone).toBe("appreciative"); // itemized current, no competitor → nothing to push for
+  });
+
+  it("a FUTURE ISO quote_expires_at reads OPEN → assertive (the CAST-predicate bug fix)", () => {
+    const c = db.$client;
+    const now = Date.parse("2026-06-01T00:00:00.000Z");
+    // CAST('2027-01-01…' AS INTEGER) collapses to 2027, and 2027 > now(epoch-ms
+    // ~1.7e12) is FALSE, so the OLD SQL-CAST predicate wrongly read this OPEN quote
+    // as already-expired → currentOtd null → the WRONG (non-assertive) tone. The JS
+    // open-ness check keeps it OPEN, so the tone is the correct assertive.
+    insertQuote(c, {
+      quoteId: "q-fut",
+      dealerId: DEALER,
+      profileId: PROFILE,
+      otd: 33900,
+      selling: 31400,
+      docFee: 499,
+      receivedAt: Date.parse("2026-05-01T00:00:00.000Z"),
+      expiresAt: "2027-01-01T00:00:00.000Z" as unknown as number,
+    });
+    // A cheaper competitor, also with a future ISO expiry (the tone baseline).
+    insertQuote(c, {
+      quoteId: "q-comp-fut",
+      dealerId: COMP,
+      profileId: PROFILE,
+      otd: 31200,
+      selling: 29000,
+      docFee: 400,
+      receivedAt: Date.parse("2026-05-02T00:00:00.000Z"),
+      expiresAt: "2027-01-01T00:00:00.000Z" as unknown as number,
+    });
+
+    const s = situationFor(DEALER, now);
+    expect(s.currentOtd).toBe(33900); // still OPEN, NOT dropped as expired
+    expect(s.bestCompetingOtd).toBe(31200);
+    expect(s.tone).toBe("assertive"); // the CAST bug would have yielded conservative
+  });
+
+  it("a PAST ISO quote_expires_at reads EXPIRED → no current OTD → conservative tone", () => {
+    const c = db.$client;
+    const now = Date.parse("2026-06-01T00:00:00.000Z");
+    insertQuote(c, {
+      quoteId: "q-past",
+      dealerId: DEALER,
+      profileId: PROFILE,
+      otd: 33900,
+      selling: 31400,
+      docFee: 499,
+      receivedAt: Date.parse("2026-05-01T00:00:00.000Z"),
+      expiresAt: "2026-05-15T00:00:00.000Z" as unknown as number,
+    });
+
+    const s = situationFor(DEALER, now);
+    expect(s.currentOtd).toBeNull(); // a past ISO expiry → expired, excluded from current
+    expect(s.tone).toBe("conservative");
+  });
+
+  it("orders by the parsed ISO quote_received_at (newest wins as current), not quote_id", () => {
+    const c = db.$client;
+    const now = Date.parse("2026-07-01T00:00:00.000Z");
+    // quote_ids deliberately REVERSED vs chronology: a SQL CAST(received_at AS
+    // INTEGER) would collapse all to 2026 and fall back to quote_id order (picking
+    // the WRONG current). Only a real time sort makes the 12:00 quote current.
+    insertQuote(c, { quoteId: "iso-z", dealerId: DEALER, profileId: PROFILE, otd: 34000, selling: 31500, docFee: 499, receivedAt: "2026-06-25T10:00:00.000Z" as unknown as number });
+    insertQuote(c, { quoteId: "iso-a", dealerId: DEALER, profileId: PROFILE, otd: 33900, selling: 31400, docFee: 499, receivedAt: "2026-06-25T12:00:00.000Z" as unknown as number });
+    insertQuote(c, { quoteId: "q-comp", dealerId: COMP, profileId: PROFILE, otd: 31200, selling: 29000, docFee: 400, receivedAt: "2026-06-25T09:00:00.000Z" as unknown as number });
+
+    const s = situationFor(DEALER, now);
+    expect(s.currentOtd).toBe(33900); // the chronologically-newest ISO quote (12:00), not iso-z's 34000
+    expect(s.tone).toBe("assertive"); // 33900 − 31200 = 2700 > the $500 threshold
   });
 });
 

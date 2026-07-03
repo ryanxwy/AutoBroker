@@ -2,7 +2,7 @@
  * portfolioSummary — the pure header-by-counts derivation. The portfolio status
  * bar reports COUNTS, never a blended health color: "N searches · X NEED
  * APPROVAL · Y ghosted · W healthy", and NAMES the profiles that are red
- * (an action-required item: an irreversible send or a saga retraction) so a
+ * (an action-required item: an irreversible send) so a
  * problem escalates upward and points at the vehicle. Derived from the board
  * cards + the approval queue (ApprovalItem[]); no I/O, no budget.
  *
@@ -18,7 +18,7 @@ const GHOSTED_REASON = "all_threads_capped";
 export interface PortfolioCounts {
   /** Active searches on the board. */
   searches: number;
-  /** Parked gates + retraction tasks awaiting the user. */
+  /** Parked gates awaiting the user. */
   needApproval: number;
   /** Profiles whose dealers went silent (all follow-up threads capped). */
   ghosted: number;
@@ -48,7 +48,7 @@ export function summarizePortfolio(
   const redNames: string[] = [];
   for (const i of items) {
     if (!i.actionRequired) continue;
-    const key = i.profileId ?? i.runId ?? `idx-${redNames.length}`;
+    const key = i.profileId ?? i.runId;
     if (seen.has(key)) continue;
     seen.add(key);
     redNames.push(i.summary?.heading ?? i.skill.replace(/_/g, " "));

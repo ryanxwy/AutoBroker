@@ -1,83 +1,49 @@
 # @autobroker/workflows
 
-> Status: Phase 0 alignment target, 2026-06-03. The workflow backbone is
-> **Mastra 1.x**. The pre-Phase-0 self-built
-> `SkillRun` / `HarnessWorkflowRuntime` scaffold has been deleted; this package
-> now owns the Mastra integration shell and runtime-glue surface. Layer 3 of the
-> five-layer monorepo (`core -> model -> workflows -> tools -> app`). Sibling
-> package: [tools](../tools/README.md), the only side-effect layer.
+The orchestration layer (Layer 3 of the five-layer monorepo
+`core -> model -> workflows -> tools -> app`). It is the **Mastra 1.x** backbone:
+it turns one skill invocation into a durable Mastra workflow run while staying a
+pure coordinator that **never performs a product side effect itself**. Sibling
+package: [tools](../tools/README.md), the only side-effect layer.
 
-## What this package becomes
+There is no engine seam — skills import Mastra primitives directly; the Mastra
+instance runs in library mode (storage = `@mastra/libsql` on
+`file:~/.autobroker-ts/mastra.db`, a dedicated DB beside the product
+`autobroker.db`), with no `mastra dev`, no Hono server, and no Cloud.
 
-The orchestration layer. It turns one skill invocation into a durable Mastra
-workflow run while staying a pure coordinator that **never performs a product
-side effect itself**.
-
-Target shape:
+## What lives here
 
 | Concern | Owner |
 | --- | --- |
-| Skill execution | One flat linear Mastra `createWorkflow` per skill. |
-| Agent model | Mastra agents receive AI SDK 6 `LanguageModel` instances from `@autobroker/model`; Mastra's remote model router is not used. |
-| Session state | Mastra Memory threads/resources, with Observational Memory auto-compact on the chat lane only. |
-| Approval pause | Tool/step-level `suspend()` plus persisted workflow snapshot; boot recovery re-attaches suspended runs to the approval UI. |
-| Status projection | App-side projection from Mastra workflow state into AutoBroker's public run statuses. |
-| Gate routing | Irreversible actions are routed through the L2 in-process gate in `@autobroker/tools`; workflows only orchestrate the ask/resume path. |
-
-## What Phase 0 removed
-
-The 2026-06-03 product-owner override deleted the old reversibility seam. Phase
-0 removed the self-built engine artifacts instead of treating them as an
-abstraction to preserve:
-
-| Old artifact | Phase 0 result |
-| --- | --- |
-| `src/skillRun.ts` | Deleted; replace with Mastra workflow definitions plus a thin status-projection service as skills land. |
-| `src/harnessWorkflowRuntime.ts` | Deleted; skills import/use Mastra primitives directly. |
-| `SelfBuiltWorkflowRuntime` / `MastraWorkflowRuntime` split | Deleted; there is no parallel engine choice in MVP. |
-
-The accepted cost is that Mastra public API/type churn reaches skill files
-directly. The mitigation is a minor-version pin, codemods when needed, and the
-live-harness regression net.
-
-## Runtime glue that still belongs here
-
-Mastra owns workflows and snapshots, but the embedded local app still needs
-small product-specific glue:
-
-- **Boot recovery** — list suspended/active runs at process start and apply the
-  product policy: restart eligible runs, cancel stale runs, and re-attach
-  approval UI for suspended runs.
-- **Duplicate run guard** — reject duplicate `runId` starts app-side; Mastra can
-  restart from step 1 on an existing id if the host allows it.
-- **SSE discipline** — all workflow starts route through the streaming path that
-  can feed the app's SSE/event bus; do not create invisible runs.
-- **Gate rendering order** — every semantic/irreversible fallback is voiced and
-  rendered as a gate before prose. Transient/equivalent fallbacks auto-allow but
-  record trace spans.
-
-This glue is a service layer, not an alternate workflow engine.
+| Skill execution | One flat linear Mastra `createWorkflow` per skill. The 17 skill workflows are registered in `registeredWorkflows.ts` (`REGISTERED_WORKFLOWS` for `createMastraInstance`, `REGISTERED_WORKFLOW_IDS` for boot scans). |
+| Agent loop | `harness.ts` — the runnable `harness.generate` facade that drives the Mastra Agent loop end-to-end. The pure helpers/types live in `@autobroker/model`; the loop is owned here. `emit_result` single-tool discipline. |
+| Agent model | Mastra agents receive AI SDK 6 `LanguageModel` instances from `@autobroker/model` (policy-driven, DeepSeek-default); Mastra's remote model router is not used. Per-run provider selection is applied at the generate seam (`agentSelection.ts`). |
+| Chat sessions | `railMemory.ts` — the chat-rail Memory thread store (sessions = Mastra Memory threads/resources), with Observational Memory auto-compact configured on the chat rail ONLY (never inside a skill workflow run). Apps do session CRUD through the product-shaped `RailSessionStore` facade and never import `@mastra/*` directly. |
+| Boot recovery / run guard | `runtimeGlue.ts` — boot recovery (re-attach suspended runs to the approval UI, restart/cancel stale `running` runs per age policy) and the duplicate-`runId` idempotency guard. Thin wrappers over the Mastra instance/workflow/run API. |
+| Approval pause | Tool/step-level `suspend()` plus the persisted workflow snapshot; boot recovery re-attaches suspended runs to the approval UI. The shared batch_review suspend/resume contract lives in `batchReviewContracts.ts`. |
+| NL routing | `router.ts` — the LLM skill-router (a core product feature): it reads a free-form chat message and routes it to ONE of the 17 skills / intake / clarify, and also re-ranks the skills popover (advisory only). Single `emit_result` + Zod, #1244 fail-closed → clarify. |
+| #1244 fail-closed | `malformedToolCallProcessor.ts` — the fail-closed detector wired as a Mastra output Processor (detection logic stays pure in `@autobroker/model`). `recoverEmitWithRetry.ts` is the bounded, no-HITL, same-provider single retry for the opt-in heavy extractors before the identical hard-abort. |
+| Status projection | App-side projection from Mastra workflow state into AutoBroker's public `SkillRunStatus` (single source — no core↔workflows enum drift). |
+| Gate routing | Irreversible actions route through the L2 in-process gate in `@autobroker/tools`; workflows only orchestrate the ask/resume path. |
 
 ## Side-effect invariant
 
 This layer holds **zero product SQLite handles** and makes **zero external API
 calls**. Product DB writes, Gmail, Maps, browser network calls, and any
-irreversible send/submit path live in `@autobroker/tools`. Mastra may persist
-its own framework runtime state to the dedicated `mastra.db` beside
-`autobroker.db`; that state is outside the product schema and outside the
-drizzle parity gate.
+irreversible send/submit path live in `@autobroker/tools`. Mastra persists its
+own framework runtime state to the dedicated `mastra.db` beside `autobroker.db`;
+that state is outside the product schema and outside the drizzle parity gate.
+
+Every semantic/irreversible fallback is voiced and rendered as a gate before
+prose; transient/equivalent fallbacks auto-allow but record a trace span. All
+workflow starts route through the streaming path that feeds the app's SSE/event
+bus — there are no invisible runs.
 
 ## Dependency rules
 
 - May import: `@autobroker/core`, `@autobroker/model`, `@autobroker/tools`, and
-  Mastra runtime packages once Phase 0 lands.
+  the Mastra runtime packages (`@mastra/core`, `@mastra/memory`, `@mastra/libsql`
+  — pinned as an exact date-matched trio).
 - May **not** import: `app` surfaces.
 - Enforced by TypeScript project references in `tsconfig.json`; changing the
   dependency graph is an architecture decision, not a drive-by import.
-
-## Current scaffold status
-
-As of this doc alignment pass, the package still compiles as the old scaffold.
-That is intentional drift until Phase 0: the docs now describe the target
-source-of-intent so the implementation work can delete/replace the old files in
-one focused slice.

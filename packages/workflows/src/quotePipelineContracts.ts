@@ -52,8 +52,8 @@ export type PipelineResolution = (typeof PIPELINE_RESOLUTIONS)[number];
  * Input — `{ search_profile_id, dry_run, target_listing_id }`.
  *   - search_profile_id null → resolve via the strict three-branch ASK.
  *   - dry_run true → short-circuit to a would-run preview (zero writes).
- *   - target_listing_id set → the targeted-VIN OTD sub-path (one outbound
- *     fake-send through the L2 gate), skipping the full fan-out.
+ *   - target_listing_id set → the targeted-VIN OTD sub-path (one outbound send
+ *     through the L2 gate — real in buyer mode, fake in test mode), skipping the full fan-out.
  * Flat, all-required-with-explicit-null (the #1244 schema discipline).
  */
 export const quotePipelineInputSchema = z.object({
@@ -141,7 +141,7 @@ export class QuotePipelineStopError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// the targeted-VIN SEND suspend / resume (the single HITL point — fake-send)
+// the targeted-VIN SEND suspend / resume (the single HITL point — real send in buyer mode, fake in test mode)
 // ---------------------------------------------------------------------------
 
 /**
@@ -149,7 +149,7 @@ export class QuotePipelineStopError extends Error {
  * approval card renders). kind/summary/sensitive are what the generic approval
  * surface shows; the typed fields are the audit record of WHAT is being sent.
  * The outbound OTD ask on ONE specific listing is a sensitive scope (it sends a
- * real email — fake-send under the fuse), so the card renders the danger frame.
+ * real email in buyer mode, fake in test mode), so the card renders the danger frame.
  * IDs + short strings only; the payload stays well under the renderable bound.
  */
 export const QuotePipelineSendSuspendSchema = z
@@ -166,8 +166,8 @@ export const QuotePipelineSendSuspendSchema = z
 export type QuotePipelineSendSuspend = z.infer<typeof QuotePipelineSendSuspendSchema>;
 
 /** The resume vocabulary for the targeted SEND suspend: approve (fire the gated
- *  fake-send + record the quote) or decline (zero outbound, zero record write →
- *  the `declined` output member). */
+ *  send — real in buyer mode, fake in test mode — + record the quote) or decline
+ *  (zero outbound, zero record write → the `declined` output member). */
 export const QuotePipelineSendResumeSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("decline") }),

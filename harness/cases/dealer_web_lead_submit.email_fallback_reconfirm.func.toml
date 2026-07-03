@@ -19,8 +19,8 @@
 #           email-shape lead_submissions row AND one fake outbound messages row.
 #           Terminal `done`; +1 lead_submissions EXACT (the email-fallback row);
 #           messages Δ=1 EXACT (the fake gmail.send); keystone clean with
-#           allow_fake_outbound; the sensitive approval card carried NO
-#           approve-all affordance (asserted via dom_state); no malformed call.
+#           allow_fake_outbound; the approval card carried NO approve-all
+#           affordance (there is none — asserted DRIVER-SIDE); no malformed call.
 
 [meta]
 id = "dealer_web_lead_submit_email_fallback_reconfirm"
@@ -83,10 +83,10 @@ expect = ["done"]
 [[steps.anchors]]
 kind = "approval_gate"      # BOTH suspends rendered (the batch card + the re-confirm).
 
-# The sensitive email re-confirm card must NOT expose an approve-all affordance
-# (sensitive=true → no bulk-approve of a mutating scope). That assertion is made
-# DRIVER-SIDE during the approval resume (checkApprovalApproveAllForSensitivity
-# reads the live card's data-sensitive + counts approval-approve-all controls and
+# The email re-confirm card must NOT expose an approve-all affordance — there is
+# no bulk-approve control on the approval card at all (it was removed as dead).
+# That assertion is made DRIVER-SIDE during the approval resume
+# (checkApprovalApproveAllForSensitivity counts approval-approve-all controls and
 # records a REAL ui_check — a failure RED-outs the verdict via failedUi). It is
 # NOT authored as a dom_state anchor here: on a kind="skill" step a dom_state
 # anchor is a no-op passthrough in evalAnchor, which would assert nothing.

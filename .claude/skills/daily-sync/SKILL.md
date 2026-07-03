@@ -40,7 +40,7 @@ This is the deliberate counterpart to the passive Stop hook.
      the gap to the current phase's exitCriteria. (Optionally invoke the
      `burndown-scout` agent for the precise per-skill step state.)
    - **决策与偏移** — any decision settled/overturned today; link to
-     `../architecture/DECISIONS.md` (use `/decision-log` to add the entry there).
+     `../architecture/DECISIONS.html` (use `/decision-log` to add the entry there).
    - **风险与 anchor 红灯** — any risk hit (e.g. #1244 fail-closed fired,
      profile W-C branch) or anchor that went green→red.
    - **明日计划** — the next skill / next step, pointing to the specific

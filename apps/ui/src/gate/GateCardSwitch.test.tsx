@@ -235,12 +235,24 @@ describe("GateCardSwitch — the approval decision surface + pending floor", () 
     expect(r.query("gate-banner-pending")).toBeNull();
     const card = r.get("approval-prompt");
     expect(card.textContent).toContain("hyundaiusa.com");
-    // sensitive: the danger frame is on and batch approval is HIDDEN.
+    // sensitive: the danger frame is on. There is no approve-all affordance on
+    // this card at all — the dead bulk-approve control was removed, so the
+    // testid never exists (asserted regardless of sensitivity below too).
     expect(card.getAttribute("data-sensitive")).toBe("true");
     expect(r.query("approval-approve-all")).toBeNull();
 
     click(r.get("approval-approve"));
     expect(decision.decide).toHaveBeenCalledWith("accept");
+    r.unmount();
+  });
+
+  it("a NON-sensitive approval carries no approve-all affordance either (the bulk-approve is gone entirely)", () => {
+    const r = render(
+      <GateCardSwitch awaiting={awaiting("approval", { ...APPROVAL_SPEC, sensitive: false })} decision={controller()} />,
+    );
+    const card = r.get("approval-prompt");
+    expect(card.getAttribute("data-sensitive")).toBe("false");
+    expect(r.query("approval-approve-all")).toBeNull();
     r.unmount();
   });
 

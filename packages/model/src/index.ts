@@ -11,7 +11,7 @@
  */
 
 // Provider registry + model resolution.
-export { registry, resolveModel, defaultProvider } from "./registry.js";
+export { registry, resolveModel } from "./registry.js";
 // Lane B — Claude via the official Agent SDK on a subscription OAuth token
 // (tool-disabled, min-env, fail-closed). The ONLY importer of the raw Agent SDK.
 export { claudeOAuthQuery, ClaudeOAuthError } from "./claudeOAuth.js";
@@ -44,8 +44,8 @@ export {
 export type { TranscriptEvent, TranscriptSink } from "./recordReplay.js";
 
 // useCase -> ModelAlias -> CapabilityFlags routing policy.
-export { policy, policyForAlias, withProvider, aliasForModelId, USE_CASES } from "./policy.js";
-export type { UseCase, PolicyResolution, AliasResolution } from "./policy.js";
+export { policy, policyForAlias, withProvider, aliasForModelId } from "./policy.js";
+export type { UseCase, PolicyResolution } from "./policy.js";
 
 // Provider-neutral harness contract: signature types + the pure structured-output
 // strategy selector. The runnable harness.generate facade + Mastra Agent loop
@@ -66,7 +66,6 @@ export { makeStaticToolCallModel, makeProseDumpModel, makeStructuredObjectModel 
 export {
   detectMalformedToolCall,
   assertToolTurnOrFailClosed,
-  looksLikeToolShapedBlob,
   redactMalformedSample,
   MalformedToolCallAbort,
   MALFORMED_TOOL_CALL_REASON,
@@ -74,13 +73,5 @@ export {
 export type { ToolTurnView, MalformedSignal } from "./malformedToolCall.js";
 
 // Self-managed pricing table + usage→cost helper (NULL-not-$0; ledger snapshot).
-export { PRICING, PRICING_SOURCE, computeCostUsd } from "./pricing.js";
+export { PRICING, computeCostUsd } from "./pricing.js";
 export type { ModelRate } from "./pricing.js";
-
-// Minimal canonical-message → ModelMessage translator (flat text, fail-LOUD).
-export {
-  CANONICAL_ROLES,
-  toModelMessages,
-  UnsupportedCanonicalMessageError,
-} from "./messages.js";
-export type { CanonicalMessage, CanonicalRole } from "./messages.js";

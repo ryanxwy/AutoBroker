@@ -7,6 +7,12 @@
 #     /skill-loop and removed at acceptance): run the FULL scripts/green.sh.
 #   - any other session: fast `pnpm typecheck` only (seconds, incremental).
 #
+# Staleness guard: the marker is gitignored and removed only by LLM instruction,
+# so an aborted skill-loop session leaves it forever and every later turn then
+# runs the full green.sh (a stale Jun-12 marker once did exactly this). If the
+# marker is older than MAX_MARKER_AGE_HOURS, treat it as stale — delete it and
+# fall through to the fast typecheck branch.
+#
 # Exit 2 blocks the turn from ending and feeds the failure tail back to Claude
 # (Claude Code overrides the hook after 8 consecutive blocks — it is a gate,
 # not a jail). Exit 0 allows the stop.
@@ -15,7 +21,17 @@ set -uo pipefail
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$ROOT"
 
-if [ -f .claude/.skill-loop-active ]; then
+MARKER=.claude/.skill-loop-active
+MAX_MARKER_AGE_HOURS=12
+if [ -f "$MARKER" ]; then
+  # find prints the path only when it is OLDER than the cutoff (mmin in minutes).
+  if [ -n "$(find "$MARKER" -mmin +$((MAX_MARKER_AGE_HOURS * 60)) 2>/dev/null)" ]; then
+    rm -f "$MARKER"
+    echo "loop-gate: removed a stale .skill-loop-active marker (>${MAX_MARKER_AGE_HOURS}h old); using the fast typecheck gate." >&2
+  fi
+fi
+
+if [ -f "$MARKER" ]; then
   if ! out="$(bash scripts/green.sh 2>&1)"; then
     {
       echo "skill-loop gate: scripts/green.sh FAILED — do not end the turn red."

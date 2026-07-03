@@ -5,17 +5,22 @@
 > boots the real server in an isolated process and scores each skill's
 > behaviour against deterministic anchors, live, with no fixtures or replay.
 
-## Roles (five) — `prompts/`
+## Roles — `prompts/`
+
+The old five-role agentic harness (orchestrator/driver/monitor/bugfixer) was
+superseded by the deterministic `runner.ts` (it IS orchestrator + driver +
+monitor folded into one process — see its header). The role prompts that remain
+are the ones `soak/` still loads: the `claude -p` buyer/dealer/judge, plus the
+per-skill dealer/judge variants a soak skill overrides them with.
 
 | prompt | model | role |
 |---|---|---|
-| [`prompts/orchestrator.md`](prompts/orchestrator.md) | **Opus** | owns Browser #1, the per-step loop, the GREEN/RED call |
-| [`prompts/driver.md`](prompts/driver.md) | Sonnet | non-technical user on the dashboard chat rail; applies the gate policy |
-| [`prompts/monitor.md`](prompts/monitor.md) | Sonnet | read-only verifier; runs the anchor evaluator; writes `verdict.json` |
+| [`prompts/buyer.md`](prompts/buyer.md) | any (agent-agnostic) | generates the freeform cold-start + per-scenario journey text; **emits text only** — never drives the browser or a gate |
 | [`prompts/dealer.md`](prompts/dealer.md) | Sonnet | multi-round email mode; plays the dealer via the fake mailbox; **zero SUT-shared isolated context** |
-| [`prompts/bugfixer.md`](prompts/bugfixer.md) | **Opus** | patches a service / `SKILL.md` / anchor on a Monitor defect flag; never runs a skill or browser |
+| [`prompts/judge.md`](prompts/judge.md) | Opus | LLM-judge of the soft verdict dims only (the deterministic `dbReads` assertions are authoritative) |
+| `prompts/<skill>.dealer.md` / `prompts/<skill>.judge.md` | Sonnet / Opus | per-skill overrides (`dealer_reply_extract`, `negotiation_followup`) with a disjoint, skill-private context |
 
-The harness substrate (these roles) is **independent of the model under test**.
+The harness substrate is **independent of the model under test**.
 The model under test defaults to **DeepSeek `deepseek-v4-flash`** with the
 ratified defaults: thinking ON + `reasoning_effort: "high"`; structured
 `emit_result` steps inject per-step `thinking:{type:'disabled'}` + named
@@ -30,11 +35,21 @@ orchestration model.
 - [x] **`cases/*.toml`** — per-skill case files (skill, narrative profile, gate
       policy, expected anchors, seeded preconditions); two rounds per skill
       (slash + freeform) as independent cells.
-- [x] **`evaluator.ts`** — the deterministic anchor checker, 8 anchor kinds:
+- [x] **`cases.ts` + `evaluator.ts`** — `cases.ts` parses **11 anchor kinds**:
       `run_status`, `driver_kind`, `browser_activity`, `approval_gate`,
       `table_min_rows`, `no_external_mutation` (keystone, every step),
-      `cost_and_time`, and the framework-new `malformed_tool_call`. Writes
-      `verdict.json` (+ the vacuous-confirmation guard: L2+ needs ≥1 ui_check).
+      `cost_and_time`, `malformed_tool_call`, `resolution` (profile
+      pinned-vs-inferred), `dom_state` (UI-lane widget assertions), and
+      `latency_budget`. `evaluator.ts` scores them and writes `verdict.json`
+      (+ the vacuous-confirmation guard: L2+ needs ≥1 ui_check).
+- [x] **`soak/skills/multiroundFakeMailbox.ts`** — the multiround fake-mailbox
+      helper backing the Dealer role: it writes ONE inbound Sonnet-dealer reply
+      into the isolated `fake_mailbox_*` tables (through the sanctioned
+      tools-layer `seedFakeMailbox` writer, byte-identical to a real row) so the
+      NEXT `/dealer_inbox_check` round discovers it via the FakeGmailAdapter and
+      the SUT does the product-table ingestion itself. `AUTOBROKER_MODE=test`
+      (the sole send-control floor) resolves every send fake, so the dealer turn
+      can never reach real email.
 - [x] **`poller.ts` (gate poller, `deny_all`)** — the test-time approver. Stands
       in for the human at the dashboard; on irreversible steps it denies,
       exercising the decline path. Never `AUTOBROKER_TEST_AUTO_APPROVE`.
@@ -42,13 +57,6 @@ orchestration model.
       the default DB + the day's isolated run DBs and folds case verdicts into
       stable JSON, consumed by an external daily-report generator that reads
       `harness/exports/<date>.json`.
-
-## To be built
-
-- [ ] **`multiround_fake_mailbox`** — the fake-mailbox helper backing the Dealer
-      role, with the fail-closed `fake_mailbox_send_only` preflight (positive
-      verify FakeGmailAdapter + isolated fake DB + `BLOCK_EXTERNAL_MUTATIONS=1`,
-      else `deny_all`). Lands with the Phase-3 email service.
 
 ## `soak/` — the agentic-soak lane (`pnpm soak`, NEVER green.sh)
 

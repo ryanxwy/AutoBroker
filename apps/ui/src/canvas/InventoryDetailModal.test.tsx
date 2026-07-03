@@ -75,7 +75,7 @@ describe("InventoryDetailModal — existing structure", () => {
     close();
   });
 
-  it("renders an inert modal (no dialog) when row is null", () => {
+  it("renders nothing when row is null", () => {
     const r = render(<InventoryDetailModal row={null} onClose={() => {}} />);
     expect(doc("inventory-detail-modal")).toBeNull();
     r.unmount();

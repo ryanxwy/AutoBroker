@@ -13,6 +13,7 @@
 import type { Db } from "@autobroker/db";
 
 import { hostStem } from "./discovery.js";
+import { toEpochMs } from "./time.js";
 import { flagCodesFromJson } from "../quotes/flags.js";
 
 /**
@@ -225,26 +226,6 @@ export function readFirstLeadSubmitAtMs(db: Db, profileId: string): number | nul
         "WHERE search_profile_id = ? AND outcome = 'submitted' AND submitted_at IS NOT NULL",
     )
     .get(profileId) as { first_at: string | number | null };
-  const raw = row.first_at;
-  if (raw === null) return null;
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (raw.trim() === "") return null;
-  const ms = Date.parse(raw);
-  return Number.isFinite(ms) ? ms : null;
+  return toEpochMs(row.first_at);
 }
 
-/**
- * The inbound messages ingested for one profile, newest first. snake_case rows
- * for the HTTP view. Read-only.
- */
-export function listProfileMessageRows(db: Db, profileId: string): Record<string, unknown>[] {
-  return db.$client
-    .prepare(
-      "SELECT message_id, thread_id, direction, sender, sender_email, sender_name, " +
-        "subject, received_at, quote_extraction_status " +
-        "FROM messages " +
-        "WHERE search_profile_id = ? " +
-        "ORDER BY received_at DESC, message_id",
-    )
-    .all(profileId) as Record<string, unknown>[];
-}

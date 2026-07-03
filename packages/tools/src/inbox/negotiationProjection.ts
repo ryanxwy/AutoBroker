@@ -36,7 +36,7 @@ import {
 } from "./followupReads.js";
 import { listProfileDealerRowsWithVerdicts } from "./giveUpProjection.js";
 import { isNonSubstantiveReply } from "./replyFilter.js";
-import { listProfileThreadStatuses } from "./negotiationStatusProjection.js";
+import { toEpochMs } from "./time.js";
 
 /**
  * Actionability rank for the live negotiation status — lower = more worth the
@@ -130,20 +130,59 @@ function quoteAggByDealer(db: Db, profileId: string): Map<string, QuoteAgg> {
   return new Map(rows.map((r) => [r.dealerId, { bestOtd: r.bestOtd, bestDiscount: r.bestDiscount }]));
 }
 
-/** Reduce each dealer's per-thread negotiation statuses to ONE: lowest
- *  NEGOTIATION_STATUS_RANK, tie-broken by the newest thread activity. */
-function negotiationStatusByDealer(
+/** The winning (most-actionable) thread for one dealer: the derived status plus the
+ *  winning thread's timing gate + follow-up cap, which the detail advisory reuses. */
+interface MostActionableThread {
+  status: NegotiationStatus;
+  gate: ReturnType<typeof gateDecisionForTarget>;
+  cap: ReturnType<typeof followupCapDecision>;
+  tieMs: number;
+}
+
+/**
+ * Reduce each dealer's threads to its MOST-ACTIONABLE one — lowest
+ * NEGOTIATION_STATUS_RANK, tie-broken by newest thread activity. Per thread it
+ * computes the timing gate + follow-up cap + the derived negotiation status (the
+ * same-vehicle OTD trajectory drives current/prior), then keeps the winner (with
+ * its gate/cap for the detail advisory). Optionally scoped to one dealer. The single
+ * rank-min/newest-tie comparison the grid status roll-up AND the detail advisory
+ * share, so the two can never diverge. Read-only.
+ */
+function mostActionableThreadByDealer(
   db: Db,
   profileId: string,
-  opts: { nowMs?: number },
-): Map<string, NegotiationStatus> {
-  const statusByThread = new Map(
-    listProfileThreadStatuses(db, profileId, opts).map((s) => [s.threadId, s.status]),
-  );
-  const best = new Map<string, { status: NegotiationStatus; tieMs: number }>();
+  opts: { nowMs: number; dealerId?: string },
+): Map<string, MostActionableThread> {
+  // Memoize the per-dealer give-up inputs (current/prior OTD): a dealer with many
+  // threads reads them once, not once per thread.
+  const giveUpByDealer = new Map<string, ReturnType<typeof readDealerGiveUpInputs>>();
+  const inputsFor = (dealerId: string): ReturnType<typeof readDealerGiveUpInputs> => {
+    let v = giveUpByDealer.get(dealerId);
+    if (v === undefined) {
+      v = readDealerGiveUpInputs(db, { profileId, dealerId, nowMs: opts.nowMs });
+      giveUpByDealer.set(dealerId, v);
+    }
+    return v;
+  };
+
+  const best = new Map<string, MostActionableThread>();
   for (const c of listFollowupCandidateThreads(db, profileId)) {
-    const status = statusByThread.get(c.threadId);
-    if (status === undefined) continue;
+    if (opts.dealerId !== undefined && c.dealerId !== opts.dealerId) continue;
+    const gate = gateDecisionForTarget(c.lastInboundAtMs, c.lastOutboundAtMs, {
+      maxGapDays: BATCH_SILENCE_WINDOW_DAYS,
+      nowMs: opts.nowMs,
+    });
+    const cap = followupCapDecision(c.unansweredFollowups, c.roundsSent);
+    const inputs = inputsFor(c.dealerId);
+    const status = deriveNegotiationStatus({
+      persistedState: c.state,
+      gate,
+      cap,
+      lastInboundAtMs: c.lastInboundAtMs,
+      roundsSent: c.roundsSent,
+      currentOtd: inputs.currentOtd,
+      priorOtd: inputs.otdTrajectory[1] ?? null,
+    });
     const tieMs = Math.max(c.lastInboundAtMs ?? -Infinity, c.lastOutboundAtMs ?? -Infinity);
     const prev = best.get(c.dealerId);
     if (
@@ -151,10 +190,23 @@ function negotiationStatusByDealer(
       NEGOTIATION_STATUS_RANK[status] < NEGOTIATION_STATUS_RANK[prev.status] ||
       (NEGOTIATION_STATUS_RANK[status] === NEGOTIATION_STATUS_RANK[prev.status] && tieMs > prev.tieMs)
     ) {
-      best.set(c.dealerId, { status, tieMs });
+      best.set(c.dealerId, { status, gate, cap, tieMs });
     }
   }
-  return new Map([...best].map(([id, v]) => [id, v.status]));
+  return best;
+}
+
+/** Reduce each dealer's per-thread negotiation statuses to ONE: a thin map over the
+ *  shared most-actionable reduction. */
+function negotiationStatusByDealer(
+  db: Db,
+  profileId: string,
+  opts: { nowMs?: number },
+): Map<string, NegotiationStatus> {
+  const nowMs = opts.nowMs ?? Date.now();
+  return new Map(
+    [...mostActionableThreadByDealer(db, profileId, { nowMs })].map(([id, w]) => [id, w.status]),
+  );
 }
 
 /**
@@ -221,17 +273,6 @@ const MODAL_REPLY_EXCERPT_MAX = 320;
 /** The summary-feed body cap (chars) — longer than the modal excerpt because the
  *  T8 LLM summary needs more of the dealer's prose, but still bounded. */
 const SUMMARY_REPLY_BODY_MAX = 1200;
-
-/** Parse a numeric|ISO-string timestamp to epoch-ms, or null (the schema's dual
- *  format — neither a SQL CAST nor a string sort orders both, so newest-first is
- *  done in JS). Mirrors the followupReads convention. */
-function toEpochMs(raw: string | number | null | undefined): number | null {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (raw.trim() === "") return null;
-  const ms = Date.parse(raw);
-  return Number.isFinite(ms) ? ms : null;
-}
 
 /** Trim a string to a max length, appending an ellipsis when truncated. */
 function cap(text: string, max: number): string {
@@ -444,39 +485,16 @@ export function readDealerNegotiationDetail(
   const quoteSent = quoteRow.cnt > 0;
 
   // Reduce the dealer's threads to its MOST-ACTIONABLE one (status rank min, newest
-  // activity tie-break) and keep that thread's gate/cap for the advisory.
-  let repStatus: NegotiationStatus | null = null;
-  let repGate = gateDecisionForTarget(null, null, { maxGapDays: BATCH_SILENCE_WINDOW_DAYS, nowMs });
-  let repCap = followupCapDecision(0, 0);
-  let repTieMs = -Infinity;
-  for (const c of listFollowupCandidateThreads(db, args.profileId)) {
-    if (c.dealerId !== args.dealerId) continue;
-    const gate = gateDecisionForTarget(c.lastInboundAtMs, c.lastOutboundAtMs, {
-      maxGapDays: BATCH_SILENCE_WINDOW_DAYS,
-      nowMs,
-    });
-    const cap = followupCapDecision(c.unansweredFollowups, c.roundsSent);
-    const status = deriveNegotiationStatus({
-      persistedState: c.state,
-      gate,
-      cap,
-      lastInboundAtMs: c.lastInboundAtMs,
-      roundsSent: c.roundsSent,
-      currentOtd: inputs.currentOtd,
-      priorOtd,
-    });
-    const tieMs = Math.max(c.lastInboundAtMs ?? -Infinity, c.lastOutboundAtMs ?? -Infinity);
-    if (
-      repStatus === null ||
-      NEGOTIATION_STATUS_RANK[status] < NEGOTIATION_STATUS_RANK[repStatus] ||
-      (NEGOTIATION_STATUS_RANK[status] === NEGOTIATION_STATUS_RANK[repStatus] && tieMs > repTieMs)
-    ) {
-      repStatus = status;
-      repGate = gate;
-      repCap = cap;
-      repTieMs = tieMs;
-    }
-  }
+  // activity tie-break) via the shared reduction, keeping that thread's gate/cap for
+  // the advisory. No thread → the no-candidate gate/cap defaults + a null status.
+  const winner = mostActionableThreadByDealer(db, args.profileId, {
+    nowMs,
+    dealerId: args.dealerId,
+  }).get(args.dealerId);
+  const repStatus: NegotiationStatus | null = winner?.status ?? null;
+  const repGate =
+    winner?.gate ?? gateDecisionForTarget(null, null, { maxGapDays: BATCH_SILENCE_WINDOW_DAYS, nowMs });
+  const repCap = winner?.cap ?? followupCapDecision(0, 0);
 
   const tone = classifyQuoteSituation({
     isItemized: inputs.isItemized,

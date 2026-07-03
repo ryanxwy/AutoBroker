@@ -1,10 +1,11 @@
 /**
  * ApprovalPrompt — the run-level approval gate.
- * Renders on an `approval_required` decision: Approve / Approve all / Deny /
- * Cancel. Two load-bearing safety rules (see CLAUDE.md):
+ * Renders on an `approval_required` decision: Approve / Deny / Cancel. Two
+ * load-bearing safety rules (see CLAUDE.md):
  *
- *   - "Approve all" is HIDDEN for a SENSITIVE event (no batch-approval of a
- *     mutating/sensitive tool) — `sensitive` also renders the danger frame.
+ *   - a SENSITIVE event renders the danger frame + the `data-sensitive`
+ *     attribute the harness reads; there is no bulk/batch-approve affordance on
+ *     this card — every action is approved one at a time.
  *   - the approval is NEVER hidden on any surface; it lives in the assistant
  *     turn's GATE zone, structurally before the prose.
  *
@@ -18,7 +19,7 @@ export interface ApprovalDecision {
   decisionId: string;
   /** The tool/action label shown to the user. */
   label: string;
-  /** Sensitive (mutating) → hide "Approve all" + danger frame. */
+  /** Sensitive (mutating) → danger frame + `data-sensitive` attribute. */
   sensitive: boolean;
 }
 
@@ -26,7 +27,6 @@ export interface ApprovalPromptProps {
   decision: ApprovalDecision;
   submitting: boolean;
   onApprove: () => void;
-  onApproveAll: () => void;
   onDeny: () => void;
   onCancel: () => void;
 }
@@ -35,7 +35,6 @@ export function ApprovalPrompt({
   decision,
   submitting,
   onApprove,
-  onApproveAll,
   onDeny,
   onCancel,
 }: ApprovalPromptProps): JSX.Element {
@@ -55,12 +54,6 @@ export function ApprovalPrompt({
         <button type="button" className="btn-primary" data-testid="approval-approve" disabled={submitting} onClick={onApprove}>
           Approve
         </button>
-        {/* Hidden for sensitive events — no batch-approval of a mutating tool. */}
-        {!decision.sensitive && (
-          <button type="button" data-testid="approval-approve-all" disabled={submitting} onClick={onApproveAll}>
-            Approve all
-          </button>
-        )}
         <button type="button" className="btn-danger" data-testid="approval-deny" disabled={submitting} onClick={onDeny}>
           Deny
         </button>

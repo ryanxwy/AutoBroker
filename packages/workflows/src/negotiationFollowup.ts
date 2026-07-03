@@ -1,6 +1,6 @@
 /**
- * negotiation_followup — the irreversible-send follow-up skill (Phase 5,
- * [fake-send]). ONE flat linear Mastra `createWorkflow`: 7 named steps chained
+ * negotiation_followup — the irreversible-send follow-up skill (real in buyer
+ * mode, fake in test mode). ONE flat linear Mastra `createWorkflow`: 7 named steps chained
  * with `.then()`, no nested workflow. The ONLY LLM touch is a NO-TOOL PROSE draft
  * (harness.draftProse) — there is no structured output and no emit_result, so the
  * #1244 mixing failure is structurally inapplicable. TWO human suspends, both
@@ -25,8 +25,9 @@
  *                      candidates → a graceful `no_candidates` carry (not a STOP).
  *   2 buildContext  — per eligible thread: readThreadSnapshotForDraft →
  *                      buildDraftContext (budget redacted, inbound dealer bodies
- *                      untrusted-fenced) + readQuoteSituationForThread →
- *                      classifyQuoteSituation (THE TONE IS PICKED IN CODE) + the
+ *                      untrusted-fenced) + readDealerGiveUpInputs →
+ *                      classifyQuoteSituation (THE TONE IS PICKED IN CODE, on the
+ *                      SAME derivation the Negotiations board uses) + the
  *                      reply-target ladder (resolveReplyTarget) resolved ONCE here.
  *                      A thread with no resolvable reply target is dropped.
  *   3 draft         — per target: harness.draftProse writes the CHOSEN-tone PROSE
@@ -40,9 +41,9 @@
  *   5 sendRecord    — per approved thread SERIAL via sendAndRecord, replying on the
  *                      EXISTING thread id (reuseThreadIdForReply + the thread
  *                      double-flag: threadId AND inReplyToGmailId both set) with a
- *                      subjectForFollowup subject. Under BLOCK=1 sendAndRecord
- *                      returns {blocked} → ZERO messages rows (the fake send);
- *                      disarmed offline → a promoted row. A mid-batch hard failure
+ *                      subjectForFollowup subject. In test mode sendAndRecord
+ *                      fake-sends → a promoted fake sandbox row (no real outbound);
+ *                      in buyer mode → a real promoted row. A mid-batch hard failure
  *                      (partial) stops-and-reconciles (no backfill).
  *   6 confirm       — ZERO-LLM summary + threads.state='negotiating' on each SENT
  *                      thread. `threads.state='agreed'` is NEVER written here
@@ -71,7 +72,8 @@ import {
   getDb,
   listFollowupCandidateThreads as listFollowupCandidateThreadsImpl,
   listProfileRows as listProfileRowsImpl,
-  readQuoteSituationForThread as readQuoteSituationForThreadImpl,
+  readProfileRow,
+  readDealerGiveUpInputs as readDealerGiveUpInputsImpl,
   readReplyTargetInputs as readReplyTargetInputsImpl,
   readThreadSnapshotForDraft as readThreadSnapshotForDraftImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
@@ -80,6 +82,7 @@ import {
   selectNextReplyTargets,
   sendAndRecord as sendAndRecordImpl,
   setPrimaryReplyTarget as setPrimaryReplyTargetImpl,
+  setThreadState as setThreadStateImpl,
   subjectForFollowup,
   gateDecisionForTarget,
   followupCapDecision,
@@ -99,12 +102,12 @@ import {
   NegotiationFollowupInputSchema,
   NegotiationFollowupOutputSchema,
   NegotiationFollowupStopError,
-  profileStopCode,
   SevenDaySilenceError,
   FollowupCapError,
   type FollowupTone,
 } from "./negotiationFollowupContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
+import { resolvePinnedProfileRowOrStop, rowVehicleLabel } from "./profilePinShared.js";
 
 export { NEGOTIATION_FOLLOWUP_WORKFLOW_ID };
 
@@ -114,11 +117,12 @@ export { NEGOTIATION_FOLLOWUP_WORKFLOW_ID };
 
 /**
  * The post-suspend approver. The human ALREADY approved at the batch_review ①
- * suspend; this Approver records that fact for the gate. The L1 fuse (inside
- * sendAndRecord) is the real floor under the harness — under BLOCK=1 it throws
- * BEFORE the send so a fake send can never mint a real receipt. In a disarmed-fuse
- * offline test the approve path runs the real draft-then-promote against the FAKE
- * backend and the row is written. ONE module constant, reused by every send.
+ * suspend; this Approver records that fact for the gate. The AUTOBROKER_MODE=test
+ * brake (inside sendAndRecord) is the test-mode floor — in test mode the send
+ * resolves to the FakeGmailAdapter (a fake sandbox row, never a real outbound) so
+ * a fake send can never mint a real receipt. In buyer mode (or an offline
+ * fake-backend test) the approve path runs the real draft-then-promote and the
+ * row is written. ONE module constant, reused by every send.
  */
 const APPROVED: Approver = { async decide() { return true; } };
 
@@ -157,8 +161,9 @@ export interface NegotiationFollowupWorkflowDeps {
   listCandidateThreads: typeof listFollowupCandidateThreadsImpl;
   /** One thread's snapshot + the reply double-flag anchor (tools layer). */
   readThreadSnapshot: typeof readThreadSnapshotForDraftImpl;
-  /** The current vs best-competing OTD + itemization for the tone (tools layer). */
-  readQuoteSituation: typeof readQuoteSituationForThreadImpl;
+  /** The give-up inputs (current/itemization + the real same-mode competing OTD)
+   *  the tone is derived from — the SAME derivation the Negotiations board uses. */
+  readGiveUpInputs: typeof readDealerGiveUpInputsImpl;
   /** The 4-rung reply-target ladder inputs (tools layer). */
   readReplyTargetInputs: typeof readReplyTargetInputsImpl;
   /** The gated draft-then-promote send+record (tools layer; the ONLY send path). */
@@ -175,19 +180,14 @@ const realDeps: NegotiationFollowupWorkflowDeps = {
   draftProse: harness.draftProse,
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
-  readProfileById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
+  readProfileById: readProfileRow,
   listCandidateThreads: listFollowupCandidateThreadsImpl,
   readThreadSnapshot: readThreadSnapshotForDraftImpl,
-  readQuoteSituation: readQuoteSituationForThreadImpl,
+  readGiveUpInputs: readDealerGiveUpInputsImpl,
   readReplyTargetInputs: readReplyTargetInputsImpl,
   sendAndRecord: sendAndRecordImpl,
   setPrimaryReplyTarget: setPrimaryReplyTargetImpl,
-  updateThreadState: (db, threadId, state) => {
-    db.$client.prepare("UPDATE threads SET state = ? WHERE thread_id = ?").run(state, threadId);
-  },
+  updateThreadState: setThreadStateImpl,
   getDb,
 };
 
@@ -368,7 +368,7 @@ const FollowupStateSchema = z.object({
   approvedThreadIds: z.array(z.string()).nullable(),
   /** How many contact flips were committed (0 or 1; suspend-② gated). */
   contactFlips: z.number().int(),
-  /** How many fake sends fired (fuse-blocked under BLOCK=1, promoted offline). */
+  /** How many sends fired (real in buyer mode; a promoted fake sandbox row in test mode). */
   emailsSent: z.number().int(),
 });
 type FollowupState = z.infer<typeof FollowupStateSchema>;
@@ -385,13 +385,6 @@ function asState(inputData: unknown): FollowupState {
 /** Run `fn` against the SHARED tools-layer DB connection. */
 function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
-}
-
-/** "2026 Hyundai Tucson SEL"-style label for ask/pin stops + the prompt vehicle. */
-function rowVehicleLabel(row: Record<string, unknown>): string {
-  return [row["year"], row["make"], row["model"], row["trim"]]
-    .filter((x) => x !== null && x !== undefined && x !== "")
-    .join(" ");
 }
 
 /** The TRUNCATED first-line preview of a draft (≤120 chars) — small payload only;
@@ -413,41 +406,24 @@ const resolveProfileStep = createStep({
     // EXPLICIT-PIN REQUIRED (this skill never infers, not even the single-active
     // case). A pin-less input STOPs by the generalized classifier. thread_id mode
     // still requires a pinned profile — the named thread must live under the pin.
-    if (inputData.search_profile_id === null) {
-      const active = withDb((db) => deps().listActiveProfiles(db));
-      const code = profileStopCode(active.length);
-      if (code === "no_active_profile") {
-        throw new NegotiationFollowupStopError(
-          "no_active_profile",
-          "No active search profile found — negotiation_followup needs one to know " +
-            "which dealer threads to follow up. Run /search_profile_intake to create " +
-            "a profile, then re-run /negotiation_followup.",
-        );
-      }
-      const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
-      throw new NegotiationFollowupStopError(
-        code, // pin_required (1 active) | multiple_active_profiles (2+)
-        `Pin a search first: ${labels}. negotiation_followup only follows up threads ` +
-          "for a search you have explicitly pinned — pick one from the Searches list, " +
-          "then re-run /negotiation_followup.",
-      );
-    }
+    const d = deps();
+    const { row: profileRow, profileId } = resolvePinnedProfileRowOrStop({
+      withDb,
+      resolvers: {
+        listActiveProfiles: d.listActiveProfiles,
+        resolveProfile: d.resolveProfile,
+        readProfileById: d.readProfileById,
+      },
+      pin: inputData.search_profile_id,
+      skillSlash: "/negotiation_followup",
+      purposeClause: "dealer threads to follow up",
+      pinClause: "follows up threads for a search you have explicitly pinned",
+      makeError: (code, message) => new NegotiationFollowupStopError(code, message),
+    });
 
-    // A supplied pin must still be active; a stale/closed/missing pin is rejected.
-    const resolved = withDb((db) =>
-      deps().resolveProfile(db, { threadPin: inputData.search_profile_id! }),
-    );
-    if (resolved.kind !== "pinned") {
-      throw new NegotiationFollowupStopError(
-        "pin_required",
-        "That pinned search is no longer active. Pick an active search from the " +
-          "Searches list and re-run /negotiation_followup.",
-      );
-    }
-
-    const row = withDb((db) => deps().readProfileById(db, resolved.profile.id)) ?? {};
+    const row = profileRow ?? {};
     return {
-      searchProfileId: String(row["search_profile_id"] ?? resolved.profile.id),
+      searchProfileId: String(row["search_profile_id"] ?? profileId),
       vehicle: rowVehicleLabel(row) || "vehicle",
       // The buyer's reply address — the follow-up is sent FROM the buyer (nullable).
       followUpEmail:
@@ -593,15 +569,21 @@ const buildContextStep = createStep({
         })),
       });
 
-      const situation = withDb((db) =>
-        deps().readQuoteSituation(db, { profileId: state.searchProfileId, dealerId: t.dealer_id }),
+      // The give-up inputs are the tone's source — the SAME derivation the
+      // Negotiations board maps to its tone/advisory: current OTD + itemization,
+      // and the lowest REAL same-mode competing OTD (bestCompetingRealOtd) as the
+      // baseline. Open-ness is parsed in JS, so a future ISO quote_expires_at reads
+      // OPEN (no SQL-CAST year-collapse).
+      const inputs = withDb((db) =>
+        deps().readGiveUpInputs(db, { profileId: state.searchProfileId, dealerId: t.dealer_id }),
       );
+      const bestCompetingOtd = inputs.bestCompetingRealOtd;
       // THE TONE IS PICKED IN CODE (the classifier owns the register from the
       // numbers; the LLM only writes the chosen tone's prose).
       const tone: QuoteTone = classifyQuoteSituation({
-        isItemized: situation.isItemized,
-        bestCompetingOtd: situation.bestCompetingOtd,
-        currentOtd: situation.currentOtd,
+        isItemized: inputs.isItemized,
+        bestCompetingOtd,
+        currentOtd: inputs.currentOtd,
       });
 
       // The 4-rung reply-target ladder, resolved ONCE here. A thread with no
@@ -620,8 +602,8 @@ const buildContextStep = createStep({
       built.push({
         ...t,
         tone,
-        current_otd: situation.currentOtd,
-        best_competing_otd: situation.bestCompetingOtd,
+        current_otd: inputs.currentOtd,
+        best_competing_otd: bestCompetingOtd,
         subject: snapshot.subject ?? "",
         draft_context: {
           subject: draftContext.subject,
@@ -834,11 +816,12 @@ const sendRecordStep = createStep({
         inReplyToGmailId: t.in_reply_to_gmail_id, // the thread double-flag anchor.
       };
 
-      // THE ONE send face. Under BLOCK=1 sendAndRecord returns {blocked} (the
-      // fuse fired BEFORE the draft insert → ZERO messages rows) — the fake send,
-      // counted. Disarmed offline → {sent} (one promoted row). A {partial} is a
-      // mid-commit failure → STOP-and-reconcile (do not backfill the trailing
-      // targets; leave them un-sent so a reconcile pass can finish them).
+      // THE ONE send face. In test mode sendAndRecord fake-sends → {sent} (one
+      // promoted fake sandbox row, no real outbound), counted. In buyer mode →
+      // {sent} (a real send). A {blocked} outcome is a defensive legacy zero-row
+      // branch, still counted. A {partial} is a mid-commit failure →
+      // STOP-and-reconcile (do not backfill the trailing targets; leave them
+      // un-sent so a reconcile pass can finish them).
       const outcome = await deps().sendAndRecord(target, { approver: APPROVED, runId });
       if (outcome.kind === "sent" || outcome.kind === "blocked") {
         emailsSent += 1;

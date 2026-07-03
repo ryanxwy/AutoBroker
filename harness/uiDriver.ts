@@ -809,12 +809,12 @@ export class UiDriver {
     await this.page.waitForSelector(tid("approval-prompt"), { timeout: timeoutMs });
   }
 
-  /** Assert the approval card's bulk affordance matches its sensitivity: a
-   *  SENSITIVE event (data-sensitive="true", e.g. the dealer_web_lead_submit
-   *  email_fallback re-confirm — a mutating scope switch) must NOT expose an
-   *  approve-all button (no batch-approval of a mutating tool), while a
-   *  non-sensitive event (e.g. incentive_scrape's first-encounter approval) DOES.
-   *  Reads the live card, records a REAL UiCheck (never a passthrough), and
+  /** Assert the approval card exposes NO approve-all affordance — unconditionally,
+   *  regardless of sensitivity. The dead bulk-approve control was removed (the
+   *  payload pinned sensitive=true so it never rendered, and it wired to the SAME
+   *  single accept as Approve — a batch label with no batch semantics), so the
+   *  `approve-all` testid must never exist on any approval card. A REAL DOM read
+   *  (never a passthrough): reads the live card, records a UiCheck, and
    *  screenshots. Call after waitForApprovalPrompt, before the approve/deny. */
   async checkApprovalApproveAllForSensitivity(): Promise<void> {
     const observed = (await this.page.evaluate(
@@ -825,15 +825,12 @@ export class UiDriver {
         return { present: card !== null, sensitive, approveAll };
       })()`,
     )) as { present: boolean; sensitive: boolean; approveAll: number };
-    // sensitive ⇒ zero approve-all controls; non-sensitive ⇒ exactly one.
-    const ok =
-      observed.present && (observed.sensitive ? observed.approveAll === 0 : observed.approveAll === 1);
+    // The card must be present AND expose zero approve-all controls — always.
+    const ok = observed.present && observed.approveAll === 0;
     this.record({
       surface: "dom:gate-banner",
-      selector: `${tid("approval-prompt")}[data-sensitive] vs ${tid("approval-approve-all")}`,
-      expected: observed.sensitive
-        ? "sensitive approval card: zero approve-all affordances (no bulk-approve of a mutating scope)"
-        : "non-sensitive approval card: exactly one approve-all affordance",
+      selector: `${tid("approval-prompt")} vs ${tid("approval-approve-all")}`,
+      expected: "approval card present with zero approve-all affordances (bulk-approve removed entirely)",
       observed: `present=${observed.present} sensitive=${observed.sensitive} approveAll=${observed.approveAll}`,
       ok,
     });

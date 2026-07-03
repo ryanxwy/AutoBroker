@@ -25,9 +25,10 @@
  *     no-op idempotency skip).
  *
  * The func anchors read row deltas: ui_send asserts +2 thread_suppression (one
- * per closed addressable dealer) + 2 threads flipped to 'closed' + ZERO messages
- * (the gmail send is L1-fuse-blocked under BLOCK=1, while the LOCAL close+suppress
- * commit on approve regardless of the fuse). ui_decline asserts Δ0 on all three.
+ * per closed addressable dealer) + 2 threads flipped to 'closed' + +2 messages
+ * (one fake sandbox send per closed dealer via the AUTOBROKER_MODE=test brake —
+ * legal fake outbound, ZERO REAL; the LOCAL close+suppress commits on approve
+ * regardless of send mode). ui_decline asserts Δ0 on all three.
  * X3 is zero-LLM + zero-browser, so the workflow runs REAL against this DB with
  * no stubbed collaborators.
  */

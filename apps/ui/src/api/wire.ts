@@ -37,79 +37,12 @@ export const ErrorEnvelopeSchema = z.object({
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>;
 
 // ---------------------------------------------------------------------------
-// EVENT_KINDS — apps/server/src/runPubSub.ts:47-69 (verbatim). Kept as a local
-// const so the SSE reducer can switch exhaustively without importing the server.
-// If the server list changes, this must change in lockstep (the wire owns it).
-// ---------------------------------------------------------------------------
-
-export const EVENT_KINDS = [
-  "init",
-  "text",
-  "tool_call",
-  "tool_result",
-  "awaiting_user",
-  "awaiting_permission",
-  "approval_required",
-  "approval_response",
-  "reasoning_full",
-  "reasoning_summary",
-  "refusal",
-  "browser.opened",
-  "browser.action",
-  "browser.error",
-  "browser.closed",
-  // browser.acquire.progress — additive install-on-demand progress pulse emitted
-  // while the browser engine is being acquired (the frame works regardless; this
-  // keeps the kind mirror honest with the server's emitter).
-  "browser.acquire.progress",
-  // data.changed — the non-terminal "a write landed" pulse driving
-  // fresh-by-default auto-refresh (payload {profile_id, kinds:string[]}).
-  "data.changed",
-  "done",
-  "error",
-  "aborted",
-  "runs.list_changed",
-  "runs.run_updated",
-] as const;
-export type EventKind = (typeof EVENT_KINDS)[number];
-
-/** The three terminal wire kinds — runPubSub.ts:72 (TERMINAL_EVENT_KINDS). A
- *  run's stream ends after exactly one. */
-export const TERMINAL_EVENT_KINDS = ["done", "error", "aborted"] as const;
-export type TerminalEventKind = (typeof TERMINAL_EVENT_KINDS)[number];
-
-const EVENT_KIND_SET = new Set<string>(EVENT_KINDS);
-const TERMINAL_SET = new Set<string>(TERMINAL_EVENT_KINDS);
-
-export function isEventKind(k: string): k is EventKind {
-  return EVENT_KIND_SET.has(k);
-}
-export function isTerminalKind(k: string): k is TerminalEventKind {
-  return TERMINAL_SET.has(k);
-}
-
-// ---------------------------------------------------------------------------
-// SSE frame — apps/server/src/runPubSub.ts:79-83 (SseEvent) and the route
-// serializer routes.ts:195-198 (`data: <compact-json>\n\n`, NO `event:` line).
-//   { ts: <ISO-8601 UTC>, kind: <EVENT_KIND>, payload: {...} }
-// NOTE: the wire carries NO `seq`/`id` field (no Last-Event-ID) — replay is by
-// full-snapshot re-send (runPubSub.ts:33-35). Dedupe is therefore by content,
-// not by sequence number.
-// ---------------------------------------------------------------------------
-
-export const SseEventSchema = z.object({
-  ts: z.string(),
-  kind: z.string(),
-  payload: z.record(z.string(), z.unknown()),
-});
-export type SseEvent = z.infer<typeof SseEventSchema>;
-
-// ---------------------------------------------------------------------------
 // Status summary — GET /api/skill-runs/:id.
-// apps/server/src/intakeRuns.ts:547-576 (statusSummary return):
-//   { run_id, skill, status: SkillRunStatus, pending: {step, decision_id}|null,
-//     events: SseEvent[] }
-// `status` is the product 7-value projection (core SkillRunStatusSchema).
+// apps/server/src/intakeRuns.ts (statusSummary return):
+//   { run_id, skill, status: SkillRunStatus, pending: {step, decision_id}|null }.
+// `status` is the product 7-value projection (core SkillRunStatusSchema). (The
+// server also carries an `events` snapshot on this response; the AI-SDK uiStream
+// path drives the rail, so the UI decodes only the status + pending it reads.)
 // ---------------------------------------------------------------------------
 
 export const PendingSuspendSchema = z.object({
@@ -123,7 +56,6 @@ export const SkillRunSummarySchema = z.object({
   skill: z.string(),
   status: SkillRunStatusSchema,
   pending: PendingSuspendSchema.nullable(),
-  events: z.array(SseEventSchema),
 });
 export type SkillRunSummary = z.infer<typeof SkillRunSummarySchema>;
 
@@ -910,7 +842,7 @@ export type PortfolioView = z.infer<typeof PortfolioViewSchema>;
 // ---------------------------------------------------------------------------
 // ApprovalInbox — GET /api/approvals → ApprovalItem[] (apps/server/src/portfolio/
 // approvalInbox.ts ApprovalInbox.list()). The Phase-3 global "Needs you" widget
-// reads every PARKED gate + saga retraction task across ALL pipelines, keyed by
+// reads every PARKED gate across ALL pipelines, keyed by
 // (profileId, runId, decisionId), so a gate that parked in profile C surfaces
 // while the user is focused on B. The widget ROUTES to the run (navigate
 // /runs/:runId) — the existing per-run GateBannerHost then renders the actual
@@ -926,14 +858,13 @@ export const ApprovalSummarySchema = z.object({
 });
 export type ApprovalSummary = z.infer<typeof ApprovalSummarySchema>;
 
-/** One queue entry: a parked gate (`kind:"gate"`, with a decisionId to route to)
- *  or a saga retraction task (`kind:"retraction"`, no decisionId — acted
- *  out-of-band). `actionRequired` ranks irreversible sends + retractions first. */
+/** One queue entry: a parked gate (`kind:"gate"`) with a decisionId to route to.
+ *  `actionRequired` ranks irreversible sends first. */
 export const ApprovalItemSchema = z.object({
-  kind: z.enum(["gate", "retraction"]),
+  kind: z.literal("gate"),
   profileId: z.string().nullable(),
-  runId: z.string().nullable(),
-  decisionId: z.string().nullable(),
+  runId: z.string(),
+  decisionId: z.string(),
   skill: z.string(),
   reason: z.string(),
   actionRequired: z.boolean(),

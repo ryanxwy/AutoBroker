@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { exportDaily, serializeExport, type DailyHarnessExport } from "./export_daily.js";
+import { exportDaily, resolveExportDate, serializeExport, type DailyHarnessExport } from "./export_daily.js";
 import { insertLedgerRow, makeTmpDb, type TmpDb } from "./testSupport.js";
 
 let tmp: TmpDb;
@@ -97,6 +97,21 @@ describe("exportDaily", () => {
     const byCase = new Map(doc.cases.map((c) => [c.case_id, c]));
     expect(byCase.get("case_ui")?.lane).toBe("ui");
     expect(byCase.get("case_api")?.lane).toBe("api");
+  });
+
+  it("resolveExportDate: an explicit YYYY-MM-DD is passed through", () => {
+    expect(resolveExportDate("2026-06-02", new Date(2026, 6, 3))).toBe("2026-06-02");
+  });
+
+  it("resolveExportDate: absent date defaults to LOCAL today (the dateless Stop-hook call)", () => {
+    // new Date(2026, 5, 5) = 2026-06-05 in LOCAL time (month is 0-indexed).
+    expect(resolveExportDate(undefined, new Date(2026, 5, 5))).toBe("2026-06-05");
+  });
+
+  it("resolveExportDate: a leading flag / bare '--' also defaults to today", () => {
+    const now = new Date(2026, 11, 9); // 2026-12-09 local
+    expect(resolveExportDate("--out", now)).toBe("2026-12-09");
+    expect(resolveExportDate("--", now)).toBe("2026-12-09");
   });
 
   it("serializes deterministically with a trailing newline", () => {

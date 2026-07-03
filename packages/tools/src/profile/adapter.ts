@@ -9,7 +9,7 @@
  *
  * DISCIPLINE:
  *   - Pure functions, no I/O. Zod-validated on the way IN from the DB
- *     (rowToProfile re-parses through SearchProfileSchema so a malformed oracle
+ *     (rowToProfile re-parses through SearchProfileSchema so a malformed legacy
  *     row fails LOUD rather than flowing on as a half-typed object).
  *   - SQLite stores int-booleans (military_first_responder / current_brand_owner)
  *     and there is NO Drizzle ORM import in this layer (sqlite-only-in-db rule),

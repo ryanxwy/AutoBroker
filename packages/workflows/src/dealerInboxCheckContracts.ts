@@ -27,7 +27,7 @@
 
 import { z } from "zod";
 
-import { BatchReviewResumeSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema } from "./batchReviewContracts.js";
 
 /** The stable workflow id (registration + the server descriptor). */
 export const DEALER_INBOX_CHECK_WORKFLOW_ID = "dealer_inbox_check" as const;
@@ -134,4 +134,4 @@ export type InboxReviewSuspend = z.infer<typeof InboxReviewSuspendSchema>;
  *  dealer-id list, or decline). Re-exported so the workflow + descriptor import
  *  it from one place. */
 export { BatchReviewResumeSchema };
-export type { BatchReviewResume } from "./inventorySiteScan.js";
+export type { BatchReviewResume } from "./batchReviewContracts.js";

@@ -38,7 +38,9 @@ AutoBroker handles sensitive data by design:
 - **Secrets are never committed.** `.env`, `keys.json`, and OAuth tokens are
   in `.gitignore`. CI is verified to contain no real credentials.
 - **The three irreversible skills** (`dealer_web_lead_submit`,
-  `negotiation_followup`, `dealer_closeout_email`) remain fake-send until Phase 5
-  acceptance is complete, and their human approval is never hidden on any surface.
+  `negotiation_followup`, `dealer_closeout_email`) really send in `buyer` mode
+  through the single L2 human-approval gate (one action at a time), and fake-send
+  in `test` mode — via the same `AUTOBROKER_MODE` switch as every other send.
+  Their human approval is never hidden on any surface.
 
 See `CLAUDE.md` for the full 12-point safety invariant set.

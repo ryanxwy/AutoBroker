@@ -371,7 +371,8 @@ describe("quote_pipeline targeted-VIN", () => {
     __setQuotePipelineDepsForTests({
       sendAndRecord: async (target) => {
         sentBody = target.email.body;
-        return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
+        // The send LANDED (a fake-mailbox send in test mode resolves `sent`).
+        return { kind: "sent", messageRowId: "m-sent", gmailMessageId: "g-sent", mode: "fake" };
       },
     });
 
@@ -401,6 +402,56 @@ describe("quote_pipeline targeted-VIN", () => {
     const { result } = await start({ search_profile_id: PROFILE_ID, target_listing_id: "nope" });
     expect(statusOf(result)).toBe("failed");
     expect(errorMessageOf(result)).toContain("listing was not found");
+  });
+
+  // SEND-STATUS TRUTHFULNESS: a send that did NOT complete (a `partial` outcome —
+  // the send threw AFTER the draft was inserted) must NOT record a quote and must
+  // NOT report finalState "ok" / "sent"; it surfaces a stop-and-reconcile instead.
+  // Against the pre-fix unconditional code this FAILS (recordQuoteFromListing was
+  // called and finalState was "ok").
+  it("approve but the send returns partial → NOT recorded, non-sent reconcile result", async () => {
+    seedProfile();
+    const { listingId } = seedTargetedWorld();
+    let sends = 0;
+    __setQuotePipelineDepsForTests({
+      // The gate fired (the send WAS attempted) but the send threw after its draft
+      // was inserted → a `partial` outcome (retained draft, gmail id still NULL).
+      sendAndRecord: async () => {
+        sends += 1;
+        return {
+          kind: "partial",
+          messageRowId: "m-draft",
+          partial: {
+            message_recorded: true,
+            state_updated: false,
+            reconcile_hint: "send_failed_draft_retained",
+            external_id: null,
+          },
+        };
+      },
+    });
+
+    const { run, result } = await start({ search_profile_id: PROFILE_ID, target_listing_id: listingId });
+    expect(statusOf(result)).toBe("suspended");
+
+    const final = await run.resume({ step: "targeted", resumeData: { action: "approve" } });
+    expect(statusOf(final)).toBe("success");
+    const out = quotePipelineOutputSchema.parse(outputOf(final));
+    if (out.outcome !== "completed") throw new Error("expected completed");
+
+    // The send was attempted (the gate fired) but did NOT complete.
+    expect(sends).toBe(1);
+    // (a) recordQuoteFromListing was NOT called — zero dealer_quotes rows.
+    expect(quoteCount()).toBe(0);
+    // (b) the result is the not-sent shape — NOT finalState "ok".
+    expect(out.finalState).not.toBe("ok");
+    expect(out.finalState).toBe("partial");
+    // (c) the reconcile hint is surfaced (and it never claims the ask was sent).
+    expect(out.summary).toContain("did NOT send");
+    expect(out.nextAction).toContain("send_failed_draft_retained");
+    expect(out.nextAction).toContain("reconcile");
+    // The targeted lane never writes a completion row.
+    expect(auditLogCount()).toBe(0);
   });
 
   // The REAL sendAndRecord path (NOT a stub): the orchestrator builds a thread
@@ -463,9 +514,10 @@ describe("quote_pipeline targeted-VIN", () => {
     const { listingId } = seedTargetedWorld();
     __setQuotePipelineDepsForTests({
       sendAndRecord: async () => ({
-        kind: "blocked",
-        messageRowId: null,
-        reconcile_hint: "mode_blocked",
+        kind: "sent",
+        messageRowId: "m-sent",
+        gmailMessageId: "g-sent",
+        mode: "fake",
       }),
     });
 

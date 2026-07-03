@@ -12,7 +12,6 @@ export {
 export {
   validate,
   create,
-  resolveActive,
   update,
   replace,
   close,
@@ -21,6 +20,7 @@ export {
   parseLocation,
   synthProfileId,
   readProfileRow,
+  closeProfileStatusPlain,
   listProfileRows,
   listProfileDealerRows,
   type PurgeResult,

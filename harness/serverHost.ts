@@ -1,14 +1,14 @@
 /**
  * serverHost — boot the REAL @autobroker/server on an ephemeral 127.0.0.1 port for
- * the live harness. Spawned as a CHILD PROCESS by runner.ts
- * (the e2e serve.mjs pattern) so the harness drives a genuine HTTP/SSE server in a
- * separate process — black-box, exactly the SUT a user runs.
+ * the live harness. Spawned as a CHILD PROCESS by runner.ts so the harness drives a
+ * genuine HTTP/SSE server in a separate process — black-box, exactly the SUT a user
+ * runs.
  *
- * KEY DIFFERENCE FROM apps/ui/e2e/serve.mjs: the live harness boots WITHOUT the DI
- * stubs — `live = real geocode + real DeepSeek`. The two external
- * collaborators (resolveLocation / harnessGenerate) keep their REAL implementations.
- * The only thing this host arranges is ISOLATION (a throwaway DB under
- * ~/.autobroker-ts) + the migration + a seed account, and it prints the port.
+ * The live harness boots WITHOUT the DI stubs — `live = real geocode + real
+ * DeepSeek`. The two external collaborators (resolveLocation / harnessGenerate) keep
+ * their REAL implementations. The only thing this host arranges is ISOLATION (a
+ * throwaway DB under ~/.autobroker-ts) + the migration + a seed account, and it
+ * prints the port.
  *
  * DRY-RUN MODE (--dry-run): boot the server with the test DI seam
  * DISABLED (NOT stubbed) but STOP before the first live call — i.e. boot, print the
@@ -19,11 +19,11 @@
  *
  * FIXTURE MODE (AUTOBROKER_HARNESS_FIXTURE=1, set by the functional lane): boot
  * with the DETERMINISTIC DI stubs injected (resolveLocation + harnessGenerate —
- * NO live geocode, NO live LLM) and register three test-only routes OUTSIDE /api
- * (mirroring apps/ui/e2e/serve.mjs): POST /__e2e/scenario (flip the stub
- * scenario), POST /__e2e/apply-fixture (install a named FixtureState — its seed +
- * scenario), GET /__e2e/audit (count audit_log rows). The live path is unchanged:
- * when the flag is absent NONE of this runs (no stubs, no extra routes).
+ * NO live geocode, NO live LLM) and register three test-only routes OUTSIDE /api:
+ * POST /__e2e/scenario (flip the stub scenario), POST /__e2e/apply-fixture (install
+ * a named FixtureState — its seed + scenario), GET /__e2e/audit (count audit_log
+ * rows). The live path is unchanged: when the flag is absent NONE of this runs (no
+ * stubs, no extra routes).
  *
  * ISOLATION: AUTOBROKER_DATA_DIR is set by the INVOKING runner (under
  * ~/.autobroker-ts/harness-runs/<ts>/); this host honors it (never overrides to a
@@ -33,7 +33,7 @@
  * is never set here.
  *
  * Output: a single JSON line on stdout once listening: { harness_host:"listening",
- * port, dataDir } — the runner parses it (mirrors serve.mjs's contract).
+ * port, dataDir } — the runner parses that line to learn the port + data dir.
  *
  * Run: node --import tsx/esm harness/serverHost.ts  (the runner spawns it).
  *
@@ -282,11 +282,12 @@ async function main(): Promise<void> {
     // no-form dealer → the email fallback; a captcha-gated form for the captcha
     // dealer → the email fallback with reason "captcha_fallback", never
     // submitting the captcha). The gated submit boundary returns
-    // `fuse_blocked` for the web-form dealer (the BLOCK=1 fake-submit) and
+    // `fuse_blocked` for the web-form dealer (the test-mode fake-submit) and
     // `needs_fallback` for the no-form dealer (defensive — a no-form dealer never
     // reaches submitOne, but the stub mirrors that shape). recordSubmission +
-    // sendAndRecord stay REAL (the latter is L1-fuse-blocked under BLOCK=1, so the
-    // email fallback writes its lead_submissions row but ZERO messages rows).
+    // sendAndRecord stay REAL (in test mode the latter fake-sends via the
+    // AUTOBROKER_MODE=test brake, so the email fallback writes its lead_submissions
+    // row plus a fake sandbox messages row — ZERO REAL outbound).
     __setDealerWebLeadSubmitDepsForTests({
       scoutForms: (args: ScoutFormsArgs): Promise<ScoutOutcome[]> =>
         Promise.resolve(
@@ -341,7 +342,7 @@ async function main(): Promise<void> {
           }),
         ),
       submitOne: (args: SubmitOneArgs): Promise<SubmitVerdict> =>
-        // The web-form dealer's gated submit hits the armed L1 fuse → fuse_blocked
+        // The web-form dealer's gated submit hits the AUTOBROKER_MODE=test brake → fuse_blocked
         // (the fake-submit; recorded as a web_form lead row). A no-form dealer
         // never reaches here (the submit step routes it straight to fallback) —
         // return needs_fallback defensively if it ever does.
@@ -358,7 +359,8 @@ async function main(): Promise<void> {
     // assertNoBudget passes, and there is no dealer name in the text → the
     // "no competing name" red line holds). Every DB read (candidate threads /
     // quote situation / thread snapshot / reply-target ladder), the send path
-    // (sendAndRecord — L1-fuse-blocked under BLOCK=1 → ZERO messages rows), the
+    // (sendAndRecord — in test mode fake-sends via the AUTOBROKER_MODE=test brake →
+    // a fake sandbox messages row, ZERO REAL outbound), the
     // contact-flip write, and the threads.state='negotiating' LOCAL write all
     // stay REAL against the seeded fixture DB.
     __setNegotiationFollowupDepsForTests({
@@ -379,7 +381,8 @@ async function main(): Promise<void> {
     });
     // X3 (dealer_closeout_email) is zero-LLM + zero-browser — the deterministic
     // body/subject and the atomic close+suppress run REAL against the seeded DB
-    // (sendAndRecord is L1-fuse-blocked under BLOCK=1), so there is NOTHING to
+    // (in test mode sendAndRecord fake-sends via the AUTOBROKER_MODE=test brake →
+    // a fake sandbox messages row, ZERO REAL outbound), so there is NOTHING to
     // stub. No __setDealerCloseoutEmailDepsForTests call is needed.
 
     // dealer_reply_extract — stub ONLY the per-message LLM extraction (the single

@@ -136,7 +136,7 @@ export interface HealthResult {
  * Every Gmail backend implements this. Read methods are free (no gate); the
  * `send` method is the ONLY mutation and is the single fake/real switch point —
  * its real implementation reaches the network ONLY behind the L2 gate + the
- * BLOCK fuse (wired in the send seam, not here).
+ * AUTOBROKER_MODE=test mode brake (wired in the send seam, not here).
  *
  * Consumers (by skill):
  *   - the send seam needs `send`;
@@ -182,9 +182,9 @@ export interface GmailAdapter {
 
   /**
    * The single mutation. Takes the assembled base64url `raw` RFC-2822 message
-   * and returns the backend message id. The real backend asserts the BLOCK fuse
-   * first and only ever runs inside an approved gate commit; the fake backend
-   * writes a sandbox row. This interface does NOT itself enforce the gate — the
+   * and returns the backend message id. The real backend only ever runs inside
+   * an approved gate commit in buyer mode; the fake backend writes a sandbox
+   * row. This interface does NOT itself enforce the gate — the
    * send seam wraps every call through L2 (see the gmail send tool).
    */
   send(raw: string): Promise<{ messageId: string }>;

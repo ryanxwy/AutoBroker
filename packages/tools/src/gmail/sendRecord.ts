@@ -1,15 +1,16 @@
 /**
  * sendRecord — the single skill-facing outbound-message writer for the
  * irreversible-send skills (X1/X2/X3). It does the WHOLE draft-then-promote
- * send+record INSIDE one approved gate commit, so a side effect (the fake send)
- * and its durable record can only happen together, and only after approval.
+ * send+record INSIDE one approved gate commit, so a side effect (the send — real
+ * in buyer mode, fake in test mode) and its durable record can only happen
+ * together, and only after approval.
  *
  * THE DRAFT-THEN-PROMOTE FLOW (inside `withGate`, in this exact order):
  *   1. test-mode brake (`assertFakeMailboxSendOnly`) — fake adapter only when
  *      not in buyer mode (fail-CLOSED);
  *   2. INSERT a draft `messages` row with `gmail_message_id = NULL` — the durable
  *      checkpoint that survives a later send failure;
- *   3. `adapter.send(raw)` — the irreversible boundary (fake during this phase);
+ *   3. `adapter.send(raw)` — the irreversible boundary (real in buyer mode, fake in test mode);
  *   4. PROMOTE: UPDATE the draft, backfilling `gmail_message_id`, only WHERE it
  *      is still NULL — so a double-fire promote is a harmless no-op.
  *
@@ -218,8 +219,8 @@ export async function sendAndRecord(
     if (err instanceof ExternalMutationsBlockedError && draftRowId === null) {
       return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
     }
-    // The send was prevented after the draft was inserted (a mid-commit fuse arm
-    // or an adapter throw): retain the draft (NULL gmail id) and report a partial
+    // The send was prevented after the draft was inserted (the mid-commit
+    // test-mode brake or an adapter throw): retain the draft (NULL gmail id) and report a partial
     // so a reconcile pass can promote or discard it.
     if (draftRowId !== null) {
       return {

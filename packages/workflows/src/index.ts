@@ -5,19 +5,20 @@
  * transitional self-built SkillRun / HarnessWorkflowRuntime scaffold has been
  * DELETED; skills import Mastra primitives directly.
  *
- * What lands here (foundation first, then one skill at a time):
+ * What this barrel exposes to the app + harness layers:
  *   - the Mastra instance (library mode — no `mastra dev`, no Hono server, no
  *     Cloud), storage = @mastra/libsql on file:~/.autobroker-ts/mastra.db —
  *     a dedicated DB beside the product autobroker.db, never the same file;
- *   - one flat linear `createWorkflow` per skill;
- *   - Memory threads/resources + OM auto-compact on the chat rail ONLY (OM is
- *     never enabled inside skill workflow runs — mastra#14598);
- *   - the runtime-glue service: boot recovery (MASTRA_TELEMETRY_DISABLED=1
- *     before construction → deterministic tool re-registration by toolName →
- *     listWorkflowRuns({status:'suspended'}) re-attach approval UI →
- *     restart()/cancel() per age policy), duplicate-runId idempotency guard,
- *     SSE pubsub discipline, and the Mastra→product status projection onto
- *     core's `SkillRunStatus` (single source — no core↔workflows enum drift).
+ *   - the registered-workflows map + ids for construction and boot recovery;
+ *   - the runtime-glue service (boot recovery + duplicate-runId guard);
+ *   - per-run provider selection, the chat-rail Memory store, and the NL router;
+ *   - the per-skill workflow ids, resume-schema vocabularies, and test-only DI
+ *     seams the server descriptors + the offline in-stack tests build against.
+ *
+ * This is a PRUNED barrel: it re-exports only the symbols the app/harness layers
+ * actually import. In-package modules import each other directly (never through
+ * this barrel), so skill-local schemas/helpers/workflow values stay unexported
+ * here. Adding an export is warranted only when a cross-package consumer needs it.
  *
  * Dependency wall: workflows may import core, model, and tools — never app.
  * workflows NEVER touches SQLite or external APIs; all side effects go through
@@ -32,35 +33,20 @@
 // `createWorkflow` (subpath @mastra/core/workflows) all resolve under NodeNext
 // ESM. Do NOT re-introduce a self-built run state machine here.
 
-// #1244 fail-closed detector as a Mastra output Processor (detection logic
-// stays pure in @autobroker/model).
-export {
-  malformedToolCallProcessor,
-  type MalformedToolCallProcessorOptions,
-  type MalformedToolCallTripMetadata,
-} from "./malformedToolCallProcessor.js";
-
 // The library-mode Mastra instance (storage = mastra.db on disk, the dual-DB
 // never-co-write rule keeps it separate from the product DB). No dev server, no Cloud.
-export {
-  createMastraInstance,
-  getMastra,
-  resetMastraForTests,
-  type CreateMastraInstanceOptions,
-} from "./mastra.js";
+export { createMastraInstance, resetMastraForTests } from "./mastra.js";
 
-// The runnable harness.generate facade: the Mastra Agent
-// loop end-to-end. Types + pure helpers live in @autobroker/model; the loop is
-// owned here (only the api-key lane lets the AI SDK own the tool loop).
-// emit_result discipline + #1244 fail-closed.
+// The registered-workflows map for createMastraInstance({ workflows }) and the
+// ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
 export {
-  harness,
-  type HarnessLedgerContext,
-} from "./harness.js";
+  REGISTERED_WORKFLOWS,
+  REGISTERED_WORKFLOW_IDS,
+} from "./registeredWorkflows.js";
 
-// Runtime glue — boot recovery (suspended re-attach + stale
-// 'running' restart/cancel) and the duplicate-runId guard. Thin wrappers over
-// the Mastra instance/workflow/run API (no engine seam).
+// Runtime glue — boot recovery (suspended re-attach + stale 'running'
+// restart/cancel) and the duplicate-runId guard. Thin wrappers over the Mastra
+// instance/workflow/run API (no engine seam).
 export {
   recoverOnBoot,
   restartStaleRun,
@@ -70,141 +56,82 @@ export {
   releaseRunOwnership,
   resetRuntimeGlueForTests,
   DuplicateRunIdError,
-  type BegunRun,
   type BootRecoveryReport,
-  type UnclassifiedRun,
-  type ReattachableSuspendedRun,
-  type StaleRunningRun,
-  type RecoverOnBootOptions,
-  type StartRunGuardedArgs,
 } from "./runtimeGlue.js";
 
 // Per-run provider-selection registry + alias override (lane A). The server
-// registers a run's AgentSelection (setRunSelection, threaded through
-// startRunGuarded's agentSelection arg); the harness reads it at the generate
-// seam (resolveSelectionForRun → applySelection) to re-home a DeepSeek-default
-// route onto the chosen provider. With no selection the route is the untouched
-// policy() default.
+// registers a run's AgentSelection; the harness reads it at the generate seam
+// (resolveSelectionForRun) to re-home a DeepSeek-default route onto the chosen
+// provider. With no selection the route is the untouched policy() default.
 export {
   setRunSelection,
   clearRunSelection,
   getRunSelection,
   envDefaultSelection,
   resolveSelectionForRun,
-  applySelection,
 } from "./agentSelection.js";
 
-// The search_profile_intake skill workflow (the first skill) — one flat
-// linear createWorkflow, 8 steps, no nested workflow. The test-only deps seam is
-// exported so the offline in-stack tests drive the real suspend/resume chain.
+// The chat-rail Memory thread store (sessions = Mastra Memory threads). The
+// ONLY construction of @mastra/memory Memory — apps do session CRUD through the
+// product-shaped RailSessionStore facade and never import @mastra/* (dep wall).
 export {
-  searchProfileIntakeWorkflow,
+  createRailMemory,
+  RailSessionStore,
+  type RailSession,
+} from "./railMemory.js";
+
+// The NL skill-router (the core product feature) — the LLM classifier that reads
+// a free-form chat message and routes it to ONE of the 17 skills / intake /
+// clarify, plus the advisory suggest-next re-rank for the skills popover (never
+// launches; #1244 fail-closed → null so the UI keeps its deterministic order).
+export {
+  classifySkillFromText,
+  suggestNextSkills,
+  type RouteDecision,
+  type RouterContext,
+  type SuggestContext,
+  type SkillSuggestion,
+} from "./router.js";
+
+// The model-layer generate-fault test seam, re-exported so the live e2e host
+// (serve-live.mjs depends on @autobroker/workflows but not directly on
+// @autobroker/model) can arm an llm_500/llm_timeout fault for the next resolved
+// model — the LLM twin of __setIntakeDepsForTests' geocode override.
+export { __setHarnessGenerateFaultForTests } from "@autobroker/model";
+
+// ---------------------------------------------------------------------------
+// Per-skill surfaces — the workflow id, the resume-schema vocabulary the server
+// descriptor imports, the app-set per-run browser-emitter factory, and the
+// test-only DI seams the offline in-stack tests drive the real suspend/resume
+// chain through. (In-package tests import the skill module files directly.)
+// ---------------------------------------------------------------------------
+
+// search_profile_intake (skill #1).
+export {
   SEARCH_PROFILE_INTAKE_WORKFLOW_ID,
   __setIntakeDepsForTests,
   __resetIntakeDepsForTests,
   type IntakeWorkflowDeps,
 } from "./searchProfileIntake.js";
-
-// The model-layer generate-fault test seam (T4-U2), re-exported so the live e2e
-// host (serve-live.mjs depends on @autobroker/workflows but not directly on
-// @autobroker/model) can arm an llm_500/llm_timeout fault for the next resolved
-// model — the LLM twin of __setIntakeDepsForTests' geocode override.
 export {
-  __setHarnessGenerateFaultForTests,
-  __resetHarnessGenerateFaultForTests,
-  type HarnessGenerateFault,
-} from "@autobroker/model";
-
-// The intake skill contracts (emit schemas + resume schemas + prompt builders),
-// co-located with the skill (skill-local, single-use; see header rationale).
-export {
-  IntakePrefillSchema,
-  TrimSuggestionSchema,
-  CollectResumeSchema,
-  IntakeConfirmSuspendSchema,
-  IntakeConfirmResumeSchema,
   AmbiguousLocationResumeSchema,
-  TrimSuggestionResumeSchema,
+  CollectResumeSchema,
   MalformedRetryResumeSchema,
-  buildPrefillPrompt,
-  buildTrimSuggestionPrompt,
-  type IntakePrefill,
-  type IntakeConfirmResume,
-  type TrimSuggestion,
-  type TrimSuggestionResume,
+  TrimSuggestionResumeSchema,
 } from "./intakeContracts.js";
 
-// The dealer_geosearch skill workflow (skill #2, first browser skill) — one
-// flat linear createWorkflow, 6 steps, zero suspends. Test-only deps seam +
-// the app-set per-run browser-emitter factory are exported alongside.
+// dealer_geosearch (skill #2, first browser skill, zero suspends).
 export {
-  dealerGeosearchWorkflow,
   DEALER_GEOSEARCH_WORKFLOW_ID,
   setGeosearchBrowserEmitterFactory,
-  __setGeosearchDepsForTests,
-  __resetGeosearchDepsForTests,
-  DealerGeosearchStopError,
-  GeosearchAllViewportsFailedError,
-  GeosearchExtractSchema,
-  buildGeosearchExtractPrompt,
-  type GeosearchWorkflowDeps,
-  type GeosearchStopCode,
-  type GeosearchExtract,
-  type ViewportScanArgs,
-  type ViewportScanOutcome,
 } from "./dealerGeosearch.js";
 
-// The inventory_site_scan skill workflow (skill #3, first browser skill with a
-// human suspend) — one flat linear createWorkflow, 6 steps, one batch_review
-// suspend. Test-only deps seam + the app-set per-run browser-emitter factory
-// are exported alongside, plus the batch_review suspend/resume contracts the
-// server descriptor and the UI build against.
+// inventory_site_scan (skill #3, browser scan). READ-ONLY auto-approve: no human
+// gate, no suspend. The shared batch_review resume vocabulary lives in
+// batchReviewContracts.js (below); this skill exposes only its id + emitter setter.
 export {
-  inventorySiteScanWorkflow,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
   setInventoryScanBrowserEmitterFactory,
-  __setInventoryScanDepsForTests,
-  __resetInventoryScanDepsForTests,
-  InventorySiteScanStopError,
-  InventoryScanCaptureLostError,
-  BatchReviewSuspendSchema,
-  BatchReviewResumeSchema,
-  BATCH_REVIEW_QUESTION,
-  InventoryExtractSchema,
-  buildInventoryExtractPrompt,
-  computeScanTargets,
-  bucketTargetsByHost,
-  scanHostnameOf,
-  isDeniedScanHost,
-  walkFilterLadder,
-  browserWalkSrp,
-  collectInventoryCards,
-  weaveCardsForExtraction,
-  selectVdpCandidates,
-  harvestVinFromSnapshot,
-  scanDealersParallelImpl,
-  SCAN_CONCURRENCY,
-  SCAN_SKIP_REASONS,
-  FILTERED_RENDER_MIN_CHARS,
-  type InventoryScanWorkflowDeps,
-  type InventoryScanStopCode,
-  type InventoryExtract,
-  type BatchReviewSuspend,
-  type BatchReviewResume,
-  type ScanSkipReason,
-  type ProfileDealerRowSlice,
-  type ScanTargetRow,
-  type SkippedTargetRow,
-  type ScanBucket,
-  type ScanDealersArgs,
-  type DealerCaptureOutcome,
-  type BucketRunner,
-  type FilterLadderIo,
-  type FilterLadderOutcome,
-  type FilterRungExit,
-  type CollectedCard,
-  type SrpWalkIo,
-  type SrpWalkResult,
 } from "./inventorySiteScan.js";
 
 // The inventory_aggregator_scan skill workflow (skill #18 — the read-only sibling
@@ -244,216 +171,63 @@ export {
   type PersistAggregatorScanResult,
 } from "./inventoryAggregatorScan.js";
 
-// The inventory_link_scan skill workflow (skill #4 — the link-driven sibling
-// of inventory_site_scan: 8 flat steps, one batch_review suspend on the SAME
-// card + resume wire). Test-only deps seam + the app-set per-run
-// browser-emitter factory are exported alongside the contracts.
+// The shared batch_review resume vocabulary (approve{approved_dealer_ids min 1} |
+// decline) — the ONE card the irreversible send skills + inventory_link_scan +
+// dealer_inbox_check all suspend against, and the server approval-inbox reshapes.
+export { BatchReviewResumeSchema } from "./batchReviewContracts.js";
+
+// inventory_link_scan (skill #4, the link-driven scan sibling).
 export {
-  inventoryLinkScanWorkflow,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   setLinkScanBrowserEmitterFactory,
-  __setInventoryLinkScanDepsForTests,
-  __resetInventoryLinkScanDepsForTests,
-  InventoryLinkScanStopError,
-  InventoryLinkScanCaptureLostError,
-  LINK_SCAN_REVIEW_QUESTION,
-  LINK_SCAN_SKIP_REASONS,
-  LinkScanReviewSuspendSchema,
-  LinkScanReviewResumeSchema,
-  LinkScanInputSchema,
-  LinkScanOutputSchema,
-  bucketLinksByHost,
-  captureOneLink,
-  captureLinksParallelImpl,
-  runLinkBucket,
-  type InventoryLinkScanWorkflowDeps,
-  type InventoryLinkScanStopCode,
-  type LinkScanSkipReason,
-  type LinkScanReviewSuspend,
-  type LinkScanReviewResume,
-  type LinkScanInput,
-  type LinkScanOutput,
-  type LinkCaptureTarget,
-  type LinkScanCaptureArgs,
-  type SourceCaptureOutcome,
-  type LinkBucket,
-  type LinkBucketRunner,
 } from "./inventoryLinkScan.js";
 
-// The incentive_scrape skill contracts (skill #5 — typed input/output, the
-// OEM first-encounter suspend/resume vocabulary, the incentive_extract emit
-// shape + fenced prompt, and the typed STOP / skip / fail vocabularies). The
-// workflow itself lands beside them; skill-local, single-use (see header
-// rationale in the contracts file).
+// incentive_scrape (skill #5). Read-only OEM-source scrape; the first-encounter
+// resume vocabulary is exposed for the server descriptor.
 export {
-  IncentiveScrapeInputSchema,
-  IncentiveScrapeOutputSchema,
-  IncentiveScrapeStopError,
-  INCENTIVE_SKIP_REASONS,
-  INCENTIVE_FAIL_REASONS,
-  OemFirstEncounterSuspendSchema,
-  OemFirstEncounterResumeSchema,
-  IncentiveExtractSchema,
-  buildIncentiveExtractPrompt,
-  type IncentiveScrapeInput,
-  type IncentiveScrapeOutput,
-  type IncentiveScrapeStopCode,
-  type IncentiveSkipReason,
-  type IncentiveFailReason,
-  type OemFirstEncounterSuspend,
-  type OemFirstEncounterResume,
-  type IncentiveExtract,
-} from "./incentiveScrapeContracts.js";
-
-// The incentive_scrape skill workflow (skill #5 — 7 flat steps, ONE
-// first-encounter approval suspend before any navigation). Test-only deps
-// seam + the app-set per-run browser-emitter factory are exported alongside
-// the capture/collector helpers the offline tests pin.
-export {
-  incentiveScrapeWorkflow,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
   setIncentiveScrapeBrowserEmitterFactory,
-  __setIncentiveScrapeDepsForTests,
-  __resetIncentiveScrapeDepsForTests,
-  collectOfferCards,
-  weaveOfferCards,
-  rooftopSpecialsUrls,
-  runOfferLadder,
-  captureOffersImpl,
-  OFFER_COLLECT_MAX,
-  OFFER_RENDER_MIN_CHARS,
-  ROOFTOP_SPECIALS_PATHS,
-  type IncentiveScrapeWorkflowDeps,
-  type CollectedOfferCard,
-  type OfferCaptureArgs,
-  type OfferCaptureOutcome,
-  type OfferLadderSession,
 } from "./incentiveScrape.js";
 
-// The dealer_inbox_check skill workflow (skill #6 — the email-pull skill: 6 flat
-// steps, ONE batch_review suspend over discovered dealer-reply groups before any
-// write, zero-LLM). Test-only deps seam + the app-set per-run sync emitter
-// factory are exported alongside the contracts the server descriptor builds on.
-export {
-  dealerInboxCheckWorkflow,
-  DEALER_INBOX_CHECK_WORKFLOW_ID,
-  setDealerInboxCheckEmitterFactory,
-  __setDealerInboxCheckDepsForTests,
-  __resetDealerInboxCheckDepsForTests,
-  type DealerInboxCheckWorkflowDeps,
-  type InboxEmitter,
-} from "./dealerInboxCheck.js";
+// dealer_inbox_check (skill #6, the email-pull skill; batch_review over
+// discovered dealer-reply groups — resume reuses the shared BatchReviewResumeSchema).
+export { DEALER_INBOX_CHECK_WORKFLOW_ID } from "./dealerInboxCheck.js";
 
-// The dealer_inbox_check skill contracts (typed input/output, the batch_review
-// suspend payload, the typed STOP vocabulary). Skill-local, single-use (see the
-// header rationale in the contracts file). The resume reuses the shared
-// BatchReviewResumeSchema already exported above.
+// dealer_reply_extract (skill #7, the live-LLM keystone; autonomous, zero suspend).
 export {
-  DealerInboxCheckInputSchema,
-  DealerInboxCheckOutputSchema,
-  DealerInboxCheckStopError,
-  InboxReviewSuspendSchema,
-  type DealerInboxCheckInput,
-  type DealerInboxCheckOutput,
-  type DealerInboxCheckStopCode,
-  type InboxReviewSuspend,
-} from "./dealerInboxCheckContracts.js";
-
-// The dealer_reply_extract skill workflow (skill #7 — the SOLE live-LLM
-// keystone: 4 flat steps, ZERO suspend, autonomous; per-message single
-// emit_result extraction with the #1244 fail-closed detector armed). Test-only
-// deps seam exported alongside the contracts the server descriptor builds on.
-export {
-  dealerReplyExtractWorkflow,
   DEALER_REPLY_EXTRACT_WORKFLOW_ID,
+  dealerReplyExtractWorkflow,
   __setDealerReplyExtractDepsForTests,
-  __resetDealerReplyExtractDepsForTests,
-  type DealerReplyExtractWorkflowDeps,
 } from "./dealerReplyExtract.js";
 
-// The dealer_reply_extract skill contracts (typed input/output, the single
-// emit_result extraction contract + the fenced prompt, the threaded state, and
-// the typed STOP vocabulary). Skill-local, single-use (see the header
-// rationale). Autonomous — no suspend/resume schema, no `declined` member.
-export {
-  DealerReplyExtractInputSchema,
-  DealerReplyExtractOutputSchema,
-  DealerReplyExtractEmitSchema,
-  DealerReplyExtractStopError,
-  MessageIntentSchema,
-  buildDealerReplyExtractPrompt,
-  capReplySnapshot,
-  REPLY_SNAPSHOT_CAP_CHARS,
-  type DealerReplyExtractInput,
-  type DealerReplyExtractOutput,
-  type DealerReplyExtractEmit,
-  type DealerReplyExtractStopCode,
-  type MessageIntent,
-} from "./dealerReplyExtractContracts.js";
+// dealer_hygiene (DESTRUCTIVE — three strictly-ordered batch_review stages; the
+// per-stage resume vocabulary is exposed for the server descriptor).
+export { DEALER_HYGIENE_WORKFLOW_ID } from "./dealerHygiene.js";
+export { HygieneResumeSchema } from "./dealerHygieneContracts.js";
 
-// The dealer_hygiene skill workflow (DESTRUCTIVE — three strictly-ordered
-// batch_review suspends 5a/5b/5c with a deferred single-transaction commit;
-// decline at any stage = zero writes for the whole run; zero-LLM). Test-only
-// deps seam exported alongside the contracts the server descriptor builds on.
+// dealer_web_lead_submit (IRREVERSIBLE-SEND keystone — REAL submit in buyer mode
+// via AUTOBROKER_MODE, always behind the L2 gate; test mode fake-submits). TWO
+// suspends before any side effect: the batch_review card ① (resume reuses the
+// shared BatchReviewResumeSchema) and the INDEPENDENT email_fallback re-confirm ②
+// (LeadApprovalResumeSchema). The injectable scout/submit boundary types let the
+// functional lane drive the REAL workflow + suspend/resume against a fixture.
 export {
-  dealerHygieneWorkflow,
-  DEALER_HYGIENE_WORKFLOW_ID,
-  __setDealerHygieneDepsForTests,
-  __resetDealerHygieneDepsForTests,
-  type DealerHygieneWorkflowDeps,
-} from "./dealerHygiene.js";
-
-// The dealer_hygiene skill contracts (typed input/output, the ONE stage-
-// discriminated batch_review suspend payload, the ONE resume vocabulary reused
-// per stage). Skill-local, single-use (see the header rationale).
-export {
-  DealerHygieneInputSchema,
-  DealerHygieneOutputSchema,
-  HygieneStageReviewSchema,
-  HygieneResumeSchema,
-  HYGIENE_STAGES,
-  type DealerHygieneInput,
-  type DealerHygieneOutput,
-  type HygieneStage,
-  type HygieneStageReview,
-  type HygieneResume,
-} from "./dealerHygieneContracts.js";
-
-// The dealer_web_lead_submit skill workflow (IRREVERSIBLE-SEND keystone, Phase 5,
-// [fake-send] — TWO suspends before any side effect: the batch_review card ① and
-// the INDEPENDENT email_fallback re-confirm ②). Test-only deps seam + the per-run
-// browser-emitter factory setter exported alongside.
-export {
-  dealerWebLeadSubmitWorkflow,
   DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID,
-  setDealerWebLeadSubmitBrowserEmitterFactory,
   __setDealerWebLeadSubmitDepsForTests,
   __resetDealerWebLeadSubmitDepsForTests,
   type DealerWebLeadSubmitWorkflowDeps,
-  // The injectable scout/submit boundary types — the functional-lane host builds
-  // deterministic stubs of these (no browser) so the X1 keystone cases drive the
-  // REAL workflow + REAL suspend/resume + REAL recordSubmission against a fixture.
   type ScoutOutcome,
   type ScoutFormsArgs,
   type SubmitOneArgs,
   type SubmitVerdict,
 } from "./dealerWebLeadSubmit.js";
+export { LeadApprovalResumeSchema } from "./dealerWebLeadSubmitContracts.js";
 
-// The dealer_web_lead_submit contracts (typed input/output + the suspend ②
-// approval resume vocabulary the server descriptor imports; the batch_review ①
-// resume reuses inventorySiteScan's already-exported BatchReviewResumeSchema).
+// negotiation_followup (IRREVERSIBLE-SEND — REAL email in buyer mode via
+// AUTOBROKER_MODE, always behind the L2 gate; test mode fake-sends). Email-only
+// (no browser emitter). The contact-flip ② override is registered out-of-band via
+// requestContactFlipForRun; the ① batch_review resume reuses BatchReviewResumeSchema.
 export {
-  DealerWebLeadSubmitInputSchema,
-  DealerWebLeadSubmitOutputSchema,
-  LeadApprovalResumeSchema,
-} from "./dealerWebLeadSubmitContracts.js";
-
-// negotiation_followup (X2) — irreversible-send (fake-send) email follow-up. NO
-// browser (email-only), so no browser-emitter setter. The contact-flip ② override
-// is registered out-of-band via requestContactFlipForRun (the server descriptor
-// threads an approved-thread flip request before the ① batch_review resume).
-export {
-  negotiationFollowupWorkflow,
   NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
   __setNegotiationFollowupDepsForTests,
   __resetNegotiationFollowupDepsForTests,
@@ -461,262 +235,46 @@ export {
   clearContactFlipForRun,
   __negotiationFollowupCarrySizesForTests,
   type NegotiationFollowupWorkflowDeps,
-  type ContactFlipRequest,
 } from "./negotiationFollowup.js";
+export { ContactFlipApprovalResumeSchema } from "./negotiationFollowupContracts.js";
 
-// The negotiation_followup contracts (typed input/output + the suspend ②
-// contact-flip approval resume vocabulary the server descriptor imports; the
-// batch_review ① resume reuses inventorySiteScan's BatchReviewResumeSchema).
-export {
-  NegotiationFollowupInputSchema,
-  NegotiationFollowupOutputSchema,
-  ContactFlipApprovalResumeSchema,
-} from "./negotiationFollowupContracts.js";
-
-// negotiation_summary — the advisory LLM read of a dealer's negotiation state
-// for the dealer-negotiation detail modal (single emit_result, hitlAvailable
-// false; ANY failure degrades to {summary:null}). The cache + test-only deps
-// seam are exported alongside the emit schema + fenced prompt builder.
+// negotiation_summary — the advisory LLM read of a dealer's negotiation state for
+// the detail modal (single emit_result, hitlAvailable false; ANY failure degrades
+// to {summary:null}). Never surfaces budget.
 export {
   getOrGenerateDealerNegotiationSummary,
   __setNegotiationSummaryDepsForTests,
   __resetNegotiationSummaryDepsForTests,
-  type NegotiationSummaryDeps,
 } from "./negotiationSummary.js";
-export {
-  NegotiationSummaryEmitSchema,
-  buildNegotiationSummaryPrompt,
-  capSummarySnapshot,
-  SUMMARY_SNAPSHOT_CAP_CHARS,
-  type NegotiationSummaryEmit,
-} from "./negotiationSummaryContracts.js";
 
-// dealer_closeout_email (X3) — the Phase-5 EXIT skill: near-zero-LLM, state-only
-// (close + suppress, never delete). NO browser, NO LLM, so no emitter setter and
-// no resume vocabulary beyond the shared BatchReviewResumeSchema.
+// dealer_closeout_email (the EXIT skill — REAL send in buyer mode via
+// AUTOBROKER_MODE, always behind the L2 gate; test mode fake-sends). State-only
+// (close + suppress, never delete). The batch_review resume reuses the shared schema.
 export {
-  dealerCloseoutEmailWorkflow,
   DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
   __setDealerCloseoutEmailDepsForTests,
   __resetDealerCloseoutEmailDepsForTests,
   type DealerCloseoutEmailWorkflowDeps,
 } from "./dealerCloseoutEmail.js";
 
-// The dealer_closeout_email contracts (typed input/output incl. the
-// `skip_all_reset` member; the batch_review resume reuses the shared schema).
-export {
-  DealerCloseoutEmailInputSchema,
-  DealerCloseoutEmailOutputSchema,
-} from "./dealerCloseoutEmailContracts.js";
+// daily_digest (zero-LLM, zero-suspend windowed read-only aggregation).
+export { DAILY_DIGEST_WORKFLOW_ID } from "./dailyDigest.js";
 
-// The daily_digest skill workflow (Phase 4 / Wave O — zero-LLM, zero-suspend:
-// a windowed read-only aggregation of every upstream skill's output rows into a
-// local digest artifact + the in-app /digest projection, advancing the
-// per-profile digest.last_at watermark and never surfacing budget). Test-only
-// deps seam exported alongside the contracts the server descriptor builds on.
-export {
-  dailyDigestWorkflow,
-  DAILY_DIGEST_WORKFLOW_ID,
-  DIGEST_SECTIONS_COUNT,
-  __setDailyDigestDepsForTests,
-  __resetDailyDigestDepsForTests,
-  type DailyDigestWorkflowDeps,
-} from "./dailyDigest.js";
-export {
-  DailyDigestInputSchema,
-  DailyDigestOutputSchema,
-  type DailyDigestInput,
-  type DailyDigestOutput,
-} from "./dailyDigestContracts.js";
+// pipeline_reset (DESTRUCTIVE — ONE typed-YES confirmation_gate suspend; the
+// resume vocabulary is exposed for the server descriptor).
+export { PIPELINE_RESET_WORKFLOW_ID } from "./pipelineReset.js";
+export { PipelineResetResumeSchema } from "./pipelineResetContracts.js";
 
-// The pipeline_reset skill workflow (Phase 4 / Wave O — DESTRUCTIVE: ONE typed-
-// YES confirmation_gate suspend [re-validated server-side], a VACUUM INTO backup,
-// an atomic migrate-based recreate + accounts re-seed, the mastra.db workflow-
-// runtime clear [Memory chat threads preserved], and a manifest schema verify;
-// decline at the gate = ZERO destruction). Test-only deps seam exported alongside
-// the contracts the server descriptor builds on.
-export {
-  pipelineResetWorkflow,
-  PIPELINE_RESET_WORKFLOW_ID,
-  PIPELINE_RESET_DEEP_LINK,
-  __setPipelineResetDepsForTests,
-  __resetPipelineResetDepsForTests,
-  type PipelineResetWorkflowDeps,
-} from "./pipelineReset.js";
-export {
-  PipelineResetInputSchema,
-  PipelineResetOutputSchema,
-  PipelineResetGateSuspendSchema,
-  PipelineResetResumeSchema,
-  PIPELINE_RESET_CONSEQUENCE_LINES,
-  PIPELINE_RESET_CONFIRM_TOKEN,
-  type PipelineResetInput,
-  type PipelineResetOutput,
-  type PipelineResetGateSuspend,
-  type PipelineResetResume,
-} from "./pipelineResetContracts.js";
+// inventory_compare / quote_audit / quote_compare (zero-LLM read skills — only
+// their workflow ids cross the package boundary).
+export { INVENTORY_COMPARE_WORKFLOW_ID } from "./inventoryCompareContracts.js";
+export { QUOTE_AUDIT_WORKFLOW_ID } from "./quoteAuditContracts.js";
+export { QUOTE_COMPARE_WORKFLOW_ID } from "./quoteCompareContracts.js";
 
-// The inventory_compare skill contracts (typed input/output, the flat ranked
-// candidate shape, the typed STOP vocabulary). Skill-local, single-use (see the
-// header rationale in the contracts file). Zero-LLM, read-only, no suspend.
-export {
-  InventoryCompareInputSchema,
-  InventoryCompareOutputSchema,
-  InventoryCompareStopError,
-  RankedCandidateSchema,
-  INVENTORY_COMPARE_WORKFLOW_ID,
-  type InventoryCompareInput,
-  type InventoryCompareOutput,
-  type InventoryCompareStopCode,
-  type RankedCandidate,
-} from "./inventoryCompareContracts.js";
-
-// The inventory_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
-// resolve profile → rank live listings → render). Test-only deps seam exported
-// alongside.
-export {
-  inventoryCompareWorkflow,
-  __setInventoryCompareDepsForTests,
-  __resetInventoryCompareDepsForTests,
-  type InventoryCompareWorkflowDeps,
-} from "./inventoryCompare.js";
-
-// The quote_audit skill contracts (typed input/output, the per-quote row shape,
-// the typed STOP vocabulary). Skill-local, single-use (see the header rationale
-// in the contracts file). Zero-LLM, read-only-plus-idempotent-audit-upsert, no
-// suspend.
-export {
-  QuoteAuditInputSchema,
-  QuoteAuditOutputSchema,
-  QuoteAuditRowSchema,
-  QuoteAuditStopError,
-  QUOTE_AUDIT_WORKFLOW_ID,
-  type QuoteAuditInput,
-  type QuoteAuditOutput,
-  type QuoteAuditRow,
-  type QuoteAuditStopCode,
-  type BestOtd,
-  type FlagCounts,
-} from "./quoteAuditContracts.js";
-
-// The quote_audit skill workflow (4 flat steps, ZERO suspends, ZERO LLM:
-// resolve profile → load quotes/peers/incentives → run the 10-check audit →
-// idempotent UPSERT → render). Test-only deps seam exported alongside.
-export {
-  quoteAuditWorkflow,
-  __setQuoteAuditDepsForTests,
-  __resetQuoteAuditDepsForTests,
-  type QuoteAuditWorkflowDeps,
-} from "./quoteAudit.js";
-
-// The quote_compare skill contracts (typed input/output, the flat ranked compare
-// row shape, the typed STOP vocabulary). Skill-local, single-use (see the header
-// rationale in the contracts file). Zero-LLM, read-only, no suspend.
-export {
-  QuoteCompareInputSchema,
-  QuoteCompareOutputSchema,
-  QuoteRankingSchema,
-  QuoteCompareStopError,
-  QUOTE_COMPARE_WORKFLOW_ID,
-  type QuoteCompareInput,
-  type QuoteCompareOutput,
-  type QuoteCompareStopCode,
-  type QuoteRankingRow,
-} from "./quoteCompareContracts.js";
-
-// The quote_compare skill workflow (3 flat steps, ZERO suspends, ZERO LLM:
-// resolve profile → rank quotes (gated by preference) → confirm). Test-only deps
-// seam exported alongside.
-export {
-  quoteCompareWorkflow,
-  __setQuoteCompareDepsForTests,
-  __resetQuoteCompareDepsForTests,
-  type QuoteCompareWorkflowDeps,
-} from "./quoteCompare.js";
-
-// The quote_pipeline skill contracts (Phase 4 / Wave O — the ORCHESTRATOR's typed
-// input/output, the targeted-VIN SEND suspend/resume vocabulary, the typed STOP
-// codes, and the audit_log completion record shape). Skill-local, single-use (see
-// the header rationale in the contracts file).
+// quote_pipeline (the ORCHESTRATOR — REAL targeted-VIN send in buyer mode via
+// AUTOBROKER_MODE, always behind the L2 gate; test mode fake-sends). The
+// targeted-VIN SEND resume vocabulary is exposed for the server descriptor.
 export {
   QUOTE_PIPELINE_WORKFLOW_ID,
-  PIPELINE_STEPS,
-  FINAL_STATES,
-  PIPELINE_RESOLUTIONS,
-  quotePipelineInputSchema,
-  quotePipelineOutputSchema,
-  quotePipelineCompletedSchema,
-  quotePipelineDeclinedSchema,
-  pipelineCompletionRecordSchema,
-  QuotePipelineStopError,
-  QuotePipelineSendSuspendSchema,
   QuotePipelineSendResumeSchema,
-  type QuotePipelineInput,
-  type QuotePipelineOutput,
-  type QuotePipelineCompleted,
-  type QuotePipelineDeclined,
-  type PipelineCompletionRecord,
-  type PipelineStep,
-  type FinalState,
-  type PipelineResolution,
-  type QuotePipelineStopCode,
-  type QuotePipelineSendSuspend,
-  type QuotePipelineSendResume,
 } from "./quotePipelineContracts.js";
-
-// The quote_pipeline skill workflow (Phase 4 / Wave O — the ORCHESTRATOR: 5 flat
-// steps, ONE targeted-VIN SEND suspend [fake-send]; the fan-out composes the
-// EXISTING child skill workflows via mastra.getWorkflow(childId).createRun().start;
-// final_state/next_action are computed in CODE). Test-only deps seam exported
-// alongside (the child composer + the send/record path are injectable).
-export {
-  quotePipelineWorkflow,
-  __setQuotePipelineDepsForTests,
-  __resetQuotePipelineDepsForTests,
-  type QuotePipelineWorkflowDeps,
-  type ChildRunOutcome,
-} from "./quotePipeline.js";
-
-// The registered-workflows map for createMastraInstance({ workflows }) and the
-// ids recoverOnBoot scans (the boot caller owns this list — runtimeGlue).
-export {
-  REGISTERED_WORKFLOWS,
-  REGISTERED_WORKFLOW_IDS,
-} from "./registeredWorkflows.js";
-
-// The chat-rail Memory thread store (sessions = Mastra Memory threads). The
-// ONLY construction of @mastra/memory Memory — apps do session CRUD through the
-// product-shaped RailSessionStore facade and never import @mastra/* (dep wall).
-// OM is configured rail-only with its model PINNED to DeepSeek via resolveModel
-// (never the @mastra default Gemini).
-export {
-  createRailMemory,
-  RailSessionStore,
-  RAIL_RESOURCE_ID,
-  PIN_METADATA_KEY,
-  SCOPE_NOTICE_METADATA_KEY,
-  type RailSession,
-} from "./railMemory.js";
-
-// The NL skill-router (the core product feature) — the LLM classifier that reads
-// a free-form chat message and routes it to ONE of the 18 skills / intake /
-// clarify, then the app layer launches the LAUNCH verdict through the EXISTING
-// skillRuns.start path (every gate stays downstream, button-only). Imports
-// @autobroker/{core,model,skills} + the local harness ONLY (single emit_result +
-// Zod, #1244 fail-closed; every fail-closed branch → clarify).
-export {
-  classifySkillFromText,
-  buildRoutePrompt,
-  ChatRouteEmitSchema,
-  type RouteDecision,
-  type RouterContext,
-  type ChatRouteEmit,
-  // suggest-next: the Hybrid skills-popover re-rank (advisory only — never
-  // launches; #1244 fail-closed → null so the UI keeps its deterministic order).
-  suggestNextSkills,
-  buildSuggestPrompt,
-  buildSuggestSchema,
-  redactBudgetText,
-  type SkillSuggestion,
-  type SuggestContext,
-} from "./router.js";

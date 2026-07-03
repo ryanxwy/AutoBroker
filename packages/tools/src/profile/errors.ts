@@ -83,7 +83,7 @@ export class MissingRequiredFieldError extends Error {
   constructor(fields: readonly string[]) {
     super(
       `missing_required_field: persist requires non-empty [${fields.join(", ")}] ` +
-        `(oracle parity minimum).`,
+        `(legacy parity minimum).`,
     );
     this.name = "MissingRequiredFieldError";
     this.fields = fields;

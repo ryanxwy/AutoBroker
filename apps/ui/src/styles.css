@@ -544,47 +544,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .btn-go-live:hover:not(:disabled) { background: #186b3d; }
 
-.diagnostics { position: relative; font-size: 12px; }
-.diagnostics summary {
-  cursor: pointer;
-  list-style: none;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  padding: 6px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--paper);
-  transition: box-shadow 0.15s, background 0.15s;
-}
-.diagnostics summary::-webkit-details-marker { display: none; }
-.diagnostics summary:hover { box-shadow: var(--shadow); background: var(--panel); }
-.diagnostics .diag-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  z-index: 90;
-  min-width: 300px;
-  background: var(--panel);
-  border: 1px solid var(--rule);
-  border-radius: 9px;
-  padding: 12px 14px;
-  box-shadow: var(--shadow-pop);
-  animation: popIn 0.16s ease both;
-}
-.diagnostics dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 10.5px;
-}
-.diagnostics dt { color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9px; padding-top: 2px; }
-.diagnostics dd { margin: 0; word-break: break-all; color: var(--ink-soft); }
-
 .session-pill {
   display: inline-block;
   font-family: var(--mono);
@@ -2058,29 +2017,6 @@ details.optional[open] summary { margin-bottom: 10px; }
   --agent-accent-wash: var(--amber-wash);
   --agent-accent-line: var(--amber-line);
 }
-.agent-bar__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 2px 6px;
-}
-.agent-bar__ttl {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-}
-.agent-bar__lane {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 20px;
-  color: var(--agent-accent);
-  background: var(--agent-accent-wash);
-  border: 1px solid var(--agent-accent-line);
-}
 .agent-bar__chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .agent-bar__chip { position: relative; min-width: 0; }
 .agent-bar__chip .popover-wrap { display: block; }
@@ -2196,23 +2132,6 @@ details.optional[open] summary { margin-bottom: 10px; }
 .agent-opt:disabled { cursor: not-allowed; opacity: 0.55; }
 .agent-opt:disabled .agent-opt__sub { color: var(--stop); }
 
-.agent-bar__resolved {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--ink-soft);
-  padding: 7px 3px 0;
-  line-height: 1.5;
-}
-.agent-bar__resolved b { color: var(--ink); font-weight: 600; }
-.agent-bar__pp { color: var(--ink-mute); }
-.agent-bar__warn { color: var(--amber-ink); }
-.agent-bar__caption {
-  margin: 3px 3px 2px;
-  font-family: var(--mono);
-  font-size: 8.5px;
-  color: var(--ink-mute);
-}
-
 /* ---- rail history (sessions) popover trigger + rows --------------------------- */
 .rail-history-row {
   display: flex;
@@ -2269,11 +2188,6 @@ details.optional[open] summary { margin-bottom: 10px; }
   white-space: nowrap;
 }
 .searches-row[data-pinned="true"] .searches-row-title { font-weight: 600; color: var(--run); }
-.searches-row .searches-row-view {
-  flex: 0 0 auto;
-  font-size: 11px;
-  padding: 4px 9px;
-}
 
 /* ---- settings: diagnostics section (folded in from the top bar) --------------- */
 .settings-page .diag-grid {
@@ -2575,7 +2489,6 @@ p.muted, span.muted { font-size: 0.95em; }
 .portfolio-status-link { color: var(--run); font-weight: 600; }
 .portfolio-count { color: var(--ink-soft); }
 .portfolio-count-alert { color: var(--gate); font-weight: 600; }
-.portfolio-count-fail { color: var(--stop); font-weight: 600; }
 .portfolio-count-healthy { color: var(--go); }
 .portfolio-status-names { color: var(--stop); }
 

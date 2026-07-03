@@ -9,7 +9,7 @@
  * (the SUT writes the ledger row per LLM call; the harness only reads it for the
  * cost_and_time anchor + export_daily) and NEVER calls a provider directly.
  *
- * SUBCOMMANDS: intake | case | suite. CLI:
+ * SUBCOMMANDS: intake | case. CLI:
  *   pnpm harness intake [--case <name>] [--provider deepseek]
  *                       [--gate-policy approve_safe] [--max-seconds 900]
  *                       [--db <path>] [--dry-run]
@@ -36,7 +36,8 @@
  */
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -70,14 +71,21 @@ import { planBatchRowDecisions, UiDriver } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_HOST = join(HERE, "serverHost.ts");
-const TSX_LOADER = join(HERE, "..", "node_modules", ".pnpm", "tsx@4.22.4", "node_modules", "tsx", "dist", "loader.mjs");
+// Resolve tsx's loader from its package "." export (which maps to dist/loader.mjs)
+// instead of a hardcoded .pnpm/tsx@<version>/ path — that pinned path broke on any
+// tsx patch/minor bump inside the declared ^4.22.x range.
+const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
+/** The shared root every isolated per-run dir is written under (`<root>/<ts>/`). */
+const HARNESS_RUNS_ROOT = join(homedir(), ".autobroker-ts", "harness-runs");
+/** Delete run-evidence dirs older than this many days at each runner start. */
+const RUN_DIR_RETENTION_DAYS = 14;
 
 // ---------------------------------------------------------------------------
 // CLI arg parsing
 // ---------------------------------------------------------------------------
 
 export interface RunnerOpts {
-  command: "intake" | "case" | "suite";
+  command: "intake" | "case";
   casePath: string | null;
   caseName: string | null;
   step: string | null;
@@ -110,8 +118,8 @@ function parseArgs(argv: string[]): RunnerOpts {
   const tokens = argv.slice(2).filter((t) => t !== "--");
   const [cmd, ...rest] = tokens;
   const command = (cmd ?? "intake") as RunnerOpts["command"];
-  if (!["intake", "case", "suite"].includes(command)) {
-    fail(`unknown subcommand "${command}" (expected intake|case|suite)`);
+  if (!["intake", "case"].includes(command)) {
+    fail(`unknown subcommand "${command}" (expected intake|case)`);
   }
 
   const flags = new Map<string, string>();
@@ -130,7 +138,7 @@ function parseArgs(argv: string[]): RunnerOpts {
   }
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const runRoot = join(homedir(), ".autobroker-ts", "harness-runs", ts);
+  const runRoot = join(HARNESS_RUNS_ROOT, ts);
   const db = flags.get("db") ?? join(runRoot, "autobroker.db");
   const evidenceRoot = flags.get("evidence-root") ?? join(runRoot, "evidence");
   const provider = (flags.get("provider") ?? "deepseek") as RunnerOpts["provider"];
@@ -541,8 +549,6 @@ function pendingKind(step: string): string {
     case "batchReview":
     case "reviewGate": // inventory_link_scan's batch_review step
       return "batch_review";
-    case "resolveOemSource": // incentive_scrape's first-encounter approval
-      return "oem_first_encounter";
     case "confirmGate": // pipeline_reset's destructive typed-YES confirm
       return "confirmation_gate";
     default:
@@ -1251,20 +1257,18 @@ async function driveResumeScriptDom(
         await driver.screenshot("confirmation-gate-decline");
         await driver.clickResetCancel(maxMs);
       }
-    } else if (resume.on === "oem_first_encounter" || resume.on === "approval") {
+    } else if (resume.on === "approval") {
       // The banner-track ApprovalPrompt: Approve = accept (approve the shown
-      // action), Deny = decline (terminal/skip, zero writes). Two suspend kinds
-      // ride this same card: incentive_scrape's first-encounter approval
-      // (oem_first_encounter) and dealer_web_lead_submit's email_fallback
-      // re-confirm (approval, sensitive=true → the approve-all affordance is
-      // structurally absent, which the case asserts via a dom_state anchor).
+      // action), Deny = decline (terminal/skip, zero writes). The send-skill
+      // re-confirms ride this card — dealer_web_lead_submit's single_store /
+      // email_fallback approval and negotiation_followup's contact-flip
+      // re-confirm (all sensitive=true → the danger frame is on; there is no
+      // approve-all affordance on this card at all).
       await driver.waitForApprovalPrompt(maxMs);
       await driver.checkBannerGateBeforeProse();
-      // The bulk affordance must match the card's sensitivity: a sensitive
-      // event (dealer_web_lead_submit's email_fallback re-confirm — a mutating
-      // scope switch) carries ZERO approve-all controls; a non-sensitive one
-      // (incentive_scrape's first-encounter approval) carries exactly one. A
-      // REAL DOM read recorded into ui_checks (not a vacuous anchor passthrough).
+      // The approval card exposes NO approve-all affordance — unconditionally
+      // (the dead bulk-approve was removed). A REAL DOM read recorded into
+      // ui_checks (not a vacuous anchor passthrough).
       await driver.checkApprovalApproveAllForSensitivity();
       if (resume.action === "accept") {
         await driver.screenshot("approval-approve");
@@ -1922,6 +1926,49 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// evidence-dir retention
+// ---------------------------------------------------------------------------
+
+/** Names of timestamp run dirs (`^YYYY-MM-DDT…`) older than `maxAgeDays` by their
+ *  NAME date. PURE + FS-free so it is unit-testable in isolation. Only strict
+ *  timestamp-prefixed names are ever returned — a non-timestamped sibling (e.g.
+ *  regression.sh's root `autobroker.db*`) never matches, so the sweep can never
+ *  delete it. */
+export function expiredRunDirNames(names: string[], now: Date, maxAgeDays: number = RUN_DIR_RETENTION_DAYS): string[] {
+  const cutoff = now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000;
+  const expired: string[] = [];
+  for (const name of names) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T/.exec(name);
+    if (m === null) continue;
+    const dayMs = Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+    if (Number.isNaN(dayMs)) continue;
+    if (dayMs < cutoff) expired.push(name);
+  }
+  return expired;
+}
+
+/** Best-effort retention sweep of the shared harness-runs root: delete timestamp
+ *  run dirs older than the retention window. Never throws (a missing root or a
+ *  concurrently-recreated dir is skipped) and — via expiredRunDirNames — never
+ *  touches a non-timestamped entry. */
+function sweepOldRunDirs(runsRoot: string = HARNESS_RUNS_ROOT, now: Date = new Date()): void {
+  let names: string[];
+  try {
+    if (!existsSync(runsRoot)) return;
+    names = readdirSync(runsRoot);
+  } catch {
+    return;
+  }
+  for (const name of expiredRunDirNames(names, now)) {
+    try {
+      rmSync(join(runsRoot, name), { recursive: true, force: true });
+    } catch {
+      /* best-effort: a busy dir / perms issue must never abort the harness. */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // entry
 // ---------------------------------------------------------------------------
 
@@ -1940,14 +1987,15 @@ export async function run(argv: string[]): Promise<number> {
   // an already-exported key still wins over both. Both missing = no-op.
   loadDotEnvKeys();
   loadSecretsIntoEnv();
+  // Retention: prune run-evidence dirs older than the window before this run adds
+  // its own. Best-effort + timestamp-name-scoped, so it never blocks a run or
+  // deletes a non-run sibling.
+  sweepOldRunDirs();
   const opts = parseArgs(argv);
   switch (opts.command) {
     case "intake":
     case "case":
       return cmdIntake(opts);
-    case "suite":
-      fail("suite subcommand is scaffolded but not wired for the intake slice (single-step intake only)");
-      break;
     default:
       fail(`unhandled command ${opts.command}`);
   }

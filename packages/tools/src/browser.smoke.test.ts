@@ -57,7 +57,7 @@ describe.skipIf(!SMOKE)("browser smoke — real headless chromium", () => {
   });
 
   it(
-    "launches, navigates a data: page, snapshots/screenshots, emits opened→navigate→closed, closes cleanly",
+    "launches, navigates a data: page, snapshots, emits opened→navigate→closed, closes cleanly",
     async () => {
       const { events, screenshots, emitter } = recordingEmitter();
       tracesDir = mkdtempSync(join(tmpdir(), "autobroker-traces-"));
@@ -75,14 +75,12 @@ describe.skipIf(!SMOKE)("browser smoke — real headless chromium", () => {
           expect(nav.blocked).toBeNull();
           expect(nav.robotsDisallowed).toBe(false); // data: URL → no host → no robots
           const text = await session.snapshot(page);
-          const shot = await session.screenshot(page);
-          return { text, shotLength: shot.length };
+          return { text };
         },
       );
 
       expect(result.text).toContain("hello dealer");
       expect(result.text.length).toBeLessThanOrEqual(120_000);
-      expect(result.shotLength).toBeGreaterThan(0);
 
       // Emitter order: opened first (exactly once), navigate action after,
       // closed last.

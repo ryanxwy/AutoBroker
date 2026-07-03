@@ -6,7 +6,7 @@
  *            interaction, preferred);
  *   rung ii  `FILTER_SELECTOR_MAP` — per-platform widget selectors driven
  *            through the browser session's allowlisted filter verbs
- *            (setFilterSelect / tickFilterCheckbox / clickFilterApply);
+ *            (setFilterSelect / clickFilterApply);
  *   rung iii fall back to the UNFILTERED SRP — the floor; a dealer can never
  *            do worse than the unfiltered scan.
  *

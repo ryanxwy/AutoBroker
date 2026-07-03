@@ -26,17 +26,9 @@ export function InventoryDetailModal({
 }: {
   row: InventoryCandidate | null;
   onClose: () => void;
-}): JSX.Element {
+}): JSX.Element | null {
   const titleId = useId();
-  if (row === null) {
-    // Closed: render an inert Modal (returns null while open=false) so the hook
-    // order stays stable across open/closed.
-    return (
-      <Modal open={false} onClose={onClose} labelId={titleId} variant="dialog">
-        <></>
-      </Modal>
-    );
-  }
+  if (row === null) return null;
 
   const header = vehicleHeader(row) || "Inventory listing";
   const listed = dollarLabel(row.listed_price);

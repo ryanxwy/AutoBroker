@@ -45,7 +45,6 @@ import {
   IDENTITY_FIELDS,
   MissingRequiredFieldError,
 } from "./errors.js";
-import { resolveActiveProfile, type ResolveResult } from "./resolver.js";
 import { releaseDealerClaims } from "../leadSubmissions/claimDealer.js";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +58,7 @@ export interface ValidateResult {
 }
 
 /**
- * LC-1 pure validation — the oracle parity-minimum (year/make/model non-empty +
+ * LC-1 pure validation — the legacy parity minimum (year/make/model non-empty +
  * year int-coercible). Does NOT touch the DB. This is intentionally LOOSER than
  * the 7-field FORM contract (SearchProfileIntakeInputSchema, core): a skill can
  * dry-run this without forcing the full form set. Returns { ok, errors[] }.
@@ -387,15 +386,6 @@ export function create(
 }
 
 // ---------------------------------------------------------------------------
-// resolve — three-branch (delegates to resolver.ts)
-// ---------------------------------------------------------------------------
-
-/** Three-branch resolve; intake itself is exempt (it creates the profile). */
-export function resolveActive(db: Db, args: { threadPin?: string } = {}): ResolveResult {
-  return resolveActiveProfile(db, args);
-}
-
-// ---------------------------------------------------------------------------
 // read views — snake_case row reads for the HTTP profile views. The SQL lives
 // here so the app layer never composes SQL itself.
 // ---------------------------------------------------------------------------
@@ -544,6 +534,20 @@ export function close(db: Db, id: string, opts: { actor?: string; reason?: strin
   });
   txn();
   return true;
+}
+
+/**
+ * The PLAIN status→'closed' write for a skill's OWN lifecycle completion (the
+ * closeout run's final flip). Sets ONLY the `status` column — NO `updated_at`
+ * bump, NO audit row, NO slot/claim release. This is deliberately DISTINCT from
+ * close() / SET_STATUS above (the soft-delete close lifecycle with its audit +
+ * dealer-claim machinery): reproduces exactly the plain single-column UPDATE the
+ * closeout workflow needs, no more.
+ */
+export function closeProfileStatusPlain(db: Db, id: string): void {
+  db.$client
+    .prepare("UPDATE search_profiles SET status = 'closed' WHERE search_profile_id = ?")
+    .run(id);
 }
 
 /**

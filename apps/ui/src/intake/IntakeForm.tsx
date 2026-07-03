@@ -2,8 +2,7 @@
  * IntakeForm — the turn-level wiring that dispatches an awaiting_user suspend to
  * the right surface. It classifies the suspend's
  * spec_inline (gateModel.classifyGate) and renders either the data_collection
- * SchemaForm or one of the three semantic gates. The decision_id is injected from
- * the part and echoed back verbatim on every resume; the runId keys the draft.
+ * SchemaForm or one of the three semantic gates. The runId keys the draft.
  *
  * This is the GATE-zone content of an assistant turn: it renders structurally
  * BEFORE the prose text zone (the AssistantTurn lays the zones in that order).
@@ -35,7 +34,6 @@ export interface IntakeFormProps {
 }
 
 export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: IntakeFormProps): JSX.Element {
-  const decisionId = awaitingUser.decisionId ?? "";
   const gate = classifyGate(awaitingUser.specInline);
 
   const resume = (content: Record<string, unknown>): void => onDecision("accept", content);
@@ -57,9 +55,7 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "intake_confirm":
       return (
         <IntakeConfirmCard
-          gate={gate}
-          decisionId={decisionId}
-          submitting={submitting}
+          gate={gate}          submitting={submitting}
           onResume={resume}
           onDecline={decline}
         />
@@ -67,9 +63,7 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "trim_suggestion":
       return (
         <TrimSuggestionPicker
-          gate={gate}
-          decisionId={decisionId}
-          submitting={submitting}
+          gate={gate}          submitting={submitting}
           onResume={resume}
           onDecline={decline}
         />
@@ -77,9 +71,7 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "ambiguous_location":
       return (
         <AmbiguousLocationPicker
-          gate={gate}
-          decisionId={decisionId}
-          submitting={submitting}
+          gate={gate}          submitting={submitting}
           onResume={resume}
           onDecline={decline}
         />
@@ -87,9 +79,7 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "location_failure":
       return (
         <LocationFailureBanner
-          gate={gate}
-          decisionId={decisionId}
-          submitting={submitting}
+          gate={gate}          submitting={submitting}
           onResume={resume}
           onDecline={decline}
         />
@@ -97,9 +87,7 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
     case "malformed_tool_call":
       return (
         <MalformedRetryGate
-          gate={gate}
-          decisionId={decisionId}
-          submitting={submitting}
+          gate={gate}          submitting={submitting}
           onResume={resume}
           onDecline={decline}
         />

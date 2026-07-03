@@ -392,7 +392,7 @@ function evalNoExternalMutation(
   baseline: number,
 ): AnchorResult {
   const allowFake = spec.allowFakeOutbound === true;
-  // The DB scan honors allowFakeOutbound too: under the harness lane (BLOCK=1)
+  // The DB scan honors allowFakeOutbound too: under the harness lane (AUTOBROKER_MODE=test)
   // the fake-submit lead_submissions row is a LOCAL record, not a real POST, so
   // it must not register as a mutation when the step opted in (invariant #1).
   // Real-escape signals (send/submit audit actions, non-sandbox outbound

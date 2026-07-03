@@ -52,13 +52,15 @@ surroundings (e.g. is this write actually behind the gate?).
    outbound/communication text path that can include a budget number without
    `_redact_budget` / `assertNoBudget`, or a real phone number used without an
    explicit opt-in. These are code constraints, not prompt text.
-7. **Irreversible-send skills stay fake-send (#8).** The three irreversible skills
-   (`dealer_web_lead_submit`, `negotiation_followup`, `dealer_closeout_email`)
-   must stay fake-send pre-Phase-5, their human approval must be visible on every
-   surface, and `dealer_web_lead_submit`'s `email_fallback` scope switch
+7. **Irreversible-send skills: real send in buyer mode, always L2-gated (#8).**
+   The three irreversible skills (`dealer_web_lead_submit`, `negotiation_followup`,
+   `dealer_closeout_email`) really send in buyer mode and fake-send in test mode
+   via the single `AUTOBROKER_MODE` switch; their human approval must be visible on
+   every surface, and `dealer_web_lead_submit`'s `email_fallback` scope switch
    (`browser.submit` → `gmail.send`) MUST force a `suspend()` re-confirm. Flag a
-   real-send path, a hidden approval, a missing re-confirm, or a missing
-   `[fake-send]` marker on the commit body for these skills.
+   send that bypasses the L2 human-approval gate, a hidden approval, or a missing
+   re-confirm. (The old fake-send-until-Phase-5 posture and its commit-body marker
+   are retired — real-send-by-default is owner-ratified, not a violation.)
 8. **Destructive skills need their second confirm (#10).** `pipeline_reset` must
    force a typed-YES second-confirm suspend; `dealer_hygiene`'s second confirm is
    three strictly-ordered per-item batch-review suspends (decline/cancel at ANY

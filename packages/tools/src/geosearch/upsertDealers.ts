@@ -138,3 +138,13 @@ export function upsertDealers(
 
   return txn();
 }
+
+/** Upsert a discovered contact email onto an existing dealer row (the ONLY
+ *  pre-approval write of the lead-submit scout). A plain single-column UPDATE of
+ *  `dealers.contact_email` keyed by dealer_id — the dealer row already exists
+ *  (geosearch created it), so no INSERT path is needed. */
+export function upsertDealerContactEmail(db: Db, dealerId: string, email: string): void {
+  db.$client
+    .prepare("UPDATE dealers SET contact_email = ? WHERE dealer_id = ?")
+    .run(email, dealerId);
+}

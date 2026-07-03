@@ -2,7 +2,7 @@
 # quote_audit IDEMPOTENCY keystone. quote_audit is a ZERO-LLM skill (resolve →
 # read quotes/peers/incentives → run the deterministic 10-check audit → UPSERT
 # quote_audits → render), so it runs OFFLINE on the functional lane (--fixture,
-# dummy DeepSeek key, BLOCK fuse) — no provider call ever fires. Unlike every
+# dummy DeepSeek key, AUTOBROKER_MODE=test) — no provider call ever fires. Unlike every
 # other .func.toml (all runless kind="ui" DOM steps), this case drives REAL
 # kind="skill" runs: the skill genuinely executes the workflow against the
 # fixture-seeded quote world.

@@ -6,8 +6,8 @@
  * parsed shapes every consumer depends on, so swapping fake↔real is a
  * factory-string change, never a consumer edit. Read methods are free (no gate);
  * `send` is the single mutation and only ever runs behind the L2 gate + the
- * BLOCK fuse that the send seam (gmail.ts) wraps around it — this adapter does
- * NOT itself enforce the gate.
+ * AUTOBROKER_MODE=test mode brake that the send seam (gmail.ts) wraps around it —
+ * this adapter does NOT itself enforce the gate.
  *
  * TESTABILITY: the adapter takes a thin `GmailApiClient` (just the API methods
  * it calls) so a unit test can inject a stub and exercise the mapping with ZERO
@@ -266,8 +266,8 @@ export class RealGmailAdapter implements GmailAdapter {
   /**
    * POST the assembled base64url raw RFC-2822 message via users.messages.send.
    * This reaches the network — it must only ever be called from inside the
-   * send seam's approved gate commit, after the BLOCK fuse. This adapter does
-   * not assert the fuse itself (that wall lives in the seam, kept FIRST).
+   * send seam's approved gate commit, in buyer mode. This adapter does not
+   * assert the mode brake itself (that wall lives in the seam, kept FIRST).
    */
   async send(raw: string): Promise<{ messageId: string }> {
     const res = await this.getService().users.messages.send({

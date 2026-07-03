@@ -4,7 +4,6 @@
  *   - ABSENT when nothing is parked (read-only/idle ⇒ zero items);
  *   - lists the consolidated approval queue (server-ranked action-required first);
  *   - names the item (summary heading); a gate "Review" routes to its run;
- *   - a retraction (no runId) is shown action-required but NOT routable;
  *   - never approves inline (no approve/decline buttons — only Review).
  */
 
@@ -44,18 +43,5 @@ describe("NeedsYouInbox", () => {
     expect(r.get("needs-you-count").textContent).toBe("2");
     click(r.get("needs-you-item-run-1"));
     expect(onReview).toHaveBeenCalledWith("run-1");
-  });
-
-  it("shows a retraction task (no runId) as action-required but not routable", () => {
-    const items = [
-      item({ kind: "retraction", runId: null, decisionId: null, reason: "retraction_required", summary: { heading: "Camry", lines: [] } }),
-    ];
-    const onReview = vi.fn();
-    const r = render(<NeedsYouInbox items={items} onReview={onReview} />);
-    const task = r.get("needs-you-task-0");
-    expect(task.textContent).toContain("Action required");
-    expect((task as HTMLButtonElement).disabled).toBe(true);
-    click(task);
-    expect(onReview).not.toHaveBeenCalled();
   });
 });

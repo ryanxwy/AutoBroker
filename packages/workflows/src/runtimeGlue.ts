@@ -109,8 +109,14 @@ export interface BootRecoveryReport {
  * to restart/cancel — clobbering live work). CONTRACT: all production starts
  * go through startRunGuarded (it is also the dup-runId gate, the single entry);
  * a run started via a raw workflow.createRun().start() bypasses this set and
- * recoverOnBoot cannot tell it from a stale row. The app's terminal projection
- * calls {@link releaseRunOwnership} when a run ends, so the set stays a bounded
+ * recoverOnBoot cannot tell it from a stale row. The ONE sanctioned exception is
+ * quote_pipeline's composed child runs (runChildImpl starts each detected child
+ * via a raw createRun().start()): these are deliberately NOT guarded, and that is
+ * safe because the stale scan is boot-only (no boot runs mid-orchestration), each
+ * child gets a fresh UUID runId, and any child that suspends is reaped (cancelled)
+ * in the same tick so it never surfaces as a dangling re-attachable run — do NOT
+ * add beginRunGuarded to those child runs. The app's terminal projection calls
+ * {@link releaseRunOwnership} when a run ends, so the set stays a bounded
  * "currently live" set rather than growing once per run ever started.
  */
 const ownedRunIds = new Set<string>();

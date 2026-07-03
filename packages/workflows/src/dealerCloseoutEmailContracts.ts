@@ -24,7 +24,8 @@
 
 import { z } from "zod";
 
-import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./batchReviewContracts.js";
+import type { ProfilePinStopCode } from "./profilePinShared.js";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -42,8 +43,8 @@ export type DealerCloseoutEmailInput = z.infer<typeof DealerCloseoutEmailInputSc
 /**
  * The workflow output — a 3-member discriminated union.
  *   - sent: the closeout ran. `closed_thread_ids` are the threads flipped to
- *     closed; `emails_sent` counts PROMOTED sends (0 under BLOCK=1 — the send is
- *     fuse-blocked even though the local close happened);
+ *     closed; `emails_sent` counts PROMOTED sends (real in buyer mode; a fake
+ *     sandbox row in test mode — the local close happens either way);
  *     `profile_status_transition` is "closed" once any closeout landed.
  *   - declined: the batch_review decline → zero writes, zero sends.
  *   - skip_all_reset: the user skipped every row → the Phase-4 pipeline_reset
@@ -75,10 +76,8 @@ export type DealerCloseoutEmailOutput = z.infer<typeof DealerCloseoutEmailOutput
 // typed STOP codes (pin-required skill) + the generalized classifier
 // ---------------------------------------------------------------------------
 
-export type DealerCloseoutEmailStopCode =
-  | "pin_required"
-  | "no_active_profile"
-  | "multiple_active_profiles";
+/** This skill's STOP vocabulary is exactly the shared pin-required set. */
+export type DealerCloseoutEmailStopCode = ProfilePinStopCode;
 
 /** Typed STOP from the resolve step. The message is the user-facing wording —
  *  the server surfaces it verbatim on the run's error frame. */
@@ -91,18 +90,8 @@ export class DealerCloseoutEmailStopError extends Error {
   }
 }
 
-/**
- * The generalized profile-STOP classifier for a pin-less input. 0 active →
- * no_active_profile (point at intake); exactly 1 active → pin_required (one
- * active is still not silently run — the user must explicitly pin); 2+ active →
- * multiple_active_profiles (ask by vehicle name). Returns the typed code only;
- * the resolve step supplies the wording.
- */
-export function profileStopCode(activeCount: number): DealerCloseoutEmailStopCode {
-  if (activeCount <= 0) return "no_active_profile";
-  if (activeCount === 1) return "pin_required";
-  return "multiple_active_profiles";
-}
+/** The generalized profile-STOP classifier (shared across the 3 send skills). */
+export { profileStopCode } from "./profilePinShared.js";
 
 // ---------------------------------------------------------------------------
 // suspend ① — REUSE the shared batch_review contracts verbatim
@@ -111,7 +100,7 @@ export function profileStopCode(activeCount: number): DealerCloseoutEmailStopCod
 /** The batch_review suspend ① / resume reuse the shared vocabulary. Re-exported
  *  so the workflow + descriptor import them from one place. */
 export { BatchReviewResumeSchema, BatchReviewSuspendSchema };
-export type { BatchReviewResume, BatchReviewSuspend } from "./inventorySiteScan.js";
+export type { BatchReviewResume, BatchReviewSuspend } from "./batchReviewContracts.js";
 
 /** The stable workflow id (registration + the server descriptor). */
 export const DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID = "dealer_closeout_email" as const;

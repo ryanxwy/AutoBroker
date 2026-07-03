@@ -1,6 +1,6 @@
 # dealer_web_lead_submit.ui_decline.func.toml — the X1 irreversible-send KEYSTONE
-# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_
-# MUTATIONS=1, NO live LLM/browser). The batch_review card suspends BEFORE any
+# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test,
+# NO live LLM/browser). The batch_review card suspends BEFORE any
 # dealer-site contact, so a Decline must be terminal with ZERO lead_submissions,
 # ZERO messages, and a clean keystone (decline = zero writes).
 #

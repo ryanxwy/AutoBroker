@@ -17,7 +17,8 @@
  * tool reads it and never writes back here.
  *
  * Usage:
- *   tsx harness/export_daily.ts 2026-06-02 [--out <path>]
+ *   tsx harness/export_daily.ts [2026-06-02] [--out <path>]
+ *   (date optional — absent defaults to LOCAL today; the Stop hook calls it dateless)
  *
  * Output path + key contract (LOCKED to the external reporting tool's parser —
  * default out is harness/exports/<date>.json, the first path it probes, and the
@@ -278,6 +279,19 @@ export function serializeExport(doc: DailyHarnessExport): string {
   return JSON.stringify(doc, null, 2) + "\n";
 }
 
+/** Resolve the export date from argv[2]: an explicit YYYY-MM-DD, else LOCAL today.
+ *  The Stop hook calls `pnpm harness:export` with NO date (and pnpm can forward a
+ *  bare "--" separator), so an absent or flag-leading arg defaults to today —
+ *  otherwise the export was a silent no-op. Format is LOCAL YYYY-MM-DD to match
+ *  the ledger's local createdAtBucket. */
+export function resolveExportDate(arg: string | undefined, now: Date = new Date()): string {
+  if (arg !== undefined && !arg.startsWith("--")) return arg;
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /** Default out path = harness/exports/<date>.json (the first path the reporting tool probes). */
 export function defaultOutPath(date: string): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -293,13 +307,11 @@ export function writeExport(date: string, outPath?: string): string {
   return out;
 }
 
-/** CLI: `node --import tsx/esm export_daily.ts <date> [--out <path>]`. */
+/** CLI: `node --import tsx/esm export_daily.ts [<date>] [--out <path>]`.
+ *  Date is optional — absent (or a leading flag) defaults to LOCAL today, so the
+ *  Stop hook's date-less `pnpm harness:export` exports today's window. */
 function main(argv: string[]): void {
-  const date = argv[2];
-  if (date === undefined || date.startsWith("--")) {
-    console.error("usage: export_daily.ts <YYYY-MM-DD> [--out <path>]");
-    process.exit(2);
-  }
+  const date = resolveExportDate(argv[2]);
   const outIdx = argv.indexOf("--out");
   const outPath = outIdx !== -1 ? argv[outIdx + 1] : undefined;
   const written = writeExport(date, outPath);

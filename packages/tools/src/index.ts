@@ -8,7 +8,7 @@
  * Dependency wall: tools may import core and db — never workflows or app.
  */
 
-// L2 gate bridge + L1 env fuse — the single side-effect path.
+// L2 in-process approval gate bridge — the single side-effect path.
 export {
   requestApproval,
   withGate,
@@ -154,7 +154,6 @@ export {
   SNAPSHOT_CAP_CHARS,
   POLITENESS_JITTER_MS,
   BrowserIsolationError,
-  BrowserTool,
   gatedSubmitForm,
   // Filter face (read-side refinement verbs + their fences; never gated,
   // never holds an Approver).
@@ -168,7 +167,6 @@ export {
   // Approver; ZIP-digits-only value constraint).
   ZIP_VALUE_RE,
   ZIP_FIELD_RE,
-  ZIP_SUBMIT_TEXT_RE,
   LocationZipRefusedError,
   probeZipTarget,
   assertZipTargetAllowed,
@@ -187,8 +185,6 @@ export {
   type BrowserContextOptions,
   type BrowserSession,
   type ExtractFallbackResult,
-  type ResponseMatch,
-  type PageLike,
   type DealerLeadForm,
 } from "./browser.js";
 
@@ -225,15 +221,16 @@ export {
 } from "./geosearch/pure.js";
 export {
   mapsExtractor,
-  parseMapsHref,
-  parseRatingLabel,
-  isServiceCenterTypeLine,
   needsFallback,
   MAPS_EXTRACT_REQUIRED_FIELDS,
   type MapsDomDocument,
   type MapsDomElement,
 } from "./geosearch/mapsExtractor.js";
-export { upsertDealers, type UpsertDealersResult } from "./geosearch/upsertDealers.js";
+export {
+  upsertDealers,
+  upsertDealerContactEmail,
+  type UpsertDealersResult,
+} from "./geosearch/upsertDealers.js";
 
 // Outbound-URL SSRF validator (9 ordered rules, fail-closed).
 export {
@@ -246,7 +243,6 @@ export {
 // Dealer-platform inventory scout (fingerprint table + fresh-200 SRP probe).
 export {
   fingerprintPlatform,
-  likelySrpPath,
   resolveSrp,
   type DealerPlatform,
   type ScoutOptions,
@@ -364,6 +360,7 @@ export {
 } from "./inventory/inventory_rank.js";
 export {
   listListingsForProfile,
+  readListingRowById,
   type ProfileListingsRead,
 } from "./inventory/read.js";
 export {
@@ -408,7 +405,8 @@ export {
 } from "./gmail/readProbe.js";
 
 // Outbound send+record writer — the single skill-facing draft-then-promote
-// send path (preflight → draft row → fuse → fake send → promote, all inside one
+// send path (test-mode brake → draft row → send [real in buyer mode, fake in
+// test mode] → promote, all inside one
 // gated commit). Four discriminated outcomes (sent/declined/blocked/partial) +
 // the serial batch variant that stops at the first failure.
 export {
@@ -555,19 +553,18 @@ export {
 // candidates, the reply-thread snapshot, and the 4-level reply-target inputs).
 export { setPrimaryReplyTarget } from "./dealerComm/contactFlip.js";
 export {
-  readQuoteSituationForThread,
   readDealerGiveUpInputs,
   readDealerContacts,
   listFollowupCandidateThreads,
   readThreadSnapshotForDraft,
   readReplyTargetInputs,
-  type QuoteSituationRead,
   type DealerGiveUpInputsRead,
   type DealerContactRead,
   type FollowupCandidateThread,
   type ThreadSnapshotRead,
   type ReplyTargetInputsRead,
 } from "./inbox/followupReads.js";
+export { setThreadState } from "./inbox/threadWrites.js";
 export {
   listProfileDealerVerdicts,
   listProfileDealerRowsWithVerdicts,
@@ -591,8 +588,9 @@ export {
 
 // dealer_closeout_email (X3) — the closeout target assembler (open threads minus
 // closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)
-// + the atomic per-dealer send+close+suppress tool (gated send fuse-blocked under
-// the L1 fuse; the close + thread_suppression commit locally in one transaction).
+// + the atomic per-dealer send+close+suppress tool (gated send is fake in test
+// mode via the AUTOBROKER_MODE=test brake, real in buyer mode; the close +
+// thread_suppression commit locally in one transaction).
 export {
   assembleCloseoutTargets,
   closeAndSuppressDealer,
@@ -649,7 +647,6 @@ export {
 } from "./inbox/watermark.js";
 export {
   listProfileThreadRows,
-  listProfileMessageRows,
   listProfileQuoteRows,
   listProfileIncentiveRows,
   listProfileContactEmails,
@@ -813,11 +810,6 @@ export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
 // plus the classes + pacing primitives for callers that construct their own.
 export * from "./limiter/index.js";
 
-// The serialized product-DB write lane — the single funnel for multi-step async
-// write SEQUENCES under concurrency (sync .run()/.transaction() are already
-// serialized + atomic; see writeLane.ts for the honest scope).
-export { withWriteLane } from "./writeLane.js";
-
 // Scheduler watermark — the per-job last-success store in pipeline_state (the
 // durable catch-up watermark; the only product-DB access the background
 // scheduler is permitted, funnelled down here per the SQLite invariant).
@@ -873,6 +865,7 @@ export {
 export {
   listQuotesForProfile,
   getQuote,
+  readDealerDisplayName,
   listPeerQuotes,
   listIncentivesSlice,
   DEFAULT_AUDIT_PASS_VERSION,
@@ -905,17 +898,14 @@ export {
   type OtdAttribution,
 } from "./quotes/crossState.js";
 
-// Pure validators (post-validation + safety rules).
+// Pure validators (safety rules).
 export {
-  postValidate,
   assertNoBudget,
   assertPaymentMethodConsistent,
   assertUnicodeSafe,
-  assertPhonePolicy,
   BudgetLeakError,
   PaymentMethodMismatchError,
   UnicodeUnsafeError,
-  PhonePolicyViolationError,
   type ValidationResult,
 } from "./validators.js";
 
@@ -940,8 +930,9 @@ export {
   type SecretsProbeDeps,
 } from "./settings/index.js";
 
-// Settings/env — the curated NON-SECRET operational env vars (the editable
-// AUTOBROKER_MODE / CHROME_HEADLESS toggles + read-only fuse/path/status rows).
+// Settings/env — the curated NON-SECRET operational env vars (the four editable
+// app_mode / gmail_account / chrome_headless / per_dealer_record_cap rows +
+// read-only path/status rows).
 // The boot loader seeds saved overrides into process.env; routes delegate down
 // here and never read/write the env file directly.
 export {
@@ -987,7 +978,6 @@ export {
   profileToRow,
   validate,
   create,
-  resolveActive,
   update,
   replace,
   close,
@@ -996,6 +986,7 @@ export {
   parseLocation,
   synthProfileId,
   readProfileRow,
+  closeProfileStatusPlain,
   listProfileRows,
   listProfileDealerRows,
   resolveActiveProfile,

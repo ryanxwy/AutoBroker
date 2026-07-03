@@ -1,5 +1,5 @@
 /**
- * dealer_web_lead_submit — the irreversible-send KEYSTONE (Phase 5, [fake-send]).
+ * dealer_web_lead_submit — the irreversible-send KEYSTONE (real send in buyer mode, fake in test mode).
  * ONE flat linear Mastra `createWorkflow`: 8 named steps chained with `.then()`,
  * no nested workflow. TWO human suspends, BOTH before any side effect; the first
  * is the batch_review card (decline = terminal, zero writes / zero sends), the
@@ -40,8 +40,8 @@
  *                      to the kind:"approval" single_store_confirm suspend.
  *   4 submit        — per approved dealer: the ONE Approver-holding call,
  *                      session.submitForm via the internal always-true APPROVED
- *                      approver (the human ALREADY approved at ①; the L1 fuse is
- *                      the real floor — under BLOCK=1 it throws BEFORE the click).
+ *                      approver (the human ALREADY approved at ①; the AUTOBROKER_MODE=test
+ *                      brake is the test-mode floor — in test mode it throws BEFORE the click).
  *                      captcha NEVER retried → routes straight to email_fallback.
  *   5 emailFallback — SUSPEND ② (the X1 FIX POINT): the INDEPENDENT re-confirm
  *                      for each needs-fallback dealer. approve → sendAndRecord
@@ -49,8 +49,8 @@
  *                      dealer's fallback only (carry "declined"), run continues.
  *   6 recordConfirm — the LOCAL recordSubmission XOR writer (one row per decided
  *                      dealer, the channel-matching shape) + the zero-LLM confirm
- *                      template. recordSubmission is NOT fuse-gated — it writes the
- *                      fake-submit row on approve regardless of the fuse.
+ *                      template. recordSubmission is NOT mode-gated — it writes the
+ *                      local submission row on approve regardless of send mode.
  *
  * KEYSTONE: the scout capture path holds NO Approver and imports NOTHING from the
  * gate module — the ONLY Approver-holding call is `session.submitForm` in the
@@ -84,11 +84,14 @@ import {
   NULL_EMITTER,
   partitionUsDealers,
   platformOf,
+  readListingRowById,
+  readProfileRow,
   recordSubmission as recordSubmissionImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   safeBodyTemplate,
   safeSubjectLine,
   sendAndRecord as sendAndRecordImpl,
+  upsertDealerContactEmail as upsertDealerContactEmailImpl,
   withBrowserContext,
   type Approver,
   type BrowserEmitter,
@@ -112,10 +115,10 @@ import {
   LeadApprovalResumeSchema,
   LeadApprovalSuspendSchema,
   LeadFormMapSchema,
-  profileStopCode,
 } from "./dealerWebLeadSubmitContracts.js";
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { envConcurrency } from "./inventorySiteScan.js";
+import { runWorkerPool, envConcurrency } from "./inventorySiteScan.js";
+import { resolvePinnedProfileRowOrStop } from "./profilePinShared.js";
 import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 export { DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID };
@@ -128,12 +131,13 @@ import { randomUUID } from "node:crypto";
 
 /**
  * The post-suspend approver. The human ALREADY approved at the batch_review ① /
- * email_fallback ② suspend; this Approver records that fact for the gate. The L1
- * fuse (gate step (b)) is the real floor under the harness — it throws BEFORE
- * this decide() ever runs, so a fake submit can never mint a real receipt. In a
- * disarmed-fuse offline test the approve path runs the real commit against the
- * FAKE backend (browser stub / FakeGmailAdapter) and the row is written. ONE
- * module constant, reused by both the submit step and the email_fallback send.
+ * email_fallback ② suspend; this Approver records that fact for the gate. The
+ * AUTOBROKER_MODE=test brake (at the top of the approved commit) is the test-mode
+ * floor — in test mode it throws BEFORE the form fill/click, so a fake submit can
+ * never touch a real dealer. In an offline test the approve path runs the real
+ * commit against the FAKE backend (browser stub / FakeGmailAdapter) and the row is
+ * written. ONE module constant, reused by both the submit step and the
+ * email_fallback send.
  */
 const APPROVED: Approver = { async decide() { return true; } };
 
@@ -251,9 +255,9 @@ export async function scoutOneWithSession(deps: {
       if (FORM_SHAPE_RE.test(snapshot)) {
         // A captcha-gated contact form is unreachable by auto-submit (retrying a
         // captcha never helps) → route to email fallback, never a form submit.
-        // Detected at SCOUT time on the read snapshot, BEFORE the fuse-gated
-        // submit (under BLOCK=1 the fuse throws before any post-submit page
-        // exists, so a captcha can only be caught here). Carry the harvested
+        // Detected at SCOUT time on the read snapshot, BEFORE the gated
+        // submit (in test mode the AUTOBROKER_MODE=test brake throws before any
+        // post-submit page exists, so a captcha can only be caught here). Carry the harvested
         // email so the fallback still has a target.
         if (hasCaptcha(snapshot)) {
           emitter.action("scout_captcha_form", `${dealer.name} ${probeUrl}`);
@@ -305,67 +309,39 @@ const SCOUT_CONCURRENCY = envConcurrency("AUTOBROKER_SCOUT_CONCURRENCY", 4);
 const SUBMIT_PER_DEALER_TIMEOUT_MS = 45_000;
 
 /**
- * A tiny inline bounded-concurrency map (no new dependency): run `fn` over `items`
- * with at most `limit` in flight, writing each result into a pre-sized array AT ITS
- * INPUT INDEX so the output order EXACTLY mirrors the input — completion order never
- * leaks into the result. A fixed pool of `limit` workers pulls the next free index
- * off a shared cursor; each worker awaits its task before taking another, so no more
- * than `limit` run concurrently.
- */
-export async function boundedConcurrentMap<T, R>(
-  items: ReadonlyArray<T>,
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    for (;;) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      results[index] = await fn(items[index]!, index);
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
-  await Promise.all(workers);
-  return results;
-}
-
-/**
  * The production scout boundary: ONE isolated read-only browser PER dealer
  * (named so trace files never collide), each scouted via scoutOneWithSession,
- * now run with bounded concurrency (SCOUT_CONCURRENCY) — see that constant for
- * why parallelizing the scout is safe. Output order mirrors input order so the
- * downstream batch stays deterministic. The whole browser tree tears down in
- * withBrowserContext's own finally. A throwing dealer degrades to a
+ * now run with bounded concurrency (SCOUT_CONCURRENCY) via the shared
+ * runWorkerPool — see that constant for why parallelizing the scout is safe.
+ * Output order mirrors input order (runWorkerPool writes each result at its input
+ * index) so the downstream batch stays deterministic. The whole browser tree
+ * tears down in withBrowserContext's own finally. A throwing dealer degrades to a
  * no-form/no-email outcome — it never kills the batch. Holds NO Approver and
  * reaches NO mutating face. Offline tests inject a stub through the deps seam.
  */
 async function scoutFormsImpl(args: ScoutFormsArgs): Promise<ScoutOutcome[]> {
-  const outcomes = await boundedConcurrentMap(
-    args.dealers,
-    SCOUT_CONCURRENCY,
-    (dealer) =>
-      withBrowserContext(
-        `${args.runId}-leadscout-${dealer.dealerId}`,
-        { emitter: args.emitter },
-        (session) => scoutOneWithSession({ session, emitter: args.emitter, dealer }),
-      ).catch(
-        // Per-dealer isolation: a dead scout is a no-form/no-email outcome (it is
-        // dropped as unreachable downstream), never a batch-killing throw.
-        (): ScoutOutcome => ({
-          dealerId: dealer.dealerId,
-          name: dealer.name,
-          website: dealer.website,
-          form: null,
-          platform: "custom",
-          fieldMap: null,
-          formSnapshot: null,
-          contactEmail: null,
-          captcha: false,
-        }),
-      ),
-  );
+  const outcomes = await runWorkerPool(SCOUT_CONCURRENCY, args.dealers.length, (i) => {
+    const dealer = args.dealers[i]!;
+    return withBrowserContext(
+      `${args.runId}-leadscout-${dealer.dealerId}`,
+      { emitter: args.emitter },
+      (session) => scoutOneWithSession({ session, emitter: args.emitter, dealer }),
+    ).catch(
+      // Per-dealer isolation: a dead scout is a no-form/no-email outcome (it is
+      // dropped as unreachable downstream), never a batch-killing throw.
+      (): ScoutOutcome => ({
+        dealerId: dealer.dealerId,
+        name: dealer.name,
+        website: dealer.website,
+        form: null,
+        platform: "custom",
+        fieldMap: null,
+        formSnapshot: null,
+        contactEmail: null,
+        captcha: false,
+      }),
+    );
+  });
   // Progress signal: a single end-of-scout summary so the UI turn shows that the
   // (now-parallel) pre-gate scout actually ran, instead of sitting on "RUNNING".
   // Same emitter channel as scout_probe_blocked / scout_captcha_form above.
@@ -452,7 +428,7 @@ export interface DealerWebLeadSubmitWorkflowDeps {
    *  `'unavailable'` drop the dealer. A LOCAL DB lock, acquired mode-agnostically
    *  (whether AUTOBROKER_MODE is buyer or test) before the real-or-fake send. */
   claimDealer: typeof claimDealerImpl;
-  /** The XOR lead-submission writer (tools layer, a LOCAL write — not fuse-gated). */
+  /** The XOR lead-submission writer (tools layer, a LOCAL write — not mode-gated). */
   recordSubmission: typeof recordSubmissionImpl;
   /** The gated draft-then-promote send+record (tools layer; the email fallback). */
   sendAndRecord: typeof sendAndRecordImpl;
@@ -511,14 +487,14 @@ export async function submitOneWithSession(deps: {
     }
     try {
       // THE ONE Approver-holding call — the single structured path to a real
-      // form submission. Under BLOCK=1 the L1 fuse throws BEFORE the click.
+      // form submission. In test mode the AUTOBROKER_MODE=test brake throws BEFORE the click.
       const result = await session.submitForm(page, form, approver);
       // submitForm returns {submitted:true} | {declined:true}; the human already
       // approved at the suspend, so the internal approver returns true and the
       // declined branch cannot fire here — guard it as needs_fallback anyway.
       return "submitted" in result ? { kind: "submitted" } : { kind: "needs_fallback", reason: "no_form" };
     } catch (err) {
-      // The expected fake-submit under the armed fuse: the gate fails CLOSED.
+      // The expected fake-submit in test mode: the mode brake fails CLOSED.
       if (err instanceof ExternalMutationsBlockedError) return { kind: "fuse_blocked" };
       throw err; // any other failure is a real error — never swallowed.
     }
@@ -554,21 +530,11 @@ const realDeps: DealerWebLeadSubmitWorkflowDeps = {
   harnessGenerate: harness.generate,
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
-  readProfileById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM search_profiles WHERE search_profile_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
-  readListingById: (db, id) =>
-    (db.$client
-      .prepare("SELECT * FROM inventory_listings WHERE listing_id = ?")
-      .get(id) as Record<string, unknown> | undefined) ?? null,
+  readProfileById: readProfileRow,
+  readListingById: readListingRowById,
   listProfileDealers: listProfileDealerRowsImpl,
   scoutForms: scoutFormsImpl,
-  upsertDealerContactEmail: (db, dealerId, email) => {
-    db.$client
-      .prepare("UPDATE dealers SET contact_email = ? WHERE dealer_id = ?")
-      .run(email, dealerId);
-  },
+  upsertDealerContactEmail: upsertDealerContactEmailImpl,
   checkSubmissionPrecondition: checkSubmissionPreconditionImpl,
   claimDealer: claimDealerImpl,
   recordSubmission: recordSubmissionImpl,
@@ -768,13 +734,6 @@ function withDb<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   return fn(deps().getDb());
 }
 
-/** "2026 Hyundai Tucson SEL"-style label for ask/pin stops. */
-function rowVehicleLabel(row: Record<string, unknown>): string {
-  return [row["year"], row["make"], row["model"], row["trim"]]
-    .filter((x) => x !== null && x !== undefined && x !== "")
-    .join(" ");
-}
-
 /** The minimal LeadPayloadProfile from the threaded message profile + email. */
 function payloadProfileOf(state: LeadSubmitState): LeadPayloadProfile {
   return {
@@ -856,37 +815,20 @@ const resolveProfileStep = createStep({
       // Full-batch mode: EXPLICIT-PIN REQUIRED (this skill never infers, not even
       // the single-active case — that is the thin edge of "pick newest" it must
       // not take). A pin-less input STOPs by the generalized classifier.
-      if (inputData.search_profile_id === null) {
-        const active = withDb((db) => deps().listActiveProfiles(db));
-        const code = profileStopCode(active.length);
-        if (code === "no_active_profile") {
-          throw new DealerWebLeadSubmitStopError(
-            "no_active_profile",
-            "No active search profile found — dealer_web_lead_submit needs one to " +
-              "know which dealers to submit leads to. Run /search_profile_intake to " +
-              "create a profile, then re-run /dealer_web_lead_submit.",
-          );
-        }
-        const labels = active.map((r) => rowVehicleLabel(r)).join(" | ");
-        throw new DealerWebLeadSubmitStopError(
-          code, // pin_required (1 active) | multiple_active_profiles (2+)
-          `Pin a search first: ${labels}. dealer_web_lead_submit only submits leads ` +
-            "for a search you have explicitly pinned — pick one from the Searches " +
-            "list, then re-run /dealer_web_lead_submit.",
-        );
-      }
-      // A supplied pin must still be active; a stale/closed/missing pin is rejected.
-      const resolved = withDb((db) =>
-        deps().resolveProfile(db, { threadPin: inputData.search_profile_id! }),
-      );
-      if (resolved.kind !== "pinned") {
-        throw new DealerWebLeadSubmitStopError(
-          "pin_required",
-          "That pinned search is no longer active. Pick an active search from the " +
-            "Searches list and re-run /dealer_web_lead_submit.",
-        );
-      }
-      profileRow = withDb((db) => deps().readProfileById(db, resolved.profile.id));
+      const d = deps();
+      profileRow = resolvePinnedProfileRowOrStop({
+        withDb,
+        resolvers: {
+          listActiveProfiles: d.listActiveProfiles,
+          resolveProfile: d.resolveProfile,
+          readProfileById: d.readProfileById,
+        },
+        pin: inputData.search_profile_id,
+        skillSlash: "/dealer_web_lead_submit",
+        purposeClause: "dealers to submit leads to",
+        pinClause: "submits leads for a search you have explicitly pinned",
+        makeError: (code, message) => new DealerWebLeadSubmitStopError(code, message),
+      }).row;
     }
 
     const row = profileRow ?? {};
@@ -1436,9 +1378,10 @@ const emailFallbackStep = createStep({
         continue;
       }
 
-      // RE-CONFIRMED. Only NOW does the gmail.send scope fire (fake). The L1 fuse
-      // is the live anchor: under BLOCK=1 sendAndRecord returns {blocked} (zero
-      // messages rows). Offline disarmed: {sent} writes one fake draft+promote.
+      // RE-CONFIRMED. Only NOW does the gmail.send scope fire. In test mode the
+      // AUTOBROKER_MODE=test brake resolves the FakeGmailAdapter → sendAndRecord
+      // {sent} writes one fake draft+promote (a fake sandbox row, no real
+      // outbound); in buyer mode it is a real send behind the L2 gate.
       const target = fallbackEmailTarget(state, d);
       await deps().sendAndRecord(target, { approver: APPROVED, runId });
       d.channel = "email";
@@ -1469,7 +1412,7 @@ const recordConfirmStep = createStep({
     let captchaManualCount = 0;
     let failedCount = 0;
 
-    // THE LOCAL WRITE (NOT fuse-gated): one recordSubmission per decided dealer,
+    // THE LOCAL WRITE (NOT mode-gated): one recordSubmission per decided dealer,
     // the XOR shape mirroring the channel. recordSubmission's typed union is the
     // authority on the column combination — the INSERT is never hand-built.
     withDb((db) => {
@@ -1581,7 +1524,7 @@ const recordConfirmStep = createStep({
       unavailableSentence;
 
     return {
-      outcome: "scanned" as const,
+      outcome: "submitted" as const,
       resolution: state.resolution,
       submissions_successful: submissionsSuccessful,
       email_fallback_count: emailFallbackCount,

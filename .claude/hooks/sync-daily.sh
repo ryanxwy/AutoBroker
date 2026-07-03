@@ -9,7 +9,9 @@
 #
 #   1. Export today's test_run_records -> harness/exports/<date>.json so the
 #      daily report's "harness 信号" section has data. (No-op if pnpm/script
-#      absent.) Wire package.json: "harness:export": "tsx harness/export_daily.ts --date $(date +%F)".
+#      absent.) The `pnpm -s harness:export` call passes no date; export_daily.ts
+#      defaults the run-window bucket to local today when no positional date is
+#      given, so the dateless call writes today's file.
 #   2. Scaffold today's plan-repo daily report IF there is real progress today
 #      (>=1 commit) AND the report does not exist yet. new-day.sh refuses to
 #      overwrite, so re-runs are no-ops; use /daily-sync to refresh + draft.

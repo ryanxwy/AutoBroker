@@ -18,31 +18,30 @@ The skill manifest layer: a typed `SkillDef` registry plus a per-skill
 
 ## The 18 skills
 
-Derived from `src/registry.ts` (build order, phase 1 → 5). For implemented
-skills the Doc column links the per-skill `SKILL.md`; planned skills get their
-`SKILL.md` together with their acceptance commit — no placeholder docs are
-written ahead of the build.
+Derived from `src/registry.ts` (build order, phase 1 → 5). All 17 are
+**implemented**. Where a per-skill `SKILL.md` exists the Doc column links it; the
+remaining skills are implemented in code but carry no standalone `SKILL.md`.
 
 | Phase | Skill | Risk | Status | Doc |
 |---|---|---|---|---|
 | 1 | `search_profile_intake` | local_write | implemented | [SKILL.md](search_profile_intake/SKILL.md) |
-| 1 | `quote_audit` | read_only | planned | — |
-| 1 | `quote_compare` | read_only | planned | — |
-| 1 | `inventory_compare` | read_only | planned | — |
+| 1 | `quote_audit` | read_only | implemented | — |
+| 1 | `quote_compare` | read_only | implemented | — |
+| 1 | `inventory_compare` | read_only | implemented | — |
 | 2 | `dealer_geosearch` | local_write | implemented | [SKILL.md](dealer_geosearch/SKILL.md) |
 | 2 | `inventory_site_scan` | local_write | implemented | [SKILL.md](inventory_site_scan/SKILL.md) |
 | 2 | `inventory_aggregator_scan` | local_write | implemented | — |
-| 2 | `inventory_link_scan` | local_write | planned | — |
-| 2 | `incentive_scrape` | local_write | planned | — |
-| 3 | `dealer_inbox_check` | local_write | planned | — |
-| 3 | `dealer_reply_extract` | local_write | planned | — |
-| 3 | `dealer_hygiene` | destructive | planned | — |
-| 4 | `quote_pipeline` | local_write | planned | — |
-| 4 | `daily_digest` | local_write | planned | — |
-| 4 | `pipeline_reset` | destructive | planned | — |
-| 5 | `dealer_web_lead_submit` | irreversible | planned | — |
-| 5 | `negotiation_followup` | irreversible | planned | — |
-| 5 | `dealer_closeout_email` | irreversible | planned | — |
+| 2 | `inventory_link_scan` | local_write | implemented | [SKILL.md](inventory_link_scan/SKILL.md) |
+| 2 | `incentive_scrape` | local_write | implemented | [SKILL.md](incentive_scrape/SKILL.md) |
+| 3 | `dealer_inbox_check` | local_write | implemented | [SKILL.md](dealer_inbox_check/SKILL.md) |
+| 3 | `dealer_reply_extract` | local_write | implemented | — |
+| 3 | `dealer_hygiene` | destructive | implemented | [SKILL.md](dealer_hygiene/SKILL.md) |
+| 4 | `quote_pipeline` | local_write | implemented | — |
+| 4 | `daily_digest` | local_write | implemented | — |
+| 4 | `pipeline_reset` | destructive | implemented | — |
+| 5 | `dealer_web_lead_submit` | irreversible | implemented | — |
+| 5 | `negotiation_followup` | irreversible | implemented | — |
+| 5 | `dealer_closeout_email` | irreversible | implemented | — |
 
 The registry in `src/registry.ts` is authoritative; this table mirrors it.
 
@@ -68,8 +67,8 @@ The registry in `src/registry.ts` is authoritative; this table mirrors it.
 ## Build order — dependency × risk
 
 Safest face first (deterministic, read-only + intake), product surface next
-(browser-first), most dangerous last (irreversible fake-send). **One skill = one
-commit**, prefixed `phaseN/<skill>:`.
+(browser-first), most dangerous last (irreversible send — real in buyer mode,
+fake in test mode). **One skill = one commit**, prefixed `phaseN/<skill>:`.
 
 1. **Phase 1 · deterministic core + intake** — `search_profile_intake` (skill
    #1, e2e-first), `quote_audit` (template), `quote_compare`,
@@ -83,11 +82,11 @@ commit**, prefixed `phaseN/<skill>:`.
 4. **Phase 4 · orchestration / report** — `quote_pipeline`, `daily_digest`,
    `pipeline_reset` (destructive, typed-YES). Compose + destructive-local.
 5. **Phase 5 · irreversible mutations** — `dealer_web_lead_submit`,
-   `negotiation_followup`, `dealer_closeout_email`. **Fake-send throughout**;
-   the commit body carries `[fake-send]` until Phase 5 acceptance is GREEN, and
-   human approval is never hidden. The gate stack (native Mastra approval /
-   `suspend()` → L2 in-process gate fail-closed → fallback suspend, over the
-   `AUTOBROKER_MODE` send brake) is mandatory.
+   `negotiation_followup`, `dealer_closeout_email`. **Real send in buyer mode,
+   fake in test mode** (the single `AUTOBROKER_MODE` switch), and human approval
+   is never hidden. The gate stack (native Mastra approval / `suspend()` → L2
+   in-process gate fail-closed → fallback suspend, over the `AUTOBROKER_MODE` send
+   brake) is mandatory.
 
 ## The 7-step per-skill loop
 

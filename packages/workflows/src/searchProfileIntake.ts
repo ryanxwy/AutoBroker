@@ -90,7 +90,6 @@ import {
   SearchProfileIntakeInputSchema,
   type SearchProfileIntakeInput,
 } from "@autobroker/core";
-import type { HarnessSuspend } from "@autobroker/model";
 import {
   create as createProfileImpl,
   resolveLocation as resolveLocationImpl,
@@ -100,7 +99,7 @@ import {
   type ResolvedCoordinates,
 } from "@autobroker/tools";
 
-import { harness, type HarnessLedgerContext } from "./harness.js";
+import { harness, isHarnessSuspend, type HarnessLedgerContext } from "./harness.js";
 import {
   AmbiguousLocationResumeSchema,
   buildPrefillPrompt,
@@ -279,11 +278,6 @@ const IntakeOutputSchema = z.discriminatedUnion("outcome", [
 /** Re-hydrate a typed IntakeState from a step's loosely-typed inputData. */
 function asState(inputData: unknown): IntakeState {
   return IntakeStateSchema.parse(inputData);
-}
-
-/** Narrow a harness.generate result to the HarnessSuspend branch. */
-function isHarnessSuspend(r: unknown): r is HarnessSuspend {
-  return typeof r === "object" && r !== null && "suspended" in r;
 }
 
 /**

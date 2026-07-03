@@ -47,7 +47,6 @@ import {
   listProfileThreadRowsWithStatus,
   listProfileDealerNegotiations,
   readDealerNegotiationDetail,
-  listProfileMessageRows,
   buildDigestView,
   profileHealth,
   listActiveProfileIds,
@@ -257,9 +256,9 @@ const TestKeyBodySchema = z.object({
 });
 
 /** PUT /api/settings/env — set ONE editable operational env var. The id enum IS
- *  the route-layer allow-list: only the two editable ids are accepted, so the
- *  read-only fuse / paths / demo-status ids fail the schema with a 400 before the
- *  store is ever called (the L1 fuse var is structurally unreachable here). The
+ *  the route-layer allow-list: only the four editable ids are accepted, so the
+ *  read-only path / demo-status ids fail the schema with a 400 before the
+ *  store is ever called (a non-editable id is structurally unreachable here). The
  *  store re-checks editable + allowedValues as defense-in-depth. */
 const SetEnvBodySchema = z.object({
   id: z.enum(["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"]),
@@ -305,20 +304,20 @@ export function __resetRouteClassifierForTests(): void {
 type SuggestFn = (ctx: SuggestContext) => Promise<SkillSuggestion[] | null>;
 
 /** Whether the conversation-aware re-rank should NOT make a real model call.
- *  TRUE in the deterministic UI lanes — the functional lane (AUTOBROKER_HARNESS
- *  / fixture, set by serverHost) and the e2e/serve.mjs lane (an obviously-fake
- *  DeepSeek key) — so they make ZERO provider calls. FALSE in serve-live and
- *  buyer (a real key, no harness sentinel), where the model fires. NOTE we do
- *  NOT key off NODE_ENV: serve-live sets NODE_ENV=test yet IS the live lane. */
+ *  TRUE in the deterministic UI lane — the functional lane (AUTOBROKER_HARNESS
+ *  / fixture, set by serverHost, booted with an obviously-fake DeepSeek key) —
+ *  so it makes ZERO provider calls. FALSE in serve-live and buyer (a real key,
+ *  no harness sentinel), where the model fires. NOTE we do NOT key off NODE_ENV:
+ *  serve-live sets NODE_ENV=test yet IS the live lane. */
 function suggestionsDisabled(): boolean {
   if (process.env["AUTOBROKER_HARNESS"] === "1" || process.env["AUTOBROKER_HARNESS_FIXTURE"] === "1") {
     return true;
   }
   const key = (process.env["DEEPSEEK_API_KEY"] ?? "").trim();
-  // The deterministic lanes use an obviously-fake key (serve.mjs → "e2e-dummy-
-  // not-used", the func lane → "functional-dummy-not-used"); both carry "dummy".
-  // A real DeepSeek key (sk-… hex) never matches, so this is a safe secondary
-  // gate behind the AUTOBROKER_HARNESS sentinel above.
+  // The deterministic functional lane uses an obviously-fake key
+  // (DEEPSEEK_API_KEY="functional-dummy-not-used", carrying "dummy"). A real
+  // DeepSeek key (sk-… hex) never matches, so this is a safe secondary gate
+  // behind the AUTOBROKER_HARNESS sentinel above.
   return key === "" || /dummy|not[-_]?used/i.test(key);
 }
 
@@ -908,7 +907,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   // ---- GET /api/approvals — the consolidated "needs you" queue --------------
   // Aggregates EVERY parked gate (the 3 irreversible sends + dealer_inbox_check +
-  // inventory_link_scan) across all concurrent profiles + saga retraction tasks,
+  // inventory_link_scan) across all concurrent profiles,
   // ranked action-required first, keyed (profileId, runId, decisionId), tagged by
   // reason + the budget-free summary. Read-only: each decision still goes through
   // POST /api/skill-runs/:id/form-decision (the idempotent three-phase claim).
@@ -1035,16 +1034,6 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       );
     },
   );
-
-  // ---- GET /api/profiles/:id/messages — read-only ingested-message projection
-  app.get("/api/profiles/:id/messages", async (req: FastifyRequest, _reply: FastifyReply) => {
-    const { id } = req.params as { id: string };
-    const profile = withDb((db) => readProfileRow(db, id));
-    if (profile === null) {
-      throw new RouteError("not_found", 404, `profile ${id} not found`);
-    }
-    return withDb((db) => listProfileMessageRows(db, id));
-  });
 
   // ---- GET /api/digest — the daily-digest live projection ------------------
   // The /digest page reads this. Optional ?profile_id pins one profile; absent

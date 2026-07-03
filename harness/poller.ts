@@ -62,8 +62,8 @@ function matchesMarker(req: GateRequest, marker: string): boolean {
 /**
  * approve_safe — fail-OPEN denylist for READ-ONLY clusters (intake). A recognized
  * mutation/arbitrary-code marker → DENY; otherwise allow-once. NEVER use this for a
- * mutation-capable skill — the L1 BLOCK fuse + the in-process gate are the real
- * floor; this is only a convenience approver for the safe cluster.
+ * mutation-capable skill — the AUTOBROKER_MODE=test brake + the in-process L2 gate are
+ * the real floor; this is only a convenience approver for the safe cluster.
  */
 export function approveSafe(): Approver {
   return {
