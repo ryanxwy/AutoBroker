@@ -44,7 +44,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, openDb, seedInventorySource, type Db } from "@autobroker/tools";
 
 import { createMastraInstance } from "./mastra.js";
-import { BatchReviewResumeSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema } from "./batchReviewContracts.js";
 import {
   inventoryLinkScanWorkflow,
   InventoryLinkScanStopError,

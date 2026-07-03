@@ -439,7 +439,7 @@ describe("dealer_web_lead_submit — approve a web-form dealer (the fake submit)
     expect(final.status).toBe("success");
     if (final.status !== "success") return;
     const out = final.result as { outcome: string; submissions_successful: number };
-    expect(out.outcome).toBe("scanned");
+    expect(out.outcome).toBe("submitted");
     expect(out.submissions_successful).toBe(1);
 
     // ONE web_form lead_submissions row, the XOR shape.
@@ -494,7 +494,7 @@ describe("dealer_web_lead_submit — one failing dealer is isolated, the batch s
     expect(final.status).toBe("success");
     if (final.status !== "success") return;
     const out = final.result as { outcome: string; submissions_successful: number; summary: string };
-    expect(out.outcome).toBe("scanned");
+    expect(out.outcome).toBe("submitted");
     expect(out.submissions_successful).toBe(2); // the two reachable dealers
 
     // ... and writes an anchor per reviewed dealer: 2 web_form + 1 failed (NOT 0).
@@ -586,7 +586,7 @@ describe("dealer_web_lead_submit — email_fallback re-confirm (the X1 fix point
     expect(final.status).toBe("success");
     if (final.status !== "success") return;
     const out = final.result as { outcome: string; email_fallback_count: number };
-    expect(out.outcome).toBe("scanned");
+    expect(out.outcome).toBe("submitted");
     expect(out.email_fallback_count).toBe(1);
 
     expect(sends.calls.length).toBe(1);
@@ -631,7 +631,7 @@ describe("dealer_web_lead_submit — email_fallback re-confirm (the X1 fix point
     expect(final.status).toBe("success");
     if (final.status !== "success") return;
     const out = final.result as { outcome: string; email_fallback_count: number };
-    expect(out.outcome).toBe("scanned");
+    expect(out.outcome).toBe("submitted");
     expect(out.email_fallback_count).toBe(0);
 
     expect(sends.calls.length).toBe(0); // the gmail.send never fired without the second approval.
@@ -693,7 +693,7 @@ describe("dealer_web_lead_submit — captcha-gated form routes to email fallback
       email_fallback_count: number;
       captcha_manual_count: number;
     };
-    expect(out.outcome).toBe("scanned");
+    expect(out.outcome).toBe("submitted");
     expect(out.email_fallback_count).toBe(1);
     expect(out.captcha_manual_count).toBe(1);
 

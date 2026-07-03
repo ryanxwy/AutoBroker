@@ -351,7 +351,7 @@ describe("dealership exclusivity — a dealer engaged by another search is dropp
       excluded_conflict_count: number;
       summary: string;
     };
-    expect(out.outcome).toBe("scanned");
+    expect(out.outcome).toBe("submitted");
 
     // Exactly ONE submit fired — OTHER. D was dropped BEFORE the send seam.
     expect(spy.dealerIds).toEqual([DEALER_OTHER]);

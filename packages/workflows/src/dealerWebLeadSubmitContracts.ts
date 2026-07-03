@@ -32,7 +32,7 @@
 
 import { z } from "zod";
 
-import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./batchReviewContracts.js";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -54,14 +54,14 @@ export const DealerWebLeadSubmitInputSchema = z.object({
 export type DealerWebLeadSubmitInput = z.infer<typeof DealerWebLeadSubmitInputSchema>;
 
 /**
- * The workflow output — scanned | declined union. `scanned` carries the audit
+ * The workflow output — submitted | declined union. `submitted` carries the audit
  * tallies the confirm template surfaces (every count is a number, no budget, no
  * hex run id; X1 is pin_required → resolution is always "pinned"). `declined`
  * (batch_review decline) means zero writes and zero sends.
  */
 export const DealerWebLeadSubmitOutputSchema = z.discriminatedUnion("outcome", [
   z.object({
-    outcome: z.literal("scanned"),
+    outcome: z.literal("submitted"),
     resolution: z.enum(["pinned", "inferred_newest"]),
     submissions_successful: z.number().int(),
     email_fallback_count: z.number().int(),
@@ -127,7 +127,7 @@ export function profileStopCode(activeCount: number): DealerWebLeadSubmitStopCod
  *  never approve-all). Re-exported so the workflow + descriptor import them from
  *  one place. */
 export { BatchReviewResumeSchema, BatchReviewSuspendSchema };
-export type { BatchReviewResume, BatchReviewSuspend } from "./inventorySiteScan.js";
+export type { BatchReviewResume, BatchReviewSuspend } from "./batchReviewContracts.js";
 
 // ---------------------------------------------------------------------------
 // suspend ② — the email_fallback re-confirm + single-store confirm

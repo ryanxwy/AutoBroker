@@ -63,8 +63,8 @@ describe("DealerWebLeadSubmitInputSchema", () => {
 });
 
 describe("DealerWebLeadSubmitOutputSchema", () => {
-  const scanned = {
-    outcome: "scanned" as const,
+  const submitted = {
+    outcome: "submitted" as const,
     resolution: "pinned" as const,
     submissions_successful: 1,
     email_fallback_count: 0,
@@ -78,14 +78,14 @@ describe("DealerWebLeadSubmitOutputSchema", () => {
   };
 
   it("discriminates the two outcomes", () => {
-    expect(DealerWebLeadSubmitOutputSchema.parse(scanned).outcome).toBe("scanned");
+    expect(DealerWebLeadSubmitOutputSchema.parse(submitted).outcome).toBe("submitted");
     expect(DealerWebLeadSubmitOutputSchema.parse({ outcome: "declined" }).outcome).toBe(
       "declined",
     );
   });
 
-  it("rejects a scanned payload missing a count", () => {
-    const { submissions_successful: _omit, ...partial } = scanned;
+  it("rejects a submitted payload missing a count", () => {
+    const { submissions_successful: _omit, ...partial } = submitted;
     expect(() => DealerWebLeadSubmitOutputSchema.parse(partial)).toThrow();
   });
 });

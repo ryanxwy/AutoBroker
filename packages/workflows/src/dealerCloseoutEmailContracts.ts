@@ -24,7 +24,7 @@
 
 import { z } from "zod";
 
-import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./batchReviewContracts.js";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -111,7 +111,7 @@ export function profileStopCode(activeCount: number): DealerCloseoutEmailStopCod
 /** The batch_review suspend ① / resume reuse the shared vocabulary. Re-exported
  *  so the workflow + descriptor import them from one place. */
 export { BatchReviewResumeSchema, BatchReviewSuspendSchema };
-export type { BatchReviewResume, BatchReviewSuspend } from "./inventorySiteScan.js";
+export type { BatchReviewResume, BatchReviewSuspend } from "./batchReviewContracts.js";
 
 /** The stable workflow id (registration + the server descriptor). */
 export const DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID = "dealer_closeout_email" as const;

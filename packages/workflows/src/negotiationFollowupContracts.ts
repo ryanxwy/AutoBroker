@@ -22,7 +22,7 @@
 
 import { z } from "zod";
 
-import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./inventorySiteScan.js";
+import { BatchReviewResumeSchema, BatchReviewSuspendSchema } from "./batchReviewContracts.js";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -156,7 +156,7 @@ export class SevenDaySilenceError extends Error {
  * workflow + descriptor import them from one place.
  */
 export { BatchReviewResumeSchema, BatchReviewSuspendSchema };
-export type { BatchReviewResume, BatchReviewSuspend } from "./inventorySiteScan.js";
+export type { BatchReviewResume, BatchReviewSuspend } from "./batchReviewContracts.js";
 
 // ---------------------------------------------------------------------------
 // suspend ② — the contact-flip re-confirm (sensitive)

@@ -162,8 +162,8 @@ import {
   type DealerScanOutcome,
 } from "@autobroker/tools";
 
+import { BatchReviewResumeSchema } from "./batchReviewContracts.js";
 import {
-  BatchReviewResumeSchema,
   buildInventoryExtractPrompt,
   CARD_COLLECT_MAX,
   collectInventoryCards,

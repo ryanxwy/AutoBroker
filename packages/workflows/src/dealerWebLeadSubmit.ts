@@ -1581,7 +1581,7 @@ const recordConfirmStep = createStep({
       unavailableSentence;
 
     return {
-      outcome: "scanned" as const,
+      outcome: "submitted" as const,
       resolution: state.resolution,
       submissions_successful: submissionsSuccessful,
       email_fallback_count: emailFallbackCount,
