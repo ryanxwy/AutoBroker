@@ -295,6 +295,15 @@ export {
   type VinCollapseCandidate,
 } from "./inventory/aggregatorPersist.js";
 export {
+  AGGREGATOR_ADAPTERS,
+  buildCarsComUrl,
+  buildEdmundsUrl,
+  slugifyCarsComModel,
+  type AggregatorAdapter,
+  type AggregatorCollected,
+  type AggregatorFilterSlice,
+} from "./inventory/aggregatorAdapters.js";
+export {
   readInventoryChangesSince,
   emitInventoryPriceChange,
   INVENTORY_PRICE_CHANGE_ACTION,
