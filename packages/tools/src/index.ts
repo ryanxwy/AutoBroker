@@ -8,7 +8,7 @@
  * Dependency wall: tools may import core and db — never workflows or app.
  */
 
-// L2 gate bridge + L1 env fuse — the single side-effect path.
+// L2 in-process approval gate bridge — the single side-effect path.
 export {
   requestApproval,
   withGate,
@@ -386,7 +386,8 @@ export {
 } from "./gmail/readProbe.js";
 
 // Outbound send+record writer — the single skill-facing draft-then-promote
-// send path (preflight → draft row → fuse → fake send → promote, all inside one
+// send path (test-mode brake → draft row → send [real in buyer mode, fake in
+// test mode] → promote, all inside one
 // gated commit). Four discriminated outcomes (sent/declined/blocked/partial) +
 // the serial batch variant that stops at the first failure.
 export {
@@ -568,8 +569,9 @@ export {
 
 // dealer_closeout_email (X3) — the closeout target assembler (open threads minus
 // closeout-suppressed dealers, 4-level address ladder, idempotent one-per-dealer)
-// + the atomic per-dealer send+close+suppress tool (gated send fuse-blocked under
-// the L1 fuse; the close + thread_suppression commit locally in one transaction).
+// + the atomic per-dealer send+close+suppress tool (gated send is fake in test
+// mode via the AUTOBROKER_MODE=test brake, real in buyer mode; the close +
+// thread_suppression commit locally in one transaction).
 export {
   assembleCloseoutTargets,
   closeAndSuppressDealer,
@@ -909,8 +911,9 @@ export {
   type SecretsProbeDeps,
 } from "./settings/index.js";
 
-// Settings/env — the curated NON-SECRET operational env vars (the editable
-// AUTOBROKER_MODE / CHROME_HEADLESS toggles + read-only fuse/path/status rows).
+// Settings/env — the curated NON-SECRET operational env vars (the four editable
+// app_mode / gmail_account / chrome_headless / per_dealer_record_cap rows +
+// read-only path/status rows).
 // The boot loader seeds saved overrides into process.env; routes delegate down
 // here and never read/write the env file directly.
 export {

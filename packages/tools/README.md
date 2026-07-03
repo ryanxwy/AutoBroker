@@ -42,15 +42,16 @@ shell and bypass the gate.
 - **Deny path:** returns an explicit `declined` verdict with `autoApprove: false`
   — the safe default. Approval is never implicit; an approver that errors is
   treated as a decline.
-- **L1 env fuse:** when armed, throws `ExternalMutationsBlockedError` **before**
-  any network/file mutation — a redundant outer ring, not the primary floor.
+- **`AUTOBROKER_MODE=test` mode brake:** in test mode each mutating seam throws
+  `ExternalMutationsBlockedError` **before** any network/file mutation — resolving
+  every send fake/local. The sole send-control variable.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `src/gate/index.ts` | L2 in-process gate bridge + L1 env fuse. The single side-effect path. |
-| `src/gmail.ts` | Gmail tool. Hand-built RFC-2822 raw message = the single **fake/real send seam** (default **fake**); real send only inside an approved gate commit. |
+| `src/gate/index.ts` | L2 in-process gate bridge (the single side-effect path) + the `AUTOBROKER_MODE=test` mode brake's `ExternalMutationsBlockedError`. |
+| `src/gmail.ts` | Gmail tool. Hand-built RFC-2822 raw message = the single **fake/real send seam** (real in **buyer** mode — the default — fake in **test** mode); real send only inside an approved gate commit. |
 | `src/browser.ts` | Playwright-native tool. `page.route`/`waitForResponse` read structured JSON off the wire; mutating click/submit wrapped by the gate. |
 | `src/db.ts` | Layer-4 wrapper over `@autobroker/db`: re-exports the single Drizzle + better-sqlite3 factory and resolves non-DB artifacts under `AUTOBROKER_DATA_DIR`. |
 | `src/calc.ts` | Pure offer math: `validateOfferMath` (±$1 reconciliation) and `STATE_DOC_FEE_CAP`. |
@@ -72,8 +73,9 @@ it.
 
 ## Status of the scaffold
 
-The gate's fail-closed control flow (structural validation, env fuse, decline
-default) is **real and load-bearing** in the scaffold. Real RFC-2822 assembly,
+The gate's fail-closed control flow (structural validation, the
+`AUTOBROKER_MODE=test` mode brake, decline default) is **real and load-bearing**
+in the scaffold. Real RFC-2822 assembly,
 budget redaction, Drizzle wiring, the full `STATE_DOC_FEE_CAP` table, and Zod
 post-validation are marked `TODO(phase-4)` and land as the side-effect tools are
 built per skill.

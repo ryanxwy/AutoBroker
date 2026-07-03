@@ -815,8 +815,8 @@ export const dealerHygieneDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
-// dealer_web_lead_submit — the IRREVERSIBLE-SEND keystone descriptor (Phase 5,
-// [fake-send]). The skill's LLM useCase is lead_form_map (the ONE Custom-platform
+// dealer_web_lead_submit — the IRREVERSIBLE-SEND keystone descriptor (real send
+// in buyer mode, fake in test mode). The skill's LLM useCase is lead_form_map (the ONE Custom-platform
 // field map), so driver_kind DERIVES from policy("lead_form_map") and flips with a
 // registry-string provider swap. TWO suspend kinds, so the resume dispatches on
 // the suspended STEP id:
@@ -959,7 +959,7 @@ export const dailyDigestDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
-// negotiation_followup (X2) — the irreversible-send (fake-send) email follow-up.
+// negotiation_followup (X2) — the irreversible-send email follow-up (real in buyer mode, fake in test mode).
 //
 // ONE LLM useCase (negotiation_followup, the prose draft), so driver_kind DERIVES
 // from policy("negotiation_followup") and flips with a registry-string provider
@@ -1095,7 +1095,7 @@ export const negotiationFollowupDescriptor: RunDescriptor = {
 };
 
 // ===========================================================================
-// dealer_closeout_email (X3) — the Phase-5 EXIT skill (fake-send, state-only).
+// dealer_closeout_email (X3) — the EXIT skill (irreversible-send: real in buyer mode, fake in test mode; state-only).
 //
 // NEAR-ZERO-LLM (the default body is deterministic) → driver_kind is the constant
 // api-key lane, NOT a policy() derivation (there is no LLM useCase to route). ONE
@@ -1370,14 +1370,14 @@ export const dealerReplyExtractDescriptor: RunDescriptor = {
 // quote_pipeline (O1) — the Phase-4 ORCHESTRATOR descriptor (local_write; the
 // FINAL skill). It composes the child skill workflows over existing DB state, or
 // — when target_listing_id is supplied — runs the targeted-VIN OTD sub-path (one
-// fake-send through the L2 gate). The skill's only LLM touch is delegated to the
+// send through the L2 gate — real in buyer mode, fake in test mode). The skill's only LLM touch is delegated to the
 // child reply_extract (the orchestrator runs no LLM step of its own), so
 // driver_kind DERIVES from policy("dealer_reply_extract") and flips in lock-step
 // with a registry-string provider swap (NOT the zero-LLM constant — a pipeline
 // run that extracts replies IS a live-LLM run through its child).
 //
 // ONE suspend kind: the targeted-VIN SEND approval ("targeted") — approve fires
-// the gated fake-send + records the quote; decline → terminal `declined` (zero
+// the gated send (real in buyer mode, fake in test mode) + records the quote; decline → terminal `declined` (zero
 // outbound, zero record write). The fan-out lane never suspends here (the
 // incentive_scrape OEM first-encounter ask is handled autonomously by the
 // orchestrator — see the SCRAPE-SUSPEND NOTE in quotePipeline.ts).
@@ -1431,7 +1431,7 @@ export const quotePipelineDescriptor: RunDescriptor = {
 
   // The ONE suspend is the targeted-VIN SEND approval on the "targeted" step: the
   // approval card carries no content — accept → {action:"approve"} (fire the
-  // gated fake-send + record), decline/cancel → {action:"decline"} (terminal,
+  // gated send [real in buyer mode, fake in test mode] + record), decline/cancel → {action:"decline"} (terminal,
   // zero outbound/zero record). The workflow re-validates with
   // QuotePipelineSendResumeSchema, so this is the wire→typed translation only.
   resume(
@@ -1645,15 +1645,15 @@ function affectedKinds(workflowId: string): string[] {
       // The orchestrator's children write quote_audits (audit), dealer_quotes
       // (reply-extract + the targeted-VIN record), manufacturer_incentives
       // (scrape), inventory_listings (the targeted listing is re-touched), and
-      // messages (the targeted fake-send draft). Name the data families those
+      // messages (the targeted send draft). Name the data families those
       // surfaces refetch on.
       return ["quotes", "incentives", "listings", "messages"];
     case DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID:
       // A submitted lead writes a lead_submissions row, may update a dealer's
-      // contact_email, and an email fallback writes a (fake) messages row.
+      // contact_email, and an email fallback writes a messages row (fake in test mode).
       return ["lead_submissions", "dealers", "messages"];
     case NEGOTIATION_FOLLOWUP_WORKFLOW_ID:
-      // A follow-up sends a (fake) reply on an existing thread and updates that
+      // A follow-up sends a reply (fake in test mode) on an existing thread and updates that
       // thread's state (the contact-flip is a dealer-contact write, but the visible
       // surfaces that refetch are the thread list + its messages).
       return ["threads", "messages"];

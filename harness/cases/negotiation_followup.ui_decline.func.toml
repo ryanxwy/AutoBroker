@@ -1,6 +1,6 @@
 # negotiation_followup.ui_decline.func.toml — the X2 irreversible-send KEYSTONE
-# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_
-# MUTATIONS=1, NO live LLM). The batch_review card (suspend ①) renders over ALL
+# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test,
+# NO live LLM). The batch_review card (suspend ①) renders over ALL
 # drafts BEFORE any send face is reached, so a Decline must be terminal with ZERO
 # messages, NO threads-state change, and a clean keystone (decline = zero writes).
 #

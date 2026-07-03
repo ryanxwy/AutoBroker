@@ -1,6 +1,6 @@
 # dealer_closeout_email.ui_decline.func.toml — the X3 irreversible-send KEYSTONE
-# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_BLOCK_EXTERNAL_
-# MUTATIONS=1, NO live LLM/browser — X3 is zero-LLM). The batch_review card
+# Δ0 decline twin, FUNCTIONAL lane (pnpm ui:functional, AUTOBROKER_MODE=test,
+# NO live LLM/browser — X3 is zero-LLM). The batch_review card
 # (suspend ①) renders over the addressable dealers BEFORE any send/close/suppress,
 # so a Decline must be terminal with ZERO messages, ZERO thread_suppression rows,
 # and NO threads-state change (decline = zero writes, no destruction).

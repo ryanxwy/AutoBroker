@@ -57,14 +57,15 @@ export const SNAPSHOT_TABLES = [
   "quote_audits",
   // messages carries a nullable search_profile_id; the dealer_web_lead_submit
   // keystone asserts a profile-scoped messages delta (an email-fallback send
-  // writes a row; under BLOCK=1 the send is fuse-blocked → Δ=0) — without it the
+  // fake-writes one messages row in test mode via the AUTOBROKER_MODE=test brake —
+  // a legal fake outbound, ZERO REAL) — without it the
   // table_min_rows(messages) anchor would read a vacuous 0.
   "messages",
   // threads carries a thread-state column (open/replied/closed/…) the negotiation_
   // followup + dealer_closeout_email cases assert deltas around. dealer_closeout_
   // email's ui_send closes threads + writes a thread_suppression row on approve
-  // (LOCAL writes that land even under BLOCK=1, when the gated send is fuse-blocked
-  // → messages Δ=0); the func cases need table_min_rows on both.
+  // (LOCAL writes that land regardless of send mode, alongside the gated fake
+  // send's fake messages row in test mode); the func cases need table_min_rows on both.
   "threads",
   "thread_routing",
   "thread_suppression",
@@ -223,11 +224,11 @@ export function externalMutationDbCount(
 ): { total: number; breakdown: Record<string, number> } {
   const breakdown: Record<string, number> = {};
 
-  // (1) submitted leads. Under the harness lane the L1 fuse (BLOCK=1) makes a
+  // (1) submitted leads. Under the harness lane the AUTOBROKER_MODE=test brake makes a
   // real dealer-form POST / Gmail send physically impossible, so a
   // lead_submissions row with outcome='submitted' is the FAKE-submit LOCAL
   // record (invariant #1: fake-submit = a lead_submissions row + NO real POST is
-  // LEGAL — recordSubmission is a local write, not fuse-gated). When the step
+  // LEGAL — recordSubmission is a local write, not mode-gated). When the step
   // explicitly opted into allowFakeOutbound (the X1 approve/email-fallback
   // keystone), these fake-submit rows are EXPECTED and do NOT count as an
   // external mutation. Real-escape detection stays intact regardless: a real

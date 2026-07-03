@@ -1,5 +1,5 @@
 /**
- * dealer_closeout_email — the Phase-5 EXIT skill (irreversible-send, [fake-send]).
+ * dealer_closeout_email — the EXIT skill (irreversible-send: real in buyer mode, fake in test mode).
  * ONE flat linear Mastra `createWorkflow`: 7 named steps chained with `.then()`,
  * no nested workflow. NEAR-ZERO-LLM (the closeout body/subject are deterministic
  * templates, so this skill wires NO LLM step and there is no emit_result — the
@@ -34,8 +34,8 @@
  *   4 sendCloseClose — per approved dealer SERIAL: closeAndSuppressDealer (the ONE
  *                      atomic tool — the gated send folded around the LOCAL
  *                      threads.state='closed' + thread_suppression INSERT in one
- *                      txn; the close+suppress commit on approve regardless of the
- *                      L1 fuse, the send alone is fuse-gated). A mid-batch
+ *                      txn; the close+suppress commit on approve regardless of send
+ *                      mode, the send alone is mode-gated). A mid-batch
  *                      short-circuit (a gate-declined send) halts: trailing dealers
  *                      write NOTHING. Collect closed_thread_ids + emails_sent.
  *   5 transition    — search_profiles.status='closed' once any closeout landed (a
@@ -46,8 +46,9 @@
  *
  * COMMUNICATION RED LINES: the closeout body never carries a budget (the template
  * has none AND assertNoBudget belts the body/subject inside closeAndSuppressDealer,
- * again inside sendAndRecord's buildRaw). No real email is ever sent — the send is
- * a fake draft+promote against the FakeGmailAdapter, fuse-blocked under BLOCK=1.
+ * again inside sendAndRecord's buildRaw). In buyer mode a real email goes out behind
+ * the L2 gate; in test mode the send is a fake draft+promote against the
+ * FakeGmailAdapter (a fake sandbox `messages` row, NEVER a real outbound).
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/tools (the
  * resolver + profile-dealer reads + assembleCloseoutTargets + closeAndSuppressDealer
@@ -92,12 +93,13 @@ export { DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID };
 
 /**
  * The post-suspend approver. The human ALREADY approved at the batch_review ①
- * suspend; this Approver records that fact for the gate. The L1 fuse (inside
- * sendAndRecord, reached through closeAndSuppressDealer) is the real floor under
- * the harness — under BLOCK=1 it returns `blocked` (zero messages rows) so a fake
- * send can never mint a real receipt. In a disarmed-fuse offline test the approve
- * path runs the real draft-then-promote against the FAKE backend and the row is
- * written. ONE module constant, reused by every closeout.
+ * suspend; this Approver records that fact for the gate. The AUTOBROKER_MODE=test
+ * brake (inside sendAndRecord, reached through closeAndSuppressDealer) is the
+ * test-mode floor — in test mode the send resolves to the FakeGmailAdapter (a fake
+ * sandbox `messages` row, never a real outbound) so a fake send can never mint a
+ * real receipt. In buyer mode (or an offline fake-backend test) the approve path
+ * runs the real draft-then-promote and the row is written. ONE module constant,
+ * reused by every closeout.
  */
 const APPROVED: Approver = { async decide() { return true; } };
 
@@ -219,7 +221,7 @@ const CloseoutStateSchema = z.object({
   approvedDealerIds: z.array(z.string()).nullable(),
   /** The threads flipped to 'closed' (the closeout receipt). */
   closedThreadIds: z.array(z.string()),
-  /** How many fake sends were PROMOTED (0 under BLOCK=1 — the fuse blocked them). */
+  /** How many sends were PROMOTED (real in buyer mode; a fake sandbox row in test mode). */
   emailsSent: z.number().int(),
 });
 type CloseoutState = z.infer<typeof CloseoutStateSchema>;
@@ -468,10 +470,11 @@ const sendCloseCloseStep = createStep({
       }
       // `closed`: the local close+suppress committed and the send was approved +
       // attempted (a gate decline takes the short_circuit path above). Count the
-      // send regardless of whether the L1 fuse blocked it — under BLOCK=1 the send
-      // is a fake (fuse-blocked) send, which we still report as "sent", consistent
+      // send whether it was real or fake — in test mode the AUTOBROKER_MODE=test
+      // brake resolves a fake send, which we still report as "sent", consistent
       // with negotiation_followup (a buyer reading "0 sent" otherwise thinks no
-      // closeout went out). No real outbound is created either way.
+      // closeout went out). In buyer mode a real email goes out behind the L2 gate;
+      // in test mode no real outbound is created.
       if (t.thread_id !== null) closed.push(t.thread_id);
       emailsSent += 1;
     }
@@ -535,8 +538,8 @@ const confirmStep = createStep({
 
     const closedCount = state.closedThreadIds.length;
     const profileTransition: "closed" | "unchanged" = closedCount > 0 ? "closed" : "unchanged";
-    // emails_sent counts every approved+attempted closeout send (fake under
-    // BLOCK=1), consistent with negotiation_followup's "sent N".
+    // emails_sent counts every approved+attempted closeout send (real in buyer
+    // mode, fake in test mode), consistent with negotiation_followup's "sent N".
     const summary =
       (closedCount === 0
         ? "No dealers to close out"

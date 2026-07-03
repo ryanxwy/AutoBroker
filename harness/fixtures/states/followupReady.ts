@@ -34,9 +34,10 @@
  * (draftProse → a fixed, budget-free, no-competing-name body); every DB read
  * (candidate threads / quote situation / thread snapshot / reply-target ladder)
  * and the send + thread-state write stay REAL against this seeded DB.
- * sendAndRecord is L1-fuse-blocked under BLOCK=1 → ZERO messages rows; the
+ * In test mode sendAndRecord fake-sends via the AUTOBROKER_MODE=test brake → one
+ * fake sandbox messages row (legal fake outbound, ZERO REAL); the
  * threads.state='negotiating' write on a sent thread is a LOCAL product write
- * that lands regardless of the fuse.
+ * that lands regardless of send mode.
  */
 
 import type { Db } from "@autobroker/tools";

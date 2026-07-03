@@ -256,9 +256,9 @@ const TestKeyBodySchema = z.object({
 });
 
 /** PUT /api/settings/env — set ONE editable operational env var. The id enum IS
- *  the route-layer allow-list: only the two editable ids are accepted, so the
- *  read-only fuse / paths / demo-status ids fail the schema with a 400 before the
- *  store is ever called (the L1 fuse var is structurally unreachable here). The
+ *  the route-layer allow-list: only the four editable ids are accepted, so the
+ *  read-only path / demo-status ids fail the schema with a 400 before the
+ *  store is ever called (a non-editable id is structurally unreachable here). The
  *  store re-checks editable + allowedValues as defense-in-depth. */
 const SetEnvBodySchema = z.object({
   id: z.enum(["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"]),

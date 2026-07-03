@@ -1,8 +1,8 @@
 /**
- * sendPreflight — the fail-CLOSED gate the irreversible-send skills (X1/X2/X3)
- * run BEFORE any send during the fake-send phase. Until the irreversible wave is
- * accepted GREEN, a send must be PHYSICALLY incapable of escaping to a real
- * mailbox; this preflight is the structural proof of that.
+ * sendPreflight — the fail-CLOSED test-mode gate the send seam runs BEFORE any
+ * send when AUTOBROKER_MODE=test (i.e. `!isBuyerMode()`). In test mode a send
+ * must be PHYSICALLY incapable of escaping to a real mailbox; this preflight is
+ * the structural proof of that.
  *
  * It is a 2-condition AND matrix, fail-CLOSED: every condition must be true to
  * pass, and ANY false throws FakeMailboxPreflightError. There is no soft result
@@ -12,11 +12,12 @@
  * — can let a real send through. Together they fully guarantee the send can only
  * ever reach the local fake mailbox.
  *
- * This preflight does NOT inspect the L1 env fuse: the offline happy path runs
- * with the fuse DISARMED (a fake send must be able to actually write its row),
- * so requiring the fuse armed here would make a successful fake send impossible.
- * The armed-fuse outer ring is enforced independently at the send boundary by
- * the gate's fuse assertion, not by this per-send preflight.
+ * This preflight only inspects the ADAPTER, not the mode variable: the
+ * send-vs-fake decision is the AUTOBROKER_MODE=test mode brake at the send
+ * boundary (`!isBuyerMode()`), which selects the fake adapter and only THEN
+ * runs this preflight to prove the fake is actually the one wired in (so a fake
+ * send can actually write its row). In buyer mode the mode brake selects the
+ * real adapter and this preflight does not run.
  */
 
 import { FakeGmailAdapter } from "./fakeAdapter.js";

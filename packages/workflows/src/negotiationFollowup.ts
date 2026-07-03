@@ -1,6 +1,6 @@
 /**
- * negotiation_followup — the irreversible-send follow-up skill (Phase 5,
- * [fake-send]). ONE flat linear Mastra `createWorkflow`: 7 named steps chained
+ * negotiation_followup — the irreversible-send follow-up skill (real in buyer
+ * mode, fake in test mode). ONE flat linear Mastra `createWorkflow`: 7 named steps chained
  * with `.then()`, no nested workflow. The ONLY LLM touch is a NO-TOOL PROSE draft
  * (harness.draftProse) — there is no structured output and no emit_result, so the
  * #1244 mixing failure is structurally inapplicable. TWO human suspends, both
@@ -41,9 +41,9 @@
  *   5 sendRecord    — per approved thread SERIAL via sendAndRecord, replying on the
  *                      EXISTING thread id (reuseThreadIdForReply + the thread
  *                      double-flag: threadId AND inReplyToGmailId both set) with a
- *                      subjectForFollowup subject. Under BLOCK=1 sendAndRecord
- *                      returns {blocked} → ZERO messages rows (the fake send);
- *                      disarmed offline → a promoted row. A mid-batch hard failure
+ *                      subjectForFollowup subject. In test mode sendAndRecord
+ *                      fake-sends → a promoted fake sandbox row (no real outbound);
+ *                      in buyer mode → a real promoted row. A mid-batch hard failure
  *                      (partial) stops-and-reconciles (no backfill).
  *   6 confirm       — ZERO-LLM summary + threads.state='negotiating' on each SENT
  *                      thread. `threads.state='agreed'` is NEVER written here
@@ -117,11 +117,12 @@ export { NEGOTIATION_FOLLOWUP_WORKFLOW_ID };
 
 /**
  * The post-suspend approver. The human ALREADY approved at the batch_review ①
- * suspend; this Approver records that fact for the gate. The L1 fuse (inside
- * sendAndRecord) is the real floor under the harness — under BLOCK=1 it throws
- * BEFORE the send so a fake send can never mint a real receipt. In a disarmed-fuse
- * offline test the approve path runs the real draft-then-promote against the FAKE
- * backend and the row is written. ONE module constant, reused by every send.
+ * suspend; this Approver records that fact for the gate. The AUTOBROKER_MODE=test
+ * brake (inside sendAndRecord) is the test-mode floor — in test mode the send
+ * resolves to the FakeGmailAdapter (a fake sandbox row, never a real outbound) so
+ * a fake send can never mint a real receipt. In buyer mode (or an offline
+ * fake-backend test) the approve path runs the real draft-then-promote and the
+ * row is written. ONE module constant, reused by every send.
  */
 const APPROVED: Approver = { async decide() { return true; } };
 
@@ -367,7 +368,7 @@ const FollowupStateSchema = z.object({
   approvedThreadIds: z.array(z.string()).nullable(),
   /** How many contact flips were committed (0 or 1; suspend-② gated). */
   contactFlips: z.number().int(),
-  /** How many fake sends fired (fuse-blocked under BLOCK=1, promoted offline). */
+  /** How many sends fired (real in buyer mode; a promoted fake sandbox row in test mode). */
   emailsSent: z.number().int(),
 });
 type FollowupState = z.infer<typeof FollowupStateSchema>;
@@ -815,11 +816,12 @@ const sendRecordStep = createStep({
         inReplyToGmailId: t.in_reply_to_gmail_id, // the thread double-flag anchor.
       };
 
-      // THE ONE send face. Under BLOCK=1 sendAndRecord returns {blocked} (the
-      // fuse fired BEFORE the draft insert → ZERO messages rows) — the fake send,
-      // counted. Disarmed offline → {sent} (one promoted row). A {partial} is a
-      // mid-commit failure → STOP-and-reconcile (do not backfill the trailing
-      // targets; leave them un-sent so a reconcile pass can finish them).
+      // THE ONE send face. In test mode sendAndRecord fake-sends → {sent} (one
+      // promoted fake sandbox row, no real outbound), counted. In buyer mode →
+      // {sent} (a real send). A {blocked} outcome is a defensive legacy zero-row
+      // branch, still counted. A {partial} is a mid-commit failure →
+      // STOP-and-reconcile (do not backfill the trailing targets; leave them
+      // un-sent so a reconcile pass can finish them).
       const outcome = await deps().sendAndRecord(target, { approver: APPROVED, runId });
       if (outcome.kind === "sent" || outcome.kind === "blocked") {
         emailsSent += 1;

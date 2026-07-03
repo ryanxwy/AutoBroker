@@ -15,8 +15,8 @@
  * MUTATION POSTURE: `send(raw)` is the only write a consumer triggers. For the
  * fake it is NOT a real external send — it writes one outbound sandbox row with
  * a monotonic `internalDateMs` and returns a synthetic id. The L2 gate + the
- * BLOCK fuse that wrap a real send live in the send seam (gmail.ts), not here;
- * the fake performs no network I/O on any path.
+ * AUTOBROKER_MODE=test mode brake that wrap a real send live in the send seam
+ * (gmail.ts), not here; the fake performs no network I/O on any path.
  *
  * WATERMARK: a Gmail `historyId` is an opaque server cursor. The fake models it
  * as the max `internalDateMs` it has stored (its monotonic clock), so
@@ -232,8 +232,8 @@ export class FakeGmailAdapter implements GmailAdapter {
    * Store the assembled base64url `raw` as one OUTBOUND sandbox row with a
    * monotonic `internalDateMs` (strictly greater than every prior row, so the
    * watermark ordering never ties), and return a synthetic id. This is NOT a
-   * real send — the fake performs no network I/O; the L2 gate + BLOCK fuse that
-   * wrap a real send live in the send seam, not here.
+   * real send — the fake performs no network I/O; the L2 gate + AUTOBROKER_MODE=test
+   * mode brake that wrap a real send live in the send seam, not here.
    */
   send(raw: string): Promise<{ messageId: string }> {
     const rfc2822 = Buffer.from(raw, "base64url").toString("utf8");
@@ -246,8 +246,8 @@ export class FakeGmailAdapter implements GmailAdapter {
     const internalDateMs = this.maxDateMs() + 1;
     // The id self-describes as a sandbox send: the `sandbox-out-%` shape is the
     // one the harness `messages.real_outbound` keystone scan whitelists, so if a
-    // fake send is ever promoted onto a product `messages` row (a disarmed-fuse
-    // path), the keystone still classifies it as fake — never a real escape.
+    // fake send is ever promoted onto a product `messages` row (a buyer-mode
+    // promote path), the keystone still classifies it as fake — never a real escape.
     const messageId = `sandbox-out-${internalDateMs}`;
     const threadId = `sandbox-thread-${internalDateMs}`;
 

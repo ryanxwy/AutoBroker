@@ -6,8 +6,8 @@
  * prompt builder with the red-line fence. Skill-local, single-use (only the
  * workflow file and its tests import them).
  *
- * PROFILE RESOLUTION — EXPLICIT-PIN REQUIRED for this skill (it sends real-shape
- * follow-up emails behind the L1 fuse). A pin-less input STOPs: 0 active →
+ * PROFILE RESOLUTION — EXPLICIT-PIN REQUIRED for this skill (it sends follow-up
+ * emails behind the L2 gate — real in buyer mode, fake in test mode). A pin-less input STOPs: 0 active →
  * no_active_profile (point at intake), exactly-1 active → pin_required (one
  * active is still not silently run), 2+ active → multiple_active_profiles (ask by
  * vehicle name). The only accepted provenance is `pinned`.
@@ -54,7 +54,7 @@ export const NegotiationFollowupOutputSchema = z.discriminatedUnion("outcome", [
     outcome: z.literal("sent"),
     resolution: z.enum(["pinned", "inferred_newest"]), // pin_required → always "pinned"
     drafts_created: z.number().int(),
-    emails_sent: z.number().int(), // fuse-blocked under BLOCK=1 → counts the fake send
+    emails_sent: z.number().int(), // real in buyer mode; counts the fake send in test mode
     contact_flips: z.number().int(), // 0 or 1 (suspend-gated, explicit override only)
     summary: z.string(),
     /** For affectedKinds profile scoping. */

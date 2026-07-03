@@ -43,8 +43,8 @@ export type DealerCloseoutEmailInput = z.infer<typeof DealerCloseoutEmailInputSc
 /**
  * The workflow output — a 3-member discriminated union.
  *   - sent: the closeout ran. `closed_thread_ids` are the threads flipped to
- *     closed; `emails_sent` counts PROMOTED sends (0 under BLOCK=1 — the send is
- *     fuse-blocked even though the local close happened);
+ *     closed; `emails_sent` counts PROMOTED sends (real in buyer mode; a fake
+ *     sandbox row in test mode — the local close happens either way);
  *     `profile_status_transition` is "closed" once any closeout landed.
  *   - declined: the batch_review decline → zero writes, zero sends.
  *   - skip_all_reset: the user skipped every row → the Phase-4 pipeline_reset

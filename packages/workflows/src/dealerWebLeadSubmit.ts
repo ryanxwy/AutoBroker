@@ -1,5 +1,5 @@
 /**
- * dealer_web_lead_submit — the irreversible-send KEYSTONE (Phase 5, [fake-send]).
+ * dealer_web_lead_submit — the irreversible-send KEYSTONE (real send in buyer mode, fake in test mode).
  * ONE flat linear Mastra `createWorkflow`: 8 named steps chained with `.then()`,
  * no nested workflow. TWO human suspends, BOTH before any side effect; the first
  * is the batch_review card (decline = terminal, zero writes / zero sends), the
@@ -40,8 +40,8 @@
  *                      to the kind:"approval" single_store_confirm suspend.
  *   4 submit        — per approved dealer: the ONE Approver-holding call,
  *                      session.submitForm via the internal always-true APPROVED
- *                      approver (the human ALREADY approved at ①; the L1 fuse is
- *                      the real floor — under BLOCK=1 it throws BEFORE the click).
+ *                      approver (the human ALREADY approved at ①; the AUTOBROKER_MODE=test
+ *                      brake is the test-mode floor — in test mode it throws BEFORE the click).
  *                      captcha NEVER retried → routes straight to email_fallback.
  *   5 emailFallback — SUSPEND ② (the X1 FIX POINT): the INDEPENDENT re-confirm
  *                      for each needs-fallback dealer. approve → sendAndRecord
@@ -49,8 +49,8 @@
  *                      dealer's fallback only (carry "declined"), run continues.
  *   6 recordConfirm — the LOCAL recordSubmission XOR writer (one row per decided
  *                      dealer, the channel-matching shape) + the zero-LLM confirm
- *                      template. recordSubmission is NOT fuse-gated — it writes the
- *                      fake-submit row on approve regardless of the fuse.
+ *                      template. recordSubmission is NOT mode-gated — it writes the
+ *                      local submission row on approve regardless of send mode.
  *
  * KEYSTONE: the scout capture path holds NO Approver and imports NOTHING from the
  * gate module — the ONLY Approver-holding call is `session.submitForm` in the
@@ -131,12 +131,13 @@ import { randomUUID } from "node:crypto";
 
 /**
  * The post-suspend approver. The human ALREADY approved at the batch_review ① /
- * email_fallback ② suspend; this Approver records that fact for the gate. The L1
- * fuse (gate step (b)) is the real floor under the harness — it throws BEFORE
- * this decide() ever runs, so a fake submit can never mint a real receipt. In a
- * disarmed-fuse offline test the approve path runs the real commit against the
- * FAKE backend (browser stub / FakeGmailAdapter) and the row is written. ONE
- * module constant, reused by both the submit step and the email_fallback send.
+ * email_fallback ② suspend; this Approver records that fact for the gate. The
+ * AUTOBROKER_MODE=test brake (at the top of the approved commit) is the test-mode
+ * floor — in test mode it throws BEFORE the form fill/click, so a fake submit can
+ * never touch a real dealer. In an offline test the approve path runs the real
+ * commit against the FAKE backend (browser stub / FakeGmailAdapter) and the row is
+ * written. ONE module constant, reused by both the submit step and the
+ * email_fallback send.
  */
 const APPROVED: Approver = { async decide() { return true; } };
 
@@ -254,9 +255,9 @@ export async function scoutOneWithSession(deps: {
       if (FORM_SHAPE_RE.test(snapshot)) {
         // A captcha-gated contact form is unreachable by auto-submit (retrying a
         // captcha never helps) → route to email fallback, never a form submit.
-        // Detected at SCOUT time on the read snapshot, BEFORE the fuse-gated
-        // submit (under BLOCK=1 the fuse throws before any post-submit page
-        // exists, so a captcha can only be caught here). Carry the harvested
+        // Detected at SCOUT time on the read snapshot, BEFORE the gated
+        // submit (in test mode the AUTOBROKER_MODE=test brake throws before any
+        // post-submit page exists, so a captcha can only be caught here). Carry the harvested
         // email so the fallback still has a target.
         if (hasCaptcha(snapshot)) {
           emitter.action("scout_captcha_form", `${dealer.name} ${probeUrl}`);
@@ -427,7 +428,7 @@ export interface DealerWebLeadSubmitWorkflowDeps {
    *  `'unavailable'` drop the dealer. A LOCAL DB lock, acquired mode-agnostically
    *  (whether AUTOBROKER_MODE is buyer or test) before the real-or-fake send. */
   claimDealer: typeof claimDealerImpl;
-  /** The XOR lead-submission writer (tools layer, a LOCAL write — not fuse-gated). */
+  /** The XOR lead-submission writer (tools layer, a LOCAL write — not mode-gated). */
   recordSubmission: typeof recordSubmissionImpl;
   /** The gated draft-then-promote send+record (tools layer; the email fallback). */
   sendAndRecord: typeof sendAndRecordImpl;
@@ -486,14 +487,14 @@ export async function submitOneWithSession(deps: {
     }
     try {
       // THE ONE Approver-holding call — the single structured path to a real
-      // form submission. Under BLOCK=1 the L1 fuse throws BEFORE the click.
+      // form submission. In test mode the AUTOBROKER_MODE=test brake throws BEFORE the click.
       const result = await session.submitForm(page, form, approver);
       // submitForm returns {submitted:true} | {declined:true}; the human already
       // approved at the suspend, so the internal approver returns true and the
       // declined branch cannot fire here — guard it as needs_fallback anyway.
       return "submitted" in result ? { kind: "submitted" } : { kind: "needs_fallback", reason: "no_form" };
     } catch (err) {
-      // The expected fake-submit under the armed fuse: the gate fails CLOSED.
+      // The expected fake-submit in test mode: the mode brake fails CLOSED.
       if (err instanceof ExternalMutationsBlockedError) return { kind: "fuse_blocked" };
       throw err; // any other failure is a real error — never swallowed.
     }
@@ -1377,9 +1378,10 @@ const emailFallbackStep = createStep({
         continue;
       }
 
-      // RE-CONFIRMED. Only NOW does the gmail.send scope fire (fake). The L1 fuse
-      // is the live anchor: under BLOCK=1 sendAndRecord returns {blocked} (zero
-      // messages rows). Offline disarmed: {sent} writes one fake draft+promote.
+      // RE-CONFIRMED. Only NOW does the gmail.send scope fire. In test mode the
+      // AUTOBROKER_MODE=test brake resolves the FakeGmailAdapter → sendAndRecord
+      // {sent} writes one fake draft+promote (a fake sandbox row, no real
+      // outbound); in buyer mode it is a real send behind the L2 gate.
       const target = fallbackEmailTarget(state, d);
       await deps().sendAndRecord(target, { approver: APPROVED, runId });
       d.channel = "email";
@@ -1410,7 +1412,7 @@ const recordConfirmStep = createStep({
     let captchaManualCount = 0;
     let failedCount = 0;
 
-    // THE LOCAL WRITE (NOT fuse-gated): one recordSubmission per decided dealer,
+    // THE LOCAL WRITE (NOT mode-gated): one recordSubmission per decided dealer,
     // the XOR shape mirroring the channel. recordSubmission's typed union is the
     // authority on the column combination — the INSERT is never hand-built.
     withDb((db) => {
