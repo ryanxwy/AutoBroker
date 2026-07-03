@@ -113,7 +113,7 @@ import {
 } from "@autobroker/tools";
 
 import { harness, type HarnessLedgerContext } from "./harness.js";
-import { parseAcceptableTrims, runWorkerPool, SCAN_CONCURRENCY } from "./inventorySiteScan.js";
+import { parseAcceptableTrims, runWorkerPool } from "./inventorySiteScan.js";
 import { recoverEmitWithRetry } from "./recoverEmitWithRetry.js";
 
 /** One deterministic per-tile fact the adapter's collector reads straight from
@@ -364,7 +364,16 @@ export type SiteScanRunner = (
  */
 const realSiteRunner: SiteScanRunner = async (args, adapter) => {
   const srpUrl = adapter.buildSrpUrl(args.slice);
-  return withBrowserContext(`${args.runId}-${adapter.siteId}`, { emitter: args.emitter }, async (session) => {
+  // HEADED, not headless: the aggregator edges (Cloudflare/Akamai) hard-block
+  // the HeadlessChrome user agent at the door ("Attention Required", zero
+  // content), while a real, visible browser window loads the same page cleanly.
+  // A headed launch is the honest posture — the buyer can literally watch the
+  // handful of page loads made on their behalf; no user-agent or fingerprint
+  // masquerade is attempted, and an edge block still ends the site's scan.
+  return withBrowserContext(
+    `${args.runId}-${adapter.siteId}`,
+    { emitter: args.emitter, headless: false },
+    async (session) => {
     const page = await session.newPage();
     try {
       const nav = await session.navigate(page, srpUrl);
@@ -405,18 +414,20 @@ const realSiteRunner: SiteScanRunner = async (args, adapter) => {
 };
 
 /**
- * The parallel capture core. PURE CAPTURE: performs NO SQLite writes. Each site
- * runs in its own isolated browser; sites are different hosts, so the
- * SCAN_CONCURRENCY worker pool is host-safe. A throwing site degrades to a
- * failed outcome — it never kills the run. Outcome order follows the registry
- * order (the cross-site dedup priority downstream).
+ * The serial capture core. PURE CAPTURE: performs NO SQLite writes. Each site
+ * runs in its own isolated browser. Sites run ONE at a time: the browsers are
+ * headed (real visible windows — see realSiteRunner), and a single window at a
+ * time keeps the buyer's screen calm; two sites make serial cost negligible.
+ * A throwing site degrades to a failed outcome — it never kills the run.
+ * Outcome order follows the registry order (the cross-site dedup priority
+ * downstream).
  */
 export async function scanAggregatorsImpl(
   args: ScanAggregatorsArgs,
   runSite: SiteScanRunner = realSiteRunner,
 ): Promise<AggregatorCaptureOutcome[]> {
   const adapters = AGGREGATOR_ADAPTERS;
-  return runWorkerPool<AggregatorCaptureOutcome>(SCAN_CONCURRENCY, adapters.length, async (i) => {
+  return runWorkerPool<AggregatorCaptureOutcome>(1, adapters.length, async (i) => {
     const adapter = adapters[i]!;
     try {
       return await runSite(args, adapter);
