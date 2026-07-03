@@ -71,6 +71,9 @@ export {
 } from "./schema/inventoryListing.js";
 export type { InventoryListing, InventoryStatus } from "./schema/inventoryListing.js";
 
+export { AggregatorListingSchema } from "./schema/aggregatorListing.js";
+export type { AggregatorListing } from "./schema/aggregatorListing.js";
+
 export {
   IncentiveSchema,
   IncentiveTypeSchema,
