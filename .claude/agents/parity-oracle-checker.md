@@ -69,6 +69,6 @@ pass a diff or file set, infer which skill(s) it touches. Resolve:
 A short report grouped by severity (PARITY-BREAK / drift / nit). For each: the TS
 file + line, the oracle file + line it diverges from, the externally-visible
 difference, and the minimal fix. If the divergence is intentional and ratified
-(the oracle is wrong / superseded), say which `DECISIONS.md` entry records that —
+(the oracle is wrong / superseded), say which `DECISIONS.html` entry records that —
 do not treat a ratified deviation as a break. End with one line:
 `PARITY OK` or `DIVERGENCE (n findings)`.

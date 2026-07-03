@@ -63,8 +63,9 @@ fix or record first — per the harness standard's GREEN→RED rule.
 3. `pnpm harness:export` → today's `harness/exports/<date>.json`.
 4. Append this skill's accepted case files to `harness/regression-corpus.txt`
    (deferred + cross-provider cases stay out).
-5. Acceptance commit with the `phaseN/<skill>:` prefix; `[fake-send]` marker in
-   the body for the 3 irreversible skills until Phase 5 is GREEN. The skill's
+5. Acceptance commit with the `phaseN/<skill>:` prefix. (The 3 irreversible skills
+   real-send in buyer mode / fake-send in test mode via `AUTOBROKER_MODE` — the old
+   fake-send commit-body marker is retired.) The skill's
    `packages/skills/<skill>/SKILL.md` (Phases / Guardrails / References) rides
    the SAME commit — debt-sweep flags implemented skills missing it.
 6. `/daily-sync` for the plan-repo daily report (drafts only — the plan repo is

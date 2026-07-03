@@ -36,6 +36,29 @@ if git grep -nE 'AUTOBROKER_GMAIL_BACKEND|AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS' -
   status=1
 fi
 
+# Also ban the wrap-prefix AUTOBROKER_BLOCK_EXTERNAL_ on its own: a comment that
+# line-wraps the removed env var (prefix on one line, MUTATIONS on the next)
+# would evade the whole-name grep above. Banning the prefix catches that.
+if git grep -nE 'AUTOBROKER_BLOCK_EXTERNAL_' -- \
+  ':!pnpm-lock.yaml' \
+  ':!CLAUDE.md' \
+  ':!scripts/check-forbidden-strings.sh'; then
+  echo "ERROR: the removed-env-var wrap-prefix 'AUTOBROKER_BLOCK_EXTERNAL_' found (see above) — likely a line-wrapped re-introduction of the removed L1 fuse. Use AUTOBROKER_MODE=test instead." >&2
+  status=1
+fi
+
+# (4) RETIRED COMMIT MARKER: the '[fake-send]' commit-body marker for the three
+#     irreversible skills is retired (real-send-by-default, owner-ratified
+#     2026-06-22). Banning the bracketed literal keeps it out of commits, agent
+#     instructions, and skill docs so no future run reinstates the old posture.
+if git grep -nF '[fake-send]' -- \
+  ':!pnpm-lock.yaml' \
+  ':!CLAUDE.md' \
+  ':!scripts/check-forbidden-strings.sh'; then
+  echo "ERROR: the retired '[fake-send]' commit marker found (see above). The 3 irreversible skills real-send in buyer mode / fake-send in test mode via AUTOBROKER_MODE; the marker is retired." >&2
+  status=1
+fi
+
 # (3) MARKER DRAFT NAME: "dev-origin" was the abandoned draft name for an
 #     in-bundle freshness marker. Banning it prevents re-introducing any
 #     in-bundle marker or electron-builder extraResources entry for it.
