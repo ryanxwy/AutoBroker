@@ -45,7 +45,6 @@ import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
 import { dealerReplyExtractRetryWorld } from "./dealerReplyExtractRetryWorld.js";
 import { dealerReplyExtractWorld } from "./dealerReplyExtractWorld.js";
 import { digestPresent } from "./digestPresent.js";
-import { digestReady } from "./digestReady.js";
 import { emptyHome } from "./emptyHome.js";
 import { followupReady } from "./followupReady.js";
 import { hygieneReady } from "./hygieneReady.js";
@@ -61,7 +60,6 @@ import { quoteAuditWorld } from "./quoteAuditWorld.js";
 import { quoteCompareCashWorld, quoteCompareWorld } from "./quoteCompareWorld.js";
 import { quotePipelineReady } from "./quotePipelineReady.js";
 import { quoteSourceDoc } from "./quoteSourceDoc.js";
-import { repliesArrived } from "./repliesArrived.js";
 
 /** One named deterministic world the functional lane can install. */
 export interface FixtureState {
@@ -90,7 +88,6 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [digestPresent.id]: digestPresent,
   [dealerReplyExtractWorld.id]: dealerReplyExtractWorld,
   [dealerReplyExtractRetryWorld.id]: dealerReplyExtractRetryWorld,
-  [digestReady.id]: digestReady,
   [inventoryListings.id]: inventoryListings,
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
@@ -99,7 +96,6 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [quoteCompareCashWorld.id]: quoteCompareCashWorld,
   [quotePipelineReady.id]: quotePipelineReady,
   [quoteSourceDoc.id]: quoteSourceDoc,
-  [repliesArrived.id]: repliesArrived,
   [leadSubmitReady.id]: leadSubmitReady,
   [followupReady.id]: followupReady,
   [closeoutReady.id]: closeoutReady,

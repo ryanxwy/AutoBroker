@@ -2,10 +2,10 @@
  * DB tool — Layer-4 surface over the @autobroker/db connection factory.
  *
  * The REAL connection factory (WAL + busy_timeout=5000 + tilde-expanded
- * AUTOBROKER_DATA_DIR / AUTOBROKER_DB resolution) lives in
- * @autobroker/db/client. This file only re-exports it so higher layers reach
- * the single factory through the tools surface. Do NOT duplicate the factory
- * here — two openDb implementations is how the two-writers risk creeps back.
+ * AUTOBROKER_DATA_DIR / AUTOBROKER_DB resolution) lives in @autobroker/db and is
+ * re-exported from its root. This file only re-exports it again so higher layers
+ * reach the single factory through the tools surface. Do NOT duplicate the
+ * factory here — two openDb implementations is how the two-writers risk creeps back.
  *
  * ISOLATION INVARIANT: never touch production ~/.autobroker/autobroker.db. The
  * data dir comes from AUTOBROKER_DATA_DIR (parity period => ~/.autobroker-ts,

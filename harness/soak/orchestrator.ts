@@ -34,6 +34,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -60,18 +61,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** serverHost.ts lives one level up (harness/serverHost.ts), run under tsx — the
  *  SAME child the runner spawns. */
 const SERVER_HOST = join(HERE, "..", "serverHost.ts");
-const TSX_LOADER = join(
-  HERE,
-  "..",
-  "..",
-  "node_modules",
-  ".pnpm",
-  "tsx@4.22.4",
-  "node_modules",
-  "tsx",
-  "dist",
-  "loader.mjs",
-);
+// Resolve tsx's loader from its package "." export (dist/loader.mjs) rather than a
+// hardcoded .pnpm/tsx@<version>/ path, which broke on any tsx patch/minor bump.
+const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
 /** The role prompts (harness/prompts/*.md). */
 const PROMPTS_DIR = join(HERE, "..", "prompts");
 export const BUYER_PROMPT = join(PROMPTS_DIR, "buyer.md");

@@ -15,21 +15,25 @@
  */
 module.exports = {
   options: {
-    // Keep node_modules edges in the graph (rules match on them) but never
-    // traverse into them. NOTE: no `includeOnly` — it would drop the
-    // node_modules target nodes before the rules ever see the edge.
-    doNotFollow: { path: "node_modules" },
+    // Keep node_modules AND workspace /dist/ edges in the graph (rules match on
+    // their target paths) but never traverse INTO them. Workspace imports resolve
+    // to packages/*/dist/index.js, so /dist/ must stay a visible edge TARGET for
+    // the layer-DAG + framework-ownership rules to fire — it is NOT-FOLLOWED, not
+    // EXCLUDED (excluding drops the edge before any rule sees it, which silently
+    // neutered every rule while /dist/ sat in `exclude`). NOTE: no `includeOnly`
+    // — it would likewise drop the target nodes before the rules ever ran.
+    doNotFollow: { path: "node_modules|/dist/" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.base.json" },
-    // /dist/ = build output; apps/ui/e2e = the Playwright e2e harness (test
-    // infrastructure that legitimately boots the full server stack + drives a
-    // browser, so it lives OUTSIDE the layered src/ wall — like a .test file).
-    // apps/desktop/smoke = the Electron shell's deterministic Playwright smoke
-    // suite (same test-infrastructure carve-out); apps/desktop/bundle = the
-    // generated self-contained server bundle, and apps/desktop/release = the
+    // apps/ui/e2e = the Playwright e2e harness (test infrastructure that
+    // legitimately boots the full server stack + drives a browser, so it lives
+    // OUTSIDE the layered src/ wall — like a .test file). apps/desktop/smoke =
+    // the Electron shell's deterministic Playwright smoke suite (same
+    // test-infrastructure carve-out); apps/desktop/bundle = the generated
+    // self-contained server bundle, and apps/desktop/release = the
     // electron-builder packaged output (which re-embeds that bundle) — both are
     // gitignored build artifacts, not layered source.
-    exclude: { path: "/dist/|apps/ui/e2e/|apps/desktop/(smoke|bundle|release)/" },
+    exclude: { path: "apps/ui/e2e/|apps/desktop/(smoke|bundle|release)/" },
   },
   forbidden: [
     // ---- layer DAG: lower layers must not reach up -------------------------
@@ -126,7 +130,7 @@ module.exports = {
       name: "core-framework-free",
       severity: "error",
       comment: "core may import zod and nothing else from node_modules.",
-      from: { path: "^packages/core/" },
+      from: { path: "^packages/core/", pathNot: "\\.test\\.ts$" },
       to: {
         path: "node_modules/",
         pathNot: "node_modules/zod/",

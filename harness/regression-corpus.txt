@@ -1,6 +1,9 @@
 # Accepted L2 regression corpus — re-run via scripts/regression.sh.
 # One case file per line (lane comes from the case's own [narrative] lane).
-# Append this list at each skill's step-7 acceptance; *.deferred.toml and the
+# Frozen at P2. POST-P2 REALITY: skills accepted after P2 are gated by the
+# deterministic *.func.toml cases in the ui:functional lane + the /e2e-loop live
+# journeys — NOT by growing this list. Only a READ-ONLY live L2 case (no send, no
+# irreversible mutation) is eligible to enter this corpus. *.deferred.toml and the
 # cross-provider smoke cases (anthropic/openai, deferred in dev period) stay out.
 # DeepSeek-only, read-only / approve_safe skills only.
 
@@ -33,3 +36,8 @@ inventory_link_scan.ui_decline.toml
 # ui_first_encounter (one OEM-page contact + ~$0.005 extraction LLM per run,
 # true-path Δ cash rows) carries the always-on slot.
 incentive_scrape.ui_first_encounter.toml
+
+# dealer_reply_extract — accepted 2026-07-03 (read-only live L2 extraction). The
+# only corpus-eligible read-only live acceptance case sitting in no other
+# automated lane; the geosearch/intake rotation-pool edges stay deliberately out.
+dealer_reply_extract.live_extract.toml
