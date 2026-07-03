@@ -381,7 +381,19 @@ const realSiteRunner: SiteScanRunner = async (args, adapter) => {
         return blockedAggOutcome(adapter, srpUrl, nav.robotsDisallowed);
       }
       await session.lazyScroll(page);
-      const collected: AggregatorCollected = await page.evaluate(adapter.collect);
+      // Aggregator SRPs can fire a late client-side navigation (geo/consent
+      // reload) that destroys the evaluate's execution context mid-collect —
+      // live-hit on Edmunds. One bounded same-page retry after a settle; a
+      // second failure is the site's honest failed outcome for the run.
+      let collected: AggregatorCollected;
+      try {
+        collected = await page.evaluate(adapter.collect);
+      } catch (err) {
+        if (!/execution context was destroyed/i.test(String(err))) throw err;
+        await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+        await page.waitForTimeout(3_000);
+        collected = await page.evaluate(adapter.collect);
+      }
 
       // Edmunds location gate: a page that silently searched a different metro
       // fails closed (zero rows) before any extraction wiring.
@@ -469,6 +481,40 @@ export interface AggregatorSelectionCounts {
 }
 
 /**
+ * Deterministic model/trim RE-SEGMENTATION against the profile's model. Pure.
+ *
+ * Aggregator tile titles run model and trim together ("TUCSON Hybrid Limited
+ * AWD"), and the extraction's split of that character stream varies: the same
+ * page has yielded {model:"TUCSON Hybrid", trim:"Limited"} on one run and
+ * {model:"Tucson", trim:"Hybrid Limited"} on the next — the second shape fails
+ * the exact-model comparison and silently zeroes a lot full of real matches.
+ * When the extracted model differs from the profile's but the CONCATENATED
+ * model+trim token stream starts with the profile model's tokens, re-split at
+ * the profile-model boundary. This only re-partitions the tokens the page
+ * already carried — it never invents or reorders text — and rows whose tokens
+ * genuinely diverge pass through unchanged.
+ */
+export function resegmentModelTrim(
+  profileModel: string,
+  model: string | null,
+  trim: string | null,
+): { model: string | null; trim: string | null } {
+  if (model === null || model === "") return { model, trim };
+  const profileTokens = profileModel.toLowerCase().split(/\s+/).filter((t) => t !== "");
+  if (profileTokens.length === 0) return { model, trim };
+  if (model.trim().toLowerCase() === profileModel.trim().toLowerCase()) return { model, trim };
+  const combined = `${model} ${trim ?? ""}`.trim();
+  const combinedTokens = combined.split(/\s+/).filter((t) => t !== "");
+  if (combinedTokens.length < profileTokens.length) return { model, trim };
+  for (let i = 0; i < profileTokens.length; i += 1) {
+    if (combinedTokens[i]!.toLowerCase() !== profileTokens[i]) return { model, trim };
+  }
+  const newModel = combinedTokens.slice(0, profileTokens.length).join(" ");
+  const rest = combinedTokens.slice(profileTokens.length).join(" ");
+  return { model: newModel, trim: rest === "" ? null : rest };
+}
+
+/**
  * Deterministic keep-set + dedup selection. Pure. In registry order:
  *   - keep-set: classifyMatchStatus 'exact', OR 'near' AND the listing trim is a
  *     token-superset of the profile trim (trimSubsetMatch) — else drop + count;
@@ -497,7 +543,11 @@ export function selectAggregatorKeepRows(args: {
   const seenVin = new Set<string>();
   const kept: AggregatorKeepRow[] = [];
   for (const row of rows) {
-    const l = row.listing;
+    const seg = resegmentModelTrim(profile.model, row.listing.model, row.listing.trim);
+    const l =
+      seg.model === row.listing.model && seg.trim === row.listing.trim
+        ? row.listing
+        : { ...row.listing, model: seg.model, trim: seg.trim };
     const matchStatus = classifyMatchStatus(
       profile.year,
       profile.make,
@@ -719,6 +769,8 @@ export function buildAggregatorSummary(args: {
   duplicatesSkipped: number;
   droppedNoDealer: number;
   droppedOutOfRadius: number;
+  droppedNoMatch: number;
+  droppedInTransit: number;
 }): string {
   const siteParts = args.perSite.map((s) => {
     if (s.status === "blocked") return `${s.label}: blocked automated scanning`;
@@ -738,6 +790,12 @@ export function buildAggregatorSummary(args: {
       : "";
 
   const parens: string[] = [];
+  if (args.droppedNoMatch > 0) {
+    parens.push(`${args.droppedNoMatch} didn't match your exact search`);
+  }
+  if (args.droppedInTransit > 0) {
+    parens.push(`${args.droppedInTransit} not yet in stock`);
+  }
   if (args.duplicatesSkipped > 0) {
     parens.push(`${args.duplicatesSkipped} duplicate${args.duplicatesSkipped === 1 ? "" : "s"} skipped`);
   }
@@ -1261,6 +1319,8 @@ const persistConfirmStep = createStep({
         duplicatesSkipped,
         droppedNoDealer: state.droppedNoDealer,
         droppedOutOfRadius: counts.droppedOutOfRadius,
+        droppedNoMatch: counts.droppedNoMatch,
+        droppedInTransit: counts.droppedInTransit,
       });
 
       const sitesScanned = captured.filter((c) => c.status === "scanned").length;

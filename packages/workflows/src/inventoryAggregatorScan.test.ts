@@ -55,6 +55,7 @@ import {
   type InventoryAggregatorScanWorkflowDeps,
   type PersistAggregatorScanArgs,
   type ScanAggregatorsArgs,
+  resegmentModelTrim,
 } from "./inventoryAggregatorScan.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
@@ -396,6 +397,8 @@ describe("inventory_aggregator_scan — buildAggregatorSummary", () => {
       duplicatesSkipped: 2,
       droppedNoDealer: 1,
       droppedOutOfRadius: 3,
+      droppedNoMatch: 0,
+      droppedInTransit: 0,
     });
     expect(s).toContain("Cars.com: 12 listings");
     expect(s).toContain("Edmunds: blocked automated scanning");
@@ -422,6 +425,8 @@ describe("inventory_aggregator_scan — buildAggregatorSummary", () => {
       duplicatesSkipped: 0,
       droppedNoDealer: 0,
       droppedOutOfRadius: 0,
+      droppedNoMatch: 0,
+      droppedInTransit: 0,
     });
     expect(s).toContain("Edmunds: couldn't confirm your location — skipped its results this run");
   });
@@ -814,5 +819,36 @@ describe("inventory_aggregator_scan — scanAggregatorsImpl (injected site runne
 describe("inventory_aggregator_scan — constants", () => {
   it("caps per-site cards at 40 post-dedup", () => {
     expect(AGGREGATOR_CARD_CAP).toBe(40);
+  });
+});
+
+describe("resegmentModelTrim", () => {
+  it("re-splits when the extracted model/trim boundary drifted into the trim", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson", "Hybrid Limited")).toEqual({
+      model: "Tucson Hybrid",
+      trim: "Limited",
+    });
+  });
+  it("re-splits a trim-less compound model", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "TUCSON Hybrid Limited", null)).toEqual({
+      model: "TUCSON Hybrid",
+      trim: "Limited",
+    });
+  });
+  it("passes an already-aligned split through unchanged", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "TUCSON Hybrid", "Limited")).toEqual({
+      model: "TUCSON Hybrid",
+      trim: "Limited",
+    });
+  });
+  it("leaves genuinely divergent tokens alone", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "Santa Fe", "Limited")).toEqual({
+      model: "Santa Fe",
+      trim: "Limited",
+    });
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson", null)).toEqual({
+      model: "Tucson",
+      trim: null,
+    });
   });
 });
