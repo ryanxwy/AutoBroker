@@ -154,7 +154,6 @@ export {
   SNAPSHOT_CAP_CHARS,
   POLITENESS_JITTER_MS,
   BrowserIsolationError,
-  BrowserTool,
   gatedSubmitForm,
   // Filter face (read-side refinement verbs + their fences; never gated,
   // never holds an Approver).
@@ -168,7 +167,6 @@ export {
   // Approver; ZIP-digits-only value constraint).
   ZIP_VALUE_RE,
   ZIP_FIELD_RE,
-  ZIP_SUBMIT_TEXT_RE,
   LocationZipRefusedError,
   probeZipTarget,
   assertZipTargetAllowed,
@@ -187,8 +185,6 @@ export {
   type BrowserContextOptions,
   type BrowserSession,
   type ExtractFallbackResult,
-  type ResponseMatch,
-  type PageLike,
   type DealerLeadForm,
 } from "./browser.js";
 
@@ -225,9 +221,6 @@ export {
 } from "./geosearch/pure.js";
 export {
   mapsExtractor,
-  parseMapsHref,
-  parseRatingLabel,
-  isServiceCenterTypeLine,
   needsFallback,
   MAPS_EXTRACT_REQUIRED_FIELDS,
   type MapsDomDocument,
@@ -250,7 +243,6 @@ export {
 // Dealer-platform inventory scout (fingerprint table + fresh-200 SRP probe).
 export {
   fingerprintPlatform,
-  likelySrpPath,
   resolveSrp,
   type DealerPlatform,
   type ScoutOptions,
@@ -800,11 +792,6 @@ export { openDb, getDb, closeDb, resolveDataDir, type Db } from "./db.js";
 // plus the classes + pacing primitives for callers that construct their own.
 export * from "./limiter/index.js";
 
-// The serialized product-DB write lane — the single funnel for multi-step async
-// write SEQUENCES under concurrency (sync .run()/.transaction() are already
-// serialized + atomic; see writeLane.ts for the honest scope).
-export { withWriteLane } from "./writeLane.js";
-
 // Scheduler watermark — the per-job last-success store in pipeline_state (the
 // durable catch-up watermark; the only product-DB access the background
 // scheduler is permitted, funnelled down here per the SQLite invariant).
@@ -893,17 +880,14 @@ export {
   type OtdAttribution,
 } from "./quotes/crossState.js";
 
-// Pure validators (post-validation + safety rules).
+// Pure validators (safety rules).
 export {
-  postValidate,
   assertNoBudget,
   assertPaymentMethodConsistent,
   assertUnicodeSafe,
-  assertPhonePolicy,
   BudgetLeakError,
   PaymentMethodMismatchError,
   UnicodeUnsafeError,
-  PhonePolicyViolationError,
   type ValidationResult,
 } from "./validators.js";
 
@@ -975,7 +959,6 @@ export {
   profileToRow,
   validate,
   create,
-  resolveActive,
   update,
   replace,
   close,

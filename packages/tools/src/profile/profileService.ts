@@ -45,7 +45,6 @@ import {
   IDENTITY_FIELDS,
   MissingRequiredFieldError,
 } from "./errors.js";
-import { resolveActiveProfile, type ResolveResult } from "./resolver.js";
 import { releaseDealerClaims } from "../leadSubmissions/claimDealer.js";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +58,7 @@ export interface ValidateResult {
 }
 
 /**
- * LC-1 pure validation — the oracle parity-minimum (year/make/model non-empty +
+ * LC-1 pure validation — the legacy parity minimum (year/make/model non-empty +
  * year int-coercible). Does NOT touch the DB. This is intentionally LOOSER than
  * the 7-field FORM contract (SearchProfileIntakeInputSchema, core): a skill can
  * dry-run this without forcing the full form set. Returns { ok, errors[] }.
@@ -384,15 +383,6 @@ export function create(
   }
 
   return { profile, auditId };
-}
-
-// ---------------------------------------------------------------------------
-// resolve — three-branch (delegates to resolver.ts)
-// ---------------------------------------------------------------------------
-
-/** Three-branch resolve; intake itself is exempt (it creates the profile). */
-export function resolveActive(db: Db, args: { threadPin?: string } = {}): ResolveResult {
-  return resolveActiveProfile(db, args);
 }
 
 // ---------------------------------------------------------------------------

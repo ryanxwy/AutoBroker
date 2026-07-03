@@ -24,21 +24,8 @@ export * from "./gmailLimiter.js";
 export * from "./hostLimiter.js";
 export * from "./llmLimiter.js";
 
-/** Optional env override for the hard daily Gmail budget (500 free default; set
- *  2000 on a Workspace account). Anything non-positive/garbage falls back to the
- *  GmailSendLimiter default. */
-function envGmailDailyCap(): number | undefined {
-  const raw = process.env.AUTOBROKER_GMAIL_DAILY_CAP;
-  if (raw === undefined || raw.trim() === "") return undefined;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
-}
-
 /** The ONE Gmail account, shared across every profile's sends. */
-const gmailDailyCap = envGmailDailyCap();
-export const gmailLimiter = new GmailSendLimiter(
-  gmailDailyCap === undefined ? {} : { dailyCap: gmailDailyCap },
-);
+export const gmailLimiter = new GmailSendLimiter();
 
 /** Per-dealer-HOST politeness, shared across every profile's browser scans. */
 export const hostLimiter = new HostPolitenessLimiter();

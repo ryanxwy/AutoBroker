@@ -3,8 +3,8 @@
  * CLAUDE.md).
  *
  * The profile-ASK three-branch contract used to be skill markdown prose with no
- * function enforcing 1/0/2+ STOP semantics (readers.md:1404/1456). In full-TS it
- * is THIS typed tools-layer function:
+ * function enforcing 1/0/2+ STOP semantics. In full-TS it is THIS typed
+ * tools-layer function:
  *
  *   threadPin (non-empty + active) → kind:'pinned'         → run
  *   exactly 1 active               → kind:'inferred_newest' → LOG + run
@@ -21,7 +21,7 @@
  * column to add, and the synth-hash id has no chronological order. SQLite ROWID
  * is the insertion order, so `ORDER BY rowid DESC` is the newest-active rule.
  *
- * NULL status = v1-implicit-active: legacy oracle rows may carry NULL status; the
+ * NULL status = v1-implicit-active: legacy v1 rows may carry NULL status; the
  * active filter treats NULL as active (status IS 'active' OR status IS NULL),
  * while terminal states (superseded/closed) are filtered out.
  *

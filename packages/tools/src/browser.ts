@@ -218,12 +218,6 @@ export interface DealerLeadForm {
   submitSelector: string;
 }
 
-/** Matcher accepted by `readJson` — same shapes Playwright's waitForResponse takes. */
-export type ResponseMatch =
-  | string
-  | RegExp
-  | ((response: Response) => boolean | Promise<boolean>);
-
 export type ExtractFallbackResult<R extends Record<string, unknown>> =
   | { via: "evaluate"; rows: R[] }
   | { via: "snapshot"; completeRows: R[]; snapshotText: string };
@@ -238,26 +232,19 @@ export interface BrowserSession {
   /** Filter face (read-side inventory refinement; allowlisted + fenced,
    *  ungated by design — see the filter-face section below). */
   setFilterSelect(page: Page, selector: string, option: string): Promise<void>;
-  tickFilterCheckbox(page: Page, selector: string): Promise<void>;
   clickFilterApply(page: Page, selector: string): Promise<void>;
   /** Location-ZIP face (opt-in per skill): type the profile's ZIP into the
    *  page's own location picker so region-priced content renders. Fenced like
    *  the filter face + a US-ZIP-only value constraint; ungated, holds no
    *  Approver. ZIP DIGITS ONLY — never a name/phone/address. */
   fillLocationZip(page: Page, selector: string, zip: string): Promise<void>;
-  readJson(
-    page: Page,
-    opts: { match: ResponseMatch; trigger: () => Promise<unknown> },
-  ): Promise<unknown>;
   extract<R>(page: Page, fn: () => R[]): Promise<R[]>;
   snapshot(page: Page): Promise<string>;
-  screenshot(page: Page): Promise<Buffer>;
   extractWithFallback<R extends Record<string, unknown>>(
     page: Page,
     fn: () => R[],
     required: (keyof R & string)[],
   ): Promise<ExtractFallbackResult<R>>;
-  withTraceChunk<T>(name: string, fn: () => Promise<T>): Promise<T>;
   submitForm(
     page: Page,
     form: DealerLeadForm,
@@ -794,11 +781,6 @@ function makeSession(deps: SessionDeps): BrowserSession {
     await runFilterVerb({ page, emitter, verb: "select", selector, option });
   }
 
-  async function tickFilterCheckbox(page: Page, selector: string): Promise<void> {
-    assertNotBreached();
-    await runFilterVerb({ page, emitter, verb: "tick", selector });
-  }
-
   async function clickFilterApply(page: Page, selector: string): Promise<void> {
     assertNotBreached();
     await runFilterVerb({ page, emitter, verb: "apply", selector });
@@ -811,27 +793,6 @@ function makeSession(deps: SessionDeps): BrowserSession {
   async function fillLocationZip(page: Page, selector: string, zip: string): Promise<void> {
     assertNotBreached();
     await runLocationZip({ page, emitter, selector, zip });
-  }
-
-  /** Promise-before-action, enforced structurally: the response waiter is
-   *  ARMED before `trigger` runs. Subscribing after the click loses the race
-   *  whenever the XHR returns fast — the #1 flake source — so the helper makes
-   *  the wrong ordering unwritable. */
-  async function readJson(
-    page: Page,
-    opts: { match: ResponseMatch; trigger: () => Promise<unknown> },
-  ): Promise<unknown> {
-    assertNotBreached();
-    const armed = page.waitForResponse(opts.match, { timeout: NAV_TIMEOUT_MS });
-    try {
-      await opts.trigger();
-    } catch (err) {
-      armed.catch(() => undefined); // don't leave a dangling rejection behind
-      throw err;
-    }
-    const resp = await armed;
-    emitter.action("read_json", resp.url());
-    return resp.json();
   }
 
   /** Read-only in-page extraction. A non-array return (drifted page script)
@@ -849,11 +810,6 @@ function makeSession(deps: SessionDeps): BrowserSession {
       await page.evaluate('document.body ? document.body.innerText : ""'),
     );
     return capSnapshot(text);
-  }
-
-  async function screenshot(page: Page): Promise<Buffer> {
-    assertNotBreached();
-    return page.screenshot();
   }
 
   /** Drop a tiny trace chunk into the traces dir as a durable marker that
@@ -898,41 +854,6 @@ function makeSession(deps: SessionDeps): BrowserSession {
     return { via: "snapshot", completeRows, snapshotText };
   }
 
-  /** Run `body` inside a trace chunk: discarded on success, saved as
-   *  <tracesDir>/<runId>-<name>-<n>.zip on failure (then the error rethrows
-   *  unchanged — a tracing problem never masks the real failure). Chunks do not
-   *  nest; if one is already open (or tracing is unavailable) the body simply
-   *  runs untraced. */
-  async function withTraceChunk<T>(name: string, body: () => Promise<T>): Promise<T> {
-    assertNotBreached();
-    chunkCounter += 1;
-    const n = chunkCounter;
-    let chunkOpen = true;
-    try {
-      await context.tracing.startChunk({ name });
-    } catch {
-      chunkOpen = false; // tracing trouble must not fail the step itself
-    }
-    try {
-      const result = await body();
-      if (chunkOpen) {
-        await context.tracing.stopChunk().catch(() => undefined); // success: discard
-      }
-      return result;
-    } catch (err) {
-      if (chunkOpen) {
-        try {
-          await context.tracing.stopChunk({
-            path: join(tracesDir, `${runId}-${name}-${n}.zip`),
-          });
-        } catch {
-          // keep the original error
-        }
-      }
-      throw err;
-    }
-  }
-
   /**
    * The ONE mutating face of the browser service — submit a dealer lead form.
    * Delegates to `gatedSubmitForm` (factored out so the gate/decline/fuse paths
@@ -952,15 +873,11 @@ function makeSession(deps: SessionDeps): BrowserSession {
     navigate,
     lazyScroll,
     setFilterSelect,
-    tickFilterCheckbox,
     clickFilterApply,
     fillLocationZip,
-    readJson,
     extract,
     snapshot,
-    screenshot,
     extractWithFallback,
-    withTraceChunk,
     submitForm,
   };
 }
@@ -991,7 +908,7 @@ export const FILTER_DENYLIST_RE =
 /** The only button wording the apply verb may click. */
 export const FILTER_APPLY_TEXT_RE = /apply|update results|search inventory/i;
 
-export type FilterVerb = "select" | "tick" | "apply";
+export type FilterVerb = "select" | "apply";
 
 /** Structural DOM slices for the in-page probe (this package compiles without
  *  the DOM lib; real elements satisfy these, tests stub them). */
@@ -1113,18 +1030,6 @@ export function assertFilterTargetAllowed(
         );
       }
       return;
-    case "tick":
-      if (
-        probe.tag !== "input" ||
-        (probe.inputType !== "checkbox" && probe.inputType !== "radio")
-      ) {
-        throw new FilterInteractionRefusedError(
-          verb,
-          selector,
-          `only checkbox/radio inputs are tickable (got <${probe.tag} type=${probe.inputType ?? "?"}>)`,
-        );
-      }
-      return;
     case "apply": {
       const buttonish =
         probe.tag === "button" ||
@@ -1160,7 +1065,6 @@ export interface FilterControlPage {
     selector: string,
     values: ReadonlyArray<{ value?: string; label?: string }>,
   ): Promise<unknown>;
-  check(selector: string): Promise<void>;
   click(selector: string): Promise<void>;
 }
 
@@ -1193,10 +1097,6 @@ export async function runFilterVerb(deps: {
       emitter.action("filter_select", `${selector} = ${option}`);
       return;
     }
-    case "tick":
-      await page.check(selector);
-      emitter.action("filter_tick", selector);
-      return;
     case "apply":
       await page.click(selector);
       emitter.action("filter_apply", selector);
@@ -1234,12 +1134,6 @@ export const ZIP_VALUE_RE = /^\d{5}(-\d{4})?$/;
  *  must read like a location/ZIP control. A clean-worded but unrelated input
  *  (search-by-keyword, quantity, …) is refused. */
 export const ZIP_FIELD_RE = /zip|postal|location/i;
-
-/** Submit wording the ZIP face may click to apply the location. Reuses the
- *  filter apply wording and adds location-localizer phrasings. Still denylist-
- *  checked, so a "Get Offers" lead button never qualifies. */
-export const ZIP_SUBMIT_TEXT_RE =
-  /apply|update results|search inventory|go|update|see (offers|local)/i;
 
 /** What the in-page probe reports about a proposed ZIP target. Extends the
  *  filter probe shape with the attributes the input allowlist matches on. */
@@ -1496,22 +1390,3 @@ export async function gatedSubmitForm(deps: {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Names kept only because the package index re-exports them (the public
-// surface is re-wired separately from this file).
-// ---------------------------------------------------------------------------
-
-/** Now simply the real Playwright Page — the scaffold-era structural slice is gone. */
-export type PageLike = Page;
-
-/** Superseded scaffold entry point. Constructing it throws so no caller can
- *  silently keep a dead path alive; the browser service API is
- *  `withBrowserContext()` / `BrowserSession` (mutating face: `submitForm`). */
-export class BrowserTool {
-  constructor(_approver?: Approver) {
-    throw new Error(
-      "BrowserTool is superseded — use withBrowserContext(runId, opts, fn); " +
-        "the mutating face is session.submitForm().",
-    );
-  }
-}

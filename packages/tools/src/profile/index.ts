@@ -12,7 +12,6 @@ export {
 export {
   validate,
   create,
-  resolveActive,
   update,
   replace,
   close,
