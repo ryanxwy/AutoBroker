@@ -1,14 +1,14 @@
 # buyer-email-probe.md — optional read-only buyer-mode Gmail probe
 
 **Scope:** an owner-run, standalone script that validates the REAL Gmail I/O layer
-end-to-end without sending anything. It complements the 17-skill e2e journey but is
+end-to-end without sending anything. It complements the 18-skill e2e journey but is
 separate from it — not a replacement and not part of `green.sh`.
 
 ---
 
 ## What this probe validates that the test-mode journey cannot
 
-The serve-live 17-skill journey is hard-pinned to `AUTOBROKER_MODE=test` at boot
+The serve-live 18-skill journey is hard-pinned to `AUTOBROKER_MODE=test` at boot
 (`NODE_ENV=test → forceTestMode → assertTestModeSafe`). In test mode every send goes
 to the fake mailbox — the real Gmail adapter is never exercised. That means the
 journey is permanently blind to:
@@ -116,6 +116,6 @@ Mirror backlog items to `harvest-register.md` (semantic dedup, bump recurrence o
 re-discovery) so `e2e-evolve` picks them up. Use the same `evidence_ref` shape:
 `probe-<date>` + the JSON coverage object as the snapshot.
 
-The probe is **not** a journey step in the main 17-skill spine, so its findings do not
+The probe is **not** a journey step in the main 18-skill spine, so its findings do not
 appear in the `逐技能表` per-skill table. Record them in a separate **"Buyer-email
 probe"** sub-section inside **本轮发现** when the probe was run this session.

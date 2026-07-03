@@ -1,7 +1,7 @@
 ---
 name: e2e-loop
 description: Run one manually-triggered, live end-to-end pass of the AutoBroker product
-  as a real car buyer — drive all 17 skills against the run's live LLM lane (default
+  as a real car buyer — drive all 18 skills against the run's live LLM lane (default
   DeepSeek api-key; `--provider claude` = the Claude OAuth subscription lane, the
   official Agent SDK) through serve-live + a Playwright browser, negotiate for real
   against resistant LLM dealers, cross-shop several cars at once, and RECORD every
@@ -63,7 +63,7 @@ ends with a full report; it does **not** need an empty backlog.
 - **Provider lane** (`--provider claude|deepseek`, default `deepseek`): which real LLM
   lane the WHOLE journey runs on. `deepseek` = the DeepSeek API-key lane (lane A, the
   historical default, unchanged). `claude` = the **Claude OAuth subscription** lane (lane
-  B, the official Agent SDK) — every one of the 17 skills' LLM calls (extraction / prose /
+  B, the official Agent SDK) — every one of the 18 skills' LLM calls (extraction / prose /
   routing) routes through it, the same scope as DeepSeek. The runner enforces this by
   exporting `AUTOBROKER_AGENT_PROVIDER=<provider>` into the `serve-live` environment BEFORE
   boot; the server reads it as the default agent selection (the 4-box AgentBar is left
@@ -120,7 +120,7 @@ ends with a full report; it does **not** need an empty backlog.
 |---|---|---|---|
 | 0 | read the last 1–2 reports, run the safety gate, `touch .claude/.e2e-loop-active` | keys/MCP present; listening line seen | this spine |
 | 1 | (full) fresh worktree off `origin/main` + better-sqlite3 rebuild + `pnpm -r build`, then start `pnpm e2e:serve-live`; pick a realistic buyer (metro, car, finance mode, persona) | build OK; `dataDir` recorded; geosearch ≥1 dealer (≥10 full) | `references/harness-boundaries.md`, `references/brand-picker.md`, `references/ui-monitor.md` |
-| 2 | live the journey: drive all 17 skills as the buyer — PASS-A in natural language, PASS-B by `/slash` — verifying each skill lands its data AND its UI | terminal skill row + table delta + the right Canvas panel; data-quality coverage (not just a row count) | `references/skill-pipeline.md` (+ `references/ui-lane-personas.md`) |
+| 2 | live the journey: drive all 18 skills as the buyer — PASS-A in natural language, PASS-B by `/slash` — verifying each skill lands its data AND its UI | terminal skill row + table delta + the right Canvas panel; data-quality coverage (not just a row count) | `references/skill-pipeline.md` (+ `references/ui-lane-personas.md`) |
 | 3 | (full) negotiate for real: deep, multi-thread email negotiation against resistant LLM dealers — ≥10 dealers, front-runners driven to ≥4 rounds, with ghosting and manager escalation | front-runner threads reach ≥4 buyer rounds; ghosts drop after 2 unanswered; revised OTDs extracted | `references/dealer-brain.md` |
 | 4 | (full) cross-shop: run several searches at once (3 different-brand profiles) on the real scheduler — concurrent negotiation, a shared dealer both want, one shared approval inbox | scheduler cap holds; every profile reaches a terminal state; exactly one profile binds each shared dealer, losers voiced + zero send; no budget leak; nothing sent for real | `references/multi-profile-lane.md` |
 | 5 | judge the experience: run `frontend-taste` per data tab | a ranked usability findings list | `references/ui-lane-personas.md` (→ the `frontend-taste` skill by name) |
@@ -282,7 +282,8 @@ headline.
 - Every backlog item is mirrored to `harvest-register.md` (semantic dedup — bump
   recurrence on a re-discovery, don't duplicate). That register is what `e2e-evolve` reads.
 - For every data-bearing skill that wrote ≥1 row, you checked `/__e2e/dataquality`, not
-  just the row count.
+  just the row count. (`inventory_aggregator_scan` has no dataquality branch — its verdict
+  surface is the voiced kept/dropped run summary, `references/skill-pipeline.md` item 4.)
 - After each of the 3 irreversible sends, you confirmed the **fake** adapter fired (a
   positive check, not just the negative "no real send" counter).
 - UI-monitor checkpoints ran (all six on a full run; ONE final on `--light`) and their

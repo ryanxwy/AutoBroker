@@ -110,10 +110,18 @@ afterAll(() => {
 
 /**
  * Replicate the exact SQL from the /__e2e/dataquality route (inventory_site_scan branch).
- * NOTE: this SQL is mirrored in apps/ui/e2e/serve-live.mjs — update both.
+ * Aggregator-sourced rows (source_type='aggregator_srp') are excluded — this branch
+ * measures inventory_site_scan only. NOTE: this SQL is mirrored in
+ * apps/ui/e2e/serve-live.mjs — update both.
  */
-function runQuery() {
+const NON_AGGREGATOR =
+  "(source_id IS NULL OR source_id NOT IN (SELECT source_id FROM dealer_inventory_sources WHERE source_type = 'aggregator_srp'))";
+
+function runQuery(profileId?: string) {
   const round2 = (x: number) => Math.round(x * 100) / 100;
+  const where = profileId
+    ? `WHERE superseded_at IS NULL AND ${NON_AGGREGATOR} AND search_profile_id = ?`
+    : `WHERE superseded_at IS NULL AND ${NON_AGGREGATOR}`;
   const r = db.$client
     .prepare(
       `SELECT COUNT(*) AS n,
@@ -124,9 +132,9 @@ function runQuery() {
          SUM(CASE WHEN pricing_breakdown_json IS NOT NULL THEN 1 ELSE 0 END) AS breakdown_parsed,
          SUM(CASE WHEN dealer_markup IS NOT NULL AND dealer_markup <> 0 THEN 1 ELSE 0 END) AS markup_present,
          SUM(CASE WHEN pricing_breakdown_json LIKE '%"addOns":[{%' THEN 1 ELSE 0 END) AS addons_present
-       FROM inventory_listings WHERE superseded_at IS NULL`,
+       FROM inventory_listings ${where}`,
     )
-    .get() as Record<string, number>;
+    .get(...(profileId ? [profileId] : [])) as Record<string, number>;
   const n = r["n"] ?? 0;
   const breakdown_parsed = r["breakdown_parsed"] ?? 0;
   return {
@@ -187,7 +195,7 @@ function runByDealer() {
          SUM(CASE WHEN pricing_breakdown_json IS NOT NULL THEN 1 ELSE 0 END) AS breakdown_parsed,
          SUM(CASE WHEN dealer_markup IS NOT NULL AND dealer_markup <> 0 THEN 1 ELSE 0 END) AS markup_present,
          SUM(CASE WHEN pricing_breakdown_json LIKE '%"addOns":[{%' THEN 1 ELSE 0 END) AS addons_present
-       FROM inventory_listings WHERE superseded_at IS NULL
+       FROM inventory_listings WHERE superseded_at IS NULL AND ${NON_AGGREGATOR}
        GROUP BY dealer_id
        ORDER BY dealer_id`,
     )
@@ -263,7 +271,7 @@ function runRenderEmpty() {
     .prepare(
       `SELECT COUNT(*) AS scanned_sources,
          SUM(CASE WHEN error_json LIKE '%rendered_empty%' THEN 1 ELSE 0 END) AS rendered_empty
-       FROM dealer_inventory_sources WHERE last_status='scanned'`,
+       FROM dealer_inventory_sources WHERE last_status='scanned' AND source_type <> 'aggregator_srp'`,
     )
     .get() as Record<string, number>;
   return {
@@ -296,5 +304,72 @@ describe("dataquality — rendered_empty source marker", () => {
     const r = runRenderEmpty();
     expect(r.scanned_sources).toBe(2);
     expect(r.rendered_empty_count).toBe(1);
+  });
+});
+
+/**
+ * Aggregator-source exclusion — inventory_aggregator_scan (the 18th skill) writes
+ * into the same inventory_listings table through source_type='aggregator_srp'
+ * source rows. An aggregator-kept listing can carry a listing_url but never a
+ * pricing_breakdown_json, so leaking it into the inventory_site_scan branch would
+ * false-fire the breakdown had-and-lost rule (vdp_linked>0 AND breakdown_parsed==0)
+ * on a site_scan 0-yield and dilute price coverage. The branch must read a
+ * site_scan-empty profile as n=0 (the nullEscape SKIP), never as an F1 FAIL.
+ * NOTE: the exclusion predicate is mirrored in apps/ui/e2e/serve-live.mjs — update both.
+ */
+describe("dataquality — aggregator_srp rows are excluded from the site_scan branch", () => {
+  beforeAll(() => {
+    const NOW = Date.now();
+    db.$client
+      .prepare(
+        `INSERT INTO dealer_inventory_sources
+           (source_id, search_profile_id, dealer_id, source_type, source_url,
+            normalized_url, discovery_method, first_seen_at, last_status, error_json)
+         VALUES ('s-agg', 'p2', 'd-agg', 'aggregator_srp', 'https://agg.example/srp',
+                 'https://agg.example/srp', 'aggregator_cars_com', ?, 'scanned', NULL)`,
+      )
+      .run(NOW);
+    // The exact shape that would false-fire F1 if it leaked in: priced +
+    // URL-linked, no breakdown blob.
+    db.$client
+      .prepare(
+        `INSERT INTO inventory_listings
+           (listing_id, search_profile_id, dealer_id, source_id, inventory_status,
+            match_status, raw_listing_json, first_seen_at, last_seen_at, observed_at,
+            listed_price, listing_url, pricing_breakdown_json, dealer_markup)
+         VALUES ('l-agg', 'p2', 'd-agg', 's-agg', 'active', 'match',
+                 '{}', ?, ?, ?, 31999, 'https://agg.example/vdp/1', NULL, NULL)`,
+      )
+      .run(NOW, NOW, NOW);
+  });
+
+  afterAll(() => {
+    db.$client.prepare("DELETE FROM inventory_listings WHERE listing_id = 'l-agg'").run();
+    db.$client.prepare("DELETE FROM dealer_inventory_sources WHERE source_id = 's-agg'").run();
+  });
+
+  it("the global aggregates ignore the aggregator-sourced listing", () => {
+    const result = runQuery();
+    expect(result.n).toBe(3); // d1's three site_scan rows only
+    expect(result.vdp_linked).toBe(3); // l-agg's URL never leaks in
+  });
+
+  it("a site_scan-empty profile with aggregator rows reads n=0 (SKIP), not an F1 false-FAIL", () => {
+    // Profile p2 holds ONLY the aggregator listing — the false-fire shape.
+    const result = runQuery("p2");
+    expect(result.n).toBe(0);
+    expect(result.vdp_linked).toBe(0);
+    expect(result.breakdown_parsed).toBe(0);
+  });
+
+  it("the per-dealer instrument carries no aggregator-minted dealer", () => {
+    const ids = runByDealer().map((d) => d.dealer_id);
+    expect(ids).not.toContain("d-agg");
+  });
+
+  it("scanned_sources counts only non-aggregator sources", () => {
+    // Only s-agg (aggregator, scanned) exists at this point — excluded.
+    const r = runRenderEmpty();
+    expect(r.scanned_sources).toBe(0);
   });
 });

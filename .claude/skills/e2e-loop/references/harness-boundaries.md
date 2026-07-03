@@ -166,7 +166,11 @@ Test-host only; product wall untouched; a primary verdict signal.
   coverage, priced, msrp_present, gated, vdp_linked, nullEscape,
   breakdown_parsed, breakdown_coverage, markup_present, addons_present,
   rendered_empty_count, scanned_sources }` over
-  `inventory_listings WHERE superseded_at IS NULL`. **Hard FAIL iff `n>0 AND
+  `inventory_listings WHERE superseded_at IS NULL` **excluding `aggregator_srp`-sourced
+  rows** (the 18th skill writes into the same table; without the exclusion a site_scan
+  0-yield plus aggregator rows would false-fire the F1 breakdown rule and dilute price
+  coverage — aggregator listings never carry `pricing_breakdown_json`). `scanned_sources`
+  / `rendered_empty_count` likewise count only non-aggregator sources. **Hard FAIL iff `n>0 AND
   priced==0 AND msrp_present==0 AND gated==0`** (TOTAL price loss — the 2026-06-22
   miss); `coverage≥0.5` is the healthy target, below-but->0 a soft note (the
   per-dealer VDP budget bounds gated-car coverage). `nullEscape:true` (n==0) = SKIP.
@@ -195,8 +199,10 @@ Test-host only; product wall untouched; a primary verdict signal.
 
 Ratios name no brand/metro/row-count, so the check generalizes to the next random
 pick. Extend by adding a case to the route's skill switch (geosearch website
-coverage, quote_audit expected-finding-code, inventory_compare real-price-axis are
-recorded backlog items — add the missing verification surface).
+coverage, quote_audit expected-finding-code, inventory_compare real-price-axis, and an
+`inventory_aggregator_scan` kept-rate/price-coverage branch are recorded backlog items —
+add the missing verification surface; until then the aggregator verdict surface is the
+voiced kept/dropped run summary, `references/skill-pipeline.md` item 4).
 
 **When:** the data-quality floor in the spine self-check — for every data-bearing
 skill that wrote ≥1 row, BEFORE declaring it PASS.
@@ -305,7 +311,8 @@ fake-mailbox / watermark assertions.
 
 ## Telemetry — read BEFORE `pipeline_reset`
 
-~6 LLM-calling skills write rows to `test_run_records` in the isolated DB
+~7 LLM-calling skills write rows to `test_run_records` in the isolated DB
+(`inventory_aggregator_scan` joined the emitters via the `inventory_extract` useCase)
 (`skill`, `cost_usd`, `latency_ms` columns; also `calls` count). Dump before
 `pipeline_reset` wipes the DB:
 

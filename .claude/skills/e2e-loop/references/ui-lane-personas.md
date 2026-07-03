@@ -16,7 +16,7 @@ Dispatch a Task subagent whose system prompt is:
 >
 > **You are GOAL-DRIVEN, not a script.** You are given ONE goal and a turn budget
 > (e.g. *"get the lowest out-the-door on a Tucson Hybrid near Irvine, ideally
-> under $41k; you have ~17 turns"*). Each turn YOU decide what to say next toward
+> under $41k; you have ~18 turns"*). Each turn YOU decide what to say next toward
 > that goal. Follow these four rules (the τ-bench user-simulator design):
 > 1. **Incremental disclosure.** Do not give away all your constraints at once;
 >    reveal the metro, then the trim, then the budget only as the step needs it —
@@ -31,10 +31,10 @@ Dispatch a Task subagent whose system prompt is:
 >    every turn in this persona's voice, with its typos and register.
 
 Feed the subagent the run's committed brand-picker output (persona, brand, city,
-finance mode). Drive it toward its goal across up to **~17 turns** (one rough
+finance mode). Drive it toward its goal across up to **~18 turns** (one rough
 intent per turn, in loose pipeline order) — PLUS **2-3 journey variations** drawn
 from the rotation table below (record which ones in the report). The subagent is
-NOT handed a 17-line script; it gets the goal + budget + the four rules above and
+NOT handed an 18-line script; it gets the goal + budget + the four rules above and
 decides each turn itself. It may emit fewer turns if it hits `###STOP###` early
 (goal met or gave up) — record the stop reason. Each message must be
 accompanied by its expected-UI contract (schema below). The subagent hands both
@@ -191,7 +191,7 @@ verification):
 NL-router edges); **E11–E13 are out-of-scope boundary probes** — hit them when the
 chosen persona naturally raises them (financing advice / ranking rationale /
 trade-in), not required every run. The 2-3 journey variations must be chosen so the
-17 messages cover all of E1–E10; if the chosen persona doesn't naturally trigger
+18 messages cover all of E1–E10; if the chosen persona doesn't naturally trigger
 one, add a targeted message.
 
 | # | Edge behavior | Concrete trigger | Expected (source) |

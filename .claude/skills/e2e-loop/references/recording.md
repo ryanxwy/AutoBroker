@@ -119,6 +119,18 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   reads "close to"/signed gap; `give_up_switch` stays strict-itemized-BATNA-only; board + modal show the
   SAME gap. Re-flag ONLY "at or below" on an above-best quote, or `give_up_switch` on a lone non-itemized lowball. Shipped 2026-06-30 (`phase2/negotiation_followup`, `60ae1db`).
 
+- `inventory_aggregator_scan` opening HEADED (visible) serial browser windows — deliberate
+  (Cloudflare/Akamai edge-block the headless UA; honest posture, zero UA/fingerprint
+  masquerade). Re-flag ONLY a headless regression re-appearing as both-sites-`blocked`
+  within seconds of launch. Shipped 2026-07-03 (`phase2/inventory_aggregator_scan`).
+- `inventory_aggregator_scan` keeping <10 or 0 with voiced parens ("M didn't match your
+  exact search", "K not yet in stock") or a voiced per-site drop ("blocked automated
+  scanning" / "couldn't confirm your location — skipped its results this run")
+  = the exact-match/location gates working (iSeeCars absent by design — launch adapters are
+  Cars.com + Edmunds only). Re-flag ONLY the suspect-0 (kept 0 while site_scan holds ≥3
+  in-radius exact matches — skill-pipeline.md item 4) or an UNVOICED site drop. Shipped
+  2026-07-03 (`phase2/inventory_aggregator_scan`).
+
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
 
@@ -127,7 +139,7 @@ known-correct entry here so it is never re-flagged.)
 ### Buyer-email probe findings
 
 When the optional buyer-email probe ran this session, record its findings in a
-**"Buyer-email probe"** sub-section inside **本轮发现**, separate from the 17-skill
+**"Buyer-email probe"** sub-section inside **本轮发现**, separate from the 18-skill
 逐技能表. Apply the same three-bucket rules: a broken real-read capability is a
 blocker or backlog; a low coverage ratio is backlog with a falsifiable fix idea;
 cosmetic oddities are polish. Mirror backlog items to `harvest-register.md`
@@ -190,7 +202,8 @@ DB="<dataDir>/autobroker.db"
 If `pipeline_reset` already ran, read the pre-wipe backup:
 `BK=$(ls -t <dataDir>/backups/autobroker-*.db | head -1)` then query `$BK`.
 
-About 6 of the 17 skills emit LLM rows; the other 11 are zero-LLM deterministic (no row =
+About 7 of the 18 skills emit LLM rows (`inventory_aggregator_scan` joined the emitters —
+it reuses the `inventory_extract` useCase); the other 11 are zero-LLM deterministic (no row =
 correct). Lane-B (Claude OAuth) rows are `cost_usd` NULL + `pricing_source='subscription'` — an
 honest NULL, never a fabricated $0. Render them `cost=NULL · subscription` and never sum them
 into the $ totals (the `SUM` above skips NULLs — keep it that way). The dealer subagents run on
@@ -261,7 +274,7 @@ The ledger at `ts-rebuild/live-e2e/index.html` is auto-built — never hand-edit
    `run | date | vehicle | metro | mode | persona | skills | nego | findings | cost | wall | commit | pr | verdict | summary`
    - `run` = the run-id · `mode` = `<mode>·<provider>` (e.g. `full·claude`, `light·deepseek`)
      — the lane rides inside `mode`: still 15 fields, no parser change (values stay free of
-     `|`, `--`, raw `< > &`) · `skills` = `17/17` (or `N/N` for a sub-arc) · `nego` = e.g.
+     `|`, `--`, raw `< > &`) · `skills` = `18/18` (or `N/N` for a sub-arc) · `nego` = e.g.
      `2r → $33,400` or `—` · `findings` = the bucket counts, e.g. `0 blk · 5 bklg · 3 pol`
      · `pr` = `—` for the runner (it does not open PRs) · `verdict` = one of
      **`complete` | `partial` | `blocked`** (the journey outcome — `partial` = some step

@@ -34,7 +34,7 @@ It runs **ADVISORY** in the next `/e2e-loop` (it never blocks CI).
 ## Job 2 — the generate → soak → triage discovery pass
 
 A bounded round that actively hunts for edges the runner doesn't currently hit. Keep it
-SMALL (a handful of candidates per round, not a full 17-skill journey).
+SMALL (a handful of candidates per round, not a full 18-skill journey).
 
 ### (1) Generate — two adversarial LLM generators
 

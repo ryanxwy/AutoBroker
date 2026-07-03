@@ -58,6 +58,10 @@ live AND yields the genuine multi-active world — do NOT shortcut with a fixtur
 the live lane (the deterministic soak lane uses `seedMultiActiveSharedDealer`; the
 live lane uses the product path). Then drive each profile's pipeline (site_scan →
 lead_submit → inbox_check → reply_extract → negotiation).
+(`inventory_aggregator_scan` stays OUT of the multi-profile fan-out for now: 3 concurrent
+profiles would multiply the national shopping-site loads and interleave its HEADED
+windows; the pinned single-profile spine covers it — skill-pipeline.md item 4. Revisit
+only after several soaked spine runs.)
 
 For the **shared rooftop**, call `POST /__e2e/inject_replies` for ≥2 profiles with
 the SAME `dealer_key` (`inventory_site_scan`'s shared-dealer mode → one `dealer_id =

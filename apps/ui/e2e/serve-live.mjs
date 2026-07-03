@@ -716,10 +716,18 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
       //   are informational counters only, never a fail criterion.
       //   addons_present uses LIKE '%"addOns":[{%': the blob stores camelCase addOns; the
       //   pattern requires at least one array element ('{'), so "addOns":[] never matches.
+      // Aggregator rows are EXCLUDED: inventory_aggregator_scan (the 18th skill) writes
+      //   into the same inventory_listings table via source_type='aggregator_srp' source
+      //   rows; those listings can carry a listing_url but never a
+      //   pricing_breakdown_json, so including them would false-fire the breakdown
+      //   had-and-lost rule on a site_scan 0-yield and dilute price coverage. This branch
+      //   measures inventory_site_scan ONLY.
       // NOTE: this SQL is mirrored in packages/tools/src/inventoryDataquality.test.ts — update both.
+      const nonAggregator =
+        "(source_id IS NULL OR source_id NOT IN (SELECT source_id FROM dealer_inventory_sources WHERE source_type = 'aggregator_srp'))";
       const where = profileId
-        ? "WHERE superseded_at IS NULL AND search_profile_id = ?"
-        : "WHERE superseded_at IS NULL";
+        ? `WHERE superseded_at IS NULL AND ${nonAggregator} AND search_profile_id = ?`
+        : `WHERE superseded_at IS NULL AND ${nonAggregator}`;
       const r = adb.$client
         .prepare(
           `SELECT COUNT(*) AS n,
@@ -770,11 +778,12 @@ built.app.get("/__e2e/dataquality", async (req, reply) => {
       // RENDER-QUALITY signal: the marker rides the SOURCE row (not the listings
       // table) at last_status='scanned' — error_json carries {"rendered_empty":true}
       // for a host-thrash blank SRP (0 cards + sub-threshold snapshot), distinct
-      // from a real 0-stock dealer. NOTE: this SQL is mirrored in
-      // packages/tools/src/inventoryDataquality.test.ts — update both.
+      // from a real 0-stock dealer. Aggregator sources are excluded for the same
+      // reason as above — this counts site_scan's dealer sources only. NOTE: this
+      // SQL is mirrored in packages/tools/src/inventoryDataquality.test.ts — update both.
       const se = profileId
-        ? "WHERE last_status='scanned' AND search_profile_id = ?"
-        : "WHERE last_status='scanned'";
+        ? "WHERE last_status='scanned' AND source_type <> 'aggregator_srp' AND search_profile_id = ?"
+        : "WHERE last_status='scanned' AND source_type <> 'aggregator_srp'";
       const reInfo = adb.$client
         .prepare(
           `SELECT COUNT(*) AS scanned_sources,
