@@ -4,8 +4,9 @@
  * nested-children graph. The orchestrator re-derives the four applicable steps
  * over the live DB each run (no checkpoint table) and composes the EXISTING
  * child skill workflows in canonical fan-out order, or — when a target_listing_id
- * is supplied — runs the targeted-VIN OTD sub-path instead (one fake-send through
- * the L2 gate).
+ * is supplied — runs the targeted-VIN OTD sub-path instead (one gated outbound
+ * send through the L2 gate — a real send in buyer mode, the fake mailbox in test
+ * mode).
  *
  * STEP MAP:
  *   0 resolveProfile — STRICT pin_required three-branch ASK (this is a
@@ -24,10 +25,14 @@
  *                      OTD sub-path (skip the fan-out): resolveTargetedListing →
  *                      buildOtdInjection → SUSPEND the SEND approval (sensitive) →
  *                      decline = zero outbound/zero record (the `declined` member);
- *                      approve = the gated fake-send (the L1 fuse is the real
- *                      floor) + recordQuoteFromListing on the real inbound
- *                      message_id. completedSteps:[]; finalState reflects the
- *                      record write.
+ *                      approve = the gated send (the per-seam AUTOBROKER_MODE=test
+ *                      brake resolves it to the fake mailbox in test/harness,
+ *                      fail-closed; a REAL send in buyer mode — always behind the
+ *                      always-on L2 human-approval gate) + recordQuoteFromListing
+ *                      on the real inbound message_id, but ONLY when the send
+ *                      actually landed (`kind:"sent"`). completedSteps:[];
+ *                      finalState reflects the record write (a not-sent send
+ *                      records nothing and reports a non-"ok" reconcile state).
  *   4 fanOut        — (NOT targeted, NOT dry_run) compose the child skill
  *                      workflows conditional on their detect predicate, in
  *                      canonical order extract→scrape→audit→compare, by invoking
@@ -56,12 +61,15 @@
  * and counts. The two no-suspend keystone children (reply_extract / audit) and
  * compare nest cleanly with zero HITL concern.
  *
- * KEYSTONE: the ONLY outbound side effect is the targeted-VIN fake-send, and it
- * fires ONLY after the SEND suspend is approved, through sendAndRecord's gated
- * path (the L1 fuse is the real floor — under BLOCK=1 it returns blocked, the
- * fake-send). The fan-out lane reaches no send at all. recordQuoteFromListing +
- * writePipelineCompletion are LOCAL product-DB writes (not fuse-gated). The OTD
- * ask text passes through assertNoBudget before it leaves this file.
+ * KEYSTONE: the ONLY outbound side effect is the targeted-VIN send, and it fires
+ * ONLY after the SEND suspend is approved, through sendAndRecord's gated path. The
+ * send floor is the per-seam !isBuyerMode() AUTOBROKER_MODE=test brake (resolves
+ * every send to the fake mailbox in test/harness, fail-closed) PLUS the always-on
+ * L2 human-approval gate; buyer mode sends a real email. The fan-out lane reaches
+ * no send at all. recordQuoteFromListing runs ONLY on a `kind:"sent"` outcome (a
+ * not-sent send records nothing); it + writePipelineCompletion are LOCAL
+ * product-DB writes (not mode-gated). The OTD ask text passes through
+ * assertNoBudget before it leaves this file.
  *
  * Dependency wall: imports @mastra/* (legal only here), @autobroker/tools (the
  * pipeline tools + the gated send + the resolver + budget validator — the ONLY
@@ -137,9 +145,10 @@ export { QUOTE_PIPELINE_WORKFLOW_ID };
 /**
  * The post-suspend approver for the targeted-VIN send. The human ALREADY
  * approved at the SEND suspend; this Approver records that fact for the gate.
- * The L1 fuse is the real floor under the harness — it throws/returns blocked
- * BEFORE a real receipt can be minted, so a fake-send can never reach a real
- * mailbox. ONE module constant.
+ * The send floor under the harness is the per-seam !isBuyerMode() brake: with
+ * AUTOBROKER_MODE=test (force-pinned for every test/CI lane) sendAndRecord
+ * resolves the fake mailbox adapter fail-closed, so a targeted ask can never
+ * reach a real dealer from a test context. ONE module constant.
  */
 const APPROVED: Approver = { async decide() { return true; } };
 
@@ -341,6 +350,13 @@ const QuotePipelineStateSchema = z.object({
   completedSteps: z.array(z.enum(PIPELINE_STEPS)),
   /** True when the targeted record-quote landed (drives the targeted finalState). */
   recorded: z.boolean(),
+  /** The targeted SEND did not complete (a `partial`/`blocked` outcome) — no quote
+   *  was recorded and a retained draft awaits reconcile (drives a non-"ok"
+   *  finalState distinct from the recorded/no_work paths). */
+  sendIncomplete: z.boolean(),
+  /** The reconcile hint carried out of a not-sent outcome (surfaced in the
+   *  targeted summary/nextAction); null on every send-complete path. */
+  sendReconcileHint: z.string().nullable(),
 });
 type QuotePipelineState = z.infer<typeof QuotePipelineStateSchema>;
 
@@ -416,6 +432,8 @@ const resolveProfileStep = createStep({
       declined: false,
       completedSteps: [],
       recorded: false,
+      sendIncomplete: false,
+      sendReconcileHint: null,
     };
   },
 });
@@ -441,7 +459,7 @@ const detectStep = createStep({
 });
 
 // ---------------------------------------------------------------------------
-// step 2 — targeted (the targeted-VIN OTD sub-path: SUSPEND → gated fake-send)
+// step 2 — targeted (the targeted-VIN OTD sub-path: SUSPEND → gated send)
 // ---------------------------------------------------------------------------
 
 /** Build the outbound OTD ask body (deterministic template + the VIN-specific
@@ -517,7 +535,7 @@ const targetedStep = createStep({
         kind: "approval",
         summary:
           `Send a targeted out-the-door ask for VIN ${resolved.listing.vin} to this dealer? ` +
-          "(a real outbound email — sent in fake mode until launch)",
+          "(a real outbound email in buyer mode; fake mailbox in test mode)",
         sensitive: true,
         dealerId: resolved.listing.dealerId,
         listingId: resolved.listing.listingId,
@@ -532,9 +550,10 @@ const targetedStep = createStep({
       return { ...state, declined: true };
     }
 
-    // APPROVED. The gated fake-send fires now (the L1 fuse is the live anchor:
-    // under BLOCK=1 sendAndRecord returns blocked → zero messages rows). The OTD
-    // ask replies into the dealer's inbound thread (the sender is the reply `to`).
+    // APPROVED. The gated send fires now: the per-seam !isBuyerMode() brake
+    // resolves the fake mailbox in test/harness (fail-closed) and a REAL send in
+    // buyer mode. The OTD ask replies into the dealer's inbound thread (the sender
+    // is the reply `to`).
     const inbound = withDb((db) =>
       deps().readLatestInbound(db, resolved.inboundThread.threadId),
     );
@@ -582,10 +601,29 @@ const targetedStep = createStep({
       searchProfileId: state.searchProfileId,
       inReplyToGmailId: inbound.gmailMessageId,
     };
-    await deps().sendAndRecord(target, { approver: APPROVED, runId });
+    const outcome = await deps().sendAndRecord(target, { approver: APPROVED, runId });
 
-    // Record the targeted quote on the REAL inbound message (idempotent on
-    // quote_id; a LOCAL product-DB write, NOT fuse-gated — lands even under BLOCK=1).
+    // TRUTHFUL send status: record the quote and report a send ONLY when the send
+    // actually landed. A `partial` (the send threw AFTER its draft was inserted —
+    // the draft is retained with a NULL gmail id) or a defensive `blocked` means
+    // the ask did NOT reach the dealer, so we backfill NOTHING and stop-and-
+    // reconcile (mirrors negotiationFollowup): skip recordQuoteFromListing and
+    // carry a reconcile hint so a later pass can promote or discard the retained
+    // draft. `declined` cannot occur here (APPROVED always decides true), but any
+    // non-"sent" outcome is treated as not-sent defensively. The gate is unchanged
+    // — the send still fired only after the approved suspend above.
+    if (outcome.kind !== "sent") {
+      const reconcileHint =
+        outcome.kind === "partial"
+          ? outcome.partial.reconcile_hint
+          : outcome.kind === "blocked"
+            ? outcome.reconcile_hint
+            : "send_not_completed";
+      return { ...state, sendIncomplete: true, sendReconcileHint: reconcileHint };
+    }
+
+    // SENT. Record the targeted quote on the REAL inbound message (idempotent on
+    // quote_id; a LOCAL product-DB write — it lands only because the send landed).
     const financingMode = messageProfile.financingPreference ?? "unspecified";
     const result = withDb((db) =>
       deps().recordQuoteFromListing({
@@ -674,6 +712,25 @@ const logCompletionStep = createStep({
     // writes no audit_log completion row (it is a single-listing ask, not a
     // pipeline pass) — its truth is the recorded dealer_quotes row.
     if (state.targeted) {
+      // SEND DID NOT COMPLETE (a `partial`/`blocked` outcome): report a non-"ok"
+      // reconcile state, NEVER "sent". No quote was recorded; surface the reconcile
+      // hint so a later pass (or the user) resolves the retained draft.
+      if (state.sendIncomplete) {
+        const hint = state.sendReconcileHint ?? "send_not_completed";
+        return {
+          outcome: "completed" as const,
+          finalState: "partial" as const,
+          completedSteps: [],
+          nextAction:
+            `The targeted out-the-door ask did NOT send (${hint}) — a retained draft is ` +
+            "pending reconcile; nothing was recorded. Re-run /quote_pipeline to retry once " +
+            "the send path is clear.",
+          resolution: "pinned" as const,
+          summary:
+            "The targeted out-the-door ask did NOT send (send incomplete — a retained draft " +
+            "awaits reconcile); no quote was recorded.",
+        };
+      }
       const finalState: FinalState = state.recorded ? "ok" : "no_work";
       return {
         outcome: "completed" as const,
