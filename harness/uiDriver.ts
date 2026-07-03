@@ -559,10 +559,11 @@ export class UiDriver {
     await this.openSkillsPopover(timeoutMs);
     const runSel = tid(`ledger-run-${skillId}`);
     // The skill may be tucked behind the collapsed "More skills" disclosure —
-    // when its Run button isn't on the page yet and the disclosure exists,
-    // expand it (a real user click) before waiting on the row.
+    // a collapsed <details> keeps its rows in the DOM, so the row can resolve
+    // while staying hidden. When the Run button isn't VISIBLE and the
+    // disclosure exists, expand it (a real user click) before waiting.
     if (
-      (await this.page.locator(runSel).count()) === 0 &&
+      !(await this.page.locator(runSel).first().isVisible()) &&
       (await this.page.locator(tid("skills-more-toggle")).count()) > 0
     ) {
       await this.page.click(tid("skills-more-toggle"));
