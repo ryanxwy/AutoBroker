@@ -25,8 +25,9 @@
  *                      candidates → a graceful `no_candidates` carry (not a STOP).
  *   2 buildContext  — per eligible thread: readThreadSnapshotForDraft →
  *                      buildDraftContext (budget redacted, inbound dealer bodies
- *                      untrusted-fenced) + readQuoteSituationForThread →
- *                      classifyQuoteSituation (THE TONE IS PICKED IN CODE) + the
+ *                      untrusted-fenced) + readDealerGiveUpInputs →
+ *                      classifyQuoteSituation (THE TONE IS PICKED IN CODE, on the
+ *                      SAME derivation the Negotiations board uses) + the
  *                      reply-target ladder (resolveReplyTarget) resolved ONCE here.
  *                      A thread with no resolvable reply target is dropped.
  *   3 draft         — per target: harness.draftProse writes the CHOSEN-tone PROSE
@@ -72,7 +73,7 @@ import {
   listFollowupCandidateThreads as listFollowupCandidateThreadsImpl,
   listProfileRows as listProfileRowsImpl,
   readProfileRow,
-  readQuoteSituationForThread as readQuoteSituationForThreadImpl,
+  readDealerGiveUpInputs as readDealerGiveUpInputsImpl,
   readReplyTargetInputs as readReplyTargetInputsImpl,
   readThreadSnapshotForDraft as readThreadSnapshotForDraftImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
@@ -159,8 +160,9 @@ export interface NegotiationFollowupWorkflowDeps {
   listCandidateThreads: typeof listFollowupCandidateThreadsImpl;
   /** One thread's snapshot + the reply double-flag anchor (tools layer). */
   readThreadSnapshot: typeof readThreadSnapshotForDraftImpl;
-  /** The current vs best-competing OTD + itemization for the tone (tools layer). */
-  readQuoteSituation: typeof readQuoteSituationForThreadImpl;
+  /** The give-up inputs (current/itemization + the real same-mode competing OTD)
+   *  the tone is derived from — the SAME derivation the Negotiations board uses. */
+  readGiveUpInputs: typeof readDealerGiveUpInputsImpl;
   /** The 4-rung reply-target ladder inputs (tools layer). */
   readReplyTargetInputs: typeof readReplyTargetInputsImpl;
   /** The gated draft-then-promote send+record (tools layer; the ONLY send path). */
@@ -180,7 +182,7 @@ const realDeps: NegotiationFollowupWorkflowDeps = {
   readProfileById: readProfileRow,
   listCandidateThreads: listFollowupCandidateThreadsImpl,
   readThreadSnapshot: readThreadSnapshotForDraftImpl,
-  readQuoteSituation: readQuoteSituationForThreadImpl,
+  readGiveUpInputs: readDealerGiveUpInputsImpl,
   readReplyTargetInputs: readReplyTargetInputsImpl,
   sendAndRecord: sendAndRecordImpl,
   setPrimaryReplyTarget: setPrimaryReplyTargetImpl,
@@ -566,15 +568,21 @@ const buildContextStep = createStep({
         })),
       });
 
-      const situation = withDb((db) =>
-        deps().readQuoteSituation(db, { profileId: state.searchProfileId, dealerId: t.dealer_id }),
+      // The give-up inputs are the tone's source — the SAME derivation the
+      // Negotiations board maps to its tone/advisory: current OTD + itemization,
+      // and the lowest REAL same-mode competing OTD (bestCompetingRealOtd) as the
+      // baseline. Open-ness is parsed in JS, so a future ISO quote_expires_at reads
+      // OPEN (no SQL-CAST year-collapse).
+      const inputs = withDb((db) =>
+        deps().readGiveUpInputs(db, { profileId: state.searchProfileId, dealerId: t.dealer_id }),
       );
+      const bestCompetingOtd = inputs.bestCompetingRealOtd;
       // THE TONE IS PICKED IN CODE (the classifier owns the register from the
       // numbers; the LLM only writes the chosen tone's prose).
       const tone: QuoteTone = classifyQuoteSituation({
-        isItemized: situation.isItemized,
-        bestCompetingOtd: situation.bestCompetingOtd,
-        currentOtd: situation.currentOtd,
+        isItemized: inputs.isItemized,
+        bestCompetingOtd,
+        currentOtd: inputs.currentOtd,
       });
 
       // The 4-rung reply-target ladder, resolved ONCE here. A thread with no
@@ -593,8 +601,8 @@ const buildContextStep = createStep({
       built.push({
         ...t,
         tone,
-        current_otd: situation.currentOtd,
-        best_competing_otd: situation.bestCompetingOtd,
+        current_otd: inputs.currentOtd,
+        best_competing_otd: bestCompetingOtd,
         subject: snapshot.subject ?? "",
         draft_context: {
           subject: draftContext.subject,

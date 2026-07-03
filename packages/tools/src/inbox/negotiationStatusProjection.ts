@@ -19,18 +19,7 @@ import { followupCapDecision, gateDecisionForTarget } from "../dealerComm/replyT
 
 import { listFollowupCandidateThreads, readDealerGiveUpInputs } from "./followupReads.js";
 import { listProfileThreadRows } from "./reads.js";
-
-/** Parse an ISO-string OR epoch-ms timestamp to epoch-ms, or null (the schema's
- *  dual format — a SQL sort can't order both, so we sort in JS). */
-function toEpochMs(raw: unknown): number | null {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (typeof raw === "string") {
-    if (raw.trim() === "") return null;
-    const ms = Date.parse(raw);
-    return Number.isFinite(ms) ? ms : null;
-  }
-  return null;
-}
+import { toEpochMs } from "./time.js";
 
 export interface ThreadStatusRow {
   threadId: string;

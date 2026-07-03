@@ -533,13 +533,11 @@ export {
 // candidates, the reply-thread snapshot, and the 4-level reply-target inputs).
 export { setPrimaryReplyTarget } from "./dealerComm/contactFlip.js";
 export {
-  readQuoteSituationForThread,
   readDealerGiveUpInputs,
   readDealerContacts,
   listFollowupCandidateThreads,
   readThreadSnapshotForDraft,
   readReplyTargetInputs,
-  type QuoteSituationRead,
   type DealerGiveUpInputsRead,
   type DealerContactRead,
   type FollowupCandidateThread,

@@ -15,37 +15,11 @@
 
 import type { Db } from "@autobroker/db";
 
-/** Parse a numeric|ISO-string timestamp column to epoch-ms, or null. Mirrors the
- *  readFirstLeadSubmitAtMs convention: a number passes through (finite check), an
- *  ISO string is Date.parse'd, empty/non-finite → null. */
-function toEpochMs(raw: string | number | null | undefined): number | null {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (raw.trim() === "") return null;
-  const ms = Date.parse(raw);
-  return Number.isFinite(ms) ? ms : null;
-}
+import { toEpochMs } from "./time.js";
 
 // ---------------------------------------------------------------------------
-// the quote situation — current vs best-competing OTD, itemization
+// the give-up verdict inputs — same-vehicle trajectory + symmetric BATNA
 // ---------------------------------------------------------------------------
-
-/** The tone inputs for ONE thread's dealer (already classifyQuoteSituation-shaped). */
-export interface QuoteSituationRead {
-  /** Whether the current open quote is itemized (a real selling price AND at
-   *  least one itemized fee column) — an estimate-only quote reads NOT itemized. */
-  isItemized: boolean;
-  /** The current dealer's latest open OTD, or null when not quoted. */
-  currentOtd: number | null;
-  /** MIN(otd_total) across OTHER dealers' open quotes for the same profile, or
-   *  null when no competing open quote exists. */
-  bestCompetingOtd: number | null;
-}
-
-/** "Open" = not yet expired (quote_expires_at null or in the future), evaluated
- *  in SQL with a passed nowMs so the read is deterministic under test. */
-const OPEN_QUOTE_PREDICATE =
-  "(quote_expires_at IS NULL OR CAST(quote_expires_at AS INTEGER) > ?)";
 
 /** The give-up trajectory + competing reads only trust quotes whose extraction
  *  confidence clears this floor. A NULL confidence (unrecorded) PASSES — only an
@@ -58,60 +32,6 @@ const DEALER_QUOTE_MIN_CONFIDENCE = 0.5;
 const GIVEUP_TRAJECTORY_WINDOW = 3;
 /** Confidence floor as a reusable SQL fragment (NULL-tolerant, see above). */
 const CONFIDENCE_FLOOR_PREDICATE = "(confidence IS NULL OR confidence >= ?)";
-
-/**
- * Read the negotiation tone inputs for one thread's dealer:
- *   - current_otd = the latest open quote's otd_total for THIS dealer + profile
- *     (highest quote_received_at), with is_itemized = it has a real selling_price
- *     AND at least one itemized fee column (doc_fee / dealer_fee / sales_tax);
- *   - best_competing_otd = MIN(otd_total) across OTHER dealers' open quotes for
- *     the SAME profile.
- * Reads dealer_quotes (the comprehensive extracted quote with itemization), NOT
- * offers (which carries only an estimated OTD). Read-only, profile-scoped.
- */
-export function readQuoteSituationForThread(
-  db: Db,
-  args: { profileId: string; dealerId: string; nowMs?: number },
-): QuoteSituationRead {
-  const nowMs = args.nowMs ?? Date.now();
-
-  // `otd_total > 0` keeps the LIMIT-1 on the latest REAL OTD: a no-number reply
-  // (a hold/payment-only/come-onsite extraction) normalizes to null at write, and
-  // `> 0` is additionally robust to any pre-existing $0 row — so a dealer who
-  // declines to re-quote never loses their last real OTD here (PIC-20260629r2-5).
-  const current = db.$client
-    .prepare(
-      "SELECT otd_total AS otd, selling_price AS selling, doc_fee AS doc, dealer_fee AS dealer, sales_tax AS tax " +
-        "FROM dealer_quotes " +
-        "WHERE search_profile_id = ? AND dealer_id = ? AND otd_total > 0 AND " +
-        OPEN_QUOTE_PREDICATE +
-        " ORDER BY CAST(quote_received_at AS INTEGER) DESC, quote_id DESC LIMIT 1",
-    )
-    .get(args.profileId, args.dealerId, nowMs) as
-    | { otd: number | null; selling: number | null; doc: number | null; dealer: number | null; tax: number | null }
-    | undefined;
-
-  const currentOtd = current?.otd ?? null;
-  const isItemized =
-    current !== undefined &&
-    current.selling !== null &&
-    (current.doc !== null || current.dealer !== null || current.tax !== null);
-
-  const competing = db.$client
-    .prepare(
-      "SELECT MIN(otd_total) AS best " +
-        "FROM dealer_quotes " +
-        "WHERE search_profile_id = ? AND dealer_id != ? AND otd_total > 0 AND " +
-        OPEN_QUOTE_PREDICATE,
-    )
-    .get(args.profileId, args.dealerId, nowMs) as { best: number | null };
-
-  return { isItemized, currentOtd, bestCompetingOtd: competing.best ?? null };
-}
-
-// ---------------------------------------------------------------------------
-// the give-up verdict inputs — same-vehicle trajectory + symmetric BATNA
-// ---------------------------------------------------------------------------
 
 /** The DB inputs the pure dealerGiveUpDecision consumes. */
 export interface DealerGiveUpInputsRead {
@@ -153,7 +73,7 @@ export interface DealerGiveUpInputsRead {
  *     quotes in the SAME financing_mode as the current quote (the symmetric guard),
  *     so neither a phantom lowball nor an off-mode (finance/lease) OTD that isn't
  *     comparable to a cash OTD can drive a switch.
- * OTD figures are RAW otd_total (matching readQuoteSituationForThread). Read-only.
+ * OTD figures are RAW otd_total. Read-only.
  */
 export function readDealerGiveUpInputs(
   db: Db,
@@ -163,9 +83,7 @@ export function readDealerGiveUpInputs(
 
   // Open-ness is evaluated in JS (toEpochMs), not a SQL CAST: quote_expires_at —
   // like quote_received_at — is ISO OR epoch-ms, so CAST(... AS INTEGER) would
-  // mis-judge a FUTURE ISO expiry as already-expired. (The sibling
-  // readQuoteSituationForThread still uses the SQL-CAST OPEN_QUOTE_PREDICATE — a
-  // pre-existing hazard left untouched here so its assertive-tone gate doesn't shift.)
+  // mis-judge a FUTURE ISO expiry as already-expired.
   const isOpen = (expiresAt: string | number | null): boolean => {
     const ms = toEpochMs(expiresAt);
     return ms === null || ms > nowMs;
