@@ -14,8 +14,10 @@ Naming (authoritative, 2026-06-03):
 - **AutoBroker-Python** — the legacy Python repo
   (`~/vscode/AutoBroker/AutoBroker-Python`). **FROZEN, read-only parity
   oracle.** No new features land there. Cold-copy its SQLite (copy-not-share)
-  for parity; never share-write it. Retires only after all 18 skills are
-  parity-GREEN and the single-point flip happens.
+  for parity; never share-write it. Retires only after the 17 parity skills are
+  parity-GREEN and the single-point flip happens (`inventory_aggregator_scan`,
+  the 18th skill, is net-new with no Python oracle — it is outside the parity
+  gate, not a blocker for it).
 - **AutoBroker-dev-plan** — the docs/plan repo
   (`~/vscode/AutoBroker/AutoBroker-dev-plan`), `source-of-intent`.
 
