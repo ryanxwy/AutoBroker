@@ -130,9 +130,9 @@ describe("shared window (S1, S2, S6, S7)", () => {
     });
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    // /api/skills returns the IMPLEMENTED subset of the 17-skill registry
+    // /api/skills returns the IMPLEMENTED subset of the 18-skill registry
     // (3 at the time of writing, growing skill by skill) — assert the known
-    // floor instead of a hardcoded 17 so the suite stays truthful.
+    // floor instead of a hardcoded count so the suite stays truthful.
     expect(res.body.length).toBeGreaterThanOrEqual(3);
     const names = res.body.map((s) => s.name);
     for (const skill of ["search_profile_intake", "dealer_geosearch", "inventory_site_scan"]) {

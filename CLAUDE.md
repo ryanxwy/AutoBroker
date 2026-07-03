@@ -5,7 +5,7 @@ Guidance for Claude Code (claude.ai/code) when working in **this** repository.
 ## What this repo is
 
 This **is AutoBroker (TS)** — the full-TypeScript rebuild of AutoBroker, a
-local-first, provider-agnostic new-car quote pipeline built around 17 skills.
+local-first, provider-agnostic new-car quote pipeline built around 18 skills.
 
 Naming (authoritative, 2026-06-03):
 
@@ -14,7 +14,7 @@ Naming (authoritative, 2026-06-03):
 - **AutoBroker-Python** — the legacy Python repo
   (`~/vscode/AutoBroker/AutoBroker-Python`). **FROZEN, read-only parity
   oracle.** No new features land there. Cold-copy its SQLite (copy-not-share)
-  for parity; never share-write it. Retires only after all 17 skills are
+  for parity; never share-write it. Retires only after all 18 skills are
   parity-GREEN and the single-point flip happens.
 - **AutoBroker-dev-plan** — the docs/plan repo
   (`~/vscode/AutoBroker/AutoBroker-dev-plan`), `source-of-intent`.

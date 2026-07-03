@@ -16,7 +16,7 @@ The skill manifest layer: a typed `SkillDef` registry plus a per-skill
   **Guardrails** (the load-bearing invariants), **References** (in-repo paths).
   Each implemented skill adds its own `SKILL.md` beside this `src/`.
 
-## The 17 skills
+## The 18 skills
 
 Derived from `src/registry.ts` (build order, phase 1 → 5). For implemented
 skills the Doc column links the per-skill `SKILL.md`; planned skills get their
@@ -31,6 +31,7 @@ written ahead of the build.
 | 1 | `inventory_compare` | read_only | planned | — |
 | 2 | `dealer_geosearch` | local_write | implemented | [SKILL.md](dealer_geosearch/SKILL.md) |
 | 2 | `inventory_site_scan` | local_write | implemented | [SKILL.md](inventory_site_scan/SKILL.md) |
+| 2 | `inventory_aggregator_scan` | local_write | implemented | — |
 | 2 | `inventory_link_scan` | local_write | planned | — |
 | 2 | `incentive_scrape` | local_write | planned | — |
 | 3 | `dealer_inbox_check` | local_write | planned | — |

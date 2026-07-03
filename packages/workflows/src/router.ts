@@ -1,7 +1,7 @@
 /**
  * router — the NL skill-router (the core product feature, Layer 3).
  *
- * An LLM reads each free-form chat message and routes it to ONE of the 17
+ * An LLM reads each free-form chat message and routes it to ONE of the 18
  * skills / `intake` / `clarify`. This is what real users do (they don't type
  * `/slash`), so the classifier is the centerpiece of the freeform chat rail: the
  * app layer feeds it a sentence + the session's pinned profile, and it returns a

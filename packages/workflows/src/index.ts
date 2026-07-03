@@ -207,6 +207,43 @@ export {
   type SrpWalkResult,
 } from "./inventorySiteScan.js";
 
+// The inventory_aggregator_scan skill workflow (skill #18 — the read-only sibling
+// of inventory_site_scan: a browser scan of new-car shopping sites (Cars.com,
+// Edmunds) with NO approval gate, 5 flat steps, zero suspend). Test-only deps
+// seam + the app-set per-run browser-emitter factory are exported alongside the
+// extract contract + the pure selection/persist helpers the offline tests pin.
+export {
+  inventoryAggregatorScanWorkflow,
+  INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID,
+  setInventoryAggregatorScanBrowserEmitterFactory,
+  __setAggregatorScanDepsForTests,
+  __resetAggregatorScanDepsForTests,
+  InventoryAggregatorScanStopError,
+  AggregatorScanCaptureLostError,
+  AggregatorExtractSchema,
+  buildAggregatorExtractPrompt,
+  containmentDedupCards,
+  weaveAggregatorCardsUnderCap,
+  edmundsLocationApplied,
+  scanAggregatorsImpl,
+  selectAggregatorKeepRows,
+  persistAggregatorScanImpl,
+  buildAggregatorSummary,
+  AGGREGATOR_CARD_CAP,
+  type InventoryAggregatorScanWorkflowDeps,
+  type InventoryAggregatorScanStopCode,
+  type AggregatorExtract,
+  type AggregatorCard,
+  type ScanAggregatorsArgs,
+  type AggregatorCaptureOutcome,
+  type SiteScanRunner,
+  type AggregatorSelectionInput,
+  type AggregatorKeepRow,
+  type AggregatorSelectionCounts,
+  type PersistAggregatorScanArgs,
+  type PersistAggregatorScanResult,
+} from "./inventoryAggregatorScan.js";
+
 // The inventory_link_scan skill workflow (skill #4 — the link-driven sibling
 // of inventory_site_scan: 8 flat steps, one batch_review suspend on the SAME
 // card + resume wire). Test-only deps seam + the app-set per-run
@@ -662,7 +699,7 @@ export {
 } from "./railMemory.js";
 
 // The NL skill-router (the core product feature) — the LLM classifier that reads
-// a free-form chat message and routes it to ONE of the 17 skills / intake /
+// a free-form chat message and routes it to ONE of the 18 skills / intake /
 // clarify, then the app layer launches the LAUNCH verdict through the EXISTING
 // skillRuns.start path (every gate stays downstream, button-only). Imports
 // @autobroker/{core,model,skills} + the local harness ONLY (single emit_result +

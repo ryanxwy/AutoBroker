@@ -53,7 +53,7 @@ runtime state and is excluded from the drizzle parity gate.
 Parity-period data dir is **`~/.autobroker-ts/`** (via `AUTOBROKER_DATA_DIR`),
 physically isolated from the legacy `~/.autobroker/`. During the Mastra-backed
 plan it contains both the cold-copied product DB (`autobroker.db`) and Mastra's
-runtime DB (`mastra.db`). At the single-point flip (all 17 skills parity-GREEN)
+runtime DB (`mastra.db`). At the single-point flip (all 18 skills parity-GREEN)
 the TS repo takes over `~/.autobroker/`.
 
 ## TODO

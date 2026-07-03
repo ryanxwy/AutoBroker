@@ -107,7 +107,7 @@ function skill(name: string): SkillManifest {
     profile_pin: name === "search_profile_intake" ? "exempt" : "infer_ok",
   };
 }
-/** Every pipeline skill, in stage order — the realistic 17-skill manifest. */
+/** Every pipeline skill, in stage order — the realistic 18-skill manifest. */
 const ALL_SKILLS: SkillManifest[] = PIPELINE_STAGES.flat().map(skill);
 
 describe("nextSuggestedSkills — top-3 of the pipeline-stage sliding window", () => {
@@ -147,7 +147,7 @@ describe("nextSuggestedSkills — top-3 of the pipeline-stage sliding window", (
     expect(got.map((s) => s.name)).toEqual([
       "dealer_geosearch",
       "inventory_site_scan",
-      "inventory_link_scan",
+      "inventory_aggregator_scan",
     ]);
   });
 
@@ -159,8 +159,8 @@ describe("nextSuggestedSkills — top-3 of the pipeline-stage sliding window", (
     });
     expect(got.map((s) => s.name)).toEqual([
       "inventory_site_scan",
+      "inventory_aggregator_scan",
       "inventory_link_scan",
-      "incentive_scrape",
     ]);
   });
 
@@ -296,7 +296,7 @@ describe("SkillsPopoverList — suggested set + 'More skills' disclosure", () =>
     // The top-3 after geosearch each carry a reason node.
     expect(r.query("skills-reason-dealer_geosearch")).not.toBeNull();
     expect(r.query("skills-reason-inventory_site_scan")).not.toBeNull();
-    expect(r.query("skills-reason-inventory_link_scan")).not.toBeNull();
+    expect(r.query("skills-reason-inventory_aggregator_scan")).not.toBeNull();
     r.unmount();
   });
 

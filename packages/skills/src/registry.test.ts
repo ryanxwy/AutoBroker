@@ -1,7 +1,7 @@
 /**
  * registry.test — the profile-pin posture tiering invariants. Every skill
  * carries a valid `profilePin`; the three tier sets are EXACTLY as specified;
- * the registry has all 17 skills.
+ * the registry has all 18 skills.
  */
 
 import { describe, expect, it } from "vitest";
@@ -24,6 +24,7 @@ const PIN_REQUIRED = [
 const INFER_OK = [
   "dealer_geosearch",
   "inventory_site_scan",
+  "inventory_aggregator_scan",
   "inventory_link_scan",
   "incentive_scrape",
   "quote_audit",
@@ -40,8 +41,8 @@ function idsWithPin(pin: SkillProfilePin): string[] {
 }
 
 describe("registry — profilePin posture", () => {
-  it("has all 17 skills", () => {
-    expect(SKILLS).toHaveLength(17);
+  it("has all 18 skills", () => {
+    expect(SKILLS).toHaveLength(18);
   });
 
   it("every skill declares a valid profilePin", () => {
@@ -56,11 +57,11 @@ describe("registry — profilePin posture", () => {
     expect(idsWithPin("infer_ok")).toEqual([...INFER_OK].sort());
   });
 
-  it("the three tiers partition all 17 skills (no skill in two tiers, none missing)", () => {
+  it("the three tiers partition all 18 skills (no skill in two tiers, none missing)", () => {
     const total = EXEMPT.length + PIN_REQUIRED.length + INFER_OK.length;
-    expect(total).toBe(17);
+    expect(total).toBe(18);
     const all = new Set([...EXEMPT, ...PIN_REQUIRED, ...INFER_OK]);
-    expect(all.size).toBe(17);
+    expect(all.size).toBe(18);
     for (const s of SKILLS) expect(all.has(s.id)).toBe(true);
   });
 

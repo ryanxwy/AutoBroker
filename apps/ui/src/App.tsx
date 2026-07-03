@@ -261,7 +261,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // The session whose turns are CURRENTLY accumulated in the rail. A skill run
   // within the same session keeps the prior turns (one continuous conversation
   // across the whole journey); only a NEW session (intake forks one) clears the
-  // rail — so a 17-skill run shows its full history instead of resetting each step.
+  // rail — so a full multi-skill run shows its history instead of resetting each step.
   const streamedSessionRef = useRef<string | null>(null);
   // Runs already bound to the rail (fresh launches need no refresh recovery).
   const recoveredRef = useRef<string | null>(null);

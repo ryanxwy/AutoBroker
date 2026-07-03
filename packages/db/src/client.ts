@@ -9,7 +9,7 @@
  *   the only writer of that file.
  *
  * PARITY-PERIOD DATA DIR: ~/.autobroker-ts/ (AUTOBROKER_DATA_DIR), physically
- *   isolated from the legacy ~/.autobroker/. At the single-point flip (all 17
+ *   isolated from the legacy ~/.autobroker/. At the single-point flip (all 18
  *   skills parity-GREEN) the TS repo takes over ~/.autobroker/ and the Python
  *   repo retires.
  */

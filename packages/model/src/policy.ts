@@ -136,7 +136,7 @@ export const USE_CASES = [
    */
   "negotiation_summary",
   /**
-   * NL skill-router: classify a free-form chat message into ONE of the 17
+   * NL skill-router: classify a free-form chat message into ONE of the 18
    * skills / intake / none. A single emit_result tool carrying the flat
    * ChatRouteEmitSchema (temp 0, thinking OFF) — never Output.object + tools on
    * DeepSeek. The router only CHOOSES + LAUNCHES; every downstream gate stays

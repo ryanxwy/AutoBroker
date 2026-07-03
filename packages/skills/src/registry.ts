@@ -1,7 +1,7 @@
 /**
  * The skill registry — the single cross-layer source of skill identity.
  *
- * One SkillDef per AutoBroker skill (17 total). The registry is pure data +
+ * One SkillDef per AutoBroker skill (18 total). The registry is pure data +
  * types: it imports no framework so both the server and the UI can consume it.
  * `workflowId` holds the STRING id of the matching workflow in
  * @autobroker/workflows (registeredWorkflows); it is null while a skill is still
@@ -73,6 +73,10 @@ export const INVENTORY_SITE_SCAN_SKILL_ID = "inventory_site_scan" as const;
  *  pending dealer_inventory_sources links). */
 export const INVENTORY_LINK_SCAN_SKILL_ID = "inventory_link_scan" as const;
 
+/** The inventory aggregator scan skill id (skill #18, the read-only sibling of
+ *  inventory_site_scan — scans new-car shopping sites, no approval gate). */
+export const INVENTORY_AGGREGATOR_SCAN_SKILL_ID = "inventory_aggregator_scan" as const;
+
 /** The incentive scrape skill id (skill #5, read-only OEM scrape, auto-approved). */
 export const INCENTIVE_SCRAPE_SKILL_ID = "incentive_scrape" as const;
 
@@ -101,7 +105,7 @@ export const QUOTE_COMPARE_SKILL_ID = "quote_compare" as const;
  *  OTD fake-send sub-path). */
 export const QUOTE_PIPELINE_SKILL_ID = "quote_pipeline" as const;
 
-/** All 17 skills, in dependency × risk build order (phase 1 → 5). */
+/** All 18 skills, in dependency × risk build order (phase 1 → 5). */
 export const SKILLS: readonly SkillDef[] = [
   // ---- Phase 1 · deterministic core + intake (read-only trio + intake local_write root-dep) ----
   {
@@ -181,6 +185,20 @@ export const SKILLS: readonly SkillDef[] = [
     status: "implemented",
     workflowId: INVENTORY_SITE_SCAN_SKILL_ID,
     inputs: ["search_profile_id", "dealer_ids", "approved_by", "max_targets"],
+    outputs: "listings",
+    profilePin: "infer_ok",
+  },
+  {
+    id: INVENTORY_AGGREGATOR_SCAN_SKILL_ID,
+    slash: "/inventory_aggregator_scan",
+    title: "Inventory aggregator scan",
+    summary:
+      "Search shopping sites (Cars.com, Edmunds) for matching new-car listings near you — cross-dealer marketplace search, not the dealers' own sites.",
+    phase: 2,
+    riskClass: "local_write",
+    status: "implemented",
+    workflowId: INVENTORY_AGGREGATOR_SCAN_SKILL_ID,
+    inputs: ["search_profile_id"],
     outputs: "listings",
     profilePin: "infer_ok",
   },

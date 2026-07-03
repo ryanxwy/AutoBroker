@@ -94,7 +94,7 @@ export const DEEPSEEK_LOCK_TIP = "Add your DeepSeek key in Settings first.";
 export const PIPELINE_STAGES: string[][] = [
   ["search_profile_intake"],
   ["dealer_geosearch"],
-  ["inventory_site_scan", "inventory_link_scan", "incentive_scrape", "inventory_compare"],
+  ["inventory_site_scan", "inventory_aggregator_scan", "inventory_link_scan", "incentive_scrape", "inventory_compare"],
   ["dealer_web_lead_submit"],
   ["dealer_inbox_check", "dealer_reply_extract", "quote_audit", "quote_compare"],
   ["negotiation_followup", "quote_pipeline", "daily_digest"],
@@ -121,6 +121,7 @@ export const SKILL_REASON: Record<string, string> = {
   search_profile_intake: "Start a new car search",
   dealer_geosearch: "Find dealers in range of your search",
   inventory_site_scan: "Scan dealer sites for matching cars",
+  inventory_aggregator_scan: "Search shopping sites like Cars.com & Edmunds for matching cars",
   inventory_link_scan: "Pull cars from links you paste",
   incentive_scrape: "Check manufacturer rebates & APR offers",
   inventory_compare: "Rank the cars you've found",
@@ -145,7 +146,7 @@ export function defaultSuggestionReason(skill: SkillManifest): string {
 
 /**
  * The suggested next-step subset — at most MAX_SUGGESTED (3) ready skills, so
- * the popover is a short "what's next" list, not a 17-row wall. With no
+ * the popover is a short "what's next" list, not a full every-skill wall. With no
  * profile/pin only `search_profile_intake` is suggested (the only launchable
  * thing). Otherwise the CANDIDATE window is the stage the `lastSkill` belongs to
  * PLUS the next stage (a sliding window over PIPELINE_STAGES), narrowed to
@@ -316,7 +317,7 @@ export function SkillsPopoverList({
   const state = { pin, hasActiveProfile };
   const groups = groupSkillsByReadiness(skills, state);
   // The Ready group is split: the suggested next-available subset surfaces by
-  // default (so the popover is not a 17-row wall), the rest of the ready skills
+  // default (so the popover is not a full every-skill wall), the rest of the ready skills
   // hide behind a collapsed "More skills" disclosure (still reachable).
   const suggested = nextSuggestedSkills(skills, { ...state, lastSkill });
   // Hybrid layer: an optional LLM re-rank (order + reasons) of THESE candidates

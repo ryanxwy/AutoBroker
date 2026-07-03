@@ -55,6 +55,10 @@ import {
   NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
 } from "./negotiationFollowup.js";
 import {
+  inventoryAggregatorScanWorkflow,
+  INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID,
+} from "./inventoryAggregatorScan.js";
+import {
   inventoryLinkScanWorkflow,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
 } from "./inventoryLinkScan.js";
@@ -88,6 +92,7 @@ export const REGISTERED_WORKFLOWS: Record<string, Workflow> = {
   [SEARCH_PROFILE_INTAKE_WORKFLOW_ID]: searchProfileIntakeWorkflow as unknown as Workflow,
   [DEALER_GEOSEARCH_WORKFLOW_ID]: dealerGeosearchWorkflow as unknown as Workflow,
   [INVENTORY_SITE_SCAN_WORKFLOW_ID]: inventorySiteScanWorkflow as unknown as Workflow,
+  [INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID]: inventoryAggregatorScanWorkflow as unknown as Workflow,
   [INVENTORY_LINK_SCAN_WORKFLOW_ID]: inventoryLinkScanWorkflow as unknown as Workflow,
   [INCENTIVE_SCRAPE_WORKFLOW_ID]: incentiveScrapeWorkflow as unknown as Workflow,
   [DAILY_DIGEST_WORKFLOW_ID]: dailyDigestWorkflow as unknown as Workflow,

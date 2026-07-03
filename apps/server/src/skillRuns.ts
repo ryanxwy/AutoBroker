@@ -66,6 +66,7 @@ import {
   INBOX_CHECK_SKILL_ID,
   INCENTIVE_SCRAPE_SKILL_ID,
   INTAKE_SKILL_ID,
+  INVENTORY_AGGREGATOR_SCAN_SKILL_ID,
   INVENTORY_COMPARE_SKILL_ID,
   INVENTORY_LINK_SCAN_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
@@ -88,6 +89,7 @@ import {
   NEGOTIATION_FOLLOWUP_WORKFLOW_ID,
   DEALER_CLOSEOUT_EMAIL_WORKFLOW_ID,
   INCENTIVE_SCRAPE_WORKFLOW_ID,
+  INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID,
   INVENTORY_COMPARE_WORKFLOW_ID,
   INVENTORY_LINK_SCAN_WORKFLOW_ID,
   INVENTORY_SITE_SCAN_WORKFLOW_ID,
@@ -657,6 +659,60 @@ export const inventoryLinkScanDescriptor: RunDescriptor = {
   summaryText(result: unknown): string {
     const r = result as { summary?: string } | undefined;
     return r?.summary ?? "Inventory link scan complete.";
+  },
+};
+
+// ===========================================================================
+// inventory_aggregator_scan — the read-only sibling of inventory_site_scan
+// (scans new-car shopping sites). Auto-scans its static site set with NO
+// approval gate, so the descriptor declares NO `resume` member: a form-decision
+// against an aggregator-scan run 400s as unsupported_action (like geosearch).
+// driver_kind DERIVES from the policy() route the skill's LLM useCase
+// (inventory_extract, shared with the site/link scans) takes — it flips in
+// lock-step with a registry-string provider swap.
+// ===========================================================================
+
+/** The aggregator-scan start body fields. Only `search_profile_id` matters to
+ *  the workflow — the target sites come from a static adapter registry, never
+ *  from the start body; envelope fields ride the same body and are ignored. */
+const AggregatorScanStartBodySchema = z.object({
+  search_profile_id: z.string().nullable().optional(),
+});
+
+/** The aggregator-scan workflow inputData shape. */
+interface AggregatorScanStartInput {
+  search_profile_id: string | null;
+}
+
+/** The inventory_aggregator_scan descriptor. */
+export const inventoryAggregatorScanDescriptor: RunDescriptor = {
+  skillId: INVENTORY_AGGREGATOR_SCAN_SKILL_ID,
+  workflowId: INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID,
+
+  // DERIVED from the provider policy() routes the skill's LLM useCase
+  // (inventory_extract, the per-site snapshot extraction) to — flipping in
+  // lock-step with a registry-string provider swap.
+  driverKind(): HarnessDriverKind {
+    return providerDriverKind(policy("inventory_extract").provider);
+  },
+
+  buildInput(body: Record<string, unknown>): AggregatorScanStartInput {
+    const parsed = AggregatorScanStartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new FormDecisionError("content_invalid", 400, "request body invalid", {
+        ...(issue ? { field: `/${issue.path.join("/")}` } : {}),
+        extra: { issues: parsed.error.issues },
+      });
+    }
+    return { search_profile_id: parsed.data.search_profile_id ?? null };
+  },
+
+  // The workflow's persistConfirm step templates the full deterministic summary —
+  // pass it through.
+  summaryText(result: unknown): string {
+    const r = result as { summary?: string } | undefined;
+    return r?.summary ?? "Inventory aggregator scan complete.";
   },
 };
 
@@ -1777,6 +1833,7 @@ export const RUN_DESCRIPTORS: readonly RunDescriptor[] = [
   intakeRunDescriptor,
   dealerGeosearchDescriptor,
   inventorySiteScanDescriptor,
+  inventoryAggregatorScanDescriptor,
   inventoryLinkScanDescriptor,
   incentiveScrapeDescriptor,
   dealerInboxCheckDescriptor,
@@ -1913,6 +1970,7 @@ function affectedKinds(workflowId: string): string[] {
     case DEALER_GEOSEARCH_WORKFLOW_ID:
       return ["dealers"];
     case INVENTORY_SITE_SCAN_WORKFLOW_ID:
+    case INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID:
     case INVENTORY_LINK_SCAN_WORKFLOW_ID:
       return ["listings"];
     case INCENTIVE_SCRAPE_WORKFLOW_ID:

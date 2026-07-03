@@ -5,7 +5,7 @@ dealers, pulls real dealer email/web quotes, audits the numbers, and helps you
 negotiate — driven by 17 LLM-backed skills with deterministic code doing the
 load-bearing work and humans approving anything irreversible.
 
-![AutoBroker dashboard — the dual-pane workbench: a Canvas projection of one search (dealers, quotes, replies, inventory) beside a conversational rail that drives the 17 skills.](readme-assets/dashboard.png)
+![AutoBroker dashboard — the dual-pane workbench: a Canvas projection of one search (dealers, quotes, replies, inventory) beside a conversational rail that drives the 18 skills.](readme-assets/dashboard.png)
 
 > Shown with the built-in zero-config demo data (`AUTOBROKER_DEMO_SEED=1`) — no
 > API key, Gmail, or network required.
@@ -180,7 +180,7 @@ human approval is never hidden. See `CLAUDE.md` for the full invariant set.
 ## Legacy parity
 
 The legacy Python implementation is frozen at **`../AutoBroker-Python`** and is
-read-only until all 17 skills reach parity-GREEN, at which point AutoBroker (TS)
+read-only until all 18 skills reach parity-GREEN, at which point AutoBroker (TS)
 takes over and the Python repo retires.
 
 ---
