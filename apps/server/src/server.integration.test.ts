@@ -609,11 +609,21 @@ describe("Host-header allowlist", () => {
     expect(r.json<{ error: { code: string } }>().error.code).toBe("forbidden_host");
   });
 
-  it("allows loopback Hosts (127.0.0.1:8100 and localhost) through to the route", async () => {
+  it("allows loopback Hosts (127.0.0.1:8100, localhost, and bracketed [::1]) through to the route", async () => {
     const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
-    for (const host of ["127.0.0.1:8100", "localhost"]) {
+    for (const host of ["127.0.0.1:8100", "localhost", "[::1]", "[::1]:8100"]) {
       const r = await s.app.inject({ method: "GET", url: "/api/mode", headers: { host } });
       expect(r.statusCode).toBe(200);
+    }
+  });
+
+  it("rejects a rebinding host that only prefixes/suffixes a loopback literal", async () => {
+    const s = await buildWith({ harnessGenerate: harnessStub(), resolveLocation: locationStub([RESOLVED]) });
+    // "[::1].attacker.com" must NOT parse to the trusted "[::1]"; likewise a
+    // dotted-suffix rebind of a dotted-quad or "localhost" must fail closed.
+    for (const host of ["[::1].attacker.com", "[::1]evil", "127.0.0.1.attacker.com", "localhost.attacker.com"]) {
+      const r = await s.app.inject({ method: "GET", url: "/api/mode", headers: { host } });
+      expect(r.statusCode).toBe(403);
     }
   });
 });

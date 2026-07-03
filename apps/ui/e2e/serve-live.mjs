@@ -1,9 +1,9 @@
 /**
  * serve-live.mjs — the LIVE e2e dashboard host for the 全技能巡检.
  *
- * Like serve.mjs it boots the REAL @autobroker/server + serves the REAL built
- * apps/ui/dist on an ISOLATED throwaway DB, but it is wired for a LIVE DeepSeek
- * walkthrough (the loop e2e), NOT the deterministic UI lane:
+ * It boots the REAL @autobroker/server + serves the REAL built apps/ui/dist on
+ * an ISOLATED throwaway DB, wired for a LIVE DeepSeek walkthrough (the loop
+ * e2e), NOT the deterministic functional UI lane:
  *
  *   - DeepSeek is REAL: we do NOT pin a dummy key, so boot's loadDotEnvKeys
  *     loads DEEPSEEK_API_KEY from .env and every LLM step (intake freeform prefill

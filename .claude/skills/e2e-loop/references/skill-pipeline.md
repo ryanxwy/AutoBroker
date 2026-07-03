@@ -24,7 +24,7 @@ come from each slice's `.length`. Pager: `canvas-pager` / `-prev` / `-next` /
 | gate | testids |
 |---|---|
 | intake form | `intake-submit` (slash opens an empty 18-field form — hand-type, never auto-extract email) |
-| single-send approval | `approval-prompt` · `approval-approve` · `approval-deny` · `approval-approve-all`; host banner `gate-banner` |
+| single-send approval | `approval-prompt` · `approval-approve` · `approval-deny` (no `approval-approve-all` — batch-approve of a mutating send is not offered); host banner `gate-banner` |
 | batch review (`inventory_link_scan`, inbox) | `batch-review-card` · `batch-select-all` · `batch-submit` · `batch-decline` (NOT `inventory_site_scan` — it auto-scans all in-radius dealers, no gate; owner 2026-06-23) |
 | hygiene 3-stage | `hygiene-review-card` · `hygiene-stage` · `hygiene-select-all` · `hygiene-submit` · `hygiene-decline` |
 | pipeline_reset typed-YES | `reset-confirm-token` (type `YES`) → `reset-confirm`; card `confirmation-gate-card` |
