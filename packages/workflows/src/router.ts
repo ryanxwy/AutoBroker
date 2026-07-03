@@ -60,12 +60,12 @@ const MIN_CONFIDENCE = 0.6;
 /** The higher floor a destructive/irreversible route must clear to launch. */
 const DESTRUCTIVE_CONFIDENCE = 0.85;
 
-/** The real skill ids the model is allowed to choose from (the 17 registry ids). */
+/** The real skill ids the model is allowed to choose from (the 18 registry ids). */
 const SKILL_IDS: readonly string[] = SKILLS.map((s) => s.id);
 
 /**
  * The flat, strict emit contract for the single classify call. All-required,
- * an enum of {the 17 real skill ids, "intake", "none"}, a [0,1] confidence, a
+ * an enum of {the 18 real skill ids, "intake", "none"}, a [0,1] confidence, a
  * short reason, and an optional flat string params map (extracted slash-equivalent
  * args; mostly empty). "intake" is an explicit alias for the create-a-profile
  * skill so the model can pick it by intent without knowing the id; "none" => the

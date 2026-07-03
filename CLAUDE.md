@@ -109,7 +109,7 @@ core  ->  model  ->  workflows  ->  tools  ->  app
 
 Supporting: `packages/db` (Drizzle + better-sqlite3 product DB,
 `test_run_records`; Mastra runtime state lives beside it in a dedicated
-`mastra.db`), `packages/skills` (the 17 skill defs).
+`mastra.db`), `packages/skills` (the 18 skill defs).
 
 ## The SQLite / external-API invariant
 

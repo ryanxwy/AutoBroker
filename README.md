@@ -155,7 +155,7 @@ orchestration, `tools` owns all side effects, and `app` owns HTTP/UI shells.
 
 Supporting packages: `packages/db` (Drizzle schema + better-sqlite3,
 `drizzle-kit pull` baseline, `test_run_records` ledger; Mastra state lives in a
-separate `mastra.db`), `packages/skills` (the 17 skill definitions).
+separate `mastra.db`), `packages/skills` (the 18 skill definitions).
 
 **`ai` is pinned to `^6`** deliberately — v7's `LanguageModelV4` spec would
 break V3-spec community providers. On the backend, AI SDK 6 is the provider
