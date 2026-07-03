@@ -30,8 +30,7 @@
 /** Categories of irreversible external action that MUST pass the gate. */
 export type MutationKind =
   | "gmail_send"
-  | "dealer_form_submit"
-  | "typed_yes_confirm";
+  | "dealer_form_submit";
 
 /** A structured, already-validated request to perform one mutating action. */
 export interface GateRequest {
@@ -48,7 +47,6 @@ export interface GateRequest {
  *  it defaults false everywhere and is never set true on a deny path. */
 export type GateVerdict =
   | { decision: "approved"; autoApprove: boolean }
-  | { decision: "needs_approval"; autoApprove: false; reason: string }
   | { decision: "declined"; autoApprove: false; reason: string };
 
 /** The human/automated approver the gate consults. In production this is the
@@ -87,7 +85,6 @@ export class MalformedGateRequestError extends Error {
 const VALID_KINDS: ReadonlySet<string> = new Set<MutationKind>([
   "gmail_send",
   "dealer_form_submit",
-  "typed_yes_confirm",
 ]);
 
 /**
@@ -162,7 +159,7 @@ export async function withGate<T>(
 ): Promise<T | GateVerdict> {
   const verdict = await requestApproval(req, approver);
   if (verdict.decision !== "approved") {
-    return verdict; // declined / needs_approval — caller surfaces it, no effect.
+    return verdict; // declined — caller surfaces it, no effect.
   }
   // TODO(phase-4): record an audit row (run, kind, approver verdict) here before
   // commit so the audit log can never lag the side effect.

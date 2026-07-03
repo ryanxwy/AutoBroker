@@ -1376,15 +1376,20 @@ export async function gatedSubmitForm(deps: {
     switch (result.decision) {
       case "declined":
         return { declined: true };
-      case "needs_approval":
-        // The gate never returns this today; if a future gate change does, the
-        // suspend-and-ask semantics must be wired here deliberately, not
-        // flattened into a decline.
-        throw new Error(
-          "gate returned needs_approval — submitForm has no suspend path wired",
-        );
-      default:
-        return { declined: true }; // an approved verdict never reaches here
+      case "approved":
+        // withGate returns a bare verdict ONLY on non-approval, so an approved
+        // verdict never reaches here at runtime (the commit result is returned
+        // below instead). Fold to no-effect defensively.
+        return { declined: true };
+      default: {
+        // Exhaustiveness tripwire (replaced the old `needs_approval` throw): a
+        // future GateVerdict variant can no longer silently flatten into a
+        // decline — it becomes a compile error here until its suspend-and-ask
+        // semantics are wired deliberately.
+        const _exhaustive: never = result;
+        void _exhaustive;
+        return { declined: true };
+      }
     }
   }
   return result;
