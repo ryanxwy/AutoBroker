@@ -485,10 +485,10 @@ export class ApiClient {
     return decode(res, PortfolioViewSchema);
   }
 
-  /** GET /api/approvals → every PARKED gate + retraction task across all
-   *  pipelines (the global "Needs you" queue, keyed by profileId/runId/
-   *  decisionId, ranked action-required first). The widget routes to each item's
-   *  run; it never approves inline. */
+  /** GET /api/approvals → every PARKED gate across all pipelines (the global
+   *  "Needs you" queue, keyed by profileId/runId/decisionId, ranked
+   *  action-required first). The widget routes to each item's run; it never
+   *  approves inline. */
   async approvalInbox(): Promise<ApprovalList> {
     const res = await this.fetchImpl(this.url("/api/approvals"));
     return decode(res, ApprovalListSchema);

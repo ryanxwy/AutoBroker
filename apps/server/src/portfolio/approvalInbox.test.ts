@@ -1,8 +1,7 @@
 /**
- * ApprovalInbox — aggregates every parked gate (+ saga retraction tasks) into one
- * ranked queue keyed (profileId, runId, decisionId), tagged by reason + the budget-
- * free BatchReviewCard summary, and routes a single decision through the existing
- * idempotent formDecision. Driven through the fake-Mastra scripted-result harness.
+ * ApprovalInbox — aggregates every parked gate into one ranked queue keyed
+ * (profileId, runId, decisionId), tagged by reason + the budget-free
+ * BatchReviewCard summary. Driven through the fake-Mastra scripted-result harness.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -73,11 +72,6 @@ const SUSPEND_LINK = {
   status: "suspended",
   steps: { reviewGate: { status: "suspended", suspendPayload: { kind: "batch_review", targets: [] } } },
 };
-const SUSPEND_COLLECT = {
-  status: "suspended",
-  steps: { collect: { status: "suspended", suspendPayload: { kind: "data_collection" } } },
-};
-const SUCCESS_DECLINED = { status: "success", result: { outcome: "declined" } };
 
 describe("ApprovalInbox.list — aggregate + rank + tag", () => {
   it("lists every parked gate keyed (profileId, runId, decisionId), with reason + summary, action-required first", async () => {
@@ -133,41 +127,3 @@ describe("ApprovalInbox.list — aggregate + rank + tag", () => {
   });
 });
 
-describe("ApprovalInbox.route — idempotent single-decision routing", () => {
-  it("delegates to formDecision and a double-tap of the same decision does NOT double-fire", async () => {
-    const counters = { resume: 0 };
-    const svc = new SkillRunService(fakeMastra([SUSPEND_COLLECT, SUCCESS_DECLINED], counters), new RunPubSub());
-    await svc.start({ skill: "search_profile_intake", runId: "route-1", input: { search_profile_id: "A" } });
-    const inbox = new ApprovalInbox(svc);
-
-    const decisionId = svc.pendingOf("route-1")!.decisionId;
-    const ack1 = await inbox.route({ runId: "route-1", decisionId, action: "decline" });
-    const ack2 = await inbox.route({ runId: "route-1", decisionId, action: "decline" });
-
-    expect(ack2).toEqual(ack1); // idempotent replay of the stored ack
-    expect(counters.resume).toBe(1); // the underlying Mastra resume fired exactly once
-  });
-});
-
-describe("ApprovalInbox retraction tasks", () => {
-  it("surfaces an enqueued retraction as an action-required item with no live decisionId", () => {
-    const empty = new ApprovalInbox({ listPendingGates: () => [], formDecision: async () => ({}) });
-    empty.enqueueRetraction({
-      profileId: "A",
-      runId: "aborted-run-1",
-      kind: "retract_lead",
-      reason: "pipeline_aborted_after_send",
-      summary: { heading: "Retract the inquiry you sent?", lines: [{ label: "Vehicle", value: "2026 Honda Accord" }] },
-    });
-    const items = empty.list();
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      kind: "retraction",
-      profileId: "A",
-      runId: "aborted-run-1",
-      reason: "retraction_required",
-      actionRequired: true,
-      decisionId: null,
-    });
-  });
-});

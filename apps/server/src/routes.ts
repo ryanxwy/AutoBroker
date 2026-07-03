@@ -908,7 +908,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   // ---- GET /api/approvals — the consolidated "needs you" queue --------------
   // Aggregates EVERY parked gate (the 3 irreversible sends + dealer_inbox_check +
-  // inventory_link_scan) across all concurrent profiles + saga retraction tasks,
+  // inventory_link_scan) across all concurrent profiles,
   // ranked action-required first, keyed (profileId, runId, decisionId), tagged by
   // reason + the budget-free summary. Read-only: each decision still goes through
   // POST /api/skill-runs/:id/form-decision (the idempotent three-phase claim).

@@ -1858,7 +1858,7 @@ export interface PendingGate {
 }
 
 /** A run reaching a gate or a terminal — the events the PortfolioScheduler (slot
- *  management) and the saga coordinator (compensate-on-abort) subscribe to. */
+ *  management) subscribes to. */
 export interface RunLifecycleEvent {
   runId: string;
   profileId: string | null;
@@ -2018,9 +2018,8 @@ export class SkillRunService {
   ) {}
 
   /** Register a run-lifecycle listener (the PortfolioScheduler for slot
-   *  management; the saga coordinator for compensate-on-abort). Listeners are
-   *  fired in registration order; a throwing listener is isolated so it never
-   *  breaks the run lifecycle or a sibling listener. */
+   *  management). Listeners are fired in registration order; a throwing listener
+   *  is isolated so it never breaks the run lifecycle or a sibling listener. */
   addLifecycleListener(listener: RunLifecycleListener): void {
     this.lifecycleListeners.push(listener);
   }
@@ -2073,8 +2072,8 @@ export class SkillRunService {
 
   /** The once-only terminal hook: GC the negotiation contact-flip carry, release
    *  the run-ownership reservation (bounds ownedRunIds), then fan out onRunTerminal
-   *  so the scheduler frees the slot + the activation registry / saga coordinator
-   *  react. Idempotent via terminalHandled (a run hits exactly one terminal branch,
+   *  so the scheduler frees the slot + the activation registry reacts. Idempotent
+   *  via terminalHandled (a run hits exactly one terminal branch,
    *  but the guard makes a double-call safe). */
   private fireTerminal(run: RunState, runId: string, terminalKind: RunTerminalKind): void {
     if (run.terminalHandled) return;

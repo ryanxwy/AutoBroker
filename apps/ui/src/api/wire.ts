@@ -898,7 +898,7 @@ export type PortfolioView = z.infer<typeof PortfolioViewSchema>;
 // ---------------------------------------------------------------------------
 // ApprovalInbox — GET /api/approvals → ApprovalItem[] (apps/server/src/portfolio/
 // approvalInbox.ts ApprovalInbox.list()). The Phase-3 global "Needs you" widget
-// reads every PARKED gate + saga retraction task across ALL pipelines, keyed by
+// reads every PARKED gate across ALL pipelines, keyed by
 // (profileId, runId, decisionId), so a gate that parked in profile C surfaces
 // while the user is focused on B. The widget ROUTES to the run (navigate
 // /runs/:runId) — the existing per-run GateBannerHost then renders the actual
@@ -914,14 +914,13 @@ export const ApprovalSummarySchema = z.object({
 });
 export type ApprovalSummary = z.infer<typeof ApprovalSummarySchema>;
 
-/** One queue entry: a parked gate (`kind:"gate"`, with a decisionId to route to)
- *  or a saga retraction task (`kind:"retraction"`, no decisionId — acted
- *  out-of-band). `actionRequired` ranks irreversible sends + retractions first. */
+/** One queue entry: a parked gate (`kind:"gate"`) with a decisionId to route to.
+ *  `actionRequired` ranks irreversible sends first. */
 export const ApprovalItemSchema = z.object({
-  kind: z.enum(["gate", "retraction"]),
+  kind: z.literal("gate"),
   profileId: z.string().nullable(),
-  runId: z.string().nullable(),
-  decisionId: z.string().nullable(),
+  runId: z.string(),
+  decisionId: z.string(),
   skill: z.string(),
   reason: z.string(),
   actionRequired: z.boolean(),

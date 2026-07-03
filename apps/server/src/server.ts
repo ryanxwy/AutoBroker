@@ -26,7 +26,6 @@ import { RunPubSub } from "./runPubSub.js";
 import { SkillRunService } from "./skillRuns.js";
 import { SessionService } from "./sessions.js";
 import { ApprovalInbox } from "./portfolio/approvalInbox.js";
-import { SagaCoordinator } from "./portfolio/sagaCoordinator.js";
 import {
   DuplicateRunIdError,
   RailSessionStore,
@@ -47,8 +46,7 @@ export interface BuiltServer {
   sessions: SessionService;
   /** The consolidated approval queue across all concurrent profiles. The
    *  PortfolioScheduler (mounted in index.ts) is added as a separate lifecycle
-   *  listener; the saga coordinator is wired here so an aborted run's committed
-   *  sends surface as inbox retraction tasks. */
+   *  listener. */
   approvals: ApprovalInbox;
   recovery: BootResult["recovery"];
 }
@@ -107,12 +105,9 @@ export async function buildServer(opts: { quiet?: boolean } = {}): Promise<Built
   // service own thread CRUD + the wire projection + the intake fork.
   const sessions = new SessionService(new RailSessionStore(createRailMemory()));
 
-  // The consolidated "needs you" approval queue across all concurrent profiles +
-  // the saga coordinator that turns an aborted run's committed sends into inbox
-  // retraction tasks (never a silent undo). The coordinator is a run-lifecycle
-  // listener; the PortfolioScheduler is added as a second listener in index.ts.
+  // The consolidated "needs you" approval queue across all concurrent profiles.
+  // The PortfolioScheduler is added as a run-lifecycle listener in index.ts.
   const approvals = new ApprovalInbox(skillRuns);
-  skillRuns.addLifecycleListener(new SagaCoordinator(approvals));
 
   // Crash-and-resume: re-attach every suspended run recoverOnBoot found, so a
   // form-decision can resume it in THIS fresh process. Policy for stale 'running'

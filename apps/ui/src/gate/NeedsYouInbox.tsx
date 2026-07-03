@@ -2,18 +2,16 @@
  * NeedsYouInbox — the global, floating "Needs you" widget that follows the user
  * across pages. It consumes the consolidated approval queue (GET /api/approvals
  * → ApprovalItem[], already ranked action-required first by the server) and
- * surfaces every PARKED gate + saga retraction task across ALL pipelines. A gate
- * item's "Review" ROUTES to that run (navigate /runs/:runId) where the existing
- * per-run GateBannerHost renders the actual BatchReviewCard / ConfirmationGateCard
- * and the user approves there.
+ * surfaces every PARKED gate across ALL pipelines. A gate item's "Review" ROUTES
+ * to that run (navigate /runs/:runId) where the existing per-run GateBannerHost
+ * renders the actual BatchReviewCard / ConfirmationGateCard and the user approves
+ * there.
  *
  * The widget NEVER approves inline and NEVER batch-approves — destructive /
- * irreversible items stay strictly action-required (you go to the gate). A
- * retraction task has no live run (no decisionId) — it is shown as an
- * action-required notice (the human acts out-of-band; Phase-2 resolves it).
- * This is the "attention" layer of the four-layer interruption rule: ONLY a
- * parked gate or a retraction surfaces here. Read-only auto-scans never park, so
- * they never appear. Budget never appears (#9).
+ * irreversible items stay strictly action-required (you go to the gate). This is
+ * the "attention" layer of the four-layer interruption rule: ONLY a parked gate
+ * surfaces here. Read-only auto-scans never park, so they never appear. Budget
+ * never appears (#9).
  *
  * Dependency wall: app/ui layer.
  */
@@ -37,8 +35,6 @@ function reasonLabel(reason: string): string {
       return "review inbox replies";
     case "link_scan":
       return "review sources";
-    case "retraction_required":
-      return "retract a sent message";
     default:
       return "needs your approval";
   }
@@ -71,32 +67,24 @@ export function NeedsYouInbox({
         </span>
       </div>
       <ul className="needsyou-list">
-        {items.map((item, i) => {
-          // A gate routes to its run; a retraction (no runId) is acted out-of-band.
-          const routable = item.runId !== null;
-          const testid = item.runId !== null ? `needs-you-item-${item.runId}` : `needs-you-task-${i}`;
-          return (
-            <li key={`${item.runId ?? "task"}:${item.decisionId ?? i}`}>
-              <button
-                type="button"
-                className="needsyou-item"
-                data-testid={testid}
-                data-reason={item.reason}
-                data-action-required={item.actionRequired}
-                disabled={!routable}
-                onClick={() => {
-                  if (item.runId !== null) onReview(item.runId);
-                }}
-              >
-                <span className="needsyou-item-vehicle">{itemName(item)}</span>
-                <span className="needsyou-item-reason">{reasonLabel(item.reason)}</span>
-                <span className="needsyou-item-go" aria-hidden="true">
-                  {routable ? "Review →" : "Action required"}
-                </span>
-              </button>
-            </li>
-          );
-        })}
+        {items.map((item) => (
+          <li key={`${item.runId}:${item.decisionId}`}>
+            <button
+              type="button"
+              className="needsyou-item"
+              data-testid={`needs-you-item-${item.runId}`}
+              data-reason={item.reason}
+              data-action-required={item.actionRequired}
+              onClick={() => onReview(item.runId)}
+            >
+              <span className="needsyou-item-vehicle">{itemName(item)}</span>
+              <span className="needsyou-item-reason">{reasonLabel(item.reason)}</span>
+              <span className="needsyou-item-go" aria-hidden="true">
+                Review →
+              </span>
+            </button>
+          </li>
+        ))}
       </ul>
     </aside>
   );

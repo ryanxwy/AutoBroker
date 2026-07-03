@@ -336,8 +336,9 @@ describe("Phase 2 — concurrent multi-profile suspend + inbox + decline isolati
     // No external mutation reached any profile at the gate (test mode).
     expect(portfolioExternalMutationTotal()).toBe(0);
 
-    // Decline B THROUGH the inbox (which routes to the idempotent formDecision).
-    await inbox.route({ runId: "B-nego", decisionId: bDecision, action: "decline" });
+    // Decline B through the idempotent formDecision (the same three-phase claim the
+    // POST /api/skill-runs/:id/form-decision route drives).
+    await svc.formDecision("B-nego", { decision_id: bDecision, decision: { action: "decline" } });
 
     // B is terminal + zero-write for B; A and C are a NO-OP (still parked).
     expect(svc.isTerminal("B-nego")).toBe(true);

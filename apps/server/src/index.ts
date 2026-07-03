@@ -139,8 +139,8 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
  * independent profile pipelines actually run. It is GATED OFF by default
  * (AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") so the single-profile / pinned path stays
  * byte-identical: when off, nothing is constructed and no profile run is ever
- * auto-started; the ApprovalInbox + saga coordinator (wired in buildServer) still
- * work. When on (the multi-profile lane), it ticks on an interval, scheduling each
+ * auto-started; the ApprovalInbox (wired in buildServer) still works. When on (the
+ * multi-profile lane), it ticks on an interval, scheduling each
  * HOT profile as its own quote_pipeline run (the explicit-pin N=1 case) under the
  * MAX_CONCURRENT_ACTIVE_PROFILES cap, and tracks slots via the run-lifecycle stream.
  *
