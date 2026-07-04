@@ -22,7 +22,7 @@
  *                      with no resolvable address is SKIPPED + counted
  *                      (skippedNoAddress, shown BEFORE the gate). Zero candidates →
  *                      a graceful exit (not an error, no suspend).
- *   2 draft         — per target: buildCloseoutDraft default body + renderCloseoutSubject
+ *   2 draft         — per target: buildCloseoutDraft default body + subjectForFollowup
  *                      [deterministic, NO LLM]. The default body IS the sent body
  *                      unless the user EDITs (an EDITed body re-asserts in the
  *                      atomic tool before the send).
@@ -68,8 +68,8 @@ import {
   listProfileRows as listProfileRowsImpl,
   readProfileRow,
   releaseDealerClaims as releaseDealerClaimsImpl,
-  renderCloseoutSubject,
   resolveActiveProfile as resolveActiveProfileImpl,
+  subjectForFollowup,
   type Approver,
   type CloseoutDealerOutcome,
   type CloseoutTarget,
@@ -191,6 +191,15 @@ const CloseoutTargetSchema = z.object({
   reply_to: z.string(),
   /** The contact display name (for an optional greeting). */
   contact_name: z.string().nullable(),
+  /** The open thread's subject — the closeout subject is UNCONDITIONALLY
+   *  `subjectForFollowup(thread_subject)` (keeps the conversation's subject). */
+  thread_subject: z.string().nullable(),
+  /** The open thread's latest inbound gmail_message_id — the reply double-flag
+   *  anchor threaded to the send. */
+  latest_inbound_gmail_message_id: z.string().nullable(),
+  /** The open thread's latest inbound rfc_message_id — the recipient-side
+   *  threading header (null → no header). */
+  latest_inbound_rfc_message_id: z.string().nullable(),
   /** The deterministic closeout body the draft step fills (null until drafted). */
   body: z.string().nullable(),
   /** The closeout subject the draft step fills (null until drafted). */
@@ -249,6 +258,9 @@ function targetStateFrom(t: CloseoutTarget): CloseoutTargetState {
     gmail_thread_id: t.gmailThreadId,
     reply_to: t.replyTo,
     contact_name: t.contactName,
+    thread_subject: t.threadSubject,
+    latest_inbound_gmail_message_id: t.latestInboundGmailMessageId,
+    latest_inbound_rfc_message_id: t.latestInboundRfcMessageId,
     body: null,
     subject: null,
   };
@@ -263,6 +275,9 @@ function toCloseoutTarget(t: CloseoutTargetState): CloseoutTarget {
     gmailThreadId: t.gmail_thread_id,
     replyTo: t.reply_to,
     contactName: t.contact_name,
+    threadSubject: t.thread_subject,
+    latestInboundGmailMessageId: t.latest_inbound_gmail_message_id,
+    latestInboundRfcMessageId: t.latest_inbound_rfc_message_id,
   };
 }
 
@@ -353,12 +368,14 @@ const draftStep = createStep({
 
     // The default body IS the sent body. There is no LLM — the template is fully
     // deterministic; an optional EDIT (a future surface) re-asserts inside the
-    // atomic tool before the send.
-    const subject = renderCloseoutSubject(state.messageProfile);
+    // atomic tool before the send. The subject is UNCONDITIONALLY the open
+    // thread's subject re-cast as a reply (`subjectForFollowup`) so the closeout
+    // lands in the existing conversation — every target has an open thread by
+    // construction; a null thread subject yields "Re: (no subject)".
     const drafted = state.targets.map((t) => ({
       ...t,
       body: buildCloseoutDraft(state.messageProfile, { contactName: t.contact_name }),
-      subject,
+      subject: subjectForFollowup(t.thread_subject),
     }));
     return { ...state, targets: drafted };
   },

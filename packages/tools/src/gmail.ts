@@ -59,6 +59,15 @@ export interface OutboundEmail {
   subject: string;
   /** Plain-text body. Budget figures are stripped before assembly (see redact). */
   body: string;
+  /**
+   * The inbound RFC-2822 `Message-ID` this send is a reply to (already in
+   * `<id@host>` form). When non-null it is emitted as the `In-Reply-To` +
+   * `References` headers so the DEALER'S mail client threads the reply onto the
+   * existing conversation. Null/absent → no threading headers (today's exact
+   * bytes). The value originates from a dealer-controlled inbound header, so it
+   * MUST pass through `unfold()` like every other header (injection guard).
+   */
+  inReplyToRfcMessageId?: string | null;
 }
 
 /** Result of a send attempt — carries the mode so callers/audit can see whether
@@ -136,6 +145,18 @@ export function buildRaw(email: OutboundEmail): string {
     `From: ${unfold(email.from)}`,
     `Subject: ${unfold(email.subject)}`,
   ];
+  // Reply-threading anchor: when this send is a reply to a captured inbound
+  // message, echo its RFC Message-ID in In-Reply-To + References so the dealer's
+  // mail client threads the reply. The value is a dealer-controlled inbound
+  // header, so it passes through the SAME unfold() CRLF-collapse as every other
+  // header — an unguarded value could inject extra headers (e.g. a Bcc). Absent
+  // anchor → no threading headers, today's exact bytes.
+  const anchor = email.inReplyToRfcMessageId;
+  if (anchor !== undefined && anchor !== null && anchor !== "") {
+    const inReplyTo = unfold(anchor);
+    headers.push(`In-Reply-To: ${inReplyTo}`);
+    headers.push(`References: ${inReplyTo}`);
+  }
   const rfc2822 = `${headers.join("\r\n")}\r\n\r\n${redactedBody}`;
   return Buffer.from(rfc2822, "utf8").toString("base64url");
 }

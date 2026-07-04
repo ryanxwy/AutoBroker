@@ -114,6 +114,7 @@ function messageFixture(opts: { id: string; threadId: string; sent?: boolean }):
         { name: "From", value: "dealer@example.com" },
         { name: "To", value: "buyer@example.com" },
         { name: "Subject", value: "Your quote" },
+        { name: "Message-ID", value: `<${opts.id}@mail.dealer.example>` },
       ],
       parts: [
         {
@@ -143,6 +144,7 @@ describe("RealGmailAdapter — read mapping", () => {
       from: "dealer@example.com",
       to: "buyer@example.com",
       subject: "Your quote",
+      rfcMessageId: "<m1@mail.dealer.example>",
       bodyText: "plain text",
       bodyHtml: "<p>html</p>",
       internalDateMs: 1_700_000_000_000,

@@ -338,6 +338,9 @@ const FollowupTargetSchema = z.object({
   reply_email: z.string(),
   /** The latest inbound gmail id — the in_reply_to anchor for the reply double-flag. */
   in_reply_to_gmail_id: z.string().nullable(),
+  /** The latest inbound RFC Message-ID — emitted as In-Reply-To/References so the
+   *  dealer's mail client threads the reply (null on legacy rows → no headers). */
+  in_reply_to_rfc_message_id: z.string().nullable(),
   /** The prose body the draft step fills (null until drafted). */
   draft_body: z.string().nullable(),
 });
@@ -539,6 +542,7 @@ function targetStubsFor(
     draft_context: { subject: "", messages: [] },
     reply_email: "",
     in_reply_to_gmail_id: null,
+    in_reply_to_rfc_message_id: null,
     draft_body: null,
   }));
 }
@@ -615,6 +619,7 @@ const buildContextStep = createStep({
         },
         reply_email: replyTarget.email,
         in_reply_to_gmail_id: snapshot.latestInboundGmailMessageId,
+        in_reply_to_rfc_message_id: snapshot.latestInboundRfcMessageId,
       });
     }
 
@@ -809,6 +814,7 @@ const sendRecordStep = createStep({
           from: state.followUpEmail ?? t.reply_email,
           subject,
           body: t.draft_body!,
+          inReplyToRfcMessageId: t.in_reply_to_rfc_message_id, // recipient-side thread anchor.
         },
         threadId: reuseThreadIdForReply(t.thread_id), // reply on the EXISTING thread.
         searchProfileId: state.searchProfileId,

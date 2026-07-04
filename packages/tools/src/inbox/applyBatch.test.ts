@@ -30,6 +30,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0008_graceful_magdalene.sql",
 ].map((f) => join(here, "..", "..", "..", "db", "drizzle", f));
 
 const PROFILE_ID = "prof-inbox-1";
@@ -86,6 +87,7 @@ function decision(over: Partial<ThreadDecision> = {}): ThreadDecision {
       {
         messageId: "m-1",
         gmailMessageId: "g-m-1",
+        rfcMessageId: "<m-1@example-dealer.com>",
         sender: "Sam Sales <sam@example-dealer.com>",
         senderEmail: "sam@example-dealer.com",
         senderName: "Sam Sales",
@@ -117,6 +119,8 @@ describe("applyInboxBatch — APPROVE", () => {
     expect(msg["quote_extraction_status"]).toBe("pending");
     expect(msg["search_profile_id"]).toBe(PROFILE_ID); // NON-NULL — the orphan fix
     expect(msg["gmail_message_id"]).toBe("g-m-1");
+    // The inbound RFC Message-ID is captured for later reply-threading.
+    expect(msg["rfc_message_id"]).toBe("<m-1@example-dealer.com>");
 
     const thread = db.$client
       .prepare("SELECT * FROM threads WHERE thread_id = 't-1'")
@@ -146,6 +150,7 @@ describe("applyInboxBatch — APPROVE", () => {
             {
               messageId: "m-1-redux", // different product id
               gmailMessageId: "g-m-1", // SAME backend id
+              rfcMessageId: "<m-1@example-dealer.com>",
               sender: "Sam Sales <sam@example-dealer.com>",
               senderEmail: "sam@example-dealer.com",
               senderName: "Sam Sales",
@@ -188,6 +193,7 @@ describe("applyInboxBatch — APPROVE", () => {
             {
               messageId: "m-2",
               gmailMessageId: "g-m-2",
+              rfcMessageId: "<m-2@example-dealer.com>",
               sender: "Sam Sales <sam@example-dealer.com>",
               senderEmail: "sam@example-dealer.com",
               senderName: "Sam Sales",

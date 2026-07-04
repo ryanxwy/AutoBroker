@@ -58,6 +58,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0008_graceful_magdalene.sql",
 ].map((f) => join(here, "..", "..", "db", "drizzle", f));
 
 let tmpDir: string;
@@ -416,6 +417,11 @@ describe("dealer_closeout_email — approve the batch (close + suppress)", () =>
     expect(out.emails_sent).toBe(2);
     expect(out.profile_status_transition).toBe("closed");
     expect(out.skipped_no_address).toBe(0);
+
+    // The closeout subject is UNCONDITIONALLY the open thread's subject re-cast as
+    // a reply (subjectForFollowup) so the closeout lands in the conversation — the
+    // seeded threads carry "Quote request", so every send is "Re: Quote request".
+    expect(sends.calls.map((c) => c.subject)).toEqual(["Re: Quote request", "Re: Quote request"]);
 
     // Per dealer: thread closed + a 'closeout:'-reason suppression row.
     expect(threadState(THREAD_A)).toBe("closed");

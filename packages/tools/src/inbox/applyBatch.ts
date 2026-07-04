@@ -36,6 +36,9 @@ export interface InboxMessageInput {
   messageId: string;
   /** The backend message id — the dedup key (a re-seen message is a no-op). */
   gmailMessageId: string;
+  /** The inbound RFC-2822 Message-ID header (null when the mail carried none) —
+   *  the recipient-side reply-threading anchor persisted for later sends. */
+  rfcMessageId: string | null;
   sender: string;
   senderEmail: string;
   senderName: string | null;
@@ -111,10 +114,10 @@ const SELECT_MESSAGE_BY_GMAIL_ID =
   "SELECT message_id FROM messages WHERE gmail_message_id = ? LIMIT 1";
 const INSERT_MESSAGE =
   "INSERT INTO messages " +
-  "(message_id, thread_id, gmail_message_id, direction, sender, recipient, subject, " +
+  "(message_id, thread_id, gmail_message_id, rfc_message_id, direction, sender, recipient, subject, " +
   "body_text, received_at, contact_id, sender_email, sender_name, search_profile_id, " +
   "quote_extraction_status) " +
-  "VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending') " +
+  "VALUES (?, ?, ?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending') " +
   "ON CONFLICT(message_id) DO NOTHING";
 
 const UPSERT_ROUTING =
@@ -183,6 +186,7 @@ export function applyInboxBatch(args: ApplyInboxBatchArgs): ApplyInboxBatchResul
           m.messageId,
           d.threadId,
           m.gmailMessageId,
+          m.rfcMessageId,
           m.sender,
           m.recipient,
           m.subject,

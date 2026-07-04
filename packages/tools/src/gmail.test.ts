@@ -172,6 +172,50 @@ describe("buildRaw", () => {
     const bad: OutboundEmail = { ...CLEAN_EMAIL, body: `Hello \uD83D there.` };
     expect(() => buildRaw(bad)).toThrow();
   });
+
+  it("emits In-Reply-To + References when an inbound RFC Message-ID anchor is present", () => {
+    const raw = buildRaw({ ...CLEAN_EMAIL, inReplyToRfcMessageId: "<abc.123@mail.dealer.test>" });
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    expect(decoded).toMatch(/^In-Reply-To: <abc\.123@mail\.dealer\.test>$/m);
+    expect(decoded).toMatch(/^References: <abc\.123@mail\.dealer\.test>$/m);
+  });
+
+  it("emits NO threading headers when the anchor is absent/null (today's exact bytes)", () => {
+    const withoutField = buildRaw(CLEAN_EMAIL);
+    const withNull = buildRaw({ ...CLEAN_EMAIL, inReplyToRfcMessageId: null });
+    const withEmpty = buildRaw({ ...CLEAN_EMAIL, inReplyToRfcMessageId: "" });
+    for (const raw of [withoutField, withNull, withEmpty]) {
+      const decoded = Buffer.from(raw, "base64url").toString("utf8");
+      expect(decoded).not.toContain("In-Reply-To:");
+      expect(decoded).not.toContain("References:");
+    }
+    // Byte-identical: a null/empty anchor produces the SAME bytes as no field at
+    // all (Date/Message-ID vary per call, so compare the header set, not the raw).
+    const headerBlock = (raw: string) =>
+      Buffer.from(raw, "base64url")
+        .toString("utf8")
+        .split("\r\n\r\n", 1)[0]
+        ?.split("\r\n")
+        .filter((h) => !h.startsWith("Date:") && !h.startsWith("Message-ID:"));
+    expect(headerBlock(withNull)).toEqual(headerBlock(withoutField));
+    expect(headerBlock(withEmpty)).toEqual(headerBlock(withoutField));
+  });
+
+  it("collapses a CRLF header-injection attempt in the anchor (no smuggled Bcc)", () => {
+    // The anchor originates from a dealer-controlled inbound header. An injected
+    // CRLF must be unfolded to a space so it cannot smuggle a second header
+    // (e.g. a Bcc) into the assembled RFC-2822 message.
+    const raw = buildRaw({
+      ...CLEAN_EMAIL,
+      inReplyToRfcMessageId: "<abc@dealer.test>\r\nBcc: attacker@evil.test",
+    });
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const headerBlock = decoded.split("\r\n\r\n", 1)[0] ?? "";
+    // No standalone Bcc header line survived the collapse.
+    expect(headerBlock).not.toMatch(/^Bcc:/m);
+    // The In-Reply-To value is one physical line with the CRLF collapsed to a space.
+    expect(headerBlock).toMatch(/^In-Reply-To: <abc@dealer\.test> Bcc: attacker@evil\.test$/m);
+  });
 });
 
 describe("createGmailAdapter — factory matrix (backend = projection of AUTOBROKER_MODE)", () => {

@@ -124,6 +124,7 @@ function rowToMessage(db: Db, row: MessageRow): Message {
     from: row.from,
     to: row.to,
     subject: row.subject ?? "",
+    rfcMessageId: readHeader(rfc2822, "Message-ID"),
     bodyText,
     bodyHtml: "",
     internalDateMs: row.internal_date_ms,

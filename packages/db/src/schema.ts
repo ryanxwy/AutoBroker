@@ -381,6 +381,7 @@ export const messages = sqliteTable("messages", {
 	messageId: text("message_id").primaryKey(),
 	threadId: text("thread_id").references(() => threads.threadId),
 	gmailMessageId: text("gmail_message_id"),
+	rfcMessageId: text("rfc_message_id"),
 	direction: text().notNull(),
 	sender: text(),
 	recipient: text(),

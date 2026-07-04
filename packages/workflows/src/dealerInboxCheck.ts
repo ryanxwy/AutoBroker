@@ -215,6 +215,7 @@ function vehicleLabel(p: { year: number; make: string; model: string; trim: stri
 const InboxMessageStateSchema = z.object({
   message_id: z.string(),
   gmail_message_id: z.string(),
+  rfc_message_id: z.string().nullable(),
   sender: z.string(),
   sender_email: z.string(),
   sender_name: z.string().nullable(),
@@ -572,6 +573,7 @@ const syncDiscoverStep = createStep({
         messages: newMessages.map((m) => ({
           message_id: productMessageId(m.messageId),
           gmail_message_id: m.messageId,
+          rfc_message_id: m.rfcMessageId === "" ? null : m.rfcMessageId,
           sender: m.from,
           sender_email: senderEmail,
           sender_name: senderNameOf(m.from, senderEmail),
@@ -700,6 +702,7 @@ const applyBatchStep = createStep({
           messages: t.messages.map((m) => ({
             messageId: m.message_id,
             gmailMessageId: m.gmail_message_id,
+            rfcMessageId: m.rfc_message_id,
             sender: m.sender,
             senderEmail: m.sender_email,
             senderName: m.sender_name,

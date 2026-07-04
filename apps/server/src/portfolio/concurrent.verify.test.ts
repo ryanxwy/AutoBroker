@@ -49,6 +49,7 @@ const MIGRATION_SQLS = [
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
   "0003_salty_jocasta.sql",
+  "0008_graceful_magdalene.sql",
 ].map((f) => join(here, "..", "..", "..", "..", "packages", "db", "drizzle", f));
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";

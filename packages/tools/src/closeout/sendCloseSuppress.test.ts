@@ -28,6 +28,7 @@ import type { Approver, GateRequest } from "../gate/index.js";
 import {
   assembleCloseoutTargets,
   closeAndSuppressDealer,
+  type CloseoutTarget,
 } from "./sendCloseSuppress.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
@@ -38,6 +39,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0008_graceful_magdalene.sql",
 ].map((f) => join(here, "..", "..", "..", "db", "drizzle", f));
 
 const PROFILE = "profile-1";
@@ -179,6 +181,40 @@ describe("assembleCloseoutTargets", () => {
     expect(skippedNoAddress).toBe(1);
   });
 
+  it("carries the open thread's subject + the latest inbound gmail & rfc anchors", () => {
+    seedProfile();
+    db.$client
+      .prepare("INSERT INTO dealers (dealer_id, name, contact_email, country) VALUES ('d1', 'Jim Click Hyundai', 'leads@jimclick.test', 'US')")
+      .run();
+    db.$client
+      .prepare("INSERT INTO profile_dealers (search_profile_id, dealer_id, status) VALUES (?, 'd1', 'bound')")
+      .run(PROFILE);
+    db.$client
+      .prepare(
+        "INSERT INTO threads (thread_id, dealer_id, gmail_thread_id, subject, state, search_profile_id, updated_at) " +
+          "VALUES ('t1', 'd1', 'gmail-t1', 'Re: 2026 Tucson quote', 'replied', ?, '2026-06-10T00:00:00.000Z')",
+      )
+      .run(PROFILE);
+    const ins = (id: string, at: string, gmail: string | null, rfc: string | null) =>
+      db.$client
+        .prepare(
+          "INSERT INTO messages (message_id, thread_id, direction, received_at, gmail_message_id, rfc_message_id, search_profile_id, quote_extraction_status) " +
+            "VALUES (?, 't1', 'inbound', ?, ?, ?, ?, 'pending')",
+        )
+        .run(id, at, gmail, rfc, PROFILE);
+    ins("in-1", "1000", "gm-1", "<r1@dealer.test>");
+    ins("in-2", "2000", "gm-2", "<r2@dealer.test>"); // the latest inbound
+
+    const { targets } = assembleCloseoutTargets(db, PROFILE);
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({
+      threadId: "t1",
+      threadSubject: "Re: 2026 Tucson quote",
+      latestInboundGmailMessageId: "gm-2",
+      latestInboundRfcMessageId: "<r2@dealer.test>",
+    });
+  });
+
   it("excludes a dealer with only a closed/agreed thread (no open thread to close)", () => {
     seedProfile();
     seedBoundDealerWithThread({
@@ -238,14 +274,7 @@ describe("assembleCloseoutTargets", () => {
 // closeAndSuppressDealer
 // ---------------------------------------------------------------------------
 
-function targetFor(threadId: string, dealerId = "d1"): {
-  dealerId: string;
-  dealerName: string;
-  threadId: string;
-  gmailThreadId: string;
-  replyTo: string;
-  contactName: string | null;
-} {
+function targetFor(threadId: string, dealerId = "d1"): CloseoutTarget {
   return {
     dealerId,
     dealerName: "Jim Click Hyundai",
@@ -253,6 +282,11 @@ function targetFor(threadId: string, dealerId = "d1"): {
     gmailThreadId: `gmail-${threadId}`,
     replyTo: "leads@jimclick.test",
     contactName: "Pat Rivera",
+    threadSubject: "Quote request",
+    // The reply double-flag anchor: the latest inbound MESSAGE id (non-null so
+    // validateThreadFlags is satisfied alongside the set threadId).
+    latestInboundGmailMessageId: `gmail-msg-${threadId}`,
+    latestInboundRfcMessageId: `<${threadId}@dealer.test>`,
   };
 }
 
@@ -287,6 +321,15 @@ describe("closeAndSuppressDealer", () => {
     expect(threadState("t1")).toBe("closed");
     expect(count("thread_suppression")).toBe(1);
 
+    // The sent raw threads onto the dealer's conversation: In-Reply-To/References
+    // echo the target's latest inbound rfc_message_id, and the subject is a reply.
+    const sentRaw = db.$client
+      .prepare("SELECT raw FROM fake_mailbox_messages WHERE direction = 'outbound'")
+      .get() as { raw: string };
+    const decoded = Buffer.from(sentRaw.raw, "base64url").toString("utf8");
+    expect(decoded).toMatch(/^In-Reply-To: <t1@dealer\.test>$/m);
+    expect(decoded).toMatch(/^References: <t1@dealer\.test>$/m);
+
     const sup = db.$client
       .prepare("SELECT scope, action, approved_by, reason FROM thread_suppression")
       .get() as { scope: string; action: string; approved_by: string; reason: string };
@@ -296,6 +339,38 @@ describe("closeAndSuppressDealer", () => {
       approved_by: "user",
       reason: `closeout:${PROFILE}`,
     });
+  });
+
+  it("the reply double-flag anchor is the latest inbound MESSAGE id, not the thread id", async () => {
+    // The :317 fix: inReplyToGmailId now comes from latestInboundGmailMessageId,
+    // NOT gmailThreadId. Prove it by NULLing the message anchor while leaving the
+    // thread id set — the double-flag invariant (threadId ⇔ inReplyToGmailId) now
+    // refuses the send (had the anchor still read gmailThreadId, it would proceed).
+    seedProfile();
+    seedBoundDealerWithThread({
+      dealerId: "d1",
+      name: "Jim Click Hyundai",
+      contactEmail: "leads@jimclick.test",
+      threadId: "t1",
+    });
+
+    await expect(
+      closeAndSuppressDealer({
+        db,
+        approver: recordingApprover(true),
+        runId: "run-317",
+        searchProfileId: PROFILE,
+        target: { ...targetFor("t1"), latestInboundGmailMessageId: null }, // thread set, msg anchor null
+        body: BODY,
+        subject: SUBJECT,
+        fromEmail: FROM,
+      }),
+    ).rejects.toThrow(/thread_flag_mismatch/);
+
+    // Fail-closed: nothing was sent, closed, or suppressed.
+    expect(count("messages")).toBe(0);
+    expect(threadState("t1")).toBe("replied");
+    expect(count("thread_suppression")).toBe(0);
   });
 
   it("send prevented after its draft (partial) → sendBlocked but the local close+suppress STILL commit", async () => {

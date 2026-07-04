@@ -63,6 +63,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0008_graceful_magdalene.sql",
 ].map((f) => join(here, "..", "..", "db", "drizzle", f));
 
 let tmpDir: string;
@@ -248,6 +249,7 @@ function makeAdapter(threads: StubThread[]): GmailAdapter & { searchQueries: str
       from: m.from,
       to: m.to,
       subject: m.subject,
+      rfcMessageId: `<${m.messageId}@dealer.test>`,
       bodyText: m.bodyText,
       bodyHtml: "",
       internalDateMs: m.internalDateMs,

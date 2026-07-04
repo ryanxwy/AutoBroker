@@ -174,6 +174,40 @@ describe("FakeGmailAdapter read paths", () => {
     await expect(adapter.getMessage("nope")).rejects.toThrow(/no message/);
   });
 
+  it("recovers rfcMessageId from the raw Message-ID header (empty string when absent)", async () => {
+    const adapter = new FakeGmailAdapter(db);
+    // A raw that carries a Message-ID header → rowToMessage reads it back.
+    const withId = Buffer.from(
+      "To: buyer@x.test\r\nFrom: dealer@x.test\r\nSubject: quote\r\n" +
+        "Message-ID: <cap.1@mail.dealer.test>\r\n\r\nbody",
+      "utf8",
+    ).toString("base64url");
+    db.$client
+      .prepare(
+        "INSERT INTO fake_mailbox_threads (thread_id, subject, search_profile_id) VALUES ('tc', 'quote', NULL) ON CONFLICT(thread_id) DO NOTHING",
+      )
+      .run();
+    db.$client
+      .prepare(
+        "INSERT INTO fake_mailbox_messages (message_id, thread_id, raw, `to`, `from`, subject, internal_date_ms, direction, is_delivered, search_profile_id) " +
+          "VALUES ('mc', 'tc', ?, 'buyer@x.test', 'dealer@x.test', 'quote', 1000, 'inbound', 1, NULL)",
+      )
+      .run(withId);
+    expect((await adapter.getMessage("mc")).rfcMessageId).toBe("<cap.1@mail.dealer.test>");
+
+    // A raw with NO Message-ID header → empty string (absence, not a fabricated id).
+    seedInbound({
+      messageId: "mn",
+      threadId: "tn",
+      to: "buyer@x.test",
+      from: "dealer@x.test",
+      subject: "no id",
+      body: "b",
+      internalDateMs: 2000,
+    });
+    expect((await adapter.getMessage("mn")).rfcMessageId).toBe("");
+  });
+
   it("getThread returns messages in receive order", async () => {
     const adapter = new FakeGmailAdapter(db);
     seedInbound({

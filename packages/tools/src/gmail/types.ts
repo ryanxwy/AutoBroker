@@ -76,6 +76,10 @@ export interface Message {
   from: string;
   to: string;
   subject: string;
+  /** The inbound RFC-2822 `Message-ID` header (empty string when absent). This is
+   *  the recipient-side threading anchor: a reply that echoes it in
+   *  In-Reply-To/References is threaded by the dealer's mail client. */
+  rfcMessageId: string;
   bodyText: string;
   bodyHtml: string;
   internalDateMs: number;

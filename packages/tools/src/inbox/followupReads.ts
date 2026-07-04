@@ -312,6 +312,10 @@ export interface ThreadSnapshotRead {
    *  reply double-flag needs (threadId AND inReplyToGmailId both set). null when
    *  the dealer never replied with a gmail id. */
   latestInboundGmailMessageId: string | null;
+  /** The latest INBOUND message's rfc_message_id (RFC-2822 Message-ID) — the
+   *  recipient-side reply-threading anchor emitted as In-Reply-To/References.
+   *  null on legacy rows with no captured header (→ no threading headers). */
+  latestInboundRfcMessageId: string | null;
 }
 
 /**
@@ -328,7 +332,7 @@ export function readThreadSnapshotForDraft(db: Db, threadId: string): ThreadSnap
 
   const messageRows = db.$client
     .prepare(
-      "SELECT direction, sender_name AS senderName, body_text AS bodyText, received_at AS receivedAt, gmail_message_id AS gmailMessageId " +
+      "SELECT direction, sender_name AS senderName, body_text AS bodyText, received_at AS receivedAt, gmail_message_id AS gmailMessageId, rfc_message_id AS rfcMessageId " +
         "FROM messages WHERE thread_id = ? " +
         "ORDER BY CAST(received_at AS INTEGER) ASC, message_id ASC",
     )
@@ -338,14 +342,20 @@ export function readThreadSnapshotForDraft(db: Db, threadId: string): ThreadSnap
     bodyText: string | null;
     receivedAt: string | number | null;
     gmailMessageId: string | null;
+    rfcMessageId: string | null;
   }>;
 
   // The latest inbound gmail id = the last inbound row in ascending order that
-  // carries a gmail_message_id.
+  // carries a gmail_message_id. The latest inbound rfc id follows the SAME
+  // last-inbound-wins loop (its own anchor; null on legacy rows).
   let latestInboundGmailMessageId: string | null = null;
+  let latestInboundRfcMessageId: string | null = null;
   for (const m of messageRows) {
     if (m.direction === "inbound" && m.gmailMessageId !== null && m.gmailMessageId !== "") {
       latestInboundGmailMessageId = m.gmailMessageId;
+    }
+    if (m.direction === "inbound" && m.rfcMessageId !== null && m.rfcMessageId !== "") {
+      latestInboundRfcMessageId = m.rfcMessageId;
     }
   }
 
@@ -359,6 +369,7 @@ export function readThreadSnapshotForDraft(db: Db, threadId: string): ThreadSnap
       receivedAtMs: toEpochMs(m.receivedAt),
     })),
     latestInboundGmailMessageId,
+    latestInboundRfcMessageId,
   };
 }
 

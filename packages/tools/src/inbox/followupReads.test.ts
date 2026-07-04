@@ -41,6 +41,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0008_graceful_magdalene.sql",
 ].map((f) => join(here, "..", "..", "..", "db", "drizzle", f));
 
 let tmpDir: string;
@@ -330,31 +331,34 @@ describe("listFollowupCandidateThreads", () => {
 });
 
 describe("readThreadSnapshotForDraft", () => {
-  it("returns subject, ordered messages, and the latest inbound gmail id", () => {
+  it("returns subject, ordered messages, and the latest inbound gmail + rfc ids", () => {
     const c = db.$client;
     c.prepare("INSERT INTO threads (thread_id, dealer_id, subject, state, search_profile_id) VALUES ('t-1', ?, 'Re: Tucson', 'replied', ?)").run(DEALER, PROFILE);
-    const ins = (id: string, dir: string, at: number, gmail: string | null, body: string) =>
+    const ins = (id: string, dir: string, at: number, gmail: string | null, rfc: string | null, body: string) =>
       c.prepare(
-        "INSERT INTO messages (message_id, thread_id, direction, received_at, gmail_message_id, body_text, sender_name, search_profile_id, quote_extraction_status) " +
-          "VALUES (?, 't-1', ?, ?, ?, ?, 'Dealer Rep', ?, 'pending')",
-      ).run(id, dir, at, gmail, body, PROFILE);
-    ins("m-in1", "inbound", NOW - 80000, "gm-1", "first reply");
-    ins("m-out1", "outbound", NOW - 70000, null, "our follow-up");
-    ins("m-in2", "inbound", NOW - 1000, "gm-2", "latest reply");
+        "INSERT INTO messages (message_id, thread_id, direction, received_at, gmail_message_id, rfc_message_id, body_text, sender_name, search_profile_id, quote_extraction_status) " +
+          "VALUES (?, 't-1', ?, ?, ?, ?, ?, 'Dealer Rep', ?, 'pending')",
+      ).run(id, dir, at, gmail, rfc, body, PROFILE);
+    ins("m-in1", "inbound", NOW - 80000, "gm-1", "<r1@dealer.test>", "first reply");
+    ins("m-out1", "outbound", NOW - 70000, null, null, "our follow-up");
+    ins("m-in2", "inbound", NOW - 1000, "gm-2", "<r2@dealer.test>", "latest reply");
 
     const snap = readThreadSnapshotForDraft(db, "t-1");
     expect(snap.subject).toBe("Re: Tucson");
     expect(snap.messages.map((m) => m.direction)).toEqual(["inbound", "outbound", "inbound"]); // ascending
     expect(snap.latestInboundGmailMessageId).toBe("gm-2"); // the newest inbound gmail id
+    expect(snap.latestInboundRfcMessageId).toBe("<r2@dealer.test>"); // the newest inbound rfc id
   });
 
-  it("returns a null gmail anchor when no inbound message carries one", () => {
+  it("returns a null gmail + rfc anchor when no inbound message carries one", () => {
     const c = db.$client;
     c.prepare("INSERT INTO threads (thread_id, dealer_id, state, search_profile_id) VALUES ('t-1', ?, 'replied', ?)").run(DEALER, PROFILE);
     c.prepare(
-      "INSERT INTO messages (message_id, thread_id, direction, received_at, gmail_message_id, search_profile_id, quote_extraction_status) VALUES ('m', 't-1', 'inbound', ?, NULL, ?, 'pending')",
+      "INSERT INTO messages (message_id, thread_id, direction, received_at, gmail_message_id, rfc_message_id, search_profile_id, quote_extraction_status) VALUES ('m', 't-1', 'inbound', ?, NULL, NULL, ?, 'pending')",
     ).run(NOW, PROFILE);
-    expect(readThreadSnapshotForDraft(db, "t-1").latestInboundGmailMessageId).toBeNull();
+    const snap = readThreadSnapshotForDraft(db, "t-1");
+    expect(snap.latestInboundGmailMessageId).toBeNull();
+    expect(snap.latestInboundRfcMessageId).toBeNull(); // legacy row → no threading header
   });
 });
 

@@ -132,6 +132,7 @@ function mapMessage(wire: gmail_v1.Schema$Message): Message {
     from: readHeader(payload, "From"),
     to: readHeader(payload, "To"),
     subject: readHeader(payload, "Subject"),
+    rfcMessageId: readHeader(payload, "Message-ID"),
     bodyText: effectiveBodyText,
     bodyHtml,
     internalDateMs: Number.isFinite(internalDateMs) ? internalDateMs : 0,

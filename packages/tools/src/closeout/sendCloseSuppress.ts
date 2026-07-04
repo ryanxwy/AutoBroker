@@ -58,6 +58,18 @@ export interface CloseoutTarget {
   replyTo: string;
   /** The contact display name, for an optional greeting. */
   contactName: string | null;
+  /** The open thread's subject — the closeout subject is UNCONDITIONALLY
+   *  `subjectForFollowup(threadSubject)` so the reply keeps the conversation's
+   *  subject (null → "Re: (no subject)"). */
+  threadSubject: string | null;
+  /** The open thread's latest INBOUND gmail_message_id — the reply double-flag
+   *  anchor (`inReplyToGmailId`). By construction an open closeout thread carries
+   *  an ingested inbound reply, so this is set alongside `threadId`. */
+  latestInboundGmailMessageId: string | null;
+  /** The open thread's latest INBOUND rfc_message_id — emitted as
+   *  In-Reply-To/References so the dealer's mail client threads the closeout
+   *  (null on legacy rows with no captured header → no threading headers). */
+  latestInboundRfcMessageId: string | null;
 }
 
 /** The assemble result: the addressable targets + a count of dealers dropped
@@ -79,10 +91,19 @@ const CLOSEOUT_SUPPRESSED_DEALER_IDS =
 
 // The newest OPEN thread for a dealer on this profile (agreed/closed excluded).
 const OPEN_THREAD_FOR_DEALER =
-  "SELECT thread_id, gmail_thread_id FROM threads " +
+  "SELECT thread_id, gmail_thread_id, subject FROM threads " +
   "WHERE search_profile_id = ? AND dealer_id = ? " +
   "AND state NOT IN ('closed', 'agreed') " +
   "ORDER BY updated_at DESC, thread_id LIMIT 1";
+
+// The open thread's latest INBOUND message — its gmail_message_id is the reply
+// double-flag anchor and its rfc_message_id is the recipient-side threading
+// header. Both come from the SAME (latest) inbound message so the reply
+// references exactly the message it answers.
+const LATEST_INBOUND_FOR_THREAD =
+  "SELECT gmail_message_id, rfc_message_id FROM messages " +
+  "WHERE thread_id = ? AND direction = 'inbound' " +
+  "ORDER BY CAST(received_at AS INTEGER) DESC, message_id DESC LIMIT 1";
 
 // The 4-level ladder inputs for one dealer (already-fetched rows). Each query is
 // scoped to the dealer; contacts/inbound also scoped to the profile so a reply
@@ -106,6 +127,11 @@ interface BoundDealerRow {
 interface OpenThreadRow {
   thread_id: string;
   gmail_thread_id: string | null;
+  subject: string | null;
+}
+interface LatestInboundRow {
+  gmail_message_id: string | null;
+  rfc_message_id: string | null;
 }
 
 /** Parse a received_at value (ISO string or epoch-ms numeric) to epoch ms, or
@@ -229,6 +255,10 @@ export function assembleCloseoutTargets(
       continue;
     }
 
+    const latestInbound = db.$client
+      .prepare(LATEST_INBOUND_FOR_THREAD)
+      .get(open.thread_id) as LatestInboundRow | undefined;
+
     targets.push({
       dealerId: d.dealer_id,
       dealerName: d.name,
@@ -236,6 +266,9 @@ export function assembleCloseoutTargets(
       gmailThreadId: open.gmail_thread_id,
       replyTo,
       contactName: pickContactName(db, d.dealer_id),
+      threadSubject: open.subject,
+      latestInboundGmailMessageId: latestInbound?.gmail_message_id ?? null,
+      latestInboundRfcMessageId: latestInbound?.rfc_message_id ?? null,
     });
   }
 
@@ -311,10 +344,13 @@ export async function closeAndSuppressDealer(
         from: args.fromEmail,
         subject: args.subject,
         body: args.body,
+        inReplyToRfcMessageId: args.target.latestInboundRfcMessageId, // recipient-side thread anchor.
       },
       threadId: args.target.threadId,
       searchProfileId: args.searchProfileId,
-      inReplyToGmailId: args.target.gmailThreadId,
+      // The reply double-flag anchor is the latest INBOUND gmail MESSAGE id — not
+      // the thread id (the prior value was a thread id, an inconsistent anchor).
+      inReplyToGmailId: args.target.latestInboundGmailMessageId,
     },
     // Only pass `adapter` when one was injected — under exactOptionalPropertyTypes
     // an explicit `undefined` is not assignable to the optional field.

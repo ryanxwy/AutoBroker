@@ -163,6 +163,7 @@ function makeStubAdapter(): GmailAdapter {
       from: "dealer@example.com",
       to: "buyer@example.com",
       subject: "Quote",
+      rfcMessageId: "<m1@example.com>",
       bodyText: "OTD $33,000",
       bodyHtml: "<p>OTD $33,000</p>",
       internalDateMs: 1_700_000_000_000,
