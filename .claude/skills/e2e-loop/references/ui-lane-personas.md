@@ -261,7 +261,9 @@ Six tabs → six small reads, not one giant DOM.
   `getComputedStyle`), the canvas (`.app-main`) shrank ~the same, the value persisted
   to `localStorage['autobroker:rail-width']`, and a drag far past the max RE-CLAMPS
   (min 320 / max `min(800, 60% of container)`, widened `fb76045`). A drag that moves the
-  width by ~0 is the `flex:0 0 0px` regression — a HIGH finding. (The deterministic twin is
+  width by ~0 is the `flex:0 0 0px` regression — a HIGH finding. (If `chat-launcher` is
+  present — rail minimized by design — the resizer is hidden; restore via the launcher
+  first; a 0×0 resizer rect + Δ0 is NOT the regression.) (The deterministic twin is
   the `rail_resize.func.toml` real-chromium case; this live step corroborates it.)
   **Viewport == window:** drive the browser at a viewport NO WIDER than the visible window
   (read `window.outerWidth`); a viewport wider than the window makes `.app-body`
