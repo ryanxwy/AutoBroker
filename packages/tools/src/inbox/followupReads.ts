@@ -301,6 +301,11 @@ export function listFollowupCandidateThreads(
 export interface ThreadSnapshotRead {
   threadId: string;
   subject: string | null;
+  /** The BACKEND Gmail thread id (threads.gmail_thread_id) — the send's
+   *  requestBody.threadId that Gmail groups the sent copy by. NOT part of the
+   *  reply double-flag. null on rows with no captured backend id → a plain
+   *  top-level send. */
+  gmailThreadId: string | null;
   /** Message rows, oldest first, in the shape buildDraftContext consumes. */
   messages: Array<{
     direction: string;
@@ -327,8 +332,8 @@ export interface ThreadSnapshotRead {
  */
 export function readThreadSnapshotForDraft(db: Db, threadId: string): ThreadSnapshotRead {
   const thread = db.$client
-    .prepare("SELECT subject FROM threads WHERE thread_id = ?")
-    .get(threadId) as { subject: string | null } | undefined;
+    .prepare("SELECT subject, gmail_thread_id AS gmailThreadId FROM threads WHERE thread_id = ?")
+    .get(threadId) as { subject: string | null; gmailThreadId: string | null } | undefined;
 
   const messageRows = db.$client
     .prepare(
@@ -362,6 +367,7 @@ export function readThreadSnapshotForDraft(db: Db, threadId: string): ThreadSnap
   return {
     threadId,
     subject: thread?.subject ?? null,
+    gmailThreadId: thread?.gmailThreadId ?? null,
     messages: messageRows.map((m) => ({
       direction: m.direction,
       senderName: m.senderName,

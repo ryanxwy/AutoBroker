@@ -67,7 +67,7 @@ export interface GmailApiClient {
       }): Promise<{ data: gmail_v1.Schema$Message }>;
       send(params: {
         userId: string;
-        requestBody: { raw: string };
+        requestBody: { raw: string; threadId?: string };
       }): Promise<{ data: gmail_v1.Schema$Message }>;
       attachments: {
         get(params: {
@@ -269,11 +269,15 @@ export class RealGmailAdapter implements GmailAdapter {
    * This reaches the network — it must only ever be called from inside the
    * send seam's approved gate commit, in buyer mode. This adapter does not
    * assert the mode brake itself (that wall lives in the seam, kept FIRST).
+   *
+   * `opts.threadId` rides into the requestBody so Gmail groups the sent copy
+   * into the target thread (it groups by this param, not by In-Reply-To/
+   * References). Absent → the param is omitted → a plain top-level send.
    */
-  async send(raw: string): Promise<{ messageId: string }> {
+  async send(raw: string, opts?: { threadId?: string }): Promise<{ messageId: string }> {
     const res = await this.getService().users.messages.send({
       userId: ME,
-      requestBody: { raw },
+      requestBody: { raw, ...(opts?.threadId ? { threadId: opts.threadId } : {}) },
     });
     return { messageId: res.data.id ?? "" };
   }

@@ -190,8 +190,14 @@ export interface GmailAdapter {
    * an approved gate commit in buyer mode; the fake backend writes a sandbox
    * row. This interface does NOT itself enforce the gate — the
    * send seam wraps every call through L2 (see the gmail send tool).
+   *
+   * `opts.threadId` is the BACKEND Gmail thread id (users.messages.send's
+   * requestBody.threadId): Gmail groups its own same-account mailbox copy of an
+   * API send by this param, not by In-Reply-To/References, so a reply must pass
+   * it to land in the target thread's sent-folder view. Absent → a plain
+   * top-level send (today's exact bytes). The fake backend ignores it.
    */
-  send(raw: string): Promise<{ messageId: string }>;
+  send(raw: string, opts?: { threadId?: string }): Promise<{ messageId: string }>;
 
   /** Liveness probe. MUST NOT throw — returns `{ ok: false, detail }` on failure. */
   health(): Promise<HealthResult>;

@@ -133,8 +133,10 @@ export class ReadOnlyGmailAdapter implements GmailAdapter {
     return this.#inner.getCurrentHistoryId();
   }
 
-  /** ALWAYS rejects — send is structurally forbidden from a read-only probe. */
-  async send(_raw: string): Promise<{ messageId: string }> {
+  /** ALWAYS rejects — send is structurally forbidden from a read-only probe.
+   *  The optional threadId param is accepted (contract parity) but never used —
+   *  the throw is unconditional. */
+  async send(_raw: string, _opts?: { threadId?: string }): Promise<{ messageId: string }> {
     throw new Error(
       "ReadOnlyGmailAdapter: send is forbidden in a read-only probe",
     );

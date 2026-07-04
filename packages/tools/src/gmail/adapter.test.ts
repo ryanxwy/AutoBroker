@@ -50,7 +50,7 @@ function stubClient(overrides: Partial<DeepStub> = {}): { client: GmailApiClient
           calls.get = p;
           return { data: (overrides.message ?? { id: p.id }) as gmail_v1.Schema$Message };
         }),
-        send: vi.fn(async (p: { userId: string; requestBody: { raw: string } }) => {
+        send: vi.fn(async (p: { userId: string; requestBody: { raw: string; threadId?: string } }) => {
           calls.send = p;
           return { data: (overrides.sent ?? { id: "sent-1" }) as gmail_v1.Schema$Message };
         }),
@@ -284,6 +284,30 @@ describe("RealGmailAdapter — send + health", () => {
 
     expect(res).toEqual({ messageId: "real-id-7" });
     expect(calls.send).toEqual({ userId: "me", requestBody: { raw: "BASE64URL-RAW" } });
+  });
+
+  it("send puts opts.threadId into requestBody.threadId (groups the sent copy)", async () => {
+    const { client, calls } = stubClient({ sent: { id: "real-id-8" } });
+    const adapter = new RealGmailAdapter({ client });
+
+    const res = await adapter.send("RAW-T", { threadId: "backend-thread-9" });
+
+    expect(res).toEqual({ messageId: "real-id-8" });
+    expect(calls.send).toEqual({
+      userId: "me",
+      requestBody: { raw: "RAW-T", threadId: "backend-thread-9" },
+    });
+  });
+
+  it("send OMITS threadId from requestBody when opts is absent or undefined", async () => {
+    const { client, calls } = stubClient({ sent: { id: "real-id-9" } });
+    const adapter = new RealGmailAdapter({ client });
+
+    await adapter.send("RAW-A");
+    expect(calls.send).toEqual({ userId: "me", requestBody: { raw: "RAW-A" } });
+
+    await adapter.send("RAW-B", undefined);
+    expect(calls.send).toEqual({ userId: "me", requestBody: { raw: "RAW-B" } });
   });
 
   it("health reports ok with a message count on success", async () => {

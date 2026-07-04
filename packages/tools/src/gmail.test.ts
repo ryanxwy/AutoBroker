@@ -216,6 +216,28 @@ describe("buildRaw", () => {
     // The In-Reply-To value is one physical line with the CRLF collapsed to a space.
     expect(headerBlock).toMatch(/^In-Reply-To: <abc@dealer\.test> Bcc: attacker@evil\.test$/m);
   });
+
+  it("keeps an ASCII subject byte-identical — no RFC 2047 encoded-word", () => {
+    // An all-ASCII subject must emit the plain unfolded header exactly as before
+    // (no `=?UTF-8?B?...?=` wrapper) so today's bytes are unchanged.
+    const raw = buildRaw(CLEAN_EMAIL);
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    expect(decoded).toMatch(/^Subject: Best out-the-door price request$/m);
+    expect(decoded).not.toContain("=?UTF-8?B?");
+  });
+
+  it("RFC 2047 B-encodes a non-ASCII subject (em-dash) and it decodes to the original", () => {
+    // A raw-UTF-8 em-dash subject arrives as mojibake AND breaks Gmail-recipient
+    // subject-match threading; the encoded-word carries it intact.
+    const subject = "Tucson SEL — best out-the-door price";
+    const raw = buildRaw({ ...CLEAN_EMAIL, subject });
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const line = decoded.split("\r\n").find((l) => l.startsWith("Subject: "))!;
+    const m = /^Subject: =\?UTF-8\?B\?(.+)\?=$/.exec(line);
+    expect(m).not.toBeNull();
+    // The encoded word round-trips to the exact original (no mojibake).
+    expect(Buffer.from(m![1]!, "base64").toString("utf8")).toBe(subject);
+  });
 });
 
 describe("createGmailAdapter — factory matrix (backend = projection of AUTOBROKER_MODE)", () => {

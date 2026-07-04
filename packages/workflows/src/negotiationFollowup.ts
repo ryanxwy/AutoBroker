@@ -341,6 +341,9 @@ const FollowupTargetSchema = z.object({
   /** The latest inbound RFC Message-ID — emitted as In-Reply-To/References so the
    *  dealer's mail client threads the reply (null on legacy rows → no headers). */
   in_reply_to_rfc_message_id: z.string().nullable(),
+  /** The backend Gmail thread id — the send's requestBody.threadId that groups the
+   *  sent copy into the thread (null → a plain top-level send). Not the double-flag. */
+  gmail_thread_id: z.string().nullable(),
   /** The prose body the draft step fills (null until drafted). */
   draft_body: z.string().nullable(),
 });
@@ -543,6 +546,7 @@ function targetStubsFor(
     reply_email: "",
     in_reply_to_gmail_id: null,
     in_reply_to_rfc_message_id: null,
+    gmail_thread_id: null,
     draft_body: null,
   }));
 }
@@ -620,6 +624,7 @@ const buildContextStep = createStep({
         reply_email: replyTarget.email,
         in_reply_to_gmail_id: snapshot.latestInboundGmailMessageId,
         in_reply_to_rfc_message_id: snapshot.latestInboundRfcMessageId,
+        gmail_thread_id: snapshot.gmailThreadId,
       });
     }
 
@@ -819,6 +824,7 @@ const sendRecordStep = createStep({
         threadId: reuseThreadIdForReply(t.thread_id), // reply on the EXISTING thread.
         searchProfileId: state.searchProfileId,
         inReplyToGmailId: t.in_reply_to_gmail_id, // the thread double-flag anchor.
+        gmailThreadId: t.gmail_thread_id, // requestBody.threadId — groups the sent copy.
       };
 
       // THE ONE send face. In test mode sendAndRecord fake-sends → {sent} (one

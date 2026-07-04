@@ -143,7 +143,7 @@ export function buildRaw(email: OutboundEmail): string {
     'Content-Type: text/plain; charset="UTF-8"',
     `To: ${unfold(email.to)}`,
     `From: ${unfold(email.from)}`,
-    `Subject: ${unfold(email.subject)}`,
+    `Subject: ${encodeHeaderWord(email.subject)}`,
   ];
   // Reply-threading anchor: when this send is a reply to a captured inbound
   // message, echo its RFC Message-ID in In-Reply-To + References so the dealer's
@@ -165,6 +165,17 @@ export function buildRaw(email: OutboundEmail): string {
  *  the fake backend's header scan reads only the first physical line. */
 function unfold(value: string): string {
   return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/** RFC 2047 B-encode a header value when it carries non-ASCII, else return it
+ *  unfolded unchanged. Keeps ASCII subjects byte-identical. A non-ASCII subject
+ *  (e.g. an em-dash) is written as raw UTF-8 bytes without this, which arrives
+ *  as mojibake at the dealer AND breaks Gmail-recipient subject-match threading. */
+function encodeHeaderWord(value: string): string {
+  const v = unfold(value);
+  // eslint-disable-next-line no-control-regex
+  if (!/[^\x00-\x7F]/.test(v)) return v;
+  return `=?UTF-8?B?${Buffer.from(v, "utf8").toString("base64")}?=`;
 }
 
 // ---------------------------------------------------------------------------

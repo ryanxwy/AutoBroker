@@ -235,8 +235,12 @@ export class FakeGmailAdapter implements GmailAdapter {
    * watermark ordering never ties), and return a synthetic id. This is NOT a
    * real send — the fake performs no network I/O; the L2 gate + AUTOBROKER_MODE=test
    * mode brake that wrap a real send live in the send seam, not here.
+   *
+   * The optional `_opts` (the real backend's requestBody.threadId) is IGNORED:
+   * the fake's own sandbox grouping keys off its `sandbox-thread-%` id, so the
+   * sandbox row shapes stay byte-identical whether or not a threadId is passed.
    */
-  send(raw: string): Promise<{ messageId: string }> {
+  send(raw: string, _opts?: { threadId?: string }): Promise<{ messageId: string }> {
     const rfc2822 = Buffer.from(raw, "base64url").toString("utf8");
     const to = readHeader(rfc2822, "To");
     const from = readHeader(rfc2822, "From");

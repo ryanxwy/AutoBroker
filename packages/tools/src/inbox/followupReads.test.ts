@@ -360,6 +360,19 @@ describe("readThreadSnapshotForDraft", () => {
     expect(snap.latestInboundGmailMessageId).toBeNull();
     expect(snap.latestInboundRfcMessageId).toBeNull(); // legacy row → no threading header
   });
+
+  it("surfaces the backend gmail_thread_id (requestBody.threadId), null when absent", () => {
+    const c = db.$client;
+    c.prepare(
+      "INSERT INTO threads (thread_id, dealer_id, subject, gmail_thread_id, state, search_profile_id) VALUES ('t-tid', ?, 'Re: Tucson', 'backend-thread-42', 'replied', ?)",
+    ).run(DEALER, PROFILE);
+    c.prepare(
+      "INSERT INTO threads (thread_id, dealer_id, subject, state, search_profile_id) VALUES ('t-notid', ?, 'Re: Tucson', 'replied', ?)",
+    ).run(DEALER, PROFILE);
+
+    expect(readThreadSnapshotForDraft(db, "t-tid").gmailThreadId).toBe("backend-thread-42");
+    expect(readThreadSnapshotForDraft(db, "t-notid").gmailThreadId).toBeNull(); // no backend id → top-level send
+  });
 });
 
 describe("readReplyTargetInputs", () => {

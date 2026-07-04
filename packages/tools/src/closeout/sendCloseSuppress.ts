@@ -351,6 +351,9 @@ export async function closeAndSuppressDealer(
       // The reply double-flag anchor is the latest INBOUND gmail MESSAGE id — not
       // the thread id (the prior value was a thread id, an inconsistent anchor).
       inReplyToGmailId: args.target.latestInboundGmailMessageId,
+      // The backend Gmail thread id → requestBody.threadId so Gmail groups the
+      // closeout's sent copy into the thread (not the double-flag; null → top-level).
+      gmailThreadId: args.target.gmailThreadId,
     },
     // Only pass `adapter` when one was injected — under exactOptionalPropertyTypes
     // an explicit `undefined` is not assignable to the optional field.

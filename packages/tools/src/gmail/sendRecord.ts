@@ -55,6 +55,16 @@ export interface SendRecordTarget {
    * The backend message id this is a reply to, when `threadId` is set. Both must
    * be set together or both unset (the reply double-flag invariant). */
   inReplyToGmailId?: string | null;
+  /**
+   * The BACKEND Gmail thread id (threads.gmail_thread_id) for the send's
+   * requestBody.threadId — Gmail groups its OWN same-account mailbox copy of an
+   * API send by this param, not by In-Reply-To/References, so a reply needs it to
+   * land in the target thread's sent view. DISTINCT from the product-row
+   * `threadId` (the local thread key) and from `inReplyToGmailId` (a MESSAGE id).
+   * NOT part of the reply double-flag — `validateThreadFlags` never reads it.
+   * NULL/absent → no threadId param (a plain top-level send, today's exact bytes).
+   */
+  gmailThreadId?: string | null;
 }
 
 /** A send that threw AFTER its draft row was durably inserted. The draft is
@@ -184,12 +194,17 @@ export async function sendAndRecord(
         // approval above. AUTOBROKER_MODE is the sole send-control var.
         if (!isBuyerMode()) assertFakeMailboxSendOnly({ adapter });
         draftRowId = insertOutboundDraft(db, target); // durable checkpoint, gmail id NULL.
+        // The backend thread id rides into requestBody.threadId so Gmail groups
+        // the sent copy into the target thread (it groups by this param, not by
+        // In-Reply-To/References). NULL/absent → no param (a plain top-level send,
+        // today's exact bytes); the fake adapter ignores it either way.
+        const sendOpts = target.gmailThreadId ? { threadId: target.gmailThreadId } : undefined;
         // The Gmail send limiter paces ONLY real sends (combined ≤ 60/min, daily
         // budget, 429 backoff, 403 circuit) — strictly BELOW this already-approved
         // L2 commit. Test-mode fake sends bypass it (no real quota to protect).
         const { messageId } = isBuyerMode()
-          ? await gmailLimiter.runGmailSend(() => adapter.send(raw)) // irreversible boundary.
-          : await adapter.send(raw); // fake mailbox row.
+          ? await gmailLimiter.runGmailSend(() => adapter.send(raw, sendOpts)) // irreversible boundary.
+          : await adapter.send(raw, sendOpts); // fake mailbox row.
         promoteOutbound(db, draftRowId, messageId); // backfill gmail id, exactly once.
         return { messageRowId: draftRowId, gmailMessageId: messageId, mode: adapter.kind };
       },

@@ -257,6 +257,58 @@ describe("sendAndRecord", () => {
   });
 });
 
+describe("sendAndRecord — requestBody.threadId plumbing", () => {
+  // The happy `sent` path requires a genuine FakeGmailAdapter instance (the mode
+  // brake checks instanceof), so we build one and override its `send` to capture
+  // the opts it was called with.
+  function captureSendOpts(adapter: GmailAdapter): Array<{ threadId?: string } | undefined> {
+    const captured: Array<{ threadId?: string } | undefined> = [];
+    Object.defineProperty(adapter, "send", {
+      value: (_raw: string, opts?: { threadId?: string }) => {
+        captured.push(opts);
+        return Promise.resolve({ messageId: "fake-msg-tid" });
+      },
+    });
+    return captured;
+  }
+
+  it("passes gmailThreadId through to the adapter as { threadId } — and it is OUTSIDE the double-flag", async () => {
+    const { FakeGmailAdapter } = await import("./fakeAdapter.js");
+    const adapter = new FakeGmailAdapter(db);
+    const captured = captureSendOpts(adapter);
+
+    // threadId + inReplyToGmailId both unset (double-flag satisfied) while gmailThreadId
+    // is set — the send still proceeds (no ThreadFlagMismatch), proving gmailThreadId
+    // never enters validateThreadFlags, and the value rides through to adapter.send.
+    const outcome = await sendAndRecord(
+      { email: EMAIL, threadId: null, searchProfileId: "p", gmailThreadId: "backend-thread-9" },
+      { approver: recordingApprover(true), runId: "run-tid", adapter, db },
+    );
+
+    expect(outcome.kind).toBe("sent");
+    expect(captured).toEqual([{ threadId: "backend-thread-9" }]);
+  });
+
+  it("passes undefined (no threadId param) when gmailThreadId is absent or null", async () => {
+    const { FakeGmailAdapter } = await import("./fakeAdapter.js");
+    const adapter = new FakeGmailAdapter(db);
+    const captured = captureSendOpts(adapter);
+
+    await sendAndRecord(topLevelTarget(), {
+      approver: recordingApprover(true),
+      runId: "run-na",
+      adapter,
+      db,
+    });
+    await sendAndRecord(
+      { email: EMAIL, threadId: null, searchProfileId: "p", gmailThreadId: null },
+      { approver: recordingApprover(true), runId: "run-null", adapter, db },
+    );
+
+    expect(captured).toEqual([undefined, undefined]);
+  });
+});
+
 describe("promoteOutbound double-fire safety", () => {
   it("a second promote is a no-op (the NULL guard)", async () => {
     const { FakeGmailAdapter } = await import("./fakeAdapter.js");
