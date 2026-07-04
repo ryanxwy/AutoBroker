@@ -11,7 +11,7 @@
  *
  * ZERO-LLM: the whole audit (resolve, read quotes/peers/incentives, run the
  * deterministic 10 checks, persist) is deterministic; there is no emit schema,
- * no #1244 surface, no suspend point. The only writes are quote_audits rows
+ * no structured-output surface, no suspend point. The only writes are quote_audits rows
  * (idempotent on (dealer_quote_id, audit_pass_version)).
  *
  * Dependency wall: imports @autobroker/core (the AuditFinding shape) + zod only.

@@ -3,7 +3,7 @@
  * ONE flat linear Mastra `createWorkflow`: 7 named steps chained with `.then()`,
  * no nested workflow. NEAR-ZERO-LLM (the closeout body/subject are deterministic
  * templates, so this skill wires NO LLM step and there is no emit_result — the
- * #1244 mixing surface is structurally absent) and STATE-ONLY (it closes a thread
+ * structured-output mixing surface is structurally absent) and STATE-ONLY (it closes a thread
  * + writes a suppression row; it NEVER deletes). ONE human suspend (BEFORE any
  * side effect): the batch_review card. decline → terminal zero sends / zero
  * writes; "SKIP ALL" → the typed `skip_all_reset` outcome (the Phase-4

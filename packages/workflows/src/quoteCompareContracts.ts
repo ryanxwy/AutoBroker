@@ -11,8 +11,8 @@
  * asking by car name. There is NO pick-suspend — a STOP is terminal.
  *
  * ZERO-LLM: the whole compare (read preference, read quotes joined to the latest
- * audit, gate, rank) is deterministic; there is no emit schema, no #1244
- * surface, no suspend point. The output is a SINGLE object — both finance and
+ * audit, gate, rank) is deterministic; there is no emit schema, no
+ * structured-output surface, no suspend point. The output is a SINGLE object — both finance and
  * lease buckets are always present (the empty off-mode side is the contract).
  *
  * No budget anywhere: the ranked rows carry OTD totals + rate + payment + audit

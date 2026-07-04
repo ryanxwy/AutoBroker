@@ -20,7 +20,7 @@
  * rides the server descriptor's extended accept content.
  *
  * ZERO-LLM: the whole sweep (discovery, routing, classify, ingest) is
- * deterministic; there is no emit schema, no #1244 surface.
+ * deterministic; there is no emit schema, no structured-output surface.
  *
  * Dependency wall: imports zod + the sibling skill's resume schema only.
  */

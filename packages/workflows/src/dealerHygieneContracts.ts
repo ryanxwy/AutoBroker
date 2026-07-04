@@ -16,7 +16,7 @@
  * three-branch STOP here.
  *
  * ZERO-LLM: the whole pipeline (detect, classify, commit) is deterministic;
- * there is no emit schema, no #1244 surface.
+ * there is no emit schema, no structured-output surface.
  *
  * Dependency wall: imports zod only.
  */

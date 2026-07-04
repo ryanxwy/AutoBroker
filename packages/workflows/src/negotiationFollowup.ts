@@ -3,7 +3,7 @@
  * mode, fake in test mode). ONE flat linear Mastra `createWorkflow`: 7 named steps chained
  * with `.then()`, no nested workflow. The ONLY LLM touch is a NO-TOOL PROSE draft
  * (harness.draftProse) — there is no structured output and no emit_result, so the
- * #1244 mixing failure is structurally inapplicable. TWO human suspends, both
+ * structured-output + tools mixing failure mode is structurally inapplicable. TWO human suspends, both
  * BEFORE any side effect: ① a batch_review card over all drafts ("SEND n" = the
  * explicit approve; decline = terminal zero sends / zero writes), and ② an
  * INDEPENDENT sensitive re-confirm for a contact-flip override (promote one dealer
@@ -647,9 +647,8 @@ const draftStep = createStep({
         vehicle: state.vehicle,
         financingPreference: state.financingPreference,
       });
-      // The NO-TOOL prose facade — no emit_result, no schema. #1244 is structurally
-      // inapplicable (no tools + no structured output); the detector belt inside
-      // draftProse stays clean for a prose stop.
+      // The NO-TOOL prose facade — no emit_result, no schema. With no tools and
+      // no structured output, a plain prose stop is the legitimate finish here.
       const result = await deps().draftProse(
         { useCase: "negotiation_followup", prompt },
         followupLedger(runId),

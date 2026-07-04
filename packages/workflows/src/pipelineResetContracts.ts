@@ -12,7 +12,7 @@
  * (verbatim YES, case-insensitive) — the workflow never trusts the client/LLM.
  *
  * ZERO-LLM: the whole pipeline (gate, close-out stub, backup, reset, verify,
- * notify, confirm) is deterministic; there is no emit schema, no #1244 surface.
+ * notify, confirm) is deterministic; there is no emit schema, no structured-output surface.
  *
  * Dependency wall: imports zod only.
  */

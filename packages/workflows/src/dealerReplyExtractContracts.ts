@@ -15,7 +15,7 @@
  * AUTONOMOUS — no human gate. There is NO suspend, NO resume, and NO `declined`
  * output member. The orchestrator reads per-message DB status, not this summary.
  *
- * #1244 / structured-output discipline: the emit schema is flat,
+ * Structured-output discipline: the emit schema is flat,
  * all-required-with-explicit-null, enums where possible — handed to
  * harness.generate as the single emit_result contract; never mixed with other
  * tools, never `response_format`/json_schema in the same step. Rule1/Rule2 are
@@ -35,9 +35,9 @@ import { DealerReplyQuoteRowSchema } from "@autobroker/core";
 
 /** The workflow input (the server descriptor builds this from the start body).
  *  The candidate set = unprocessed inbound messages matching the resolved
- *  profile id; the profile pin is the only routing input. The malformed-class
- *  recovery (deepseek-v4-pro WITH thinking) is an AUTOMATIC in-message hop, not
- *  an input — there is no manual retry switch. */
+ *  profile id; the profile pin is the only routing input. An extraction failure
+ *  is a typed hard error caught per-message — that message is marked failed and
+ *  re-queued (processed_at NULL); there is no retry switch. */
 export const DealerReplyExtractInputSchema = z.object({
   /** Explicit profile pin, or null → standard three-branch resolution. */
   search_profile_id: z.string().nullable(),
