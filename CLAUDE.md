@@ -189,7 +189,11 @@ the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
    out of content and executes it (fail-open == silent-fallback == forbidden). A
    caller may map that typed error ONLY to a documented fail-closed degradation — the
    NL router maps it to `clarify`; the intake trim-suggestion helper degrades to the
-   blank-trim form (product rule 1) — and every other caller lets the run FAIL. The
+   blank-trim form (product rule 1); ADVISORY surfaces degrade to null/absent with a
+   voiced/traced reason (negotiation summary → `{summary:null}`, router
+   `suggestNextSkills` → null, site_scan `llmExtractVdpPrice` → all-null, and
+   `dealer_reply_extract`'s per-message catch → message `failed` + re-queued, run
+   continues) — and every other caller lets the run FAIL. The
    former malformed-tool-call detector/Processor, the bounded no-HITL recovery lane,
    and the ledger trip-recording columns were DELETED 2026-07-03 by owner ruling:
    2521 post-migration-0005 run DBs carried zero malformed rows.

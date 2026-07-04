@@ -133,7 +133,7 @@ export interface DealerReplyExtractWorkflowDeps {
    *  (tools layer, the ONLY dealer_quotes/messages write). */
   persistMessageQuotes: typeof persistMessageQuotesImpl;
   /** The persist layer's mark-failed path (the per-message catch routes a
-   *  thrown #1244/extract error here so the state machine has one owner). */
+   *  thrown extraction error here so the state machine has one owner). */
   markMessageFailed: typeof markMessageFailedImpl;
   /** The DB accessor the read/write closures run through (tools layer). */
   getDb: typeof getDb;

@@ -37,7 +37,12 @@ surroundings (e.g. is this write actually behind the gate?).
    fails CLOSED, never silently proceeding to prose. Flag ANY regex that pulls a
    function name out of `content` and executes it — that is fail-open and forbidden.
    Flag a caller that maps the typed error to anything but a documented fail-closed
-   degradation (router→`clarify`, intake trim helper→blank form).
+   degradation: run-level — router→`clarify`, intake trim helper→blank form; advisory
+   surfaces degrading to null/absent with a traced reason — negotiation summary
+   (`{summary:null}`), router `suggestNextSkills` (null), site_scan
+   `llmExtractVdpPrice` (all-null), `dealer_reply_extract` per-message
+   failed+re-queued. Degrade-to-null with a trace is fine; prose-fallthrough or
+   regex-execute is never fine.
 4. **Structured output never mixes object-output + tools (#5).** Flag
    `Output.object` / per-step `response_format` / `json_schema` in the SAME
    DeepSeek model step as `tools`. The allowed shapes are a single `emit_result`

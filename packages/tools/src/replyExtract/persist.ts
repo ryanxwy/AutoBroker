@@ -261,8 +261,8 @@ function markFailed(client: Db["$client"], messageId: string): void {
 
 /**
  * The persist layer's mark-failed path, public for the workflow's per-message
- * catch: a message whose extraction THREW before persist ran (a #1244 abort, an
- * adapter/extract error) is marked `failed` (quote_extraction_status='failed',
+ * catch: a message whose extraction THREW before persist ran (an emit-not-called /
+ * Zod / adapter error) is marked `failed` (quote_extraction_status='failed',
  * intent NULL, processed_at NULL → re-queued), writing ZERO quotes. Keeps the
  * mark-processed state machine owned in exactly one place.
  */
