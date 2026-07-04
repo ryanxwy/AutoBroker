@@ -25,7 +25,9 @@
  *      drop, but a deep thread the dealer keeps answering is NOT capped;
  *   6. a contact-flip override → ② re-confirm → setPrimaryReplyTarget called once
  *      (decline → not called);
- *   7. no candidates → a graceful no_candidates summary (not an error).
+ *   7. no candidates → a graceful no_candidates summary (not an error);
+ *   8. a per-thread draft failure degrades (thread skipped + voiced, run
+ *      continues on the surviving drafts); ALL failing → the run errors.
  *
  * ISOLATION: a fresh os.tmpdir() subdir is AUTOBROKER_DATA_DIR (saved/restored);
  * mastra.db + autobroker.db both live there; NEVER ~/.autobroker*.
@@ -812,6 +814,126 @@ describe("negotiation_followup — contact-flip re-confirm (the independent ②)
     // The primary flag is untouched — the flip write never ran.
     expect(isPrimary("ct-jim-2")).toBe(0);
     expect(isPrimary("ct-jim-1")).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// case 8 — a per-thread draft failure degrades (thread skipped, run continues);
+// ALL drafts failing stays fail-closed (run errors, zero sends)
+// ---------------------------------------------------------------------------
+
+/** A prose stub that throws on ONE invocation (1-based) and otherwise returns
+ *  the fixed budget-free body — the per-thread provider-failure scenario. */
+function draftProseFailingOn(
+  failOnCall: number,
+  record: { prompts: string[] },
+): NegotiationFollowupWorkflowDeps["draftProse"] {
+  let calls = 0;
+  return (async (input: { prompt: string }) => {
+    calls += 1;
+    record.prompts.push(input.prompt);
+    if (calls === failOnCall) {
+      const err = new Error("lane B returned error_max_turns — fails closed");
+      err.name = "ClaudeOAuthError";
+      throw err;
+    }
+    return {
+      text:
+        "Thanks for the quote on the Tucson Limited. I'm comparing a few out-the-door " +
+        "numbers and another dealer is currently at 31,200 out-the-door. Can you match or " +
+        "beat that on the same trim? Happy to move quickly if the numbers work.",
+      usage: {
+        costUsd: null,
+        durationMs: 1,
+        pricingSource: "unavailable" as const,
+        promptTokens: null,
+        completionTokens: null,
+      },
+    };
+  }) as unknown as NegotiationFollowupWorkflowDeps["draftProse"];
+}
+
+/** Seed THREE eligible threads (distinct dealers/recencies) + a cheaper
+ *  competing quote, each with a primary reply contact. */
+function seedTriThreadScenario(): string[] {
+  seedProfile();
+  seedDealer({ dealerId: DEALER_COMPETE, name: COMPETING_NAME, website: "https://tucsonkia.example.com" });
+  seedQuote({ dealerId: DEALER_COMPETE, otdTotal: 31_200, itemized: true });
+  const day = 24 * 60 * 60 * 1000;
+  const threadIds: string[] = [];
+  for (const [i, letter] of (["a", "b", "c"] as const).entries()) {
+    const dealerId = `dealer-${letter}`;
+    const threadId = `thread-${letter}`;
+    seedDealer({ dealerId, name: `Dealer ${letter.toUpperCase()}`, website: `https://${dealerId}.example.com` });
+    seedThread({ threadId, dealerId, inboundAtMs: Date.now() - (2 + i) * day });
+    seedQuote({ dealerId, otdTotal: 33_900, itemized: true });
+    seedContact({ contactId: `ct-${dealerId}`, dealerId, email: `rep@${dealerId}.example.com`, primary: true });
+    threadIds.push(threadId);
+  }
+  return threadIds;
+}
+
+describe("negotiation_followup — per-thread draft failure degradation", () => {
+  it("one failing draft of 3 → gate shows 2, approve sends 2, the failed thread stays a candidate", async () => {
+    const threadIds = seedTriThreadScenario();
+    const prose = { prompts: [] as string[] };
+    const sends: { calls: SendCallLike[] } = { calls: [] };
+    __setNegotiationFollowupDepsForTests({
+      draftProse: draftProseFailingOn(2, prose),
+      sendAndRecord: sendAndRecordSpy(sends),
+    });
+
+    const { run, result } = await startRun("nf-draftfail-1", { search_profile_id: PROFILE_ID });
+    // (a) the gate suspends over EXACTLY the 2 successful drafts — the failed
+    // thread never reaches the card (draft_body stayed null).
+    expect(result.status).toBe("suspended");
+    const payload = suspendPayloadOf(result, "batchReview");
+    expect(payload["kind"]).toBe("batch_review");
+    const shown = (payload["targets"] as Array<{ dealer_id: string }>).map((t) => t.dealer_id);
+    expect(shown.length).toBe(2);
+    expect(prose.prompts.length).toBe(3); // all 3 were ATTEMPTED.
+    const failed = threadIds.filter((id) => !shown.includes(id));
+    expect(failed.length).toBe(1);
+
+    // (b) approve → exactly the 2 reviewed drafts send.
+    const final = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: shown },
+    });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as {
+      outcome: string;
+      drafts_created: number;
+      emails_sent: number;
+      summary: string;
+    };
+    expect(out.outcome).toBe("sent");
+    expect(sends.calls.length).toBe(2);
+
+    // (c) the summary voices the counts AND the failure.
+    expect(out.drafts_created).toBe(2);
+    expect(out.emails_sent).toBe(2);
+    expect(out.summary).toMatch(/1 thread\(s\) failed to draft/);
+
+    // (d) the failed thread's state is UNCHANGED — still a candidate next round.
+    expect(threadState(failed[0]!)).toBe("replied");
+    for (const id of shown) expect(threadState(id)).toBe("negotiating");
+  });
+
+  it("ALL drafts failing → the run errors (fail-closed), zero sends, zero state changes", async () => {
+    seedAssertiveScenario();
+    const prose = { prompts: [] as string[] };
+    __setNegotiationFollowupDepsForTests({
+      draftProse: draftProseFailingOn(1, prose),
+      sendAndRecord: sendNeverCalled,
+    });
+
+    const { result } = await startRun("nf-draftfail-all", { search_profile_id: PROFILE_ID });
+    expect(result.status).toBe("failed");
+    expect(errorMessageOf(result)).toContain("error_max_turns");
+    expect(count("messages")).toBe(1); // only the seeded inbound — no outbound written.
+    expect(threadState(THREAD_TARGET)).toBe("replied");
   });
 });
 

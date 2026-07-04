@@ -32,7 +32,11 @@
  *                      A thread with no resolvable reply target is dropped.
  *   3 draft         — per target: harness.draftProse writes the CHOSEN-tone PROSE
  *                      (the tone is passed IN; the model does NOT choose it). NO
- *                      structured output. assertNoBudget belt on the output.
+ *                      structured output. assertNoBudget belt on the output. A
+ *                      per-thread provider failure is CAUGHT (fail-closed
+ *                      degradation): the thread keeps draft_body null (skipped
+ *                      this round, voiced in the summary, still a candidate next
+ *                      round — a draft is never fabricated); ALL failing rethrows.
  *   4 batchReview   — SUSPEND ① batch_review over ALL drafts. approve names the
  *                      explicit thread-id list ("SEND n"); decline → terminal zero
  *                      sends/writes. A registered contact-flip override → SUSPEND ②
@@ -370,6 +374,18 @@ const FollowupStateSchema = z.object({
   noCandidates: z.boolean(),
   /** The eligible follow-up targets (the card rows + draft + send inputs). */
   targets: z.array(FollowupTargetSchema),
+  /** Per-thread draft failures (provider error): the thread keeps draft_body
+   *  null — skipped this round, voiced in the summary, still a candidate next
+   *  round. A draft is NEVER fabricated in its place. */
+  draftFailures: z
+    .array(
+      z.object({
+        thread_id: z.string(),
+        dealer_name: z.string(),
+        reason: z.string(),
+      }),
+    )
+    .default([]),
   /** The approved thread ids from suspend ① (the "SEND n" set). */
   approvedThreadIds: z.array(z.string()).nullable(),
   /** How many contact flips were committed (0 or 1; suspend-② gated). */
@@ -443,6 +459,7 @@ const resolveProfileStep = createStep({
       declined: false,
       noCandidates: false,
       targets: [],
+      draftFailures: [],
       approvedThreadIds: null,
       contactFlips: 0,
       emailsSent: 0,
@@ -648,34 +665,57 @@ const draftStep = createStep({
     if (state.declined || state.noCandidates) return state;
 
     const drafted: FollowupTarget[] = [];
+    const draftFailures = [...state.draftFailures];
+    let lastError: unknown;
     for (const t of state.targets) {
-      const prompt = buildFollowupDraftPrompt({
-        tone: t.tone as FollowupTone,
-        draftContext: t.draft_context,
-        currentOtd: t.current_otd,
-        bestCompetingOtd: t.best_competing_otd,
-        vehicle: state.vehicle,
-        financingPreference: state.financingPreference,
-      });
-      // The NO-TOOL prose facade — no emit_result, no schema. With no tools and
-      // no structured output, a plain prose stop is the legitimate finish here.
-      const result = await deps().draftProse(
-        { useCase: "negotiation_followup", prompt },
-        followupLedger(runId),
-      );
-      const body = result.text;
-      // BELT: the budget red line. The prompt forbids a budget; this throws LOUD if
-      // one slipped into the output anyway (again belted inside sendAndRecord).
-      assertNoBudget(body);
-      // BELT: the payment-method red line. The prompt grounds the draft in the
-      // buyer's chosen method; this throws LOUD if the draft asserts a method the
-      // buyer did not choose (a finance buyer must never "pay cash"). Hard
-      // constraint in code, not just prompt (CLAUDE.md §9).
-      assertPaymentMethodConsistent(body, state.financingPreference);
-      drafted.push({ ...t, draft_body: body });
+      try {
+        const prompt = buildFollowupDraftPrompt({
+          tone: t.tone as FollowupTone,
+          draftContext: t.draft_context,
+          currentOtd: t.current_otd,
+          bestCompetingOtd: t.best_competing_otd,
+          vehicle: state.vehicle,
+          financingPreference: state.financingPreference,
+        });
+        // The NO-TOOL prose facade — no emit_result, no schema. With no tools and
+        // no structured output, a plain prose stop is the legitimate finish here.
+        const result = await deps().draftProse(
+          { useCase: "negotiation_followup", prompt },
+          followupLedger(runId),
+        );
+        const body = result.text;
+        // BELT: the budget red line. The prompt forbids a budget; this throws LOUD if
+        // one slipped into the output anyway (again belted inside sendAndRecord).
+        assertNoBudget(body);
+        // BELT: the payment-method red line. The prompt grounds the draft in the
+        // buyer's chosen method; this throws LOUD if the draft asserts a method the
+        // buyer did not choose (a finance buyer must never "pay cash"). Hard
+        // constraint in code, not just prompt (CLAUDE.md §9).
+        assertPaymentMethodConsistent(body, state.financingPreference);
+        drafted.push({ ...t, draft_body: body });
+      } catch (err) {
+        // Documented fail-closed degradation: ONE thread's draft failure never
+        // kills the batch. The thread keeps draft_body null (the gate and the
+        // send filter it out), the failure is voiced in the summary, and — with
+        // no send and no state write — the thread stays a candidate next round.
+        // A draft is NEVER fabricated in its place.
+        lastError = err;
+        draftFailures.push({
+          thread_id: t.thread_id,
+          dealer_name: t.dealer_name,
+          reason: err instanceof Error ? err.name : "unknown",
+        });
+        drafted.push(t);
+      }
     }
 
-    return { ...state, targets: drafted };
+    // EVERY draft failed → nothing to gate; rethrow (the run fails, as a
+    // single-thread failure always has — a zero-target gate is never raised).
+    if (lastError !== undefined && drafted.every((t) => t.draft_body === null)) {
+      throw lastError;
+    }
+
+    return { ...state, targets: drafted, draftFailures };
   },
 });
 
@@ -888,7 +928,11 @@ const confirmStep = createStep({
     const summary =
       `Drafted ${draftsCreated} follow-up(s); sent ${state.emailsSent}` +
       (state.contactFlips > 0 ? `, ${state.contactFlips} reply-address change(s)` : "") +
-      ".";
+      "." +
+      (state.draftFailures.length > 0
+        ? ` ${state.draftFailures.length} thread(s) failed to draft — ` +
+          "they stay queued for the next round."
+        : "");
 
     return {
       outcome: "sent" as const,
