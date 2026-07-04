@@ -10,9 +10,10 @@
  * (collapse↔restore). Double-click resets to the default. Every path runs the
  * same clamp → set-var → set-aria-valuenow → persist helper.
  *
- * The workbench is ONE layout (the rail is always present at a fixed
- * `--rail-width`), so this seam is always active — it is the single way to
- * rebalance the canvas against the rail.
+ * The workbench is ONE layout (the rail stays mounted at a fixed
+ * `--rail-width`; a session-only minimize can hide rail + seam behind the
+ * floating chat launcher), so whenever the rail shows this seam is active —
+ * the single way to rebalance the canvas against the rail.
  *
  * Dependency wall: app/ui layer. react + the layout-store helpers only.
  */

@@ -1,10 +1,12 @@
 /**
  * layout — chat-rail WIDTH helpers. The workbench is ONE layout: the canvas on
  * the left, the chat rail fixed at `--rail-width` on the right, and the
- * RailResizer always draggable to rebalance them. (There is no canvas-vs-
- * conversation MODE — the rail is always present; the drag seam is the single
- * way to widen/narrow it.) Width is device-local VIEW state (px), persisted to
- * localStorage so the split survives a refresh.
+ * RailResizer draggable to rebalance them whenever the rail shows. (The rail
+ * stays MOUNTED always; a session-only minimize can hide it behind the floating
+ * chat launcher, and while it shows the drag seam is the single way to
+ * widen/narrow it.) Width is device-local VIEW state (px), persisted to
+ * localStorage so the split survives a refresh; the minimize state is NOT
+ * persisted — every fresh load starts expanded.
  *
  * The RailResizer writes the `--rail-width` CSS variable on the `.app-body`
  * container directly during a drag (no React re-render per frame); these helpers
