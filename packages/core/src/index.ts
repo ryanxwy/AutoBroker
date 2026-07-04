@@ -38,6 +38,7 @@ export type {
 // Zod schemas (flat, required, explicit-null structured-output convention).
 export {
   DealerQuoteSchema,
+  DealerReplyQuoteRowLooseSchema,
   DealerReplyQuoteRowSchema,
   MoneyLineSchema,
   FinancingModeSchema,

@@ -25,7 +25,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DealerReplyQuoteRow } from "@autobroker/core";
 
 import { closeDb, openDb, type Db } from "../db.js";
-import { persistMessageQuotes, type MessageProvenance } from "./persist.js";
+import { loadReplyExtractCandidates, MAX_EXTRACT_ATTEMPTS } from "./candidates.js";
+import { markMessageFailed, persistMessageQuotes, type MessageProvenance } from "./persist.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -34,6 +35,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0009_legal_dreaming_celestial.sql",
 ].map((f) => join(here, "..", "..", "..", "db", "drizzle", f));
 
 const PROFILE_ID = "prof-extract-1";
@@ -330,6 +332,45 @@ describe("persistMessageQuotes — LLM title fallback (gated role write)", () =>
     });
     expect(res.ok).toBe(false);
     expect(contactRole()).toBeNull();
+  });
+});
+
+describe("extraction attempt cap — mark-failed increments, candidates stop at the cap", () => {
+  function attempts(): number {
+    return (
+      db.$client
+        .prepare("SELECT quote_extraction_attempts AS a FROM messages WHERE message_id = ?")
+        .get(MSG_ID) as { a: number }
+    ).a;
+  }
+
+  it("markMessageFailed increments quote_extraction_attempts", () => {
+    markMessageFailed({ messageId: MSG_ID, db });
+    expect(attempts()).toBe(1);
+    markMessageFailed({ messageId: MSG_ID, db });
+    expect(attempts()).toBe(2);
+  });
+
+  it("a validation failure inside persistMessageQuotes also increments", () => {
+    const res = persistMessageQuotes({
+      provenance: provenance(),
+      // Rule 1 bleed → the whole message fails → one attempt consumed.
+      rows: [row({ financing_mode: "cash", finance_apr: 3.9 })],
+      db,
+    });
+    expect(res.ok).toBe(false);
+    expect(attempts()).toBe(1);
+  });
+
+  it("attempts=2 → still a candidate; attempts=3 → excluded from re-pick", () => {
+    markMessageFailed({ messageId: MSG_ID, db });
+    markMessageFailed({ messageId: MSG_ID, db });
+    expect(attempts()).toBe(2);
+    expect(loadReplyExtractCandidates(PROFILE_ID, db).map((c) => c.messageId)).toEqual([MSG_ID]);
+
+    markMessageFailed({ messageId: MSG_ID, db });
+    expect(attempts()).toBe(MAX_EXTRACT_ATTEMPTS);
+    expect(loadReplyExtractCandidates(PROFILE_ID, db)).toHaveLength(0);
   });
 });
 

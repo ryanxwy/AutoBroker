@@ -5,10 +5,12 @@
  *
  * The candidate set is every INBOUND message whose extraction state machine is
  * not yet terminal-succeeded:
- *   quote_extraction_status IN ('pending','failed')
+ *   quote_extraction_status = 'pending'
+ *   OR (quote_extraction_status = 'failed'
+ *       AND quote_extraction_attempts < MAX_EXTRACT_ATTEMPTS)
  * AND search_profile_id = ?   -- profile-scoped only; NULL rows are not candidates
  * A `succeeded` row is NEVER re-processed (idempotent re-extract skips it); a
- * `failed` row is re-attempted on a re-run.
+ * `failed` row is re-attempted on a re-run until it exhausts the attempt cap.
  *
  * For each candidate the reader resolves the persist identity:
  *   - dealer_id          — via the message's thread_id → threads.dealer_id (the
@@ -42,11 +44,18 @@ export interface ReplyExtractCandidate {
   body: string;
 }
 
+/** Per-message extraction attempt ceiling: a `failed` row is re-picked only
+ *  while quote_extraction_attempts is below this, so one message that fails
+ *  deterministically (e.g. an unextractable body) cannot be retried forever
+ *  by a re-running scheduler. */
+export const MAX_EXTRACT_ATTEMPTS = 3;
+
 /** The candidate SELECT: inbound, profile-scoped, thread-resolvable dealer,
  *  non-null gmail key, and a non-terminal extraction status. A `succeeded` row
  *  is terminal and never re-processed; a `failed` row is re-attempted on a
- *  re-run. (The malformed-class recovery is an in-message hop on a single
- *  candidate, NOT a candidate-set change, so there is one status filter.) */
+ *  re-run only while its attempt count is under MAX_EXTRACT_ATTEMPTS. (The
+ *  malformed-class recovery is an in-message hop on a single candidate, NOT a
+ *  candidate-set change, so there is one status filter.) */
 const SELECT_CANDIDATES_SQL = `
 SELECT
   m.message_id          AS message_id,
@@ -57,7 +66,11 @@ SELECT
 FROM messages m
 JOIN threads t ON t.thread_id = m.thread_id
 WHERE m.direction = 'inbound'
-  AND m.quote_extraction_status IN ('pending', 'failed')
+  AND (
+    m.quote_extraction_status = 'pending'
+    OR (m.quote_extraction_status = 'failed'
+        AND m.quote_extraction_attempts < ${MAX_EXTRACT_ATTEMPTS})
+  )
   AND m.search_profile_id = ?
   AND m.gmail_message_id IS NOT NULL
   AND m.search_profile_id IS NOT NULL  -- provenance guard: exclude NULL-profile rows

@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `quote_extraction_attempts` integer DEFAULT 0 NOT NULL;

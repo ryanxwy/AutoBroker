@@ -308,7 +308,14 @@ async function runLaneBOAuth<T>(
         pricingSource: "unavailable",
         priceInputPerMtok: null,
         priceOutputPerMtok: null,
-        failReason: err instanceof Error ? err.name : "claude_oauth_failed",
+        // A schema.parse rejection is the same Zod-authority verdict lane A
+        // ledgers — one label ('zod_validation') across both lanes.
+        failReason:
+          err instanceof z.ZodError
+            ? "zod_validation"
+            : err instanceof Error
+              ? err.name
+              : "claude_oauth_failed",
       }),
       ..._dbArg(_testOverrides),
     );

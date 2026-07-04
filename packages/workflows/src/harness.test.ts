@@ -44,6 +44,7 @@ import {
 import { openDb, type Db } from "@autobroker/tools";
 
 import { clearRunSelection, setRunSelection } from "./agentSelection.js";
+import { DealerReplyExtractEmitSchema } from "./dealerReplyExtractContracts.js";
 import {
   EmitResultNotCalledError,
   harness,
@@ -639,14 +640,78 @@ describe("harness.generate — lane B (Claude OAuth) dispatch", () => {
       ),
     ).rejects.toBeInstanceOf(z.ZodError);
 
-    // F1 parity: the Zod `.parse` throw still leaves ONE NULL-not-$0 trace row.
+    // F1 parity: the Zod `.parse` throw still leaves ONE NULL-not-$0 trace row,
+    // ledgered under the SAME label lane A uses for a Zod-authority failure.
     const rows = ledgerRows();
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.fail_reason).toBe("ZodError");
+    expect(rows[0]?.fail_reason).toBe("zod_validation");
     expect(rows[0]?.cost_usd).toBeNull();
     expect(rows[0]?.pricing_source).toBe("unavailable");
     expect(rows[0]?.provider).toBe("anthropic");
     expect(rows[0]?.model_alias).toBe("anthropic.cheap");
+  });
+
+  it("a $/mo lease-gap dealer-reply emit RESOLVES on lane B (structural boundary; no Rule2 reject)", async () => {
+    setRunSelection(laneBLedger.runId, {
+      provider: "anthropic",
+      method: "oauth",
+      model: null,
+      effort: "off",
+    });
+    // A faithful payment-only lease reply: term + monthly payment, but neither
+    // money_factor nor residual_pct — a Rule2 gap the JSON-Schema the model saw
+    // never forbade. The emit boundary must accept it (reclass + the refined
+    // persist belt own Rule1/Rule2 downstream).
+    const nulls = Object.fromEntries(
+      [
+        "vin", "inventory_status", "source_listing_id", "quote_format", "intent",
+        "confidence", "quote_received_at", "quote_expires_at", "msrp",
+        "selling_price", "dealer_discount", "doc_fee", "dealer_fee", "sales_tax",
+        "dmv_fees", "title_fee", "registration_fee", "license_fee", "otd_total",
+        "rebates_json", "other_fees_json", "add_ons_json", "taxable_rebates_json",
+        "finance_apr", "finance_term_months", "finance_down_payment",
+        "finance_monthly_payment", "finance_amount_financed", "lease_money_factor",
+        "lease_residual_pct", "lease_residual_value", "lease_due_at_signing",
+        "lease_miles_per_year", "lease_acquisition_fee", "lease_disposition_fee",
+        "lease_cap_cost_gross", "lease_cap_cost_adjusted", "lease_rent_charge",
+      ].map((k) => [k, null]),
+    );
+    const fakeOAuth = async () => ({
+      structuredOutput: {
+        quotes: [
+          {
+            ...nulls,
+            financing_mode: "lease",
+            lease_term_months: 36,
+            lease_monthly_payment: 389,
+          },
+        ],
+        message_intent: "real_quote",
+        contact_role: null,
+      },
+      usage: { inputTokens: 5, outputTokens: 6 },
+    });
+
+    const out = await harness.generate(
+      {
+        useCase: "dealer_reply_extract",
+        schema: DealerReplyExtractEmitSchema,
+        prompt: "extract",
+      },
+      laneBLedger,
+      { db, claudeOAuthQuery: fakeOAuth },
+    );
+
+    expect("object" in out).toBe(true);
+    if (!("object" in out)) return; // narrow
+    expect(out.object.quotes).toHaveLength(1);
+    expect(out.object.quotes[0]?.financing_mode).toBe("lease");
+    expect(out.object.quotes[0]?.lease_monthly_payment).toBe(389);
+
+    const rows = ledgerRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fail_reason).toBeNull();
+    expect(rows[0]?.pricing_source).toBe("subscription");
   });
 
   it("F1 parity: a throwing claudeOAuthQuery writes ONE NULL-not-$0 ledger row + rethrows", async () => {

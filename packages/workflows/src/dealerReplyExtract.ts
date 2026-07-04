@@ -11,8 +11,10 @@
  *                         vehicle. `resolution` provenance: pinned |
  *                         inferred_newest. NOT a pin_required boundary STOP.
  *   1 loadCandidates    — the read-only candidate SELECT: inbound messages
- *                         WHERE quote_extraction_status IN ('pending','failed')
- *                         AND search_profile_id = ?, with the
+ *                         WHERE quote_extraction_status = 'pending' OR
+ *                         (= 'failed' AND quote_extraction_attempts <
+ *                         MAX_EXTRACT_ATTEMPTS), AND search_profile_id = ?,
+ *                         with the
  *                         dealer_id resolved via thread_id → threads.dealer_id
  *                         and the source_gmail_message_id = the message's
  *                         gmail_message_id (the UNIQUE upsert key). A succeeded
@@ -288,7 +290,8 @@ const loadCandidatesStep = createStep({
   execute: async ({ inputData }) => {
     const state = asState(inputData);
     // The candidate set is always the profile's pending+failed inbound messages
-    // (a `failed` row is re-attempted on a re-run; a `succeeded` row is terminal).
+    // (a `failed` row is re-attempted on a re-run until it exhausts the reader's
+    // per-message attempt cap; a `succeeded` row is terminal).
     // The malformed-class recovery is an in-message hop, NOT a candidate-set
     // change — there is no separate "failed-only" route any more.
     const rows: ReplyExtractCandidate[] = deps().loadCandidates(
@@ -461,7 +464,7 @@ const confirmStep = createStep({
         `Read ${total} dealer repl${total === 1 ? "y" : "ies"}: ` +
         `${state.messages_processed} processed` +
         (state.messages_failed > 0
-          ? `, ${state.messages_failed} could not be read and will be retried`
+          ? `, ${state.messages_failed} could not be read`
           : "") +
         `. ${state.quotes_upserted} quote(s) saved` +
         (state.quotes_upserted === 0 && state.messages_processed > 0

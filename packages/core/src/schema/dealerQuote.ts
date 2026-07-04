@@ -6,7 +6,10 @@
  *     only the fields a model can read off a reply (prices, fees, financing
  *     terms, the discriminant). It EXCLUDES every provenance/identity field the
  *     model cannot know (the quote id, dealer id, message ids, the owning
- *     profile, who/how/when it was extracted, the raw blob).
+ *     profile, who/how/when it was extracted, the raw blob). Its
+ *     `DealerReplyQuoteRowLooseSchema` variant is the same shape WITHOUT the
+ *     cross-field refinement — the emit-boundary schema (JSON-Schema conversion
+ *     drops refinements, so the boundary must match what the model was shown).
  *   - `DealerQuoteSchema` — the full PERSISTED row = the extractable shape PLUS
  *     the provenance/identity columns. It maps 1:1 onto the `dealer_quotes`
  *     table by column name.
@@ -309,13 +312,25 @@ function refineModeContract(row: RuleFields, ctx: z.RefinementCtx): void {
 // ---------------------------------------------------------------------------
 
 /**
- * The LLM-emitted extractable row — flat, required-with-explicit-null, strict,
- * with Rule 1/Rule 2 enforced post-validation. Identity/provenance is NOT here:
- * the model never sees nor invents it.
+ * The STRUCTURAL extractable row — flat, required-with-explicit-null, strict,
+ * WITHOUT the Rule 1/Rule 2 refinement. This is the shape the model-facing
+ * boundary validates against: JSON-Schema conversion drops refinements, so a
+ * refined emit boundary would reject faithful emits the model was never told
+ * were invalid. Rule 2 gaps are demoted deterministically by
+ * `reclassifyRule2Failures` AFTER emit; the refined schemas below re-enforce
+ * both rules before persist.
  */
-export const DealerReplyQuoteRowSchema = z
+export const DealerReplyQuoteRowLooseSchema = z
   .object(replyQuoteRowShape)
   .strict()
+  .describe("Flat extractable dealer-quote row (no provenance); structural only.");
+
+/**
+ * The LLM-emitted extractable row — the loose shape plus Rule 1/Rule 2 enforced
+ * post-validation. Identity/provenance is NOT here: the model never sees nor
+ * invents it.
+ */
+export const DealerReplyQuoteRowSchema = DealerReplyQuoteRowLooseSchema
   .superRefine(refineModeContract)
   .describe("Flat extractable dealer-quote row (no provenance); Rule1/Rule2 enforced.");
 export type DealerReplyQuoteRow = z.infer<typeof DealerReplyQuoteRowSchema>;

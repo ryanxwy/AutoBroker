@@ -27,7 +27,7 @@
 
 import { z } from "zod";
 
-import { DealerReplyQuoteRowSchema } from "@autobroker/core";
+import { DealerReplyQuoteRowLooseSchema } from "@autobroker/core";
 
 // ---------------------------------------------------------------------------
 // workflow input / output
@@ -37,7 +37,8 @@ import { DealerReplyQuoteRowSchema } from "@autobroker/core";
  *  The candidate set = unprocessed inbound messages matching the resolved
  *  profile id; the profile pin is the only routing input. An extraction failure
  *  is a typed hard error caught per-message — that message is marked failed and
- *  re-queued (processed_at NULL); there is no retry switch. */
+ *  re-queued (processed_at NULL) until it exhausts the per-message attempt cap
+ *  (the candidate reader's MAX_EXTRACT_ATTEMPTS); there is no retry switch. */
 export const DealerReplyExtractInputSchema = z.object({
   /** Explicit profile pin, or null → standard three-branch resolution. */
   search_profile_id: z.string().nullable(),
@@ -58,8 +59,12 @@ export type MessageIntent = z.infer<typeof MessageIntentSchema>;
 /**
  * The single emit_result contract — the ONLY tool schema the extraction step
  * binds. Flat, all-required, .strict(); the rows are the core extractable shape
- * (Rule1/Rule2 enforced post-validation, never as JSON-Schema the model sees).
- * NEVER mixed with other tools or structured object output in the same call.
+ * validated STRUCTURALLY only (the LOOSE row schema): JSON-Schema conversion
+ * drops refinements, so the model-facing schema and the emit boundary must
+ * agree — a Rule2 gap the model faithfully emits is demoted by
+ * `reclassifyRule2Failures` after emit, and the persist layer re-enforces the
+ * full refined Rule1/Rule2 contract before any write. NEVER mixed with other
+ * tools or structured object output in the same call.
  */
 export const DealerReplyExtractEmitSchema = z
   .object({
@@ -67,7 +72,7 @@ export const DealerReplyExtractEmitSchema = z
      *  ambiguous reply quoting both a finance and a lease number emits two
      *  rows (the UNIQUE (source_gmail_message_id, financing_mode) key lets
      *  them coexist). */
-    quotes: z.array(DealerReplyQuoteRowSchema),
+    quotes: z.array(DealerReplyQuoteRowLooseSchema),
     /** What the dealer's whole message is doing — stamped onto the message's
      *  quote_extraction_intent on success (NOT NULL on the succeeded state). */
     message_intent: MessageIntentSchema,
@@ -195,7 +200,10 @@ export function buildDealerReplyExtractPrompt(
     "each quote set financing_mode to cash, finance, lease, or unspecified " +
     "(use unspecified only when the world is genuinely ambiguous), and fill " +
     "ONLY that world's fields — leave the other financing block's fields null. " +
-    "Fill the money fields in whole dollars (e.g. 43000, not 43k). Set intent " +
+    "Fill the money fields in whole dollars (e.g. 43000, not 43k). A monthly " +
+    "payment (e.g. $389/mo) is NEVER otd_total — it belongs in that mode's " +
+    "monthly-payment field (finance_monthly_payment or lease_monthly_payment). " +
+    "Set intent " +
     "and quote_format per quote when visible. Leave any value the reply does " +
     "not state as null — NEVER invent a number, a VIN, a fee, or a date. Also " +
     "classify the WHOLE message's intent (message_intent): a real number is " +

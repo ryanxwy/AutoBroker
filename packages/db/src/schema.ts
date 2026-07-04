@@ -396,6 +396,7 @@ export const messages = sqliteTable("messages", {
 	searchProfileId: text("search_profile_id"),
 	quoteExtractionStatus: text("quote_extraction_status").default("pending"),
 	quoteExtractionIntent: text("quote_extraction_intent"),
+	quoteExtractionAttempts: integer("quote_extraction_attempts").notNull().default(0),
 },
 (table) => [
 	check("ck_messages_quote_extraction_status_intent", sql`(quote_extraction_status = 'pending' AND quote_extraction_intent IS NULL) OR (quote_extraction_status = 'succeeded' AND quote_extraction_intent IS NOT NULL) OR (quote_extraction_status = 'failed' AND quote_extraction_intent IS NULL)`),

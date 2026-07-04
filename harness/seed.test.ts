@@ -27,6 +27,18 @@ import { applyDealerReplySeeds, applyInventorySourceSeeds, resolveSeedDealer } f
 const here = dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = join(here, "..", "packages", "db", "drizzle");
 
+/** Apply every committed migration in journal order — a later migration can add
+ *  a column the reply-extract candidate SELECT reads. Used by every fixture DB
+ *  in this file so no setup drifts to a partial schema. */
+function applyAllMigrations(client: { exec: (sql: string) => unknown }): void {
+  const journal = JSON.parse(
+    readFileSync(join(DRIZZLE_DIR, "meta", "_journal.json"), "utf8"),
+  ) as { entries: Array<{ tag: string }> };
+  for (const e of journal.entries) {
+    client.exec(readFileSync(join(DRIZZLE_DIR, `${e.tag}.sql`), "utf8"));
+  }
+}
+
 let tmpDir: string;
 let dbPath: string;
 
@@ -37,9 +49,7 @@ beforeAll(() => {
   dbPath = join(tmpDir, "autobroker.db");
   const db = openDb(dbPath);
   try {
-    db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
-    db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0001_redundant_ozymandias.sql"), "utf8"));
-    db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0002_pale_thunderball.sql"), "utf8"));
+    applyAllMigrations(db.$client);
     const insDealer = db.$client.prepare(
       "INSERT INTO dealers (dealer_id, name, country) VALUES (?, ?, 'US')",
     );
@@ -157,9 +167,7 @@ describe("applyDealerReplySeeds — a coherent messages↔fake_mailbox↔dealer 
     replyDb = join(tmpDir, "autobroker-reply.db");
     const db = openDb(replyDb);
     try {
-      db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0000_military_red_skull.sql"), "utf8"));
-      db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0001_redundant_ozymandias.sql"), "utf8"));
-      db.$client.exec(readFileSync(join(DRIZZLE_DIR, "0002_pale_thunderball.sql"), "utf8"));
+      applyAllMigrations(db.$client);
     } finally {
       db.$client.close();
     }
