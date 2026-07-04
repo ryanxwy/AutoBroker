@@ -29,7 +29,7 @@ come from each slice's `.length`. Pager: `canvas-pager` / `-prev` / `-next` /
 | hygiene 3-stage | `hygiene-review-card` · `hygiene-stage` · `hygiene-select-all` · `hygiene-submit` · `hygiene-decline` |
 | pipeline_reset typed-YES | `reset-confirm-token` (type `YES`) → `reset-confirm`; card `confirmation-gate-card` |
 | profile-ASK picker (0/2-active) | `stop-pick-list` · `stop-pick-option` |
-| hard-delete (cleanup) | `profile-hard-delete-open` → confirm |
+| hard-delete (cleanup) | `profile-edit-open` → `profile-edit-delete` → `hard-del-confirm` |
 | inventory | `inventory-candidate-row` · `inventory-listing-link` (`<a target=_blank>`) |
 | chat | `chat-input-textarea` |
 
@@ -145,8 +145,9 @@ quote_pipeline; (9) **budget never leaks** in negotiation drafts and the digest;
 
 ## E. Per-PASS cleanup
 
-After EACH pass: hard-delete the profile (`profile-hard-delete-open` → confirm —
-deferred-FK cascade over threads/messages/quotes/incentives/leads), THEN run
+After EACH pass: hard-delete the profile (`profile-edit-open` → `profile-edit-delete` →
+`hard-del-confirm` — Edit-preferences modal → danger zone → danger confirm; deferred-FK
+cascade over threads/messages/quotes/incentives/leads), THEN run
 `pipeline_reset` (typed-YES) as a coverage run + belt-and-suspenders wipe. Assert
 `search_profiles = 0` via `GET /__e2e/rows?table=search_profiles`. PASS-A
 cleanup → re-brand-pick a NEW profile for PASS-B from scratch.

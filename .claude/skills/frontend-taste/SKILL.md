@@ -46,8 +46,10 @@ Owner's hard checks (these are the load-bearing ones — a miss here is at least
    `--rail-width` actually changes by ~the drag delta, persists across reload, and
    re-clamps at min/max. A drag that moves the width by ~0 is the `flex:0 0 0px`
    regression (the 10px grab strip collapsed) — that's HIGH, not MED, and jsdom unit
-   tests cannot see it. If the handle is invisible or the layout breaks at
-   narrow/wide widths, that's MED–HIGH.
+   tests cannot see it. When `chat-launcher` is present (the rail minimized by
+   design) the resizer is intentionally hidden and the Δ0-drag heuristic does NOT
+   apply — restore the rail via the launcher before probing. If the handle is
+   invisible or the layout breaks at narrow/wide widths, that's MED–HIGH.
 4. **Destructive/irreversible actions are unmistakable.** Delete/reset/closeout and
    the 3 irreversible sends must show their gate card BEFORE any prose, name the
    blast radius in plain words, and never hide the approve/decline. A buried or

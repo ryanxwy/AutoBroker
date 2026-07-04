@@ -96,6 +96,14 @@ text — anchor on the sweep + pixels). Every finding:
 `{surface (testid/selector), class, what the buyer sees, evidence (shot name /
 console line), suggested bucket}`.
 
+Designed states — dismiss, never flag:
+
+- `chat-rail` height <2px WHILE `chat-launcher` is present = the designed
+  minimized rail (session-only), NOT a `collapsed` finding.
+- `chat-launcher` (fixed bottom-right, ~52px) legitimately covers the point
+  under it — NOT a `covered` finding; same for `needs-you-widget` raised to
+  `bottom: 82px` while minimized.
+
 ---
 
 ## Return contract + fold-back

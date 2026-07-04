@@ -142,6 +142,13 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   correct. Re-flag ONLY: the chain firing while `AUTOBROKER_SITESCAN_CHAIN=0`; firing TWICE
   for one parent site_scan; or a healthy COMPLETED site_scan in the live sweep producing NO
   chained turn. Shipped 2026-07-03 (`phase2/inventory_aggregator_scan` chain).
+- The chat rail MINIMIZED (`chat-rail` height 0 + `chat-launcher` present) — the designed
+  session-only minimized state since the 2026-07-04 workbench rebalance; it auto-restores on
+  rail-track gates. Re-flag ONLY a minimized rail that does NOT restore via the launcher or a
+  rail-tracked gate. Shipped 2026-07-04 (`phase6/ui` workbench rebalance).
+- The `chat-launcher` floating button bottom-right (with `needs-you-widget` raised above it
+  while minimized) — a designed floating element, never an overlap/covered defect. Shipped
+  2026-07-04 (`phase6/ui` workbench rebalance).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
