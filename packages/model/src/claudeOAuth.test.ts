@@ -39,6 +39,8 @@ const SUCCESS_STRUCTURED = {
   structured_output: { city: "Tucson", high: 100 },
   result: "ignored on the structured path",
   usage: { input_tokens: 1, output_tokens: 2 },
+  num_turns: 1,
+  permission_denials: [],
 } as const;
 
 const SCHEMA = { type: "object", properties: { city: { type: "string" } } };
@@ -154,6 +156,20 @@ describe("claudeOAuthQuery — SAFETY: tools fail-closed + min-env", () => {
     await claudeOAuthQuery({ prompt: "hi", model: "claude-sonnet-4-6" });
     expect(mockedQuery.mock.calls[0]?.[0].options?.outputFormat).toBeUndefined();
   });
+
+  it("advertises ZERO tools on the prose lane (tools: []) but leaves tools unset with a schema", async () => {
+    // allowedTools:[] is only a permission list — without tools:[] the CLI still
+    // advertises its default toolset and a tool_use attempt burns the single
+    // turn (error_max_turns). The json_schema path must NOT set it (the CLI's
+    // internal structured-output delivery stays intact).
+    mockedQuery.mockReturnValue(fakeQuery({ ...SUCCESS_STRUCTURED, structured_output: undefined }));
+    await claudeOAuthQuery({ prompt: "hi", model: "claude-sonnet-4-6" });
+    expect(mockedQuery.mock.calls[0]?.[0].options?.tools).toEqual([]);
+
+    mockedQuery.mockReturnValue(fakeQuery(SUCCESS_STRUCTURED));
+    await claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" });
+    expect(mockedQuery.mock.calls[1]?.[0].options?.tools).toBeUndefined();
+  });
 });
 
 describe("claudeOAuthQuery — success normalization", () => {
@@ -227,7 +243,14 @@ describe("claudeOAuthQuery — fail-closed", () => {
 
   it("(c) throws on a non-success subtype (error_during_execution) WITHOUT a retry", async () => {
     mockedQuery.mockReturnValue(
-      fakeQuery({ type: "result", subtype: "error_during_execution", is_error: true, usage: {} }),
+      fakeQuery({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        usage: {},
+        num_turns: 1,
+        permission_denials: [],
+      }),
     );
     await expect(
       claudeOAuthQuery({ prompt: "hi", jsonSchema: SCHEMA, model: "claude-opus-4-8" }),

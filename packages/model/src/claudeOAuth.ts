@@ -11,7 +11,9 @@
  *     denied with `interrupt`). The subprocess can never reach Bash / WebFetch /
  *     Read / Write / etc. (live-verified: a prompt-injected fetch produced zero
  *     outbound requests). Three locks so a single config regression cannot
- *     re-enable a tool.
+ *     re-enable a tool. The prose path adds a fourth: `tools: []` so the CLI
+ *     advertises NO tool to the model at all (a tool_use attempt would burn the
+ *     single turn → error_max_turns).
  *   - The subprocess env is the MINIMUM `{ CLAUDE_CODE_OAUTH_TOKEN, PATH, HOME }`.
  *     `process.env` is NEVER spread, so DEEPSEEK_API_KEY / GOOGLE_PLACES_API_KEY /
  *     Gmail tokens cannot leak into the child process.
@@ -143,6 +145,16 @@ export async function claudeOAuthQuery(args: {
     const schemaForSdk = { ...(args.jsonSchema as Record<string, unknown>) };
     delete schemaForSdk["$schema"];
     options.outputFormat = { type: "json_schema", schema: schemaForSdk };
+  } else {
+    // PROSE path: advertise ZERO built-in tools to the model (`tools: []` →
+    // `--tools ""`). `allowedTools: []` is only a permission pre-approval list —
+    // the CLI never forwards an empty one and still ADVERTISES its default
+    // toolset, so the model can attempt a tool_use, which the deny-all
+    // canUseTool aborts while still consuming the single turn → a spurious
+    // `error_max_turns` at maxTurns:1 on long/ambiguous prompts. Left unset on
+    // the json_schema path so the CLI's internal structured-output delivery
+    // tooling stays intact.
+    options.tools = [];
   }
 
   let result: SDKResultMessage | null = null;
@@ -159,7 +171,7 @@ export async function claudeOAuthQuery(args: {
     throw new ClaudeOAuthError(
       `Claude Agent SDK returned a non-success result (subtype=${String(
         result.subtype,
-      )}, is_error=${String(result.is_error)}) — lane B fails closed`,
+      )}, is_error=${String(result.is_error)}, num_turns=${String(result.num_turns)}, permission_denials=${result.permission_denials.length}) — lane B fails closed`,
     );
   }
 
