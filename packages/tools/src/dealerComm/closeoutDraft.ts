@@ -7,8 +7,6 @@
  * Pure functions — no I/O, no DB.
  */
 
-import { SUBJECT_PREFIX_FOLLOWUP } from "./constants.js";
-
 /** The profile fields the closeout reads. */
 export interface CloseoutProfile {
   year?: number | null;
@@ -48,16 +46,6 @@ export function buildCloseoutDraft(
     "and have selected another dealer. Please remove me from your " +
     "follow-up list."
   );
-}
-
-/** The closeout subject: the follow-up prefix, "Closing out", and the vehicle
- *  phrase when known. */
-export function renderCloseoutSubject(profile: CloseoutProfile): string {
-  const identity = vehicleParts(profile);
-  if (identity !== "") {
-    return `${SUBJECT_PREFIX_FOLLOWUP} Closing out — ${identity}`;
-  }
-  return `${SUBJECT_PREFIX_FOLLOWUP} Closing out`;
 }
 
 /**

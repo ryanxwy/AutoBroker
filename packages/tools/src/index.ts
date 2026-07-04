@@ -491,7 +491,6 @@ export {
 } from "./dealerComm/submitOutcome.js";
 export {
   buildCloseoutDraft,
-  renderCloseoutSubject,
   closeoutGreetingName,
   type CloseoutProfile,
   type CloseoutDealer,

@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildCloseoutDraft,
   closeoutGreetingName,
-  renderCloseoutSubject,
 } from "./closeoutDraft.js";
 
 describe("buildCloseoutDraft — byte snapshot", () => {
@@ -25,18 +24,6 @@ describe("buildCloseoutDraft — byte snapshot", () => {
       "Thanks for your help on this vehicle. I'm closing out my search " +
         "and have selected another dealer. Please remove me from your follow-up list.",
     );
-  });
-});
-
-describe("renderCloseoutSubject", () => {
-  it("appends the vehicle identity", () => {
-    expect(renderCloseoutSubject({ year: 2026, make: "Hyundai", model: "Tucson" })).toBe(
-      "[Quote Follow-up] Closing out — 2026 Hyundai Tucson",
-    );
-  });
-
-  it("omits the identity when unknown", () => {
-    expect(renderCloseoutSubject({})).toBe("[Quote Follow-up] Closing out");
   });
 });
 
