@@ -11,7 +11,7 @@
 #   step 2  "/dealer_web_lead_submit" via slash → the batch_review card renders
 #           on the gate-banner track → the driver clicks the REAL Decline button.
 #           Terminal `declined`; lead_submissions + messages Δ=0 EXACT; the
-#           suspend precedes ANY submit; keystone clean; no malformed tool call.
+#           suspend precedes ANY submit; keystone clean.
 
 [meta]
 id = "dealer_web_lead_submit_ui_decline"
@@ -76,6 +76,3 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"   # zero submitted rows → keystone clean.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

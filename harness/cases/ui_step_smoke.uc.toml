@@ -82,10 +82,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: a pure-UI step (kind="ui" — no run) ----------------------------
 # Open the top-bar Searches popover by clicking its real trigger, then assert
 # the popover (a specific element → exact match) is visible and exactly one

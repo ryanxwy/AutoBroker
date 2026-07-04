@@ -21,7 +21,7 @@
 #           (zero-LLM constant), resolution inferred_newest, quote_audits GLOBAL
 #           count == 4 EXACT (4 rows written), dealer_quotes GLOBAL count == 4
 #           EXACT (the audit wrote NO new quote rows — it only reads them),
-#           no_external_mutation, no malformed_tool_call.
+#           no_external_mutation.
 #
 #   step 2  "/quote_audit" again (SAME pass, SAME profile, no fixture re-install)
 #           → the recent/unaudited anti-join finds all 4 quotes ALREADY audited
@@ -82,10 +82,6 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: re-run the SAME pass → Δ=0 (idempotency keystone) ---------------
 
 [[steps]]
@@ -117,6 +113,3 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

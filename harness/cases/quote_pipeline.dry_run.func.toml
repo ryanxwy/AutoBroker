@@ -17,7 +17,6 @@
 #       - driver_kind deepseek_apikey      (the constant default-provider label)
 #       - no_external_mutation             (KEYSTONE — nothing outbound)
 #       - cost_and_time optional=true      (no model call — empty ledger ok)
-#       - malformed_tool_call absent       (no LLM step)
 #       - table_min_rows audit_log         (Δ=0: NO completion row — a dry run
 #         scope=global exact 0              writes nothing; the global count stays 0)
 #       - table_min_rows quote_audits      (Δ=0: the audit child never ran, so the
@@ -75,10 +74,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # Δ=0: a dry run writes NO completion row (global count stays 0).
 [[steps.anchors]]

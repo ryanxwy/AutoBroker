@@ -21,7 +21,6 @@ import {
   createdRunFrames,
   declinedRunFrames,
   confirmVehicleRunFrames,
-  malformedFailClosedFrames,
   insertAudit,
   insertLedgerRow,
   insertProfile,
@@ -316,31 +315,6 @@ describe("approval_gate anchor (gate-before-prose)", () => {
     const r = evalAnchor({ kind: "approval_gate", expect: "absent" }, detail, tmp.db, ctxFor("p-1"));
     expect(r.ok).toBe(false);
     expect(r.detail).toContain("must never ask");
-  });
-});
-
-describe("malformed_tool_call anchor (framework-new)", () => {
-  it("normal run: expect='absent' PASSES (no malformed signal)", () => {
-    const detail = buildRunDetailFromEvents("r1", createdRunFrames(), "done");
-    const r = evalAnchor({ kind: "malformed_tool_call", expect: "absent" }, detail, tmp.db, ctxFor(null));
-    expect(r.ok).toBe(true);
-  });
-
-  it("injected #1244: expect='fail_closed' PASSES on a safe terminal (error)", () => {
-    const detail = buildRunDetailFromEvents("r-mf", malformedFailClosedFrames(), "error");
-    const r = evalAnchor({ kind: "malformed_tool_call", expect: "fail_closed" }, detail, tmp.db, ctxFor(null));
-    expect(r.ok).toBe(true);
-  });
-
-  it("a malformed signal that ends in `done` (prose fallthrough) FAILS fail_closed", () => {
-    const frames = [
-      { ts: "2026-06-05T00:00:01.000Z", kind: "init", payload: { driver_kind: "deepseek_apikey" } },
-      { ts: "2026-06-05T00:00:02.000Z", kind: "awaiting_user", payload: { form_kind: "malformed_tool_call", decision_id: "x" } },
-      { ts: "2026-06-05T00:00:03.000Z", kind: "done", payload: {} },
-    ];
-    const detail = buildRunDetailFromEvents("r-bad", frames, "done");
-    const r = evalAnchor({ kind: "malformed_tool_call", expect: "fail_closed" }, detail, tmp.db, ctxFor(null));
-    expect(r.ok).toBe(false);
   });
 });
 

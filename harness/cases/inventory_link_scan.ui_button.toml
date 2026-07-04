@@ -122,10 +122,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_geosearch (binds the dealers the seeds resolve against) --
 
 [[steps]]
@@ -162,10 +158,6 @@ optional = true             # zero-LLM happy path (evaluate-extract).
 [[steps.anchors]]
 kind = "resolution"
 expect = "inferred_newest"  # unpinned session + single active profile.
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # ---- step 3: inventory_link_scan from the Skills popover Run button ----------
 
@@ -219,6 +211,3 @@ kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
 kind = "resolution"
 expect = "inferred_newest"  # still unpinned → the inferred branch, voiced.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

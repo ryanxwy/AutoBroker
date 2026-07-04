@@ -42,7 +42,6 @@ import { closedOnly } from "./closedOnly.js";
 import { closedProfile } from "./closedProfile.js";
 import { closeoutReady } from "./closeoutReady.js";
 import { dataArriving, dataArrivingGrown } from "./dataArriving.js";
-import { dealerReplyExtractRetryWorld } from "./dealerReplyExtractRetryWorld.js";
 import { dealerReplyExtractWorld } from "./dealerReplyExtractWorld.js";
 import { digestPresent } from "./digestPresent.js";
 import { emptyHome } from "./emptyHome.js";
@@ -50,7 +49,6 @@ import { followupReady } from "./followupReady.js";
 import { hygieneReady } from "./hygieneReady.js";
 import { inboxNoLead, inboxReady } from "./inboxReady.js";
 import { intakeGeocodeFault } from "./intakeGeocodeFault.js";
-import { intakeMalformed } from "./intakeMalformed.js";
 import { inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { leadSubmitReady } from "./leadSubmitReady.js";
@@ -87,7 +85,6 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [dataArrivingGrown.id]: dataArrivingGrown,
   [digestPresent.id]: digestPresent,
   [dealerReplyExtractWorld.id]: dealerReplyExtractWorld,
-  [dealerReplyExtractRetryWorld.id]: dealerReplyExtractRetryWorld,
   [inventoryListings.id]: inventoryListings,
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
@@ -101,7 +98,6 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [closeoutReady.id]: closeoutReady,
   [inboxReady.id]: inboxReady,
   [inboxNoLead.id]: inboxNoLead,
-  [intakeMalformed.id]: intakeMalformed,
   [intakeGeocodeFault.id]: intakeGeocodeFault,
   [hygieneReady.id]: hygieneReady,
 };

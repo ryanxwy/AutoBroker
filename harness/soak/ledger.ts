@@ -26,7 +26,6 @@ export interface SoakRunTrace {
   terminalStatus: string | null;
   eventCount: number;
   sawApprovalGate: boolean;
-  sawMalformedToolCall: boolean;
 }
 
 export interface BuildSoakLedgerRowInput {

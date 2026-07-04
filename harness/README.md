@@ -35,10 +35,10 @@ orchestration model.
 - [x] **`cases/*.toml`** — per-skill case files (skill, narrative profile, gate
       policy, expected anchors, seeded preconditions); two rounds per skill
       (slash + freeform) as independent cells.
-- [x] **`cases.ts` + `evaluator.ts`** — `cases.ts` parses **11 anchor kinds**:
+- [x] **`cases.ts` + `evaluator.ts`** — `cases.ts` parses **10 anchor kinds**:
       `run_status`, `driver_kind`, `browser_activity`, `approval_gate`,
       `table_min_rows`, `no_external_mutation` (keystone, every step),
-      `cost_and_time`, `malformed_tool_call`, `resolution` (profile
+      `cost_and_time`, `resolution` (profile
       pinned-vs-inferred), `dom_state` (UI-lane widget assertions), and
       `latency_budget`. `evaluator.ts` scores them and writes `verdict.json`
       (+ the vacuous-confirmation guard: L2+ needs ≥1 ui_check).
@@ -91,8 +91,9 @@ emitter), `cli.ts` (`run`/`suite`/`freeze`/`list`). Roles: `prompts/buyer.md`,
 
 - `no_external_mutation` is the non-negotiable keystone, checked on **every**
   step.
-- Irreversible actions **fail-closed** — a missing/malformed tool call (#1244)
-  never falls back to prose, never regex-extracts a function name from content.
+- Irreversible actions **fail-closed** — a model step that does not call its
+  `emit_result` tool throws a typed error, never falls back to prose or
+  regex-extracts a function name from content.
 - Never touch the production `~/.autobroker/`; runs use an isolated throwaway DB.
 - Never set `AUTOBROKER_TEST_AUTO_APPROVE`.
 - Mode-A orchestration uses explicit harness framing — never a bare prompt.

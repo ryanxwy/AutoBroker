@@ -258,8 +258,8 @@ async function main(): Promise<void> {
     // Freeform (chat_freeform) cases POST /api/route, which the REAL handler
     // resolves via the NL classifier — a LIVE router LLM call the func lane must
     // NOT make. Keyless (as CI is) that call returns empty tool_calls, so the
-    // #1244 output processor fail-closes (MalformedToolCallAbort) before the
-    // data_collection gate ever renders and the case hangs on waitForURL. Inject a
+    // router throws EmitResultNotCalledError before the data_collection gate ever
+    // renders and the case hangs on waitForURL. Inject a
     // deterministic classifier that routes the prose straight to intake with the
     // freeform seed — exactly what router.ts mapInput emits for an intake-shaped
     // message. Slash cases bypass /api/route entirely, so this only affects the

@@ -17,8 +17,7 @@
 #           (sensitive=true) renders → the driver clicks Deny. Terminal `done`
 #           (the run completes; only THIS dealer's fallback was skipped). messages
 #           Δ=0 EXACT (the keystone: no send without the second approval); keystone
-#           clean (the user_skipped row is a FAILURE record, not a fake outbound);
-#           no malformed tool call.
+#           clean (the user_skipped row is a FAILURE record, not a fake outbound).
 
 [meta]
 id = "dealer_web_lead_submit_email_fallback_decline"
@@ -96,6 +95,3 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

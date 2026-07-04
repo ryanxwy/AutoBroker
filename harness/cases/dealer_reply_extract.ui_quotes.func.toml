@@ -17,10 +17,9 @@
 # projection mounts; the row count proves every mode renders (incl. the cash
 # quote the compare buckets drop). No budget number appears anywhere; the empty
 # state is the twin case dealer_reply_extract.ui_quotes_empty.func.toml. The
-# per-thread message-extract-failed badge (which lives behind the Replies tab —
-# a different panel that can't share this step's single final DOM state) is
-# proven by dealer_reply_extract.ui_retry (badge visible, then absent after the
-# auto-recovery).
+# per-thread message-extract-failed badge lives behind the Replies tab — a
+# different panel that can't share this step's single final DOM state — so it
+# is not asserted here.
 
 [meta]
 id = "dealer_reply_extract_ui_quotes_func"
@@ -40,9 +39,7 @@ lane = "ui"
 # tab's panel renders, so the two assertions can't coexist in one step. The
 # seed inserts here are NOT idempotent (plain INSERTs), and a case may not declare
 # the same fixture_state twice, so a same-world second step isn't available. This
-# case therefore asserts the Quotes-tab content; the populated-world extract-
-# failed badge (visible) + its clearing (absent) are proven by
-# dealer_reply_extract.ui_retry over the failed-extraction world.
+# case therefore asserts the Quotes-tab content only.
 
 # ---- step 1: the populated raw-quotes section (Quotes tab) ----------------------
 # NOTE: the raw Extracted-quotes section is now behind a collapsed foldout

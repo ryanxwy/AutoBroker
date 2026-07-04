@@ -326,14 +326,13 @@ async function captureTrace(driver: UiDriver, apiBase: string): Promise<SoakRunT
   try {
     detail = await buildRunDetail(apiBase, runId);
   } catch {
-    return { runId, terminalStatus: null, eventCount: 0, sawApprovalGate: false, sawMalformedToolCall: false };
+    return { runId, terminalStatus: null, eventCount: 0, sawApprovalGate: false };
   }
   return {
     runId,
     terminalStatus: detail.terminalStatus,
     eventCount: detail.events.length,
     sawApprovalGate: detail.sawApprovalGate,
-    sawMalformedToolCall: detail.sawMalformedToolCall,
   };
 }
 

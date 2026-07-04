@@ -7,8 +7,7 @@
 # step has no try/catch and persist independently fail-louds on null coords, so the
 # run fails CLOSED — it terminates `error` with ZERO search_profiles rows, never a
 # hallucinated "resolved" success or a NULL-coords profile (inv #4 fail-closed, inv
-# #12 no silent fallback). This is the TOOL-fault twin of the #1244 malformed-LLM-
-# tool-call case — a distinct fault class, deterministic (next-tick reject, no timer).
+# #12 no silent fallback). A distinct fault class, deterministic (next-tick reject, no timer).
 
 [meta]
 id = "search_profile_intake_geocode_fault"

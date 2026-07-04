@@ -61,7 +61,6 @@ export interface RunDetail {
   /** gate-before-prose: true when an awaiting_user/approval frame precedes the
    *  FIRST prose `text` frame (assert_gate_before_prose). */
   gateBeforeProse: boolean;
-  sawMalformedToolCall: boolean;
   usage: RunUsage;
 }
 
@@ -79,21 +78,6 @@ function isBrowserEvent(ev: SseEnvelope): boolean {
     const name = String(ev.payload["name"] ?? ev.payload["tool"] ?? "");
     return /chrome-devtools|playwright|browser_/i.test(name);
   }
-  return false;
-}
-
-/** A #1244 malformed-tool-call signal on the wire (§6.2). The SUT surfaces it as
- *  an awaiting_user/error frame whose payload mentions the malformed kind/reason,
- *  or a MalformedToolCallAbort. We trust STRUCTURED payload fields, never a regex
- *  over free-text prose (invariant #4). */
-function isMalformedSignal(ev: SseEnvelope): boolean {
-  const p = ev.payload;
-  const formKind = String(p["form_kind"] ?? "");
-  if (formKind === "malformed_tool_call") return true;
-  const specKind = ((p["spec_inline"] as { kind?: unknown } | undefined)?.kind ?? "") as string;
-  if (specKind === "malformed_tool_call") return true;
-  const reason = String(p["reason"] ?? "");
-  if (reason === "malformed_tool_call" || reason === "MalformedToolCallAbort") return true;
   return false;
 }
 
@@ -232,7 +216,6 @@ export async function buildRunDetail(
     sawBrowserActivity: events.some(isBrowserEvent),
     sawApprovalGate: events.some((e) => APPROVAL_KINDS.has(e.kind)),
     gateBeforeProse: computeGateBeforeProse(events),
-    sawMalformedToolCall: events.some(isMalformedSignal),
     usage: {
       costUsd: null,
       durationMs: null,
@@ -263,7 +246,6 @@ export function buildRunDetailFromEvents(
     sawBrowserActivity: events.some(isBrowserEvent),
     sawApprovalGate: events.some((e) => APPROVAL_KINDS.has(e.kind)),
     gateBeforeProse: computeGateBeforeProse(events),
-    sawMalformedToolCall: events.some(isMalformedSignal),
     usage: {
       costUsd: usage?.costUsd ?? null,
       durationMs: usage?.durationMs ?? null,

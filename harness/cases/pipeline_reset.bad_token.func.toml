@@ -30,7 +30,6 @@
 #       - driver_kind deepseek_apikey    (the constant zero-LLM api-key label).
 #       - no_external_mutation           (KEYSTONE — nothing outbound/destructive).
 #       - cost_and_time optional=true    (zero-LLM happy path — empty ledger ok).
-#       - malformed_tool_call absent     (no tools).
 #       - table_min_rows search_profiles (Δ=0: the wrong token unlocked nothing —
 #         scope=global exact 1            the 1 seeded profile is STILL present).
 #       - table_min_rows profile_dealers (the 2 seeded bound dealers survive).
@@ -83,10 +82,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # Δ=0 DESTRUCTION: the wrong token unlocked nothing — the seeded rows are STILL
 # present (global EXACT — digest_present's exact counts; nothing was wiped).

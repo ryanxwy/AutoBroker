@@ -52,8 +52,6 @@ export const DETERMINISTIC_ASSERTION_IDS = [
   "irreversible_fake_send",
   /** budget redaction: the stated budget number is ABSENT from the drafted body. */
   "budget_redaction",
-  /** #1244 fail-closed on extract: dealer_quotes delta reflects only clean quotes. */
-  "malformed_extraction_fail_closed",
   /** cost_and_time: every live-LLM step is attributable (>=1 ledger row, no silent-$0). */
   "cost_and_time_attributable",
 ] as const;

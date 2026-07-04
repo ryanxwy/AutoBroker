@@ -19,7 +19,6 @@
 #       - no_external_mutation           (KEYSTONE — nothing outbound, and here
 #                                          nothing destructive either).
 #       - cost_and_time optional=true    (zero-LLM happy path — empty ledger ok).
-#       - malformed_tool_call absent     (no tools).
 #       - table_min_rows search_profiles (Δ=0 destruction: the 1 seeded active
 #         scope=global exact 1            profile is STILL present after the
 #                                          decline — a global count of exactly 1
@@ -71,10 +70,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # Δ=0 DESTRUCTION: the seeded rows are STILL present after the decline (global
 # EXACT — digest_present seeded exactly these counts; nothing was wiped).

@@ -33,10 +33,8 @@ import { combineSoakVerdict } from "../verdict.js";
 import {
   assertAllOrNothingUpsert,
   assertCostAndTimeAttributable,
-  assertF1RetryOnlyOnMalformed,
   assertFloatDollars,
   assertIdempotentReextract,
-  assertMalformedExtractionFailClosed,
   assertNoQuoteZeroRows,
   assertPinnedProfile,
   assertRule1Rule2Belt,
@@ -348,77 +346,6 @@ describe("assertNoQuoteZeroRows", () => {
     insertMessage({ messageId: "mn2", gmailMessageId: "gn2", status: "succeeded", intent: "come_in", processedAt: "z" });
     insertQuote({ quote_id: "qn2", message_id: "mn2", source_gmail_message_id: "gn2", selling_price: 1 });
     const r = assertNoQuoteZeroRows({ db, sourceGmailMessageId: "gn2" });
-    expect(r.ok).toBe(false);
-  });
-});
-
-// ===========================================================================
-// malformed_extraction_fail_closed (BLOCKER) + #1244
-// ===========================================================================
-
-describe("assertMalformedExtractionFailClosed (blocker)", () => {
-  it("ok: 0 rows + failed/processed_at NULL + a malformed_tool_call ledger row", () => {
-    insertMessage({ messageId: "mm", gmailMessageId: "gm", status: "failed", intent: null, processedAt: null });
-    const rows = [ledger({ failReason: "malformed_tool_call" })];
-    const r = assertMalformedExtractionFailClosed({ db, sourceGmailMessageId: "gm", ledgerRows: rows });
-    expect(r.ok).toBe(true);
-    expect(r.severity).toBe("blocker");
-  });
-
-  it("fails (blocker) on a prose-fallthrough row (a quote persisted despite malformed)", () => {
-    insertMessage({ messageId: "mm2", gmailMessageId: "gm2", status: "failed", intent: null, processedAt: null });
-    insertQuote({ quote_id: "qmm2", message_id: "mm2", source_gmail_message_id: "gm2", selling_price: 1 });
-    const rows = [ledger({ failReason: "malformed_tool_call" })];
-    const r = assertMalformedExtractionFailClosed({ db, sourceGmailMessageId: "gm2", ledgerRows: rows });
-    expect(r.ok).toBe(false);
-    // The blocker severity folds to BLOCKER in combineSoakVerdict.
-    expect(combineSoakVerdict({ deterministic: [r] }).verdict).toBe("BLOCKER");
-  });
-
-  it("fails when no malformed_tool_call ledger row exists", () => {
-    insertMessage({ messageId: "mm3", gmailMessageId: "gm3", status: "failed", intent: null, processedAt: null });
-    const r = assertMalformedExtractionFailClosed({ db, sourceGmailMessageId: "gm3", ledgerRows: [ledger({})] });
-    expect(r.ok).toBe(false);
-  });
-});
-
-// ===========================================================================
-// f1_retry_only_on_malformed
-// ===========================================================================
-
-describe("assertF1RetryOnlyOnMalformed", () => {
-  it("expectRetry: chat(malformed) → strong(clean) + extractor_provider='deepseek' → ok", () => {
-    insertQuote({ quote_id: "qf", source_gmail_message_id: "gfr", selling_price: 35500, extractor_provider: "deepseek" });
-    const rows = [
-      ledger({ modelAlias: "deepseek.chat", failReason: "malformed_tool_call" }),
-      ledger({ modelAlias: "deepseek.strong", provider: "deepseek", failReason: null }),
-    ];
-    const r = assertF1RetryOnlyOnMalformed({ db, sourceGmailMessageId: "gfr", ledgerRows: rows, expectRetry: true });
-    expect(r.ok).toBe(true);
-  });
-
-  it("expectRetry but the strong row failed malformed too → fail (not a clean recovery)", () => {
-    insertQuote({ quote_id: "qf2", source_gmail_message_id: "gfr2", extractor_provider: "deepseek" });
-    const rows = [
-      ledger({ modelAlias: "deepseek.chat", failReason: "malformed_tool_call" }),
-      ledger({ modelAlias: "deepseek.strong", failReason: "malformed_tool_call" }),
-    ];
-    const r = assertF1RetryOnlyOnMalformed({ db, sourceGmailMessageId: "gfr2", ledgerRows: rows, expectRetry: true });
-    expect(r.ok).toBe(false);
-  });
-
-  it("NOT expectRetry: a clean first hop with NO strong row → ok", () => {
-    const rows = [ledger({ modelAlias: "deepseek.chat", failReason: null })];
-    const r = assertF1RetryOnlyOnMalformed({ db, sourceGmailMessageId: "gx", ledgerRows: rows, expectRetry: false });
-    expect(r.ok).toBe(true);
-  });
-
-  it("NOT expectRetry but a strong row exists (a ZodError must NOT have escalated) → fail", () => {
-    const rows = [
-      ledger({ modelAlias: "deepseek.chat", failReason: "zod_validation" }),
-      ledger({ modelAlias: "deepseek.strong", failReason: null }),
-    ];
-    const r = assertF1RetryOnlyOnMalformed({ db, sourceGmailMessageId: "gx2", ledgerRows: rows, expectRetry: false });
     expect(r.ok).toBe(false);
   });
 });

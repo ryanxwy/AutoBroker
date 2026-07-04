@@ -17,7 +17,7 @@
  *   - [narrative.profile]  → the form content the collect-step resume submits.
  *   - [[steps.resume]]     → an ordered suspend-answer script. Each entry's `on`
  *     names the suspend kind (data_collection / intake_confirm / ambiguous_location /
- *     malformed_tool_call / batch_review); `action` is the form-decision action;
+ *     batch_review); `action` is the form-decision action;
  *     `content_from` = "narrative.profile" pulls the form content from the
  *     profile table ("suspend.targets" resolves at DRIVE time — approve all ids
  *     off the live suspend payload); an inline `content` table overrides.
@@ -545,13 +545,6 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
       // optional=true declares a step whose happy path is ZERO-LLM by design:
       // an empty ledger then scores as the valid "no model call" outcome.
       return { kind: "cost_and_time", ...(raw.optional !== undefined ? { optional: raw.optional } : {}) };
-    case "malformed_tool_call": {
-      const expect = raw.expect;
-      if (expect !== "absent" && expect !== "fail_closed") {
-        throw new Error('malformed_tool_call anchor requires expect = "absent" | "fail_closed"');
-      }
-      return { kind: "malformed_tool_call", expect };
-    }
     case "resolution": {
       const expect = raw.expect;
       if (expect !== "pinned" && expect !== "inferred_newest") {

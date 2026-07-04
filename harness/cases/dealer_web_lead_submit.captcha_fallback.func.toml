@@ -26,7 +26,7 @@
 #           captcha email-fallback row); messages Δ=1 EXACT (the fake gmail.send);
 #           keystone clean with allow_fake_outbound; the approval card carried
 #           NO approve-all affordance (there is none — asserted DRIVER-SIDE on
-#           the approval resume); no malformed call.
+#           the approval resume).
 #
 # (The captcha_fallback REASON + captcha_manual_count===1 are proven by the
 #  offline workflow test; this func case proves the end-to-end UI-lane shape.)
@@ -120,6 +120,3 @@ exact = true
 kind = "no_external_mutation"   # the captcha email-fallback row + fake messages row are LEGAL fake outbound.
 allow_fake_outbound = true
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

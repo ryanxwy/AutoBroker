@@ -27,7 +27,6 @@
 #                                           the only writes are local quote_audits
 #                                           + the one audit_log row)
 #       - cost_and_time optional=true      (no model call this run — empty ledger ok)
-#       - malformed_tool_call absent       (the orchestrator runs no LLM step)
 #       - table_min_rows audit_log         (the COMPLETION row landed: action
 #         scope=global min>=1               quote_pipeline.complete — the
 #                                           audit_log key carries a nullable
@@ -87,10 +86,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # The ONE audit_log completion row landed (action quote_pipeline.complete). The
 # audit_log key carries a nullable search_profile_id, so the honest scope is global.

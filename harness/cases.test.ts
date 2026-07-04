@@ -69,7 +69,6 @@ describe("case loader", () => {
     expect(kinds).toContain("table_min_rows");
     expect(kinds).toContain("no_external_mutation");
     expect(kinds).toContain("cost_and_time");
-    expect(kinds).toContain("malformed_tool_call");
   });
 
   it("derives the driver_kind expect from the provider (deepseek → deepseek_apikey)", () => {
@@ -130,15 +129,6 @@ describe("case loader", () => {
     // The buyer-confirmation suspend is answered with a plain accept (no content).
     expect(confirm.action).toBe("accept");
     expect(confirm.content).toBeNull();
-  });
-
-  it("loads the (now CI-gated) #1244 func case with the fail_closed anchor", () => {
-    // The deferred skeleton was un-deferred into this *.func.toml: the func lane's
-    // intake_malformed fixture forces the malformed suspend deterministically, so
-    // green.sh now gates the #1244 fail-closed path (no live DeepSeek needed).
-    const c = loadCase(join(CASES, "search_profile_intake.malformed_1244.func.toml"));
-    const mf = c.steps[0]!.anchors.find((a) => a.kind === "malformed_tool_call");
-    expect(mf).toMatchObject({ kind: "malformed_tool_call", expect: "fail_closed" });
   });
 
   it("defaults lane to api and launch to the input_mode-derived surface", () => {

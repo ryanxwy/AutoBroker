@@ -203,8 +203,6 @@ function anchorBlockFor(assertion: string): string {
       // table deltas ride table_min_rows in the per-skill case the operator then
       // tunes). Freeze the keystone — the non-negotiable floor.
       return ['[[steps.anchors]]', 'kind = "no_external_mutation"'].join("\n");
-    case "malformed_extraction_fail_closed":
-      return ['[[steps.anchors]]', 'kind = "malformed_tool_call"', 'expect = "fail_closed"'].join("\n");
     case "cost_and_time_attributable":
       return ['[[steps.anchors]]', 'kind = "cost_and_time"'].join("\n");
     case "profile_ask_branch":

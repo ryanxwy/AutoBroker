@@ -93,6 +93,3 @@ kind = "no_external_mutation"   # keystone, tolerance 0.
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

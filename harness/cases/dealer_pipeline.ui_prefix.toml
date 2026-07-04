@@ -95,10 +95,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_geosearch on the PINNED session ---------------------------
 
 [[steps]]
@@ -135,10 +131,6 @@ optional = true             # zero-LLM happy path (evaluate-extract).
 [[steps.anchors]]
 kind = "resolution"
 expect = "pinned"           # the pin threading landed → the pinned branch.
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # ---- step 3: inventory_site_scan — batch select-all → submit ------------------
 
@@ -183,6 +175,3 @@ kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase (no option
 kind = "resolution"
 expect = "pinned"           # same pinned session → same pinned branch.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

@@ -13,8 +13,7 @@
 #           confirm step writes threads.state='negotiating' on the sent thread and
 #           returns the `sent` outcome (resolution=pinned). Terminal `done`;
 #           messages Δ=1 EXACT (the one fake send); resolution=pinned (the SENT-path
-#           proof — a decline carries NO resolution); keystone clean; no malformed
-#           tool call.
+#           proof — a decline carries NO resolution); keystone clean.
 #
 # WHY resolution=pinned IS the meaningful local-write anchor: threads.state→
 # 'negotiating' is an UPDATE (not an INSERT), so table_min_rows (a row-count
@@ -92,6 +91,3 @@ expect = "pinned"           # a decline carries NO resolution) — the local-wri
 [[steps.anchors]]
 kind = "no_external_mutation"   # fake/local send → the fake outbound row is legal → keystone clean.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

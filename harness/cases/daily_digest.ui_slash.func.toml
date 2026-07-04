@@ -19,7 +19,6 @@
 #                                           only; never a send/submit)
 #       - cost_and_time optional=true      (the happy path is zero-LLM — an empty
 #                                           ledger is the honest "no model call")
-#       - malformed_tool_call absent       (no tools, so no #1244 surface)
 #       - table_min_rows pipeline_state    (the watermark WROTE: before the run
 #         scope=global min>=1               digest_present seeds zero
 #                                           pipeline_state rows; one active
@@ -83,10 +82,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # The watermark advanced: pipeline_state went 0 → >=1 (one digest.last_at.<id>
 # key for the one summarized profile). Global scope — the key's

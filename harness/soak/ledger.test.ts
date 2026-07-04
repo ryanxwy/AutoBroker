@@ -40,7 +40,6 @@ const INPUT: BuildSoakLedgerRowInput = {
     terminalStatus: "done",
     eventCount: 12,
     sawApprovalGate: true,
-    sawMalformedToolCall: false,
   },
   verdict: "GREEN",
   deterministicResults: DET,

@@ -20,7 +20,6 @@
 #       - run_status declined            (Decline = a `declined` terminal).
 #       - approval_gate                  (the SEND card rendered; decline answered it).
 #       - no_external_mutation           (KEYSTONE — the suspend precedes ANY send).
-#       - malformed_tool_call absent     (no LLM step).
 #       - table_min_rows messages        (messages Δ=0 EXACT — no fake-send draft on
 #         scope=profile delta_min 0 exact  a decline).
 #       - table_min_rows dealer_quotes   (dealer_quotes Δ=0 EXACT — no targeted
@@ -80,10 +79,6 @@ kind = "approval_gate"      # the SEND card rendered; the decline answered it.
 
 [[steps.anchors]]
 kind = "no_external_mutation"   # the suspend precedes ANY send → keystone clean.
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # messages Δ=0 EXACT — no fake-send draft row on a decline.
 [[steps.anchors]]

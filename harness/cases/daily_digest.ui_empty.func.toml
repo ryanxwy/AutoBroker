@@ -15,7 +15,6 @@
 #       - driver_kind deepseek_apikey  (the constant zero-LLM api-key label)
 #       - no_external_mutation         (KEYSTONE — nothing outbound, ever)
 #       - cost_and_time optional=true  (zero-LLM happy path — empty ledger ok)
-#       - malformed_tool_call absent   (no tools)
 #       - table_min_rows pipeline_state scope=global exact delta=0 — the skip
 #         advanced NO watermark (the empty-world DB has zero pipeline_state rows
 #         before AND after; a global EXACT 0 proves nothing was written).
@@ -61,10 +60,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # The skip advanced NO watermark: pipeline_state stays empty (global EXACT 0).
 [[steps.anchors]]

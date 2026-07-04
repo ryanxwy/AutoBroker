@@ -80,6 +80,3 @@ kind = "no_external_mutation"
 kind = "cost_and_time"
 optional = true
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

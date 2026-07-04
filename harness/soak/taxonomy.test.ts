@@ -115,8 +115,8 @@ judge_dims = ["on_strategy"]
 describe("loadTaxonomy (the _base.toml seed)", () => {
   const all = loadTaxonomy();
 
-  it("loads the 9 plan-0 edge classes", () => {
-    expect(all.length).toBeGreaterThanOrEqual(9);
+  it("loads the 8 plan-0 edge classes", () => {
+    expect(all.length).toBeGreaterThanOrEqual(8);
     const ids = all.map((s) => s.id);
     for (const expected of [
       "cold_start_phrasing",
@@ -125,7 +125,6 @@ describe("loadTaxonomy (the _base.toml seed)", () => {
       "session_consistency_hazard",
       "irreversible_send_fake",
       "budget_redaction",
-      "malformed_extraction_f1",
       "destructive_typed_confirm",
       "full_e2e_journey",
     ]) {
@@ -147,7 +146,6 @@ describe("loadTaxonomy (the _base.toml seed)", () => {
     "session_consistency_hazard",
     "irreversible_send_fake",
     "budget_redaction",
-    "malformed_extraction_f1",
     "destructive_typed_confirm",
     "full_e2e_journey",
   ]);

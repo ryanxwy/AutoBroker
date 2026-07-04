@@ -93,10 +93,6 @@ delta_min = 1
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: inventory_aggregator_scan from the Skills popover Run button ------
 
 [[steps]]
@@ -134,6 +130,3 @@ kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
 kind = "resolution"
 expect = "inferred_newest"  # unpinned session + single active profile.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

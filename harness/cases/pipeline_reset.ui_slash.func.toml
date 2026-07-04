@@ -21,7 +21,6 @@
 #       - no_external_mutation             (KEYSTONE — a local wipe + a local
 #                                           VACUUM-INTO backup; never a send/submit)
 #       - cost_and_time optional=true      (zero-LLM happy path — empty ledger ok)
-#       - malformed_tool_call absent       (no tools, so no #1244 surface)
 #       - table_min_rows search_profiles   (the WIPE landed: digest_present seeded
 #         scope=global exact 0             one active profile; after the reset the
 #                                           product DB is freshly recreated and
@@ -98,10 +97,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # The wipe landed: the populated tables are EMPTY after the reset (global EXACT
 # 0). digest_present seeded 1 search_profiles + 2 profile_dealers + 3

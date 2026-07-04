@@ -14,7 +14,7 @@
 #           atomic unit FAKE-sends (one outbound messages row) and commits the
 #           local close+suppress. Terminal `done`; +2 thread_suppression EXACT (one
 #           per closed dealer — the closeout receipt); messages Δ=2 EXACT (the two
-#           fake sends); resolution=pinned; keystone clean; no malformed tool call.
+#           fake sends); resolution=pinned; keystone clean.
 #
 # WHY +2 thread_suppression IS the meaningful local-write anchor: the close is an
 # UPDATE (threads.state→'closed', invisible to a row-count check), but each
@@ -99,6 +99,3 @@ expect = "pinned"
 [[steps.anchors]]
 kind = "no_external_mutation"   # fake/local sends → the fake outbound rows are legal → keystone clean.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

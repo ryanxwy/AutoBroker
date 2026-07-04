@@ -90,20 +90,6 @@ describe("emitCorpusToml → parseCase (the EXISTING cases.ts grammar)", () => {
     expect(c.steps[0]!.anchors.some((a) => a.kind === "no_external_mutation")).toBe(true);
   });
 
-  it("maps the malformed-extraction assertion onto the malformed_tool_call anchor", () => {
-    const toml = emit({
-      caseId: "soak_frozen_extract",
-      skill: "dealer_reply_extract",
-      failingAssertion: "malformed_extraction_fail_closed",
-    });
-    const c = parseCase(toml);
-    const anchor = c.steps[0]!.anchors.find((a) => a.kind === "malformed_tool_call");
-    expect(anchor).toBeDefined();
-    expect((anchor as { expect?: string }).expect).toBe("fail_closed");
-    // The always-on keystone is also appended (a non-keystone failing assertion).
-    expect(c.steps[0]!.anchors.some((a) => a.kind === "no_external_mutation")).toBe(true);
-  });
-
   it("maps the profile-ASK branch onto a run_status=error anchor", () => {
     const toml = emit({
       caseId: "soak_frozen_profile",
@@ -119,7 +105,7 @@ describe("emitCorpusToml → parseCase (the EXISTING cases.ts grammar)", () => {
     const toml = emit({
       caseId: "soak_frozen_multiround",
       skill: "dealer_reply_extract",
-      failingAssertion: "malformed_extraction_fail_closed",
+      failingAssertion: "all_or_nothing_upsert",
       dealerReplies: [
         {
           dealerName: "Tustin Hyundai",

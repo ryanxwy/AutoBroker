@@ -79,10 +79,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_geosearch with the SSE broken mid-run --------------------
 
 [[steps]]
@@ -121,6 +117,3 @@ optional = true             # zero-LLM happy path: no ledger row is a valid outc
 kind = "resolution"
 expect = "inferred_newest"  # fresh unpinned session + single active profile.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

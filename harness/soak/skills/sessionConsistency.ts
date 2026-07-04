@@ -1092,13 +1092,12 @@ async function captureJourneyTrace(driver: UiDriver, apiBase: string): Promise<S
   const { buildRunDetail } = await import("../../detail.js");
   const detail = await withTimeout(buildRunDetail(apiBase, runId), TRACE_TIMEOUT_MS);
   if (detail === BOUNDED_TIMEOUT) {
-    return { runId, terminalStatus: null, eventCount: 0, sawApprovalGate: false, sawMalformedToolCall: false };
+    return { runId, terminalStatus: null, eventCount: 0, sawApprovalGate: false };
   }
   return {
     runId,
     terminalStatus: detail.terminalStatus,
     eventCount: detail.events.length,
     sawApprovalGate: detail.sawApprovalGate,
-    sawMalformedToolCall: detail.sawMalformedToolCall,
   };
 }

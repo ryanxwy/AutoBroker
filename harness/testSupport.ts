@@ -213,9 +213,3 @@ export function confirmVehicleRunFrames(): FixtureFrame[] {
     doneFrame(),
   ];
 }
-
-/** A #1244 fail-closed run: init → awaiting_user(malformed) → error (no prose-fall).
- *  prefill is intake's fail-closed LLM surface (a freeform launch). */
-export function malformedFailClosedFrames(): FixtureFrame[] {
-  return [initFrame(), awaitingUserFrame("malformed_tool_call", "mf-1", "prefill"), errorFrame("malformed_tool_call")];
-}

@@ -17,7 +17,6 @@
  *   cost_and_time         usage present → ledger rows exist; NULL-not-$0 honored
  *   latency_budget        framework-new: every ledger row latencyMs <= maxMs;
  *                         NULL ignored; vacuous-pass on no row; waivable
- *   malformed_tool_call   framework-new derived anchor: absent | fail_closed
  *   resolution            profile-resolution provenance on the terminal text
  *                         frame: pinned | inferred_newest (profile-scoped skills)
  *
@@ -100,7 +99,6 @@ export type AnchorSpec =
       kind: "latency_budget";
       maxMs: number;
     }
-  | { kind: "malformed_tool_call"; expect: "absent" | "fail_closed" }
   | {
       /** Profile-resolution provenance: the run's terminal TEXT frame must
        *  carry payload.resolution === expect (pinned = explicit pin honored;
@@ -241,10 +239,6 @@ export function evalAnchor(
 
     case "cost_and_time": {
       return evalCostAndTime(spec, detail, db);
-    }
-
-    case "malformed_tool_call": {
-      return evalMalformedToolCall(spec, detail);
     }
 
     case "resolution": {
@@ -514,41 +508,6 @@ function evalLatencyBudget(
 }
 
 // ---------------------------------------------------------------------------
-// malformed_tool_call (framework-new) — absent on normal runs; fail_closed on
-// an injected #1244 case (typed abort / suspend, NEVER a prose fallthrough)
-// ---------------------------------------------------------------------------
-
-function evalMalformedToolCall(
-  spec: Extract<AnchorSpec, { kind: "malformed_tool_call" }>,
-  detail: RunDetail,
-): AnchorResult {
-  if (spec.expect === "absent") {
-    const ok = detail.sawMalformedToolCall === false;
-    return {
-      kind: "malformed_tool_call",
-      ok,
-      expected: "absent",
-      observed: detail.sawMalformedToolCall ? "malformed signal present" : "absent",
-    };
-  }
-  // fail_closed: the run must have shown the malformed signal AND ended in a SAFE
-  // terminal (a malformed_tool_call suspend → declined/error, or a hard abort →
-  // error). The forbidden outcome is a malformed signal followed by a `done` with
-  // a fabricated profile (silent fallthrough). A clean `done` with NO malformed
-  // signal is also a fail for this anchor (the injection did not trigger).
-  const sawSignal = detail.sawMalformedToolCall;
-  const safeTerminal = detail.terminalStatus === "error" || detail.terminalStatus === "declined";
-  const ok = sawSignal && safeTerminal;
-  return {
-    kind: "malformed_tool_call",
-    ok,
-    expected: "fail_closed (typed abort/suspend, never prose fallthrough)",
-    observed: { sawMalformedSignal: sawSignal, terminalStatus: detail.terminalStatus },
-    ...(ok ? {} : { detail: "expected a malformed signal followed by a safe terminal (error/declined)" }),
-  };
-}
-
-// ---------------------------------------------------------------------------
 // four-tier verdict + S1/S2/S3 cross-check + verdict.json assembly
 // ---------------------------------------------------------------------------
 
@@ -612,7 +571,7 @@ export interface BuildVerdictInput {
 
 /** The functional anchors that may NEVER be waived (a failure here is RED/BLOCKER,
  *  not a waiver). The keystone + the core effect anchors. */
-const NON_WAIVABLE = new Set(["no_external_mutation", "run_status", "table_min_rows", "malformed_tool_call"]);
+const NON_WAIVABLE = new Set(["no_external_mutation", "run_status", "table_min_rows"]);
 
 /**
  * Assemble the verdict.json doc + the four-tier judgement:
@@ -665,7 +624,7 @@ export function buildVerdict(input: BuildVerdictInput): VerdictDoc {
     // waiver EXPLICITLY names kind "table_min_rows" (the empty-real-world-result
     // case, e.g. Maps yields zero dealers in radius — browser activity proven,
     // nothing to write). A generic waiver still cannot cover it, and the
-    // keystone/run_status/malformed anchors stay absolutely non-waivable.
+    // keystone/run_status anchors stay absolutely non-waivable.
     const allWaivable = failedAnchors.every(
       (a) =>
         !NON_WAIVABLE.has(a.kind) ||

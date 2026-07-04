@@ -33,7 +33,6 @@
 #   - no_external_mutation        — Gmail is read-only; the skill never sends.
 #   - cost_and_time               — the live per-message LLM $/ms is recorded
 #     (this is the live-LLM skill — the ledger is NOT optional/empty).
-#   - malformed_tool_call absent  — #1244 fail-closed held (no silent tool-skip).
 #
 # DB-LEVEL INVARIANTS THE CONTROLLER ALSO CHECKS POST-RUN (not anchorable here):
 #   - the no_quote reply's message flips to 'succeeded' with 0 quote rows;
@@ -156,10 +155,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_reply_extract over the seeded corpus ----------------------
 
 [[steps]]
@@ -192,6 +187,3 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

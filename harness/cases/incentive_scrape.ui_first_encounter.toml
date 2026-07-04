@@ -123,10 +123,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: first run — the seed source is auto-recorded, no gate ----------
 
 [[steps]]
@@ -164,10 +160,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 3: second run — registry remembers (NO re-ask) --------------------
 
 [[steps]]
@@ -199,6 +191,3 @@ exact = true                # genuinely empty world also nets Δ=0 — holds eit
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

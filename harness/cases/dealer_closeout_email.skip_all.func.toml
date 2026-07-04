@@ -9,7 +9,7 @@
 #   step 2  "/dealer_closeout_email" → the batch_review card renders the two
 #           addressable dealers; the driver clicks the REAL "Skip all & reset"
 #           button → terminal `done`; messages + thread_suppression + threads +
-#           search_profiles all Δ=0 EXACT; keystone clean; no malformed tool call.
+#           search_profiles all Δ=0 EXACT; keystone clean.
 
 [meta]
 id = "dealer_closeout_email_skip_all"
@@ -91,6 +91,3 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"   # zero sent rows → keystone clean.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

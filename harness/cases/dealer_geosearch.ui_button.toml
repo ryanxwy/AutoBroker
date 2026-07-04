@@ -79,10 +79,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_geosearch from the Skills popover Run button -------------
 
 [[steps]]
@@ -116,6 +112,3 @@ kind = "no_external_mutation"
 kind = "cost_and_time"
 optional = true
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

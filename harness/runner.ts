@@ -544,8 +544,6 @@ function pendingKind(step: string): string {
       return "intake_confirm";
     case "resolveLocation":
       return "ambiguous_location";
-    case "prefill":
-      return "malformed_tool_call";
     case "batchReview":
     case "reviewGate": // inventory_link_scan's batch_review step
       return "batch_review";
@@ -1215,15 +1213,6 @@ async function driveResumeScriptDom(
       } else {
         await driver.clickIntakeConfirmDecline();
       }
-    } else if (resume.on === "malformed_tool_call") {
-      // The #1244 fail-closed gate (rail track). The case only DECLINES it — a
-      // retry would re-fire the same stubbed suspend (a fail-closed loop).
-      await driver.waitForMalformedGate(maxMs);
-      await driver.checkGateBeforeProse();
-      if (resume.action === "accept") {
-        throw new Error("ui lane: malformed_tool_call accept (retry) is not driven — decline only");
-      }
-      await driver.clickMalformedDecline();
     } else if (resume.on === "confirmation_gate") {
       // The DESTRUCTIVE typed-YES second-confirm (pipeline_reset's ONE suspend).
       // The card renders on the gate-banner track ABOVE the prose; assert it is
@@ -1346,7 +1335,6 @@ const EMPTY_RUN_DETAIL: RunDetail = {
   sawBrowserActivity: false,
   sawApprovalGate: false,
   gateBeforeProse: false,
-  sawMalformedToolCall: false,
   usage: {
     costUsd: null,
     durationMs: null,

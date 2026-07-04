@@ -47,6 +47,3 @@ kind = "no_external_mutation"   # keystone, tolerance 0.
 kind = "cost_and_time"
 optional = true             # STOP throws pre-LLM: empty ledger is the honest record.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

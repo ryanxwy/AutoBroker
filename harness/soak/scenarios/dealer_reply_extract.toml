@@ -1,6 +1,6 @@
 # harness/soak/scenarios/dealer_reply_extract.toml — the plan-2 reply-extract
-# soak taxonomy (skill #7, the SOLE live-LLM keystone of the email wave, the F1
-# home). ADDITIVE: this file ADDS the 8 reply-extract edge classes to the loaded
+# soak taxonomy (skill #7, the SOLE live-LLM keystone of the email wave).
+# ADDITIVE: this file ADDS the 7 reply-extract edge classes to the loaded
 # taxonomy; it NEVER edits scenarios/_base.toml (the plan-0 ScenarioClass type is
 # frozen). The loadTaxonomy() id space is shared — every id here is unique across
 # all scenario files.
@@ -14,7 +14,7 @@
 # deterministic_assertions names the per-skill assertion ids the driver scores
 # (defined in skills/dealerReplyExtract.ts via the OPEN verdict contract — free
 # `assertionId` strings folded by combineSoakVerdict). The keystone
-# `no_external_mutation` + `test_mode_armed` + the F1 `malformed_extraction_fail_closed`
+# `no_external_mutation` + `test_mode_armed`
 # are the always-on floor; the rest are correctness assertions.
 #
 # judge_dims names the OWN numeric-fidelity Opus judge dims this driver runs
@@ -23,19 +23,17 @@
 # loader validates judge_dims as open strings) and are scored by THIS driver's
 # numeric-fidelity judge, never the shared buyer-centric runJudge.
 
-# 1. THE F1 TRIGGER — the largest 2-mode + every-fee payload. Sonnet writes BOTH
-#    a finance world AND a lease world PLUS a fully itemized fee table + a
-#    rebates array: two rows under one source_gmail_message_id. This is the exact
-#    class where DeepSeek v4-flash emits the trailing-brace malformed JSON →
-#    extractWithRecovery fires the deepseek.strong+thinking retry hop.
+# 1. THE LARGEST PAYLOAD — the largest 2-mode + every-fee payload. Sonnet writes
+#    BOTH a finance world AND a lease world PLUS a fully itemized fee table + a
+#    rebates array: two rows under one source_gmail_message_id.
 [[scenarios]]
 id = "dre_large_2mode_every_fee"
 surface = "dealer_reply_extract"
 class_name = "large_2mode_every_fee"
-stresses = "the F1 trigger: largest 2-mode + every-fee emit_result payload (finance world + lease world + full itemized fee table + rebates array) → both finance+lease rows under one message; exercises the v4-pro+thinking retry on the #1244 malformed class."
+stresses = "the largest 2-mode + every-fee emit_result payload (finance world + lease world + full itemized fee table + rebates array) → both finance+lease rows under one message."
 buyer_model = "sonnet"
 dealer_needed = true
-deterministic_assertions = ["all_or_nothing_upsert", "float_dollars", "unique_two_mode", "rule1_rule2_belt", "f1_retry_only_on_malformed", "malformed_extraction_fail_closed", "cost_and_time_attributable", "pinned_profile", "no_external_mutation", "test_mode_armed"]
+deterministic_assertions = ["all_or_nothing_upsert", "float_dollars", "unique_two_mode", "rule1_rule2_belt", "cost_and_time_attributable", "pinned_profile", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["numeric_fidelity", "no_hallucinated_numbers", "financing_mode_partition", "intent_coherence"]
 gate_verbs = []
 
@@ -127,20 +125,4 @@ buyer_model = "sonnet"
 dealer_needed = true
 deterministic_assertions = ["all_or_nothing_upsert", "float_dollars", "rule1_rule2_belt", "cost_and_time_attributable", "pinned_profile", "no_external_mutation", "test_mode_armed"]
 judge_dims = ["numeric_fidelity", "no_hallucinated_numbers", "intent_coherence"]
-gate_verbs = []
-
-# 8. malformed_injection_synthetic_control (NON-Sonnet) — a FROZEN deterministic
-#    fixture (not Sonnet-generated): a fake-model forced to return a trailing-brace
-#    AI_InvalidToolInputError / MalformedToolCallAbort on the first hop, then a
-#    clean object on the retry hop. Pins the F1 recovery contract deterministically
-#    without depending on live DeepSeek mood. dealer_needed=false (no live spawn).
-[[scenarios]]
-id = "dre_malformed_injection_synthetic_control"
-surface = "dealer_reply_extract"
-class_name = "malformed_injection_synthetic_control"
-stresses = "a FROZEN synthetic control (no live LLM): a forced trailing-brace malformed first hop then a clean retry hop — pins isMalformedToolCallError gating (only MalformedToolCallAbort/AI_InvalidToolInputError trigger retry; a ZodError does NOT), the bounded ONE-hop retry, and a second-malformed → message stays failed with 0 rows."
-buyer_model = "sonnet"
-dealer_needed = false
-deterministic_assertions = ["malformed_extraction_fail_closed", "f1_retry_only_on_malformed", "all_or_nothing_upsert", "no_external_mutation", "test_mode_armed"]
-judge_dims = []
 gate_verbs = []

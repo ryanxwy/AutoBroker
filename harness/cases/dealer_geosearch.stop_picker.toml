@@ -93,10 +93,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: intake B (the second active profile → the 2+ world) -------------
 
 [[steps]]
@@ -154,10 +150,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 3: geosearch with 2 active profiles → typed STOP + picker ----------
 
 [[steps]]
@@ -182,10 +174,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 optional = true             # the resolver throws before any LLM call.
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # ---- step 4: answer the ASK through the REAL picker → pinned run completes ---
 
@@ -228,6 +216,3 @@ optional = true             # zero-LLM happy path (evaluate-extract).
 kind = "resolution"
 expect = "pinned"           # explicit search_profile_id → the pinned branch.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

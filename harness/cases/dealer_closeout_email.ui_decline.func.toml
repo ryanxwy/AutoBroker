@@ -12,7 +12,7 @@
 #   step 2  "/dealer_closeout_email" via slash → the batch_review card renders the
 #           two addressable dealers on the gate-banner track → the driver clicks
 #           the REAL Decline button. Terminal `declined`; threads + thread_suppression
-#           + messages all Δ=0 EXACT; keystone clean; no malformed tool call.
+#           + messages all Δ=0 EXACT; keystone clean.
 
 [meta]
 id = "dealer_closeout_email_ui_decline"
@@ -84,6 +84,3 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"   # zero sent rows → keystone clean (no allow_fake_outbound).
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

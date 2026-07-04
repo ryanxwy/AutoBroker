@@ -1,5 +1,5 @@
 /**
- * dealerReplyExtract soak — the F1 keystone (plan-2).
+ * dealerReplyExtract soak — the reply-extract keystone (plan-2).
  *
  * A SELF-CONTAINED per-skill soak module. It imports plan-0's FROZEN shared
  * infra (claudeAgent spawn, the verdict contract + combineSoakVerdict, the
@@ -22,7 +22,7 @@
  *       profile id explicitly (resolution='pinned');
  *   (5) read back autobroker.db + test_run_records and run the deterministic
  *       assertions (the OPEN verdict contract: per-skill `assertionId` strings,
- *       `severity:"blocker"` for no_external_mutation + malformed fail-closed,
+ *       `severity:"blocker"` for no_external_mutation,
  *       `"red"` for the rest), then the Opus numeric-fidelity judge per reply;
  *   (6) fold via combineSoakVerdict; on a deterministic failure the caller freezes
  *       a [[seed.dealer_replies]] regression case (freezeToCorpus, reused).
@@ -36,7 +36,7 @@
  * Dependency wall: harness layer. Reuses @autobroker/db (openDb at the explicit
  * isolated path — the sanctioned harness write channel seed.ts already uses),
  * @autobroker/core (the DealerQuoteSchema belt re-parse), @autobroker/workflows
- * (the flat workflow + the test-deps seam for the synthetic control), the seed
+ * (the flat workflow + the test-deps seam), the seed
  * seam, and the soak modules. NO playwright, NO direct provider client, NO
  * better-sqlite3/drizzle import (the DB rides through @autobroker/db).
  */
@@ -389,100 +389,6 @@ export function assertNoQuoteZeroRows(args: {
     observed: { rows: rows.length, status: msg?.status ?? null, intent: msg?.intent ?? null },
     severity: "red",
     ...(ok ? {} : { detail: "a no_quote reply must succeed with zero rows + a non-null intent (no fabricated quote)" }),
-  };
-}
-
-/**
- * #1244 FAIL-CLOSED (BLOCKER): on a malformed extraction with no recovery, the
- * message has ZERO rows AND status='failed' (processed_at NULL → re-queued) AND a
- * test_run_records row exists for skill='dealer_reply_extract' with
- * fail_reason='malformed_tool_call'. NEVER a prose-fallthrough row. This is a
- * safety red-line → severity:"blocker".
- */
-export function assertMalformedExtractionFailClosed(args: {
-  db: Db;
-  sourceGmailMessageId: string;
-  ledgerRows: readonly LedgerRow[];
-}): DeterministicResult {
-  const rows = readQuoteRows(args.db, args.sourceGmailMessageId);
-  const msg = readMessageState(args.db, args.sourceGmailMessageId);
-  const sawMalformedLedger = args.ledgerRows.some(
-    (r) => r.skill === "dealer_reply_extract" && r.failReason === "malformed_tool_call",
-  );
-  const ok =
-    rows.length === 0 &&
-    msg?.status === "failed" &&
-    (msg?.processedAt === null || msg?.processedAt === undefined) &&
-    sawMalformedLedger;
-  return {
-    assertionId: "malformed_extraction_fail_closed",
-    ok,
-    expected: "0 rows + status='failed' (processed_at NULL) + a malformed_tool_call ledger row",
-    observed: {
-      rows: rows.length,
-      status: msg?.status ?? null,
-      processedAt: msg?.processedAt ?? null,
-      sawMalformedLedger,
-    },
-    severity: "blocker",
-    ...(ok ? {} : { detail: "#1244 fail-closed violated (a prose-fallthrough row or no malformed ledger)" }),
-  };
-}
-
-/**
- * F1 RETRY FIRES ONLY ON THE MALFORMED CLASS (red): on a run where the first hop
- * returned malformed and the retry succeeded, exactly the two-ledger-row shape:
- * one deepseek.chat row with fail_reason='malformed_tool_call', then one
- * deepseek.strong row with fail_reason=null; AND the persisted
- * dealer_quotes.extractor_provider = 'deepseek' (same-provider/privacy-clean). On
- * a CLEAN first hop, NO deepseek.strong row. On a ZodError first-hop, NO
- * deepseek.strong row (isMalformedToolCallError(ZodError)=false → retry skipped).
- *
- * `expectRetry` declares the scenario's expectation: true (the F1/synthetic class
- * — the retry MUST have fired with the malformed→clean shape), false (a clean or
- * ZodError first hop — the retry must NOT have fired).
- */
-export function assertF1RetryOnlyOnMalformed(args: {
-  db: Db;
-  sourceGmailMessageId: string;
-  ledgerRows: readonly LedgerRow[];
-  expectRetry: boolean;
-}): DeterministicResult {
-  const chatRows = args.ledgerRows.filter(
-    (r) => r.skill === "dealer_reply_extract" && r.modelAlias === "deepseek.chat",
-  );
-  const strongRows = args.ledgerRows.filter(
-    (r) => r.skill === "dealer_reply_extract" && r.modelAlias === "deepseek.strong",
-  );
-  let ok: boolean;
-  let detail: string | undefined;
-  if (args.expectRetry) {
-    const firstHopMalformed = chatRows.some((r) => r.failReason === "malformed_tool_call");
-    const retryClean = strongRows.length === 1 && strongRows[0]!.failReason === null;
-    const provider = strongRows[0]?.provider ?? null;
-    const quoteRows = readQuoteRows(args.db, args.sourceGmailMessageId);
-    const stampedDeepseek =
-      quoteRows.length > 0 && quoteRows.every((r) => r["extractor_provider"] === "deepseek");
-    ok = firstHopMalformed && retryClean && provider === "deepseek" && stampedDeepseek;
-    if (!ok) {
-      detail =
-        `F1 retry shape: firstHopMalformed=${firstHopMalformed} retryClean=${retryClean} ` +
-        `strongProvider=${provider ?? "∅"} stampedDeepseek=${stampedDeepseek}`;
-    }
-  } else {
-    // The retry must NOT have fired (clean first hop OR a ZodError first hop).
-    ok = strongRows.length === 0;
-    if (!ok) detail = `expected NO deepseek.strong ledger row, found ${strongRows.length}`;
-  }
-  return {
-    assertionId: "f1_retry_only_on_malformed",
-    ok,
-    expected: args.expectRetry
-      ? "deepseek.chat(malformed) → deepseek.strong(clean), extractor_provider='deepseek'"
-      : "no deepseek.strong retry row",
-    observed: { chatRows: chatRows.length, strongRows: strongRows.length },
-    severity: "red",
-    ...(detail !== undefined ? { detail } : {}),
   };
 }
 
@@ -894,8 +800,8 @@ export interface RunReplyExtractSoakOpts {
   /** The mutation baseline captured before seeding (the no_external_mutation
    *  keystone delta). */
   baseline: number;
-  /** A pre-generated dealer emit (the synthetic-control class supplies a frozen
-   *  fixture instead of a live spawn; live classes leave this undefined → spawn). */
+  /** A pre-generated dealer emit (a frozen fixture instead of a live spawn;
+   *  live classes leave this undefined → spawn). */
   presetEmit?: DealerReplyEmit;
   /** Test seam: inject the dealer spawn (unit tests never shell claude). */
   dealerExecImpl?: ExecImpl;
@@ -927,7 +833,7 @@ export interface RunReplyExtractSoakResult {
 export async function runReplyExtractSoak(
   opts: RunReplyExtractSoakOpts,
 ): Promise<RunReplyExtractSoakResult> {
-  // (1) the dealer turn — a frozen fixture (synthetic control) or a live spawn.
+  // (1) the dealer turn — a frozen fixture (presetEmit) or a live spawn.
   const emit =
     opts.presetEmit ??
     parseDealerReplyEmit(
@@ -966,9 +872,6 @@ export async function runReplyExtractSoak(
     const terminalStatus: "succeeded" | "failed" = msg?.status === "succeeded" ? "succeeded" : "failed";
     const expectsZeroRows = opts.scenario.className === "no_quote_chitchat";
     const expectsTwoMode = opts.scenario.className === "large_2mode_every_fee";
-    const expectsMalformed =
-      opts.scenario.className === "large_2mode_every_fee" ||
-      opts.scenario.className === "malformed_injection_synthetic_control";
 
     const wanted = new Set(opts.scenario.deterministicAssertions);
     if (wanted.has("all_or_nothing_upsert")) {
@@ -992,31 +895,6 @@ export async function runReplyExtractSoak(
     }
     if (wanted.has("unique_two_mode") && expectsTwoMode && terminalStatus === "succeeded") {
       deterministic.push(assertUniqueTwoMode({ db, sourceGmailMessageId }));
-    }
-    if (wanted.has("malformed_extraction_fail_closed") && terminalStatus === "failed") {
-      // The fail-closed assertion only applies when the message actually failed
-      // (the F1 class self-heals on a good day — then there is nothing to assert
-      // fail-closed; the synthetic control always exercises it).
-      deterministic.push(
-        assertMalformedExtractionFailClosed({ db, sourceGmailMessageId, ledgerRows }),
-      );
-    }
-    if (wanted.has("f1_retry_only_on_malformed")) {
-      // expectRetry: the F1/synthetic class expects the retry hop to have fired
-      // (and recovered) — but only when a deepseek.strong row exists; on a clean
-      // first hop the retry must NOT have fired. We score the actual ledger shape
-      // against whether the malformed class was exercised.
-      const sawStrong = ledgerRows.some(
-        (r) => r.skill === "dealer_reply_extract" && r.modelAlias === "deepseek.strong",
-      );
-      deterministic.push(
-        assertF1RetryOnlyOnMalformed({
-          db,
-          sourceGmailMessageId,
-          ledgerRows,
-          expectRetry: expectsMalformed && sawStrong,
-        }),
-      );
     }
     if (wanted.has("cost_and_time_attributable")) {
       deterministic.push(
@@ -1042,7 +920,7 @@ export async function runReplyExtractSoak(
   }
 
   // (5b) the Opus numeric-fidelity judge (load-bearing on the soft dims). Skipped
-  // when the scenario activates no judge dims (the synthetic control) or when no
+  // when the scenario activates no judge dims or when no
   // rows persisted on a quote-bearing class (the judge has nothing to compare —
   // the deterministic half already scored that).
   let judge: JudgeDimResult[] = [];

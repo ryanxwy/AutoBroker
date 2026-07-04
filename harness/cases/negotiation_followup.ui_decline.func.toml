@@ -13,7 +13,7 @@
 #           (stubbed draftProse — a fixed budget-free, no-competing-name body),
 #           the batch_review card renders on the gate-banner track → the driver
 #           clicks the REAL Decline button. Terminal `declined`; messages Δ=0
-#           EXACT (no send on a decline); keystone clean; no malformed tool call.
+#           EXACT (no send on a decline); keystone clean.
 #
 # WHY NO threads-state delta anchor: threads.state='negotiating' is written ONLY
 # on a SENT thread (confirm step), and even on a send it is an UPDATE, not an
@@ -85,6 +85,3 @@ exact = true
 [[steps.anchors]]
 kind = "no_external_mutation"   # zero sent rows → keystone clean.
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

@@ -20,7 +20,7 @@
 #           Terminal `done`; +1 lead_submissions EXACT (the email-fallback row);
 #           messages Δ=1 EXACT (the fake gmail.send); keystone clean with
 #           allow_fake_outbound; the approval card carried NO approve-all
-#           affordance (there is none — asserted DRIVER-SIDE); no malformed call.
+#           affordance (there is none — asserted DRIVER-SIDE).
 
 [meta]
 id = "dealer_web_lead_submit_email_fallback_reconfirm"
@@ -109,6 +109,3 @@ exact = true
 kind = "no_external_mutation"   # the email-fallback row + fake messages row are LEGAL fake outbound.
 allow_fake_outbound = true
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

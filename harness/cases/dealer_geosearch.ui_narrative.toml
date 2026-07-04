@@ -91,10 +91,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_geosearch (slash, no args — single-active resolution) ----
 
 [[steps]]
@@ -135,6 +131,3 @@ expect = "inferred_newest"  # fresh unpinned session + single active profile →
                             # say so on the wire; the pinned arm is asserted by
                             # dealer_geosearch.stop_picker).
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

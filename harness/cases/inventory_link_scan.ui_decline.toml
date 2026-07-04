@@ -104,10 +104,6 @@ kind = "no_external_mutation"
 [[steps.anchors]]
 kind = "cost_and_time"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
-
 # ---- step 2: dealer_geosearch (the seeds need bound dealers) -----------------
 
 [[steps]]
@@ -144,10 +140,6 @@ optional = true             # zero-LLM happy path (evaluate-extract).
 [[steps.anchors]]
 kind = "resolution"
 expect = "inferred_newest"  # unpinned session + single active profile.
-
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"
 
 # ---- step 3: the link batch card → DECLINE (terminal, zero writes, zero nav) -
 
@@ -187,6 +179,3 @@ expect = "absent"           # the suspend precedes ANY Browser launch — zero n
 [[steps.anchors]]
 kind = "no_external_mutation"
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

@@ -13,7 +13,7 @@
 #           reports a known-platform form for Jim Click (NO LLM); the gated
 #           submit hits the test-mode brake → fuse_blocked → the fake-submit
 #           web_form row. Terminal `done`; +1 lead_submissions EXACT; messages
-#           Δ=0 EXACT; keystone clean with allow_fake_outbound; no malformed tool call.
+#           Δ=0 EXACT; keystone clean with allow_fake_outbound.
 
 [meta]
 id = "dealer_web_lead_submit_ui_approve"
@@ -86,6 +86,3 @@ exact = true
 kind = "no_external_mutation"   # the fake-submit row is a LEGAL fake outbound.
 allow_fake_outbound = true
 
-[[steps.anchors]]
-kind = "malformed_tool_call"
-expect = "absent"

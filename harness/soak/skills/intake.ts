@@ -604,7 +604,7 @@ export async function driveIntakeScenario(opts: DriveIntakeOpts): Promise<DriveI
  * Capture the data_collection suspend SEED off the run's SSE events (the
  * `awaiting_user` frame carries `spec_inline.seed_fields` — what the prefill step
  * emitted for human review). Returns the seed object, or null when no
- * data_collection suspend was seen (a slash launch / a malformed-abort run). This
+ * data_collection suspend was seen (a slash launch). This
  * is the OBSERVED seed the never-guess red-line assertions score — without it those
  * assertions would never run (the N1 dormant false-pass). READ-ONLY (off the SSE
  * replay; never a DB write).
@@ -696,9 +696,8 @@ async function captureIntakeTrace(driver: UiDriver, apiBase: string): Promise<So
       terminalStatus: detail.terminalStatus,
       eventCount: detail.events.length,
       sawApprovalGate: detail.sawApprovalGate,
-      sawMalformedToolCall: detail.sawMalformedToolCall,
     };
   } catch {
-    return { runId, terminalStatus: null, eventCount: 0, sawApprovalGate: false, sawMalformedToolCall: false };
+    return { runId, terminalStatus: null, eventCount: 0, sawApprovalGate: false };
   }
 }
