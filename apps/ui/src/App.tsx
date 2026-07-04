@@ -1018,8 +1018,8 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       {railMinimized && <ChatLauncher onOpen={() => setRailMinimized(false)} />}
 
       {/* Profile dialogs — the unified view/edit modal and the irreversible
-          hard-delete confirm (App owns the state so both Canvas and the Searches
-          list can open them). */}
+          hard-delete confirm (App owns the state; the edit modal's danger zone
+          chains into the hard-delete confirm). */}
       {profileModal?.kind === "edit" && (
         <ProfileEditModal
           client={client}

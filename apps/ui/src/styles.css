@@ -1035,6 +1035,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   text-transform: uppercase;
   color: var(--ink-mute);
 }
+/* As a paragraph heading (the Next-actions label) it drops the UA p margins. */
+p.control-label { margin: 0 0 6px; }
 /* No-markup toggle — a pill that echoes the red dealer-markup flag chip. State
    rides aria-pressed + the .on treatment (never colour alone): inactive reads as
    a neutral pill with a red flag glyph; active fills the red wash with high-ink

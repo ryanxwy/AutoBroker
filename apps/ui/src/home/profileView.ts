@@ -82,13 +82,6 @@ export function zipOf(s: ProfileSnapshot): string | null {
   return s.location?.match(/(\d{5})(?:-\d{4})?\s*$/)?.[1] ?? null;
 }
 
-/** A human-friendly skill name from a snake_case skill id (e.g.
- *  "search_profile_intake" → "Search profile intake"). Empty in, empty out. */
-export function prettifySkill(id: string): string {
-  const spaced = id.replace(/_/g, " ");
-  return spaced.length === 0 ? "" : spaced[0]!.toUpperCase() + spaced.slice(1);
-}
-
 /** "city, ST" distillation for a location string. */
 export function formatLocation(loc: string | null): string | null {
   if (loc === null) return null;
