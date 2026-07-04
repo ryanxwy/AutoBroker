@@ -81,6 +81,11 @@ const RawAnchorSchema = z.object({
   /** latency_budget only: the max per-call wall-clock latency (ms). Required for
    *  that kind (a latency_budget with no max_ms fails LOUD at parse). */
   max_ms: z.number().int().positive().optional(),
+  /** chained_run only: the skill the auto-chain must start as a sibling run. */
+  skill: z.string().optional(),
+  /** chained_run only: the sibling run's OWN wall-clock budget (seconds) to reach
+   *  done. Required for that kind (a chained_run with no max_seconds fails LOUD). */
+  max_seconds: z.number().int().positive().optional(),
 });
 type RawAnchor = z.infer<typeof RawAnchorSchema>;
 
@@ -169,15 +174,16 @@ const ExpectStopSchema = z.enum([
  *                          terminal with no duplicated rendering. */
 const EdgeSchema = z.enum(["reload_mid_form", "double_click_submit", "sse_break"]);
 
-/** One generic DOM verb a pure-UI step drives: click/fill/press a widget by its
- *  stable data-testid, reload the whole page, or navigate the SPA to a path. For
- *  the `navigate` verb `value` carries the client-side path (e.g. "/digest" —
- *  the same in-app route a notification deep-link click lands on) and `testid`
- *  is the testid the SPA must mount AFTER the route resolves (the settle
- *  signal); for fill/press `value` is the fill text or key name; it is unused
- *  for click/reload. */
+/** One generic DOM verb a pure-UI step drives: click/fill/select/press a widget
+ *  by its stable data-testid, reload the whole page, or navigate the SPA to a
+ *  path. For the `navigate` verb `value` carries the client-side path (e.g.
+ *  "/digest" — the same in-app route a notification deep-link click lands on) and
+ *  `testid` is the testid the SPA must mount AFTER the route resolves (the settle
+ *  signal); for fill/press `value` is the fill text or key name; for `select`
+ *  (a <select> element) `value` is the option value to choose; it is unused for
+ *  click/reload. */
 const RawUiActionSchema = z.object({
-  verb: z.enum(["click", "fill", "press", "reload", "navigate", "drag"]),
+  verb: z.enum(["click", "fill", "select", "press", "reload", "navigate", "drag"]),
   testid: z.string(),
   value: z.string().optional(),
   /** drag only: the horizontal pointer delta in CSS px (negative = leftward).
@@ -325,6 +331,13 @@ const RawCaseSchema = z.object({
     /** Which user-action driver runs the case: "ui" = real dashboard DOM via
      *  Playwright; "api" (default) = direct HTTP. The runner --lane overrides. */
     lane: z.enum(["ui", "api"]).optional(),
+    /** Opt this case INTO the site_scan→aggregator auto-chain. The runner exports
+     *  AUTOBROKER_SITESCAN_CHAIN=0 into every spawned host by default (the chain
+     *  must NOT fire in ordinary lanes — a chained aggregator pass would hit the
+     *  live shopping sites every run); a case that sets scan_chain=true flips the
+     *  host env to "1" so the dedicated chain case (and only it) exercises the
+     *  auto-chain. Default false. */
+    scan_chain: z.boolean().optional(),
     profile: z.record(z.string(), z.unknown()).optional(),
   }),
   steps: z.array(RawStepSchema).min(1),
@@ -365,7 +378,7 @@ export type StepEdge = z.infer<typeof EdgeSchema>;
 
 /** One generic DOM verb a pure-UI step drives (see RawUiActionSchema). */
 export interface CaseUiAction {
-  verb: "click" | "fill" | "press" | "reload" | "navigate" | "drag";
+  verb: "click" | "fill" | "select" | "press" | "reload" | "navigate" | "drag";
   testid: string;
   value?: string;
   /** drag only: horizontal pointer delta (px, negative = leftward). */
@@ -460,6 +473,10 @@ export interface Case {
   provider: "deepseek" | "anthropic" | "openai";
   /** The case-declared driver lane (runner --lane overrides; default "api"). */
   lane: "ui" | "api";
+  /** Opt this case into the site_scan→aggregator auto-chain: the runner exports
+   *  AUTOBROKER_SITESCAN_CHAIN=1 for the case's host (else "0", chain OFF).
+   *  Default false. */
+  scanChain: boolean;
   profile: Record<string, unknown> | null;
   /** Pre-step DB seeds (isolated case DB only), or null. UI-lane only. Each
    *  array applies right before the case's first consuming step:
@@ -575,6 +592,19 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
     case "latency_budget": {
       if (raw.max_ms === undefined) throw new Error("latency_budget anchor requires max_ms");
       return { kind: "latency_budget", maxMs: raw.max_ms };
+    }
+    case "chained_run": {
+      if (raw.skill === undefined || raw.skill.trim() === "") {
+        throw new Error("chained_run anchor requires skill (the sibling run's skill id)");
+      }
+      if (raw.max_seconds === undefined) {
+        throw new Error("chained_run anchor requires max_seconds (the sibling run's own budget)");
+      }
+      if (raw.table === undefined || raw.table.trim() === "") {
+        throw new Error("chained_run anchor requires table (the profile-scoped table the sibling grows)");
+      }
+      const deltaMin = raw.delta_min ?? 1;
+      return { kind: "chained_run", skill: raw.skill, maxSeconds: raw.max_seconds, table: raw.table, deltaMin };
     }
     default:
       throw new Error(`unknown anchor kind "${raw.kind}" in case (typo? unsupported anchor?)`);
@@ -715,6 +745,13 @@ export function toCase(raw: TomlTable): Case {
           `step "${step.id}": a drag ui_action needs dx=<non-zero px> (the horizontal pointer delta); dx:0 is a vacuous no-op`,
         );
       }
+      // A select verb with no value silently picks the blank "All" option — a
+      // vacuous semi-no-op (same class as drag dx:0); require the option value.
+      if (a.verb === "select" && (a.value === undefined || a.value === "")) {
+        throw new Error(
+          `step "${step.id}": a select ui_action needs value=<non-empty option value>; an empty value picks the blank option`,
+        );
+      }
     }
     // data_arriving is the realtime-reactivity proof — it grows data + emits a
     // pulse onto an open run channel, which only the runless ui-step drive path
@@ -763,6 +800,20 @@ export function toCase(raw: TomlTable): Case {
     seen.add(step.id);
   }
 
+  // scan_chain and the chained_run anchor come as a PAIR. The flag without the
+  // anchor starts a REAL shopping-site sibling that host.stop() then kills
+  // mid-browse (the orphan/politeness race the default-off knob exists to
+  // prevent); the anchor without the flag waits on a sibling the runner's env
+  // has disabled. Either half alone is a case-authoring bug — fail loud here.
+  const hasChainedAnchor = steps.some((s) => s.anchors.some((a) => a.kind === "chained_run"));
+  if ((parsed.narrative.scan_chain ?? false) !== hasChainedAnchor) {
+    throw new Error(
+      (parsed.narrative.scan_chain ?? false)
+        ? "scan_chain=true but no step declares a chained_run anchor — the auto-chained sibling would run orphaned and un-asserted"
+        : "a chained_run anchor requires narrative.scan_chain=true — the runner exports the chain OFF otherwise",
+    );
+  }
+
   return {
     id: parsed.meta.id,
     archetype: parsed.meta.archetype,
@@ -772,6 +823,7 @@ export function toCase(raw: TomlTable): Case {
     inputMode: parsed.narrative.input_mode,
     provider: parsed.narrative.provider,
     lane: parsed.narrative.lane ?? "api",
+    scanChain: parsed.narrative.scan_chain ?? false,
     profile,
     seed:
       parsed.seed === undefined

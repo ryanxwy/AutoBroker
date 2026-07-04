@@ -34,7 +34,7 @@ const SUCCESS_SCANNED = {
   result: {
     outcome: "scanned",
     resolution: "inferred_newest",
-    summary: "Cars.com: 3 listings · Edmunds: 2 listings. Kept 4 exact-match listings.",
+    summary: "Cars.com: 3 listings · Edmunds: 2 listings. Kept 4 listings matching your Sport-L trim.",
   },
 };
 

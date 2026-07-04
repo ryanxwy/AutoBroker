@@ -179,7 +179,8 @@ export const SKILLS: readonly SkillDef[] = [
     id: INVENTORY_SITE_SCAN_SKILL_ID,
     slash: "/inventory_site_scan",
     title: "Inventory site scan",
-    summary: "Scan the profile's dealer sites for matching inventory (batch-reviewed).",
+    summary:
+      "Scan the profile's dealer sites for matching inventory, then automatically check shopping sites (Cars.com, Edmunds) too.",
     phase: 2,
     riskClass: "local_write",
     status: "implemented",

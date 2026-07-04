@@ -9,14 +9,30 @@ import { describe, expect, it } from "vitest";
 import { classifyGate } from "./gateModel.js";
 
 describe("gateModel — classification", () => {
-  it("data_collection → seed fields", () => {
+  it("data_collection → seed fields; absent prose → null (slash path)", () => {
     const g = classifyGate({
       kind: "data_collection",
       form_kind: "intake",
       seed_fields: { make: "Hyundai" },
     });
     expect(g.kind).toBe("data_collection");
-    if (g.kind === "data_collection") expect(g.seedFields).toEqual({ make: "Hyundai" });
+    if (g.kind === "data_collection") {
+      expect(g.seedFields).toEqual({ make: "Hyundai" });
+      expect(g.prose).toBeNull();
+    }
+  });
+
+  it("data_collection → threads the verbal `prose` ask (freeform trim-missing)", () => {
+    const g = classifyGate({
+      kind: "data_collection",
+      form_kind: "intake",
+      seed_fields: { make: "Hyundai", model: "Tucson" },
+      prose: "Which exact trim do you want? The trim field is required — pick the trim before submitting.",
+    });
+    expect(g.kind).toBe("data_collection");
+    if (g.kind === "data_collection") {
+      expect(g.prose).toContain("Which exact trim do you want?");
+    }
   });
 
   it("intake_confirm → year/make/model/trim", () => {

@@ -1111,6 +1111,59 @@ export class UiDriver {
     throw new Error(`uiDriver: unexpected terminal data-status "${String(status)}"`);
   }
 
+  /** Non-throwing run-scoped terminal wait: like waitForTerminal(ms, runId) but
+   *  returns null instead of throwing when the run never reaches a terminal turn
+   *  within the budget. The auto-chain sibling run is a fire-and-forget top-level
+   *  run streamed as its OWN assistant turn — a timeout there is a RED chain, not
+   *  a runner crash, so the caller records a failing UiCheck rather than aborting. */
+  async waitForTerminalSafe(runId: string, timeoutMs = DEFAULT_TIMEOUT): Promise<UiTerminal | null> {
+    return this.waitForTerminal(timeoutMs, runId).catch(() => null);
+  }
+
+  /** recordChainedRun: fold the site_scan→aggregator auto-chain outcome into the
+   *  ui_checks channel (one UiCheck per fact — a failing one turns the parent
+   *  step's verdict RED). The runner supplies the facts it gathered: whether the
+   *  parent stream announced a sibling run of the expected skill, whether that
+   *  sibling reached a `done` terminal turn within its own budget, and the
+   *  profile-scoped DB row delta the sibling wrote. */
+  async recordChainedRun(facts: {
+    announced: { runId: string; skill: string } | null;
+    expectedSkill: string;
+    terminal: UiTerminal | null;
+    table: string;
+    deltaObserved: number;
+    deltaMin: number;
+  }): Promise<void> {
+    const announceOk = facts.announced !== null && facts.announced.skill === facts.expectedSkill;
+    this.record({
+      surface: "dom:chat-rail",
+      selector: `${tid("assistant-turn")}[data-run-id]`,
+      expected: `parent stream announced a chained ${facts.expectedSkill} run`,
+      observed:
+        facts.announced === null
+          ? "no chained_run announce frame on the parent stream"
+          : `run_id=${facts.announced.runId} skill=${facts.announced.skill}`,
+      ok: announceOk,
+    });
+    this.record({
+      surface: "dom:chat-rail",
+      selector: facts.announced === null
+        ? `${tid("assistant-turn")}[data-run-id="?"]`
+        : `${tid("assistant-turn")}[data-run-id="${facts.announced.runId}"][data-status="done"]`,
+      expected: "the chained sibling run reaches its own done terminal turn",
+      observed: facts.terminal === null ? "no terminal turn within the sibling budget" : `data-status=${facts.terminal}`,
+      ok: facts.terminal === "done",
+    });
+    this.record({
+      surface: `db:${facts.table}`,
+      selector: `${facts.table} (profile-scoped Δ across the sibling run)`,
+      expected: `chained run writes ≥${facts.deltaMin} row(s) into ${facts.table}`,
+      observed: `Δ=${facts.deltaObserved}`,
+      ok: facts.deltaObserved >= facts.deltaMin,
+    });
+    await this.screenshot("chained-run");
+  }
+
   // ---- DOM-derived ui_checks (each records + screenshots one moment) --------
 
   private record(check: UiCheck): void {
@@ -1319,6 +1372,13 @@ export class UiDriver {
   async fillTestid(testid: string, value: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
     await this.page.waitForSelector(tid(testid), { timeout: timeoutMs });
     await this.page.fill(tid(testid), value);
+  }
+
+  /** Choose an option in a <select> widget by its option VALUE (page.fill cannot
+   *  target a select). Used by the generic `select` ui_action verb. */
+  async selectOptionTestid(testid: string, value: string, timeoutMs = DEFAULT_TIMEOUT): Promise<void> {
+    await this.page.waitForSelector(tid(testid), { timeout: timeoutMs });
+    await this.page.selectOption(tid(testid), value);
   }
 
   /** Focus a widget by its data-testid and press a key (e.g. "Enter", "Escape"). */

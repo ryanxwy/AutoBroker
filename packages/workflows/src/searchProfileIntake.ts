@@ -488,6 +488,11 @@ const collectStep = createStep({
     form_kind: z.literal("intake"),
     spec_hint: z.string(),
     seed_fields: z.record(z.string(), z.unknown()).nullable(),
+    /** A verbal ask shown with the form. Non-null only when a freeform launch
+     *  reaches the form with the required trim still empty (the web picker did not
+     *  fire or degraded) — the buyer is asked to pick the trim before submitting.
+     *  Null on the slash path (the empty 18-field form is by design). */
+    prose: z.string().nullable(),
   }),
   execute: async ({ inputData, resumeData, suspend }) => {
     const state = asState(inputData);
@@ -498,13 +503,20 @@ const collectStep = createStep({
     if (state.declined) return state;
 
     // First pass: render the form (gate before prose — the suspend payload is the
-    // form spec). No resume yet → suspend.
+    // form spec). No resume yet → suspend. When a freeform launch arrives with the
+    // required trim still empty (picker skipped or degraded), voice an explicit ask
+    // so the buyer is prompted for the trim rather than only seeing a passive marker.
     if (resumeData === undefined) {
+      const trimAsk =
+        state.inputMode === "freeform" && seedStr(state.seed, "trim") === null
+          ? "Which exact trim do you want? The trim field is required — pick the trim before submitting."
+          : null;
       return (await suspend({
         kind: "data_collection",
         form_kind: "intake",
         spec_hint: "search_profile_intake",
         seed_fields: state.seed,
+        prose: trimAsk,
       })) as never;
     }
 

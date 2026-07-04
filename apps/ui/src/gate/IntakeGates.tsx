@@ -33,6 +33,21 @@ export interface GateProps {
   onDecline: () => void;
 }
 
+/** data_collection lead-in: when the form-suspend payload carries a verbal ask
+ *  (a freeform launch whose seed still lacks the required trim), render it as the
+ *  form gate's emphasized lead-in question, structurally ABOVE the form (the
+ *  prose IS the gate's ask here). Reuses the gate-card lead typography
+ *  (`.gate-card > strong`). Null/empty prose (the slash path, or a trim already
+ *  seeded) renders NOTHING — backward compatible with older payloads. */
+export function DataCollectionProse({ prose }: { prose: string | null }): JSX.Element | null {
+  if (prose === null || prose.trim() === "") return null;
+  return (
+    <div className="gate-card" data-testid="intake-form-prose">
+      <strong>{prose}</strong>
+    </div>
+  );
+}
+
 /** intake_confirm: the unconditional end-of-intake buyer confirmation. DUMB —
  *  display the resolved vehicle + human-affirm only (NO LLM re-validation, no
  *  "did you mean"). Shows the vehicle ONLY — never email/phone/budget (inv #9).

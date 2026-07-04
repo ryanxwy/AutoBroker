@@ -215,6 +215,21 @@ export interface StartRunBody {
 }
 
 // ---------------------------------------------------------------------------
+// Chained-run announce — the run-stream metadata a completed /inventory_site_scan
+// rides on its terminal channel to tell the client an /inventory_aggregator_scan
+// sibling was auto-started for the same profile. It rides a `text` frame's
+// payload as `chained_run` (apps/server SkillRunService.appendChainedRunAnnounce),
+// so it needs no new wire kind; the client streams the sibling as its own turn.
+// Tolerant of absence — an ordinary text frame carries no `chained_run`.
+// ---------------------------------------------------------------------------
+
+export const ChainedRunSchema = z.object({
+  run_id: z.string(),
+  skill: z.string(),
+});
+export type ChainedRun = z.infer<typeof ChainedRunSchema>;
+
+// ---------------------------------------------------------------------------
 // Form-decision — POST /api/skill-runs/:id/form-decision.
 // Body: apps/server/src/intakeRuns.ts:108-114 (FormDecisionBodySchema).
 // Ack: intakeRuns.ts:402-403 (accept → {action, content}) /

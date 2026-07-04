@@ -281,7 +281,12 @@ headline.
   recurrence on a re-discovery, don't duplicate). That register is what `e2e-evolve` reads.
 - For every data-bearing skill that wrote ≥1 row, you checked `/__e2e/dataquality`, not
   just the row count. (`inventory_aggregator_scan` has no dataquality branch — its verdict
-  surface is the voiced kept/dropped run summary, `references/skill-pipeline.md` item 4.)
+  surface is the voiced kept line `Kept N listing(s) matching your <trim> trim` on the
+  CHAINED run's turn, `references/skill-pipeline.md` item 4.)
+- The site_scan→aggregator AUTO-CHAIN fired: after a completed `inventory_site_scan` the
+  parent turn voiced `Also checking shopping sites (Cars.com, Edmunds)…` and a chained
+  `inventory_aggregator_scan` turn streamed for the same profile (a healthy site_scan with
+  NO chained turn is a finding; `references/skill-pipeline.md` item 4).
 - After each of the 3 irreversible sends, you confirmed the **fake** adapter fired (a
   positive check, not just the negative "no real send" counter).
 - UI-monitor checkpoints ran (all six on a full run; ONE final on `--light`) and their

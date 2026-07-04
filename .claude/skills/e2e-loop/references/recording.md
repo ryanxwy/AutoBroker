@@ -121,15 +121,27 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
 
 - `inventory_aggregator_scan` opening HEADED (visible) serial browser windows — deliberate
   (Cloudflare/Akamai edge-block the headless UA; honest posture, zero UA/fingerprint
-  masquerade). Re-flag ONLY a headless regression re-appearing as both-sites-`blocked`
-  within seconds of launch. Shipped 2026-07-03 (`phase2/inventory_aggregator_scan`).
-- `inventory_aggregator_scan` keeping <10 or 0 with voiced parens ("M didn't match your
-  exact search", "K not yet in stock") or a voiced per-site drop ("blocked automated
-  scanning" / "couldn't confirm your location — skipped its results this run")
-  = the exact-match/location gates working (iSeeCars absent by design — launch adapters are
-  Cars.com + Edmunds only). Re-flag ONLY the suspect-0 (kept 0 while site_scan holds ≥3
-  in-radius exact matches — skill-pipeline.md item 4) or an UNVOICED site drop. Shipped
+  masquerade). These now often appear UNPROMPTED, right after a site_scan completes, because
+  the aggregator is AUTO-CHAINED (see the chain entry below). Re-flag ONLY a headless
+  regression re-appearing as both-sites-`blocked` within seconds of launch. Shipped
   2026-07-03 (`phase2/inventory_aggregator_scan`).
+- `inventory_aggregator_scan` keeping <10 or 0 with the voiced kept line `Kept N listing(s)
+  matching your <trim> trim` + parens ("M didn't match your exact search", "K not yet in
+  stock"), or a voiced per-site drop ("blocked automated scanning" / "couldn't confirm your
+  location — skipped its results this run") = the trim-match/location keep-set working
+  (iSeeCars absent by design — launch adapters are Cars.com + Edmunds only). Re-flag ONLY the
+  suspect-0 (kept 0 while site_scan holds ≥3 in-radius exact matches — skill-pipeline.md item
+  4) or an UNVOICED site drop. Shipped 2026-07-03 (`phase2/inventory_aggregator_scan`).
+- `inventory_site_scan` completing and IMMEDIATELY spawning an UNPROMPTED
+  `inventory_aggregator_scan` assistant turn (+ its headed browser windows) — the
+  site_scan→aggregator AUTO-CHAIN (an app-layer lifecycle listener: the parent turn voices
+  `Also checking shopping sites (Cars.com, Edmunds)…` before its `done`, and the sibling
+  streams as its own turn for the SAME profile). Deliberate; serve-live runs it at the
+  product default ON (`AUTOBROKER_SITESCAN_CHAIN` unset). A declined/failed/profile-less
+  site_scan never chains, and the aggregator never chains further (no recursion) — both
+  correct. Re-flag ONLY: the chain firing while `AUTOBROKER_SITESCAN_CHAIN=0`; firing TWICE
+  for one parent site_scan; or a healthy COMPLETED site_scan in the live sweep producing NO
+  chained turn. Shipped 2026-07-03 (`phase2/inventory_aggregator_scan` chain).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
@@ -203,8 +215,10 @@ If `pipeline_reset` already ran, read the pre-wipe backup:
 `BK=$(ls -t <dataDir>/backups/autobroker-*.db | head -1)` then query `$BK`.
 
 About 7 of the 18 skills emit LLM rows (`inventory_aggregator_scan` joined the emitters —
-it reuses the `inventory_extract` useCase); the other 11 are zero-LLM deterministic (no row =
-correct). Lane-B (Claude OAuth) rows are `cost_usd` NULL + `pricing_source='subscription'` — an
+it reuses the `inventory_extract` useCase; and because the site_scan→aggregator AUTO-CHAIN
+fires it after every completed site_scan, **every site_scan journey now ALSO yields
+aggregator ledger rows** even when you never launched the aggregator by hand); the other 11
+are zero-LLM deterministic (no row = correct). Lane-B (Claude OAuth) rows are `cost_usd` NULL + `pricing_source='subscription'` — an
 honest NULL, never a fabricated $0. Render them `cost=NULL · subscription` and never sum them
 into the $ totals (the `SUM` above skips NULLs — keep it that way). The dealer subagents run on
 the local OAuth subscription — `$0` API-key cost (lane-independent).

@@ -266,6 +266,8 @@ describe("search_profile_intake — slash happy path", () => {
 
     // First suspend is the collect form.
     expect(started.status).toBe("suspended");
+    // Slash path: the empty 18-field form is by design — no verbal trim ask.
+    expect(suspendPayloadOf(started, "collect")["prose"]).toBeNull();
 
     // submit → resolveLocation resolves → the buyer-confirmation card suspends.
     const afterSubmit = await run.resume({
@@ -828,6 +830,9 @@ describe("search_profile_intake — trim suggestion", () => {
     expect(collect["kind"]).toBe("data_collection");
     const seed = (collect["seed_fields"] as Record<string, unknown>) ?? {};
     expect(seed["trim"] ?? null).toBeNull(); // skip seeded NO trim
+    // Picker-skipped path: the form suspend voices an explicit trim ask.
+    expect(String(collect["prose"])).toContain("Which exact trim do you want?");
+    expect(String(collect["prose"])).toContain("required");
   });
 
   it("decline → terminal declined, ZERO write", async () => {
@@ -871,7 +876,11 @@ describe("search_profile_intake — trim suggestion", () => {
     const started = await run.start({ inputData: { input_mode: "freeform", freeform_text: "2026 honda civic Irvine", seed_fields: null } });
     expect(started.status).toBe("suspended");
     // The FIRST suspend is the collect form, not the trim picker.
-    expect(suspendPayloadOf(started, "collect")["kind"]).toBe("data_collection");
+    const collect = suspendPayloadOf(started, "collect");
+    expect(collect["kind"]).toBe("data_collection");
+    // Degraded-exit path (web unreachable): the form suspend still voices the trim ask.
+    expect(String(collect["prose"])).toContain("Which exact trim do you want?");
+    expect(String(collect["prose"])).toContain("required");
   });
 
   it("0 trims extracted → graceful pass-through to the collect form", async () => {

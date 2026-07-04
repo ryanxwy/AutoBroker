@@ -139,6 +139,7 @@ function seedProfile(
     id: string;
     make: string;
     model: string;
+    trim: string | null;
     latitude: number | null;
     longitude: number | null;
     brand: string;
@@ -157,7 +158,7 @@ function seedProfile(
       2026,
       over.make ?? "Hyundai",
       over.model ?? "Tucson",
-      "SEL",
+      over.trim === undefined ? "SEL" : over.trim,
       120,
       "Irvine, CA 92602",
       over.latitude === undefined ? ORIGIN.lat : over.latitude,
@@ -482,6 +483,20 @@ describe("inventory_site_scan — typed STOPs", () => {
     expect(result.status).toBe("failed");
     expect(errorMessageOf(result)).toContain("/dealer_geosearch");
   });
+
+  it("a null-trim profile → typed STOP before any browser work (no silent degraded scan)", async () => {
+    seedProfile({ trim: null });
+    seedDealer({ id: "d-a", name: "Dealer A", lat: 33.7, lng: -117.8 });
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessNeverCalled,
+      scanDealers: scanNeverCalled,
+    });
+    const { result } = await startRun("scan-notrim-1");
+    expect(result.status).toBe("failed");
+    const msg = errorMessageOf(result);
+    expect(msg).toContain("trim is required before");
+    expect(msg).toContain("Start a new search");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -518,6 +533,8 @@ describe("inventory_site_scan — auto-approve (no suspend)", () => {
     expect(out["targetsApproved"]).toBe(3);
     expect(out["dealersScanned"]).toBe(3);
     expect(out["listingsWritten"]).toBe(3); // one listing per scanned dealer
+    // The summary voices the trim tally (all 3 SEL listings match the SEL profile).
+    expect(String(out["summary"])).toContain("3 match your SEL trim exactly");
 
     expect(rowCount("dealer_inventory_sources")).toBe(3);
     expect(rowCount("inventory_listings")).toBe(3);
@@ -988,6 +1005,46 @@ describe("inventory_site_scan — extract phase", () => {
     expect(out["rowsInvalidDropped"]).toBe(2);
     expect(out["listingsFound"]).toBe(1);
     expect(rowCount("inventory_listings")).toBe(1);
+  });
+
+  it("model/trim boundary drift ('Tucson' + 'Hybrid Limited') resegments to the profile model → near, not mismatch", async () => {
+    seedProfile({ model: "Tucson Hybrid" });
+    seedDealer({ id: "d-a", name: "Dealer A", lat: 33.7, lng: -117.8 });
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([listing({ model: "Tucson", trim: "Hybrid Limited" })]),
+      scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
+    });
+    const final = await runApproved("scan-reseg-1");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const row = db.$client
+      .prepare("SELECT match_status, model, trim FROM inventory_listings")
+      .get() as { match_status: string; model: string; trim: string };
+    // Without the resegment, model "Tucson" ≠ profile "Tucson Hybrid" → mismatch.
+    // Resegmented: model "Tucson Hybrid" matches; trim SEL ≠ Limited → near.
+    expect(row.match_status).toBe("near");
+    expect(row.model).toBe("Tucson Hybrid");
+    expect(row.trim).toBe("Limited");
+  });
+
+  it("a genuine 'Tucson Hybrid' against a plain 'Tucson' profile stays mismatch with its model intact (powertrain guard)", async () => {
+    seedProfile({ model: "Tucson", trim: "Limited" });
+    seedDealer({ id: "d-a", name: "Dealer A", lat: 33.7, lng: -117.8 });
+    __setInventoryScanDepsForTests({
+      harnessGenerate: harnessStub([listing({ model: "Tucson Hybrid", trim: "Limited" })]),
+      scanDealers: scanStub({ calls: [] }, (args) => args.targets.map((t) => scannedOutcome(t))),
+    });
+    const final = await runApproved("scan-reseg-2");
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const row = db.$client
+      .prepare("SELECT match_status, model, trim FROM inventory_listings")
+      .get() as { match_status: string; model: string; trim: string };
+    // resegmentModelTrim refuses to move the powertrain word OUT of the model:
+    // a different model, never a trim variant of the searched one.
+    expect(row.match_status).toBe("mismatch");
+    expect(row.model).toBe("Tucson Hybrid");
+    expect(row.trim).toBe("Limited");
   });
 
   it("an LLM-emitted VIN that is NOT verbatim in the snapshot drops the row (counted)", async () => {

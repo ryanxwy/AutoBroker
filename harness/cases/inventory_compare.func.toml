@@ -104,3 +104,12 @@ kind = "dom_state"
 testid = "inventory-stock"
 expect = "text"
 value = "STK-A1"
+
+# The per-row trim is displayed (trim is a first-class axis, always shown). The
+# recommended row is lst_strong, whose trim is the profile trim "Limited" — the
+# self-labeled "trim Limited" segment carries it (substring match on the value).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-candidate-trim"
+expect = "text"
+value = "Limited"

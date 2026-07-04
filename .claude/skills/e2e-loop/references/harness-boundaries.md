@@ -31,6 +31,7 @@ Wait for this line; **record `dataDir`**.
 | `AUTOBROKER_RECORD_TRANSCRIPT` | optional; when set, records the SUT's LLM traffic to a JSONL file (the step-3.9 record/replay seam). Lane A (AI-SDK) → `<path>`; lane B (Claude OAuth) → sibling `<path>.laneB.jsonl` (diagnostic-only, since 2026-06-29) |
 | `AUTOBROKER_REPLAY_TRANSCRIPT` | optional; when set, replays a prior transcript with ZERO provider cost (deterministic; dealer replies are frozen as seeds) |
 | `AUTOBROKER_PORTFOLIO_SCHEDULER` | `"1"` arms the real PortfolioScheduler for step 3.9; pair with `MAX_CONCURRENT_ACTIVE_PROFILES` (set below the active count to prove the cap) and `AUTOBROKER_PORTFOLIO_TICK_MS` (e.g. 2000) |
+| `AUTOBROKER_SITESCAN_CHAIN` | the site_scan→aggregator auto-chain switch, read at FIRE time (not boot). **serve-live does NOT set it, so it stays at the product default ON** — a completed `inventory_site_scan` auto-fires an `inventory_aggregator_scan` sibling for the same profile, so the live e2e sweep SEES the chain (the harness regression runner exports `"0"` to keep its lanes deterministic; THIS live host does not). `"0"` disables it |
 
 Result: real server + real built UI + isolated throwaway DB (never touches
 `~/.autobroker*`) + the run's live LLM lane (`--provider`) + fake-send floor armed +

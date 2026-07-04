@@ -234,6 +234,13 @@ function CandidateRow({
           // rank position the no-stock listing lands in.
           <span data-testid="inventory-stock-missing">—</span>
         )}
+        {" · "}
+        {/* Trim ALWAYS renders as its own self-labeled segment — trim is a match
+            axis, so a null/empty trim must be EXPLICIT ("trim —"), never silently
+            dropped the way vehicleHeader drops it from the title. */}
+        <span data-testid="inventory-candidate-trim">
+          trim {row.trim !== null && row.trim !== "" ? row.trim : "—"}
+        </span>
       </div>
       <div className="t-status">
         {price !== null ? (
@@ -386,6 +393,12 @@ export interface InventoryCandidatesProps {
 
 const PAGE_SIZE = 12;
 
+/** Trim-filter sentinels. A real trim is always a non-empty string, so the empty
+ *  string safely means "no trim filter" (All trims), and the NUL sentinel — which
+ *  can never be an actual trim — is the "No trim listed" (null/empty-trim) bucket. */
+const TRIM_FILTER_ALL = "";
+const TRIM_FILTER_NONE = "\u0000";
+
 export function InventoryCandidates({
   inventory,
   profileId = null,
@@ -408,6 +421,9 @@ export function InventoryCandidates({
     inventory.kind === "ok" ? (inventory.data.shoppingSourcesScanned ?? 0) : 0;
   const shoppingSourcesBlocked =
     inventory.kind === "ok" ? (inventory.data.shoppingSourcesBlocked ?? 0) : 0;
+  // # of same-(profile,VIN) rows the projection collapsed across dealers/sources
+  // (the aggregator↔dealer duplicate belt). Drives one honest "merged" note.
+  const sameVinCollapsed = inventory.kind === "ok" ? (inventory.data.sameVinCollapsed ?? 0) : 0;
 
   // Default to "recommended" when there are any recommended candidates; else "all".
   const [filter, setFilter] = useState<"recommended" | "all">(
@@ -419,11 +435,35 @@ export function InventoryCandidates({
   const [sort, setSort] = useState<InventorySort>("bestmatch");
   const [noMarkup, setNoMarkup] = useState(false);
   const [maxPriceText, setMaxPriceText] = useState("");
+  // The selected trim filter: "" = All trims, the NUL sentinel = "No trim listed",
+  // else a specific trim (matched case-insensitively).
+  const [trimFilter, setTrimFilter] = useState(TRIM_FILTER_ALL);
   // The active price cap, or null when the input is blank/zero/garbage (no cap).
   const maxPrice = useMemo(() => {
     const n = Number(maxPriceText);
     return maxPriceText.trim() !== "" && Number.isFinite(n) && n > 0 ? n : null;
   }, [maxPriceText]);
+
+  // Trim options for the filter select — the distinct non-null trims across ALL
+  // loaded candidates (not just the scoped set, so the dropdown is stable when the
+  // scope toggles), deduped case-insensitively keeping first-seen casing, sorted.
+  // `hasNull` flags whether to offer the "No trim listed" bucket.
+  const trimOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    let hasNull = false;
+    for (const c of allCandidates) {
+      if (c.trim === null || c.trim === "") {
+        hasNull = true;
+        continue;
+      }
+      const key = c.trim.toLowerCase();
+      if (!seen.has(key)) seen.set(key, c.trim);
+    }
+    const trims = [...seen.values()].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+    return { trims, hasNull };
+  }, [allCandidates]);
 
   // The candidate whose read-only detail modal is open (null = closed).
   const [detail, setDetail] = useState<InventoryCandidate | null>(null);
@@ -455,8 +495,16 @@ export function InventoryCandidates({
       // A capped price excludes null-price rows (no honest price to compare).
       rows = rows.filter((c) => c.listed_price !== null && c.listed_price <= maxPrice);
     }
+    if (trimFilter === TRIM_FILTER_NONE) {
+      // The "No trim listed" bucket — rows the scan left without a trim.
+      rows = rows.filter((c) => c.trim === null || c.trim === "");
+    } else if (trimFilter !== TRIM_FILTER_ALL) {
+      // A specific trim, matched case-insensitively (options keep first-seen casing).
+      const want = trimFilter.toLowerCase();
+      rows = rows.filter((c) => (c.trim ?? "").toLowerCase() === want);
+    }
     return sortCandidates(rows, sort);
-  }, [allCandidates, filter, noMarkup, maxPrice, sort]);
+  }, [allCandidates, filter, noMarkup, maxPrice, trimFilter, sort]);
 
   const pager = usePagedList(filtered, PAGE_SIZE);
 
@@ -588,6 +636,29 @@ export function InventoryCandidates({
                   onChange={(e) => setMaxPriceText(e.target.value)}
                 />
               </label>
+              {/* Trim — a native select over the loaded candidates' distinct trims
+                  (the label wraps the select for focus; the filtergroup layout
+                  supplies the label↔select gap). Composes with scope/markup/price. */}
+              <label className="inventory-filtergroup">
+                <span className="control-label">Trim</span>
+                <select
+                  className="env-select"
+                  data-testid="inventory-filter-trim"
+                  aria-label="Filter by trim"
+                  value={trimFilter}
+                  onChange={(e) => setTrimFilter(e.target.value)}
+                >
+                  <option value={TRIM_FILTER_ALL}>All trims</option>
+                  {trimOptions.trims.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                  {trimOptions.hasNull && (
+                    <option value={TRIM_FILTER_NONE}>No trim listed</option>
+                  )}
+                </select>
+              </label>
             </div>
             <p className="inventory-tally" data-testid="inventory-tally">
               {recommendedCount} recommended of {totalListings} listings
@@ -596,6 +667,14 @@ export function InventoryCandidates({
               )}
             </p>
           </div>
+          {/* Merged-count transparency: the projection collapses same-VIN duplicates
+              across dealers/sources — say how many so the combined list is honest. */}
+          {sameVinCollapsed > 0 && (
+            <p className="muted" data-testid="inventory-merged-note">
+              {sameVinCollapsed} duplicate listing{sameVinCollapsed === 1 ? "" : "s"} merged
+              across sources
+            </p>
+          )}
           {filtered.length === 0 ? (
             // Over-restrictive filters empty the set — say so plainly instead of a
             // blank tile-grid + a "0 listings" pager.

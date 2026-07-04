@@ -105,3 +105,54 @@ export function classifyTrimAvailability(
     .map((x) => x.t);
   return { matched: false, suggestions: ranked.slice(0, 3) };
 }
+
+/**
+ * Re-split a model/trim pair at the profile-model token boundary when the
+ * extraction drifted the boundary into the trim.
+ *
+ * SRP tile titles run model and trim together ("TUCSON Hybrid Limited AWD"), and
+ * the extraction's split of that character stream varies: the same page has
+ * yielded {model:"TUCSON Hybrid", trim:"Limited"} on one run and {model:"Tucson",
+ * trim:"Hybrid Limited"} on the next — the second shape fails the exact-model
+ * comparison and silently zeroes a lot full of real matches. When the extracted
+ * model differs from the profile's but the CONCATENATED model+trim token stream
+ * starts with the profile model's tokens, re-split at the profile-model boundary.
+ * This only re-partitions the tokens the page already carried — it never invents
+ * or reorders text — and rows whose tokens genuinely diverge pass through
+ * unchanged.
+ *
+ * One ASYMMETRIC guard: a re-split may pull a powertrain word (Hybrid / Electric /
+ * Plug-in / PHEV / EV) INTO the model, but never OUT of it. "Tucson Hybrid"
+ * against a "Tucson" profile is a DIFFERENT MODEL, not a trim variant — shortening
+ * it to {model:"Tucson", trim:"Hybrid …"} would upgrade a genuine model mismatch
+ * to a near match (and trimSubsetMatch treats "hybrid" as a noise token, so the
+ * mis-split could even pass a trim-subset keep). Such rows pass through unchanged
+ * and classify as the mismatch they are.
+ */
+const POWERTRAIN_TOKENS = new Set(["hybrid", "electric", "plug-in", "phev", "ev"]);
+
+export function resegmentModelTrim(
+  profileModel: string,
+  model: string | null,
+  trim: string | null,
+): { model: string | null; trim: string | null } {
+  if (model === null || model === "") return { model, trim };
+  const profileTokens = profileModel.toLowerCase().split(/\s+/).filter((t) => t !== "");
+  if (profileTokens.length === 0) return { model, trim };
+  if (model.trim().toLowerCase() === profileModel.trim().toLowerCase()) return { model, trim };
+  const combined = `${model} ${trim ?? ""}`.trim();
+  const combinedTokens = combined.split(/\s+/).filter((t) => t !== "");
+  if (combinedTokens.length < profileTokens.length) return { model, trim };
+  for (let i = 0; i < profileTokens.length; i += 1) {
+    if (combinedTokens[i]!.toLowerCase() !== profileTokens[i]) return { model, trim };
+  }
+  // The asymmetric powertrain guard: any ORIGINAL model token that this re-split
+  // would move out into the trim must not be a powertrain word.
+  const modelTokens = model.split(/\s+/).filter((t) => t !== "");
+  for (let i = profileTokens.length; i < modelTokens.length; i += 1) {
+    if (POWERTRAIN_TOKENS.has(modelTokens[i]!.toLowerCase())) return { model, trim };
+  }
+  const newModel = combinedTokens.slice(0, profileTokens.length).join(" ");
+  const rest = combinedTokens.slice(profileTokens.length).join(" ");
+  return { model: newModel, trim: rest === "" ? null : rest };
+}

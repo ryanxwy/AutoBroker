@@ -92,3 +92,11 @@ expect = "visible"
 kind = "dom_state"
 testid = "inventory-detail-found-on"
 expect = "visible"
+
+# The modal Trim row renders the listing's trim (trim is always shown, never
+# null-omitted). lst_strong's trim is the profile trim "Limited".
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-detail-trim"
+expect = "text"
+value = "Limited"

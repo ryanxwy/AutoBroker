@@ -67,8 +67,12 @@ function mockFetch(
     runStatus?: Record<string, Record<string, unknown>>;
     demo?: boolean;
     mode?: "buyer" | "test";
+    /** The session_id a POST /api/skill-runs returns. Defaults to "sess-1";
+     *  pass null to model a HEADLESS launch (no session home). */
+    startSessionId?: string | null;
   } = {},
 ): typeof fetch {
+  const startSessionId = opts.startSessionId === undefined ? "sess-1" : opts.startSessionId;
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     const json = (body: unknown, status = 200): Response =>
@@ -118,7 +122,7 @@ function mockFetch(
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       opts.posted?.push(body);
       const runId = body["skill"] === "dealer_geosearch" ? "run-geo" : "run-xyz";
-      return json({ run_id: runId, session_id: "sess-1", scope_notice: null }, 201);
+      return json({ run_id: runId, session_id: startSessionId, scope_notice: null }, 201);
     }
     const statusMatch = /\/api\/skill-runs\/([^/]+)$/.exec(url);
     if (statusMatch !== null && opts.runStatus?.[statusMatch[1]!] !== undefined) {
@@ -646,6 +650,133 @@ describe("App — data.changed pulse auto-refreshes a stale view (no reload)", (
     // The refetch fired (dealer GET count grew) and the grown row rendered.
     expect(dealerGets).toBeGreaterThan(dealerGetsAfterMount);
     expect(r.all("canvas-dealer-tile")).toHaveLength(2);
+    r.unmount();
+  });
+});
+
+describe("App — site_scan auto-chain live turn", () => {
+  it("a chained_run announce on the parent stream opens the aggregator sibling as its own turn", async () => {
+    // The server appends a chained_run announce (a `text` frame carrying the
+    // sibling {run_id, skill}) on the parent channel BEFORE its `done`; the
+    // client streams the sibling as its OWN new turn once the parent is terminal.
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    click(r.get("canvas-start-search"));
+    await flush();
+    expect(window.location.pathname).toBe("/runs/run-xyz");
+    const parent = MockStream.instances[0]!;
+
+    parent.emit({ type: "start", messageId: "run-xyz" });
+    parent.emit({
+      type: "data-frame",
+      id: "frame-0",
+      data: { kind: "init", payload: { run_id: "run-xyz", driver_kind: "deepseek_apikey" } },
+    });
+    // The announce: a voiced text triple + the chained_run metadata frame.
+    parent.emit({ type: "text-start", id: "text-1" });
+    parent.emit({ type: "text-delta", id: "text-1", delta: "Also checking shopping sites (Cars.com, Edmunds)…" });
+    parent.emit({ type: "text-end", id: "text-1" });
+    parent.emit({
+      type: "data-frame",
+      id: "frame-1",
+      data: {
+        kind: "text",
+        payload: { chained_run: { run_id: "run-agg", skill: "inventory_aggregator_scan" } },
+      },
+    });
+    // The parent reaches its terminal — only now may the sibling stream open.
+    parent.emit({ type: "data-frame", id: "frame-2", data: { kind: "done", payload: {} } });
+    parent.emit({ type: "finish" });
+    parent.end();
+    await flush();
+
+    // The sibling run's OWN stream opened, and we navigated to it (the user was
+    // on the parent run route).
+    const agg = MockStream.instances.find((s) => s.url.includes("/run-agg/stream-v2"));
+    expect(agg).toBeDefined();
+    expect(window.location.pathname).toBe("/runs/run-agg");
+    // The parent turn stays in the rail (same session — history is not wiped).
+    expect(document.querySelector('[data-testid="assistant-turn"][data-run-id="run-xyz"]')).not.toBeNull();
+    r.unmount();
+  });
+
+  it("a HEADLESS (null-session) parent keeps its turn when the sibling streams", async () => {
+    // The null-session wipe regression: a headless parent has no session, so the
+    // pre-fix sibling stream read the null session as clear-worthy and wiped the
+    // parent turn. The chained path must keep history regardless of session.
+    const client = new ApiClient({ fetchImpl: mockFetch({ startSessionId: null }) });
+    const r = render(<App client={client} />);
+    await flush();
+
+    click(r.get("canvas-start-search"));
+    await flush();
+    expect(window.location.pathname).toBe("/runs/run-xyz");
+    const parent = MockStream.instances[0]!;
+
+    parent.emit({ type: "start", messageId: "run-xyz" });
+    parent.emit({
+      type: "data-frame",
+      id: "frame-0",
+      data: { kind: "init", payload: { run_id: "run-xyz", driver_kind: "deepseek_apikey" } },
+    });
+    parent.emit({
+      type: "data-frame",
+      id: "frame-1",
+      data: {
+        kind: "text",
+        payload: { chained_run: { run_id: "run-agg", skill: "inventory_aggregator_scan" } },
+      },
+    });
+    parent.emit({ type: "data-frame", id: "frame-2", data: { kind: "done", payload: {} } });
+    parent.emit({ type: "finish" });
+    parent.end();
+    await flush();
+
+    // The sibling opened AND the parent turn survived (data-run-id still present).
+    expect(MockStream.instances.find((s) => s.url.includes("/run-agg/stream-v2"))).toBeDefined();
+    expect(document.querySelector('[data-testid="assistant-turn"][data-run-id="run-xyz"]')).not.toBeNull();
+    r.unmount();
+  });
+
+  it("a COLD refresh of a completed parent does NOT re-fire the sibling (turn + URL intact)", async () => {
+    // Cold refresh / deep link onto /runs/:parent replays the parent backlog,
+    // INCLUDING the chain announce. The already-finished sibling must NOT restart
+    // (it would wipe the recovered parent turn and hijack the URL to /runs/agg).
+    window.history.pushState({}, "", "/runs/run-xyz");
+    const client = new ApiClient({ fetchImpl: mockFetch() });
+    const r = render(<App client={client} />);
+    await flush();
+
+    // The recovery effect re-opened the parent's stream (server replays backlog).
+    const parent = MockStream.instances.find((s) => s.url.includes("/run-xyz/stream-v2"));
+    expect(parent).toBeDefined();
+
+    parent!.emit({ type: "start", messageId: "run-xyz" });
+    parent!.emit({
+      type: "data-frame",
+      id: "frame-0",
+      data: { kind: "init", payload: { run_id: "run-xyz", driver_kind: "deepseek_apikey" } },
+    });
+    // The REPLAYED announce — must be ignored on a cold-recovered parent.
+    parent!.emit({
+      type: "data-frame",
+      id: "frame-1",
+      data: {
+        kind: "text",
+        payload: { chained_run: { run_id: "run-agg", skill: "inventory_aggregator_scan" } },
+      },
+    });
+    parent!.emit({ type: "data-frame", id: "frame-2", data: { kind: "done", payload: {} } });
+    parent!.emit({ type: "finish" });
+    parent!.end();
+    await flush();
+
+    // No sibling stream opened, the URL never moved, and the parent turn is intact.
+    expect(MockStream.instances.find((s) => s.url.includes("/run-agg/stream-v2"))).toBeUndefined();
+    expect(window.location.pathname).toBe("/runs/run-xyz");
+    expect(document.querySelector('[data-testid="assistant-turn"][data-run-id="run-xyz"]')).not.toBeNull();
     r.unmount();
   });
 });

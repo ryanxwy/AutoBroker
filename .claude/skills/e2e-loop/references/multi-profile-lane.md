@@ -58,10 +58,16 @@ live AND yields the genuine multi-active world — do NOT shortcut with a fixtur
 the live lane (the deterministic soak lane uses `seedMultiActiveSharedDealer`; the
 live lane uses the product path). Then drive each profile's pipeline (site_scan →
 lead_submit → inbox_check → reply_extract → negotiation).
-(`inventory_aggregator_scan` stays OUT of the multi-profile fan-out for now: 3 concurrent
-profiles would multiply the national shopping-site loads and interleave its HEADED
-windows; the pinned single-profile spine covers it — skill-pipeline.md item 4. Revisit
-only after several soaked spine runs.)
+(**The site_scan→aggregator AUTO-CHAIN now pulls `inventory_aggregator_scan` INTO each
+profile's pipeline automatically** — every profile's completed site_scan fires its own
+aggregator sibling for the same profile, so the aggregator is no longer opt-out of the MP
+world. The extra load is bounded: ~1 SRP load per shopping site per profile per pass, and
+the in-run / persist-time / read-time VIN-dedup + enrich-only belts bound the writes.
+**WATCH-ITEM for the first post-chain MP run:** N concurrent profiles now open N× the HEADED
+aggregator windows and contend for the same shopping-site hosts — headed-window churn and
+host contention are the things to watch (record as backlog/polish if they degrade the run;
+they are not a designed-in gate). If the churn is unacceptable, `AUTOBROKER_SITESCAN_CHAIN=0`
+on the MP serve-live host disables the chain for that run. See skill-pipeline.md item 4.)
 
 For the **shared rooftop**, call `POST /__e2e/inject_replies` for ≥2 profiles with
 the SAME `dealer_key` (`inventory_site_scan`'s shared-dealer mode → one `dealer_id =

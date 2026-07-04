@@ -944,3 +944,167 @@ describe("B4 incentive_scrape cases (first-encounter auto-record, no gate)", () 
     expect(() => parseCase(src)).toThrow(/approval_gate anchor/);
   });
 });
+
+describe("E chain grammar (narrative.scan_chain / chained_run anchor / select verb)", () => {
+  const CHAIN_HEADER = (scanChain?: boolean) => `
+    [meta]
+    id = "x"
+    archetype = "A"
+    skills = ["inventory_site_scan", "inventory_aggregator_scan"]
+    [narrative]
+    session_origin = "fresh_unpinned"
+    input_mode = "slash"
+    provider = "deepseek"
+    lane = "ui"
+    ${scanChain === undefined ? "" : `scan_chain = ${scanChain}`}
+  `;
+
+  it("scan_chain defaults to false when absent, true when set (paired with its anchor)", () => {
+    const step = `
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    const chainedAnchor = `
+      [[steps.anchors]]
+      kind = "chained_run"
+      skill = "inventory_aggregator_scan"
+      max_seconds = 1800
+      table = "dealer_inventory_sources"
+    `;
+    expect(parseCase(CHAIN_HEADER() + step).scanChain).toBe(false);
+    expect(parseCase(CHAIN_HEADER(true) + step + chainedAnchor).scanChain).toBe(true);
+  });
+
+  it("scan_chain and the chained_run anchor are a PAIR — either half alone fails loud", () => {
+    const bareStep = `
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.anchors]]
+      kind = "run_status"
+      expect = ["done"]
+    `;
+    const chainedAnchor = `
+      [[steps.anchors]]
+      kind = "chained_run"
+      skill = "inventory_aggregator_scan"
+      max_seconds = 1800
+      table = "dealer_inventory_sources"
+    `;
+    // Flag without the anchor → the sibling would run orphaned/un-asserted.
+    expect(() => parseCase(CHAIN_HEADER(true) + bareStep)).toThrow(/chained_run anchor/);
+    // Anchor without the flag → the runner exports the chain OFF; nothing to wait on.
+    expect(() => parseCase(CHAIN_HEADER() + bareStep + chainedAnchor)).toThrow(/scan_chain=true/);
+  });
+
+  it("a select ui_action with no value fails loud (blank-option no-op)", () => {
+    const src = `
+      ${CHAIN_HEADER()}
+      [[steps]]
+      id = "s"
+      kind = "ui"
+      [[steps.ui_actions]]
+      verb = "select"
+      testid = "inventory-filter-trim"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "inventory-candidate-row"
+      expect = "count"
+      count = 1
+    `;
+    expect(() => parseCase(src)).toThrow(/select ui_action needs value/);
+  });
+
+  it("parses a chained_run anchor into the typed AnchorSpec", () => {
+    const src = `
+      ${CHAIN_HEADER(true)}
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.anchors]]
+      kind = "chained_run"
+      skill = "inventory_aggregator_scan"
+      max_seconds = 1800
+      table = "dealer_inventory_sources"
+      delta_min = 1
+    `;
+    const anchor = parseCase(src).steps[0]!.anchors[0]!;
+    expect(anchor).toEqual({
+      kind: "chained_run",
+      skill: "inventory_aggregator_scan",
+      maxSeconds: 1800,
+      table: "dealer_inventory_sources",
+      deltaMin: 1,
+    });
+  });
+
+  it("chained_run delta_min defaults to 1 when omitted", () => {
+    const src = `
+      ${CHAIN_HEADER(true)}
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.anchors]]
+      kind = "chained_run"
+      skill = "inventory_aggregator_scan"
+      max_seconds = 900
+      table = "dealer_inventory_sources"
+    `;
+    const anchor = parseCase(src).steps[0]!.anchors[0]! as { kind: string; deltaMin: number };
+    expect(anchor.deltaMin).toBe(1);
+  });
+
+  it("fails LOUD on a chained_run anchor missing skill / max_seconds / table", () => {
+    const base = (body: string) => `
+      ${CHAIN_HEADER(true)}
+      [[steps]]
+      id = "s"
+      skill = "inventory_site_scan"
+      [[steps.anchors]]
+      kind = "chained_run"
+      ${body}
+    `;
+    expect(() => parseCase(base(`max_seconds = 900\n      table = "dealer_inventory_sources"`))).toThrow(
+      /chained_run anchor requires skill/,
+    );
+    expect(() => parseCase(base(`skill = "inventory_aggregator_scan"\n      table = "dealer_inventory_sources"`))).toThrow(
+      /chained_run anchor requires max_seconds/,
+    );
+    expect(() => parseCase(base(`skill = "inventory_aggregator_scan"\n      max_seconds = 900`))).toThrow(
+      /chained_run anchor requires table/,
+    );
+  });
+
+  it("parses a select ui_action verb (the <select> option-choose verb)", () => {
+    const src = `
+      [meta]
+      id = "x"
+      archetype = "B"
+      skills = ["inventory_compare"]
+      [narrative]
+      session_origin = "fresh_unpinned"
+      input_mode = "slash"
+      provider = "deepseek"
+      lane = "ui"
+      [[steps]]
+      id = "ui_only"
+      kind = "ui"
+      [[steps.ui_actions]]
+      verb = "select"
+      testid = "inventory-filter-trim"
+      value = "Limited"
+      [[steps.anchors]]
+      kind = "dom_state"
+      testid = "inventory-candidate-row"
+      expect = "count"
+      count = 1
+    `;
+    expect(parseCase(src).steps[0]!.uiActions).toEqual([
+      { verb: "select", testid: "inventory-filter-trim", value: "Limited" },
+    ]);
+  });
+});

@@ -1,0 +1,54 @@
+# harness/cases/inventory_merged_note.func.toml — FUNCTIONAL lane: the
+# MERGED-COUNT transparency proof. When the read-time collapse belt merges a VIN
+# that appears under two rooftops, the combined list shows it once and the Canvas
+# Inventory section renders an honest "N duplicate listing(s) merged across
+# sources" note (inventory-merged-note).
+#
+# WHY A DEDICATED WORLD (inventory_dup_vin, not the shared inventory_listings
+# world): sameVinCollapsed>0 needs ≥2 same-VIN surviving candidates, which would
+# change the shared world's totalListings/tally (breaking the "of 3 listings"
+# anchors two cases pin). The inventory_dup_vin state seeds two in-stock,
+# under-budget, exact-trim rows sharing ONE VIN across two dealers → the collapse
+# removes one → sameVinCollapsed = 1, so the note reads "1 duplicate listing
+# merged across sources" (singular).
+#
+# Δ=0 BY CONSTRUCTION: a runless kind="ui" step snapshots before==after with no
+# run between — the read-only compare panel reaches no side effect.
+
+[meta]
+id = "inventory_merged_note_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: the same-VIN world renders the merged-count note --------------------
+
+[[steps]]
+id = "merged_note"
+kind = "ui"
+fixture_state = "inventory_dup_vin"
+purpose = "Inventory tab over the same-VIN world: the read-time collapse merges the duplicate (sameVinCollapsed=1), so the honest merged-count note renders."
+
+# Open the Inventory tab (mounts + waits for the candidates section).
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-inventory"
+
+# The merged-count note renders (only present when sameVinCollapsed > 0).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-merged-note"
+expect = "visible"
+
+# The exact honest wording (singular — exactly one duplicate was merged).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-merged-note"
+expect = "text"
+value = "1 duplicate listing merged across sources"

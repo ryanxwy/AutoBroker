@@ -15,6 +15,7 @@ import { classifyGate } from "./gateModel.js";
 import { SchemaForm } from "./SchemaForm.js";
 import {
   AmbiguousLocationPicker,
+  DataCollectionProse,
   IntakeConfirmCard,
   LocationFailureBanner,
   TrimSuggestionPicker,
@@ -41,15 +42,18 @@ export function IntakeForm({ runId, awaitingUser, submitting, onDecision }: Inta
   switch (gate.kind) {
     case "data_collection":
       return (
-        <FormBoundary spec={awaitingUser.specInline}>
-          <SchemaForm
-            runId={runId}
-            seedFields={gate.seedFields}
-            submitting={submitting}
-            onSubmit={(content) => onDecision("accept", content)}
-            onDecline={decline}
-          />
-        </FormBoundary>
+        <>
+          <DataCollectionProse prose={gate.prose} />
+          <FormBoundary spec={awaitingUser.specInline}>
+            <SchemaForm
+              runId={runId}
+              seedFields={gate.seedFields}
+              submitting={submitting}
+              onSubmit={(content) => onDecision("accept", content)}
+              onDecline={decline}
+            />
+          </FormBoundary>
+        </>
       );
     case "intake_confirm":
       return (

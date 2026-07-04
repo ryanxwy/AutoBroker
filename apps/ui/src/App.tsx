@@ -37,8 +37,10 @@ import { Chat, useChat } from "@ai-sdk/react";
 import { ApiClient, apiClient } from "./api/client.js";
 import { useAsync } from "./api/useApi.js";
 import { invalidate, useDataRefetch, useRefocusRefetch } from "./api/useDataChanged.js";
+import { ChainedRunSchema } from "./api/wire.js";
 import type {
   ApprovalList,
+  ChainedRun,
   EnvConfigResponse,
   IntakeScopeNotice,
   KeyPresenceResponse,
@@ -122,6 +124,16 @@ const PORTFOLIO_KINDS = [
 // cascades those automatically — invalidating them here too would race the
 // list update and refetch the just-deleted id (transient 404s).
 const PURGE_KINDS = ["profiles", "sessions"];
+
+/** Read the `chained_run` metadata off a run-stream data-frame payload, or null
+ *  when the frame is not a chained-run announce. It rides a `text` frame's
+ *  payload (server appendChainedRunAnnounce); an ordinary text frame has none. */
+function readChainedRun(payload: unknown): ChainedRun | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const cr = (payload as { chained_run?: unknown }).chained_run;
+  const parsed = ChainedRunSchema.safeParse(cr);
+  return parsed.success ? parsed.data : null;
+}
 
 export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.Element {
   const route = useRoute();
@@ -265,6 +277,19 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   const streamedSessionRef = useRef<string | null>(null);
   // Runs already bound to the rail (fresh launches need no refresh recovery).
   const recoveredRef = useRef<string | null>(null);
+  // The pending site_scan → aggregator_scan auto-chain: onData records the
+  // sibling run announced on the ACTIVE parent stream; an effect streams it as
+  // its OWN new turn once the parent turn is terminal (streaming it while the
+  // parent stream is still open would race two streams on the one chat).
+  // `startedChains` dedupes a re-delivered announce (same run_id twice).
+  const pendingChainRef = useRef<{ parent: string; chain: ChainedRun } | null>(null);
+  const startedChainsRef = useRef<Set<string>>(new Set());
+  // A run recovered COLD (a refresh / deep link onto /runs/:id whose stream the
+  // server REPLAYS from scratch) must NOT re-fire its already-finished sibling
+  // chain: the replayed announce would restart the (finished) aggregator sibling
+  // AND wipe the recovered parent turn. Record the cold-recovered runId so onData
+  // drops a chain whose parent is it.
+  const coldRecoveredRef = useRef<string | null>(null);
   // Transient browser activity view (live-only; never persisted into the
   // messages — the zone-4 trail + open count + latest screenshot).
   const [browserView, setBrowserView] = useState<BrowserView>(EMPTY_BROWSER_VIEW);
@@ -301,6 +326,23 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
             kinds.filter((k): k is string => typeof k === "string"),
             profileId,
           );
+        }
+      }
+      // A chained-run announce (a completed site_scan auto-started an aggregator
+      // sibling) → remember it against the ACTIVE parent run; the effect below
+      // streams it as its own turn once this parent turn is terminal. Dedupe a
+      // re-delivered announce.
+      const chained = data !== null && typeof data === "object" ? readChainedRun(data.payload) : null;
+      if (chained !== null) {
+        const parent = activeRunIdRef.current;
+        // Skip a cold-recovered parent: its replayed announce points at a sibling
+        // that already ran (re-streaming it would wipe the recovered turn).
+        if (
+          parent !== null &&
+          parent !== coldRecoveredRef.current &&
+          !startedChainsRef.current.has(chained.run_id)
+        ) {
+          pendingChainRef.current = { parent, chain: chained };
         }
       }
     }
@@ -436,7 +478,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // ---- launch (intake entries + slash/freeform + Skills popover) ------------
   // Bind a StartAck to the rail: clear the chat (a launch starts a fresh
   // conversation), send the ONE chat message that streams the run, navigate.
-  const streamRun = async (runId: string, userText?: string): Promise<void> => {
+  const streamRun = async (
+    runId: string,
+    userText?: string,
+    keepHistory = false,
+  ): Promise<void> => {
     try {
       await chat.stop(); // tear down any previous live stream first.
     } catch {
@@ -445,9 +491,12 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     // Keep the rail's history WITHIN a session (each skill run appends its own
     // turn); clear only when the session changed — i.e. intake forked a new one,
     // or a session-less headless run. bindAck has already set sessionIdRef to
-    // this run's session before calling streamRun.
+    // this run's session before calling streamRun. `keepHistory` (the auto-chain
+    // sibling path) NEVER clears — the sibling is a new turn in the SAME
+    // conversation, and a null session (headless / cold-recovered parent) must
+    // not be read as clear-worthy and wipe the parent turn.
     const sid = sessionIdRef.current;
-    if (sid === null || sid !== streamedSessionRef.current) {
+    if (!keepHistory && (sid === null || sid !== streamedSessionRef.current)) {
       chat.messages = [];
     }
     streamedSessionRef.current = sid;
@@ -477,6 +526,25 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     }
     void streamRun(ack.run_id, userText);
     navigate(`/runs/${ack.run_id}`);
+  };
+
+  // Stream an auto-chained sibling run (already started server-side by the
+  // scan-chain listener) as its OWN new assistant turn. Mirrors bindAck's tail
+  // WITHOUT a re-POST and WITHOUT clearing history (keepHistory): the sibling
+  // shares the parent's session, so the parent turn stays in the rail — even for
+  // a headless (null-session) parent, which would otherwise read as clear-worthy.
+  // Best-effort — a not-yet-live sibling channel is swallowed (the scan still ran).
+  const streamChainedRun = (parentRunId: string, chainRunId: string): void => {
+    setActiveRunId(chainRunId);
+    setServerSuggested([]);
+    recoveredRef.current = chainRunId; // live-streamed here — no cold recovery.
+    void streamRun(chainRunId, undefined, true).catch(() => {});
+    // Only take over the URL when the user is actually VIEWING the parent run —
+    // never yank them off the portfolio board / digest / another run they opened.
+    // The sibling turn streams into the always-visible rail either way.
+    if (route.name === "run" && route.runId === parentRunId) {
+      navigate(`/runs/${chainRunId}`);
+    }
   };
 
   const doLaunch = (mode: LaunchMode, userText?: string): void => {
@@ -646,6 +714,11 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       // server replays the full backlog into a fresh assistant message). The
       // draft restores from localStorage in the SchemaForm (keyed by runId).
       setRailTitle("Recovered search");
+      // This parent was recovered COLD — if it was a completed site_scan, the
+      // replayed backlog re-delivers its chain announce; mark it so onData drops
+      // that announce (the sibling already ran; re-firing would wipe this turn
+      // and hijack the URL).
+      coldRecoveredRef.current = runId;
       void (async (): Promise<void> => {
         try {
           await chat.stop();
@@ -689,6 +762,27 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       activeTurn.turn.status === "aborted");
   const activeBrowserView =
     !activeTurnTerminal && browserView.entries.length > 0 ? browserView : null;
+
+  // Auto-chain: once the parent site_scan turn is terminal, stream the announced
+  // aggregator sibling as its OWN turn. Deferred to terminal so the sibling's
+  // stream never races the parent's still-open one. Drop the pending chain if the
+  // user navigated to another run mid-stream (chat history stays in one session).
+  useEffect(() => {
+    const pending = pendingChainRef.current;
+    if (pending === null) return;
+    if (activeRunId !== pending.parent) {
+      pendingChainRef.current = null;
+      return;
+    }
+    if (!activeTurnTerminal) return;
+    pendingChainRef.current = null;
+    if (startedChainsRef.current.has(pending.chain.run_id)) return;
+    startedChainsRef.current.add(pending.chain.run_id);
+    streamChainedRun(pending.parent, pending.chain.run_id);
+    // streamChainedRun / refs are stable enough; keying off the two terminal
+    // signals is sufficient (an extra render fires a cheap null-guarded no-op).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRunId, activeTurnTerminal]);
 
   // A run is ACTIVE while it exists and has not reached a terminal status
   // (running OR awaiting_approval). Drives the TopBar run pill AND the composer

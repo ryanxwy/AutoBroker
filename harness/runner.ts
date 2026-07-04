@@ -67,7 +67,7 @@ import {
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
 import { startPoller, type GatePolicy } from "./poller.js";
 import { applyDealerReplySeeds, applyInventorySourceSeeds } from "./seed.js";
-import { planBatchRowDecisions, UiDriver } from "./uiDriver.js";
+import { planBatchRowDecisions, UiDriver, type UiTerminal } from "./uiDriver.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_HOST = join(HERE, "serverHost.ts");
@@ -208,8 +208,10 @@ interface HostHandle {
 }
 
 /** Spawn the real server host child, parse the listening line, return the base URL.
- *  AUTOBROKER_DATA_DIR is set to the run's isolated dir before spawn. */
-function startServerHost(opts: RunnerOpts): Promise<HostHandle> {
+ *  AUTOBROKER_DATA_DIR is set to the run's isolated dir before spawn.
+ *  `scanChain` opts the host into the site_scan→aggregator auto-chain (default
+ *  OFF for every lane — see the AUTOBROKER_SITESCAN_CHAIN note below). */
+function startServerHost(opts: RunnerOpts, scanChain = false): Promise<HostHandle> {
   const dataDir = dirname(opts.db);
   mkdirSync(dataDir, { recursive: true });
 
@@ -227,6 +229,14 @@ function startServerHost(opts: RunnerOpts): Promise<HostHandle> {
     // to flip it. serverHost self-sets these too.
     AUTOBROKER_HARNESS: "1",
     AUTOBROKER_MODE: "test",
+    // The site_scan→aggregator auto-chain is a PRODUCT default (ON), but it must
+    // NOT fire in the harness runner lanes: a chained aggregator pass would hit
+    // the live shopping sites on every site_scan run, spawn headed windows on CI,
+    // and race the runner teardown. So every runner-spawned host defaults the
+    // chain OFF ("0"); ONLY a case that opts in (narrative.scan_chain=true) flips
+    // it to "1" (the dedicated chain case). NOTE: apps/ui/e2e/serve-live.mjs is a
+    // SEPARATE host (not spawned here) — it leaves the chain at the product ON.
+    AUTOBROKER_SITESCAN_CHAIN: scanChain ? "1" : "0",
   };
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;
   // Functional lane: arm the host's fixture mode (deterministic DI stubs + the
@@ -835,6 +845,11 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
     // skipping it would hollow a reuse_pinned journey.
     fail(`step "${step.id}" carries pin_label — the pin verb runs on the UI lane only (--lane ui)`);
   }
+  if (step.anchors.some((a) => a.kind === "chained_run")) {
+    // The chained_run wait is driven by the UI lane's per-step loop; on the API
+    // lane the anchor would score a vacuous passthrough GREEN — refuse instead.
+    fail(`step "${step.id}" carries a chained_run anchor — the auto-chain check runs on the UI lane only (--lane ui)`);
+  }
   const gatePolicy: GatePolicy = opts.gatePolicy ?? step.gatePolicy;
   const budgetMs = stepBudgetMs(opts, step);
 
@@ -845,8 +860,9 @@ async function cmdIntake(opts: RunnerOpts): Promise<number> {
   // CONFLICTING override; pinning here makes the read path deterministic.
   process.env["AUTOBROKER_DB"] = opts.db;
 
-  // (2) Boot the REAL server host (isolated DB under ~/.autobroker-ts).
-  const host = await startServerHost(opts);
+  // (2) Boot the REAL server host (isolated DB under ~/.autobroker-ts). The
+  // auto-chain is exported OFF unless the case opts in (narrative.scan_chain).
+  const host = await startServerHost(opts, c.scanChain);
   let exitCode = 0;
   try {
     // (3) Gate ⑥ — server active DB === --db (first network call).
@@ -1344,6 +1360,78 @@ const EMPTY_RUN_DETAIL: RunDetail = {
   },
 };
 
+/** Extract the sibling run id + skill the site_scan→aggregator auto-chain
+ *  announced on the PARENT stream. The server appends a `text` frame on the
+ *  parent channel (BEFORE its `done`) whose payload carries
+ *  chained_run:{run_id,skill}. That persisted frame is the MORE DETERMINISTIC
+ *  discovery source than polling GET /api/sessions/:id last_run_id (it is minted
+ *  before the parent terminal — no polling race, and it survives a headless/
+ *  session-less parent that never records a session run), so we read it straight
+ *  off the drained parent detail. Returns null when no announce frame landed
+ *  (the chain did not fire). */
+function findChainedRunAnnounce(detail: RunDetail): { runId: string; skill: string } | null {
+  for (const ev of detail.events) {
+    const cr = ev.payload["chained_run"];
+    if (cr !== null && typeof cr === "object") {
+      const rec = cr as Record<string, unknown>;
+      const runId = rec["run_id"];
+      if (typeof runId === "string" && runId !== "") {
+        return { runId, skill: typeof rec["skill"] === "string" ? (rec["skill"] as string) : "" };
+      }
+    }
+  }
+  return null;
+}
+
+/** Drive the site_scan→aggregator auto-chain proof for a chained_run anchor. Runs
+ *  INSIDE the per-step loop (before the case's finally-teardown), so the host
+ *  stays alive while the sibling browses — the wait completes or fails BEFORE the
+ *  runner stops the host, never orphaning a mid-browse run. Discovers the sibling
+ *  off the parent stream, waits for it to reach its OWN done turn (its own
+ *  budget), reads the sibling's profile-scoped DB delta, and records each fact as
+ *  a UiCheck on the driver (the parent step's verdict carries them — a failing
+ *  chain check turns the step RED, never a silent orphan). */
+async function driveChainedRun(args: {
+  driver: UiDriver;
+  parentDetail: RunDetail;
+  anchor: { skill: string; maxSeconds: number; table: string; deltaMin: number };
+  scopeProfileId: string | null;
+  parentTerminal: UiTerminal;
+}): Promise<void> {
+  const { driver, parentDetail, anchor, scopeProfileId, parentTerminal } = args;
+  const announced = findChainedRunAnnounce(parentDetail);
+  // The chain only fires on a COMPLETED parent; a non-done parent OR a missing
+  // announce means the sibling never started — record the miss (RED) and skip the
+  // wait (there is nothing to wait for).
+  if (parentTerminal !== "done" || announced === null) {
+    await driver.recordChainedRun({
+      announced,
+      expectedSkill: anchor.skill,
+      terminal: null,
+      table: anchor.table,
+      deltaObserved: 0,
+      deltaMin: anchor.deltaMin,
+    });
+    return;
+  }
+  // Baseline the sibling's write table right after the parent terminal (the
+  // aggregator has only just started; its rows land after its long browse+extract,
+  // so this delta captures the aggregator's OWN writes).
+  const before = snapshotCounts(scopeProfileId);
+  const terminal = await driver.waitForTerminalSafe(announced.runId, anchor.maxSeconds * 1000);
+  const after = snapshotCounts(scopeProfileId);
+  const scope = scopeProfileId !== null ? "profile" : "global";
+  const deltaObserved = (after[scope][anchor.table] ?? 0) - (before[scope][anchor.table] ?? 0);
+  await driver.recordChainedRun({
+    announced,
+    expectedSkill: anchor.skill,
+    terminal,
+    table: anchor.table,
+    deltaObserved,
+    deltaMin: anchor.deltaMin,
+  });
+}
+
 /** Replay one pure-UI step (kind="ui"): drive the generic DOM verbs, score the
  *  dom_state anchors, then assemble the verdict off the recorded DOM checks. A
  *  pure-UI step has no run of its own, so it never POSTs and never polls; its
@@ -1375,6 +1463,9 @@ async function driveUiOnlyStep(args: {
       await driver.clickTestid(action.testid, stepMaxMs);
     } else if (action.verb === "fill") {
       await driver.fillTestid(action.testid, action.value ?? "", stepMaxMs);
+    } else if (action.verb === "select") {
+      // Choose an option in a <select> by its value (fill cannot target a select).
+      await driver.selectOptionTestid(action.testid, action.value ?? "", stepMaxMs);
     } else if (action.verb === "press") {
       await driver.pressKey(action.testid, action.value ?? "Enter", stepMaxMs);
     } else if (action.verb === "navigate") {
@@ -1511,7 +1602,8 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
   // rationale as the API lane, gate ①b).
   process.env["AUTOBROKER_DB"] = opts.db;
 
-  const host = await startServerHost(opts);
+  // The auto-chain host env is exported OFF unless the case opts in.
+  const host = await startServerHost(opts, c.scanChain);
   let driver: UiDriver | null = null;
   let exitCode = 0;
   try {
@@ -1863,6 +1955,25 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         step.id,
         (after.profile["profile_dealers"] ?? 0) - (before.profile["profile_dealers"] ?? 0),
       );
+
+      // ---- site_scan→aggregator auto-chain proof (chained_run anchor) --------
+      // After this (parent) step reaches terminal, discover the sibling aggregator
+      // run announced on the parent stream and wait for IT to complete, recording
+      // the outcome as UiChecks the verdict carries. This runs BEFORE the case's
+      // finally-teardown (host still alive), so the sibling never orphans mid-browse.
+      const chainedAnchor = step.anchors.find(
+        (a): a is Extract<(typeof step.anchors)[number], { kind: "chained_run" }> =>
+          a.kind === "chained_run",
+      );
+      if (chainedAnchor !== undefined) {
+        await driveChainedRun({
+          driver,
+          parentDetail: detail,
+          anchor: chainedAnchor,
+          scopeProfileId,
+          parentTerminal: uiTerminal,
+        });
+      }
 
       let waiver: { kind: string; reason: string } | null = null;
       if (step.skill === "dealer_geosearch" && uiTerminal === "done") {

@@ -309,6 +309,7 @@ export {
   classifyTrimAvailability,
   normalizeTrim,
   trimSubsetMatch,
+  resegmentModelTrim,
   type TrimAvailability,
 } from "./inventory/trimMatch.js";
 export {

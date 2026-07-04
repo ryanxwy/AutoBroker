@@ -103,7 +103,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function seedProfile(
-  over: Partial<{ id: string; make: string; model: string; trim: string; postalCode: string | null }> = {},
+  over: Partial<{ id: string; make: string; model: string; trim: string | null; postalCode: string | null }> = {},
 ): void {
   db.$client
     .prepare(
@@ -117,7 +117,7 @@ function seedProfile(
       2026,
       over.make ?? "Hyundai",
       over.model ?? "Tucson",
-      over.trim ?? "SEL",
+      over.trim === undefined ? "SEL" : over.trim,
       120,
       "Irvine, CA 92602",
       over.postalCode === undefined ? "92602" : over.postalCode,
@@ -346,6 +346,19 @@ describe("inventory_aggregator_scan — selectAggregatorKeepRows", () => {
     expect(counts.droppedNoMatch).toBe(0);
   });
 
+  it("drops a genuine powertrain-variant model — 'Tucson Hybrid' against the 'Tucson' profile is a model mismatch, never a trim keep", () => {
+    // Pre-guard this row was the pierce: the resegment shortened the model to
+    // "Tucson" and trimSubsetMatch treats "hybrid" as a noise token, so
+    // "Hybrid Sport-L" ⊇ "Sport-L" would have KEPT it as near.
+    const { kept, counts } = selectAggregatorKeepRows({
+      rows: [selInput("cars_com", { vin: VIN_A, model: "Tucson Hybrid", trim: "Sport-L" })],
+      profile: PROFILE,
+      radiusMiles: 50,
+    });
+    expect(kept).toHaveLength(0);
+    expect(counts.droppedNoMatch).toBe(1);
+  });
+
   it("drops an unrelated trim, in_transit/ordered, and beyond-radius rows; keeps unknown-status", () => {
     const { kept, counts } = selectAggregatorKeepRows({
       rows: [
@@ -394,6 +407,7 @@ describe("inventory_aggregator_scan — buildAggregatorSummary", () => {
   it("names each site with plain-word counts, a robots note, and never internal counter names or budget", () => {
     const s = buildAggregatorSummary({
       perSite,
+      trim: "Limited",
       keptWritten: 8,
       duplicatesSkipped: 2,
       droppedNoDealer: 1,
@@ -404,7 +418,7 @@ describe("inventory_aggregator_scan — buildAggregatorSummary", () => {
     expect(s).toContain("Cars.com: 12 listings");
     expect(s).toContain("Edmunds: blocked automated scanning");
     expect(s).toContain("Cars.com and Edmunds ask automated tools not to crawl");
-    expect(s).toContain("Kept 8 exact-match listings");
+    expect(s).toContain("Kept 8 listings matching your Limited trim");
     expect(s).toContain("2 duplicates skipped");
     expect(s).toContain("dealership couldn't be identified");
     expect(s).toContain("3 outside your radius");
@@ -422,6 +436,7 @@ describe("inventory_aggregator_scan — buildAggregatorSummary", () => {
         { siteId: "cars_com", label: "Cars.com", status: "scanned", error: null, robotsDisallowed: true, listingCount: 5 },
         { siteId: "edmunds", label: "Edmunds", status: "failed", error: "location_not_applied", robotsDisallowed: true, listingCount: 0 },
       ],
+      trim: "Limited",
       keptWritten: 5,
       duplicatesSkipped: 0,
       droppedNoDealer: 0,
@@ -569,6 +584,24 @@ describe("inventory_aggregator_scan — typed STOPs", () => {
     const msg = errorMessageOf(result);
     expect(msg).toContain("postal_code");
     expect(msg).toContain("/search_profile_intake");
+  });
+
+  it("a null-trim profile → typed STOP (never a silent degraded scan), no browser work", async () => {
+    seedProfile({ trim: null });
+    __setAggregatorScanDepsForTests({ scanAggregators: scanNeverCalled });
+    const { result } = await startRun("agg-notrim-1");
+    expect(result.status).toBe("failed");
+    const msg = errorMessageOf(result);
+    expect(msg).toContain("trim is required before");
+    expect(msg).toContain("Start a new search");
+  });
+
+  it("a blank-trim profile → same typed trim STOP", async () => {
+    seedProfile({ trim: "" });
+    __setAggregatorScanDepsForTests({ scanAggregators: scanNeverCalled });
+    const { result } = await startRun("agg-blanktrim-1");
+    expect(result.status).toBe("failed");
+    expect(errorMessageOf(result)).toContain("trim is required before");
   });
 });
 

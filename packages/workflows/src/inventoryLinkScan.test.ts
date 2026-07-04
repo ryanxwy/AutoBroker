@@ -110,7 +110,7 @@ const URL_B = "https://www.d-b.com/new-inventory/";
 const CARD_HREF = "https://www.d-a.com/new/Hyundai-Tucson-1.htm";
 
 function seedProfile(
-  over: Partial<{ id: string; make: string; model: string }> = {},
+  over: Partial<{ id: string; make: string; model: string; trim: string | null }> = {},
 ): void {
   db.$client
     .prepare(
@@ -124,7 +124,7 @@ function seedProfile(
       2026,
       over.make ?? "Hyundai",
       over.model ?? "Tucson",
-      "SEL",
+      over.trim === undefined ? "SEL" : over.trim,
       120,
       "Irvine, CA 92602",
       33.6695,
@@ -417,6 +417,19 @@ describe("inventory_link_scan — load/filter/usGate/reviewGate", () => {
     expect(ambiguous.status).toBe("failed");
     expect(errorMessageOf(ambiguous)).toContain("Multiple active search profiles");
   });
+
+  it("a null-trim profile → typed STOP before any capture (no blank-trim matching)", async () => {
+    seedProfile({ trim: null });
+    __setInventoryLinkScanDepsForTests({
+      harnessGenerate: harnessNeverCalled,
+      captureLinks: captureNeverCalled,
+    });
+    const { result } = await startRun("link-notrim-1");
+    expect(result.status).toBe("failed");
+    const msg = errorMessageOf(result);
+    expect(msg).toContain("trim is required before");
+    expect(msg).toContain("Start a new search");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -578,6 +591,34 @@ describe("inventory_link_scan — extract guards + profile filter + persist mark
       reason: "non_inventory_url",
       rule: "bare_homepage",
     });
+  });
+
+  it("model/trim boundary drift ('Tucson' + 'Hybrid Limited') resegments to 'Tucson Hybrid' → near, persisted (not rejected as mismatch)", async () => {
+    seedProfile({ model: "Tucson Hybrid" });
+    seedDealer({ id: "d-a", name: "Dealer A" });
+    const srcA = seedLink("d-a", URL_A);
+    __setInventoryLinkScanDepsForTests({
+      harnessGenerate: harnessStub([listing({ model: "Tucson", trim: "Hybrid Limited" })]),
+      captureLinks: captureStub({ calls: [] }, (args) =>
+        args.targets.map((t) => scannedLink(t.sourceId)),
+      ),
+    });
+    const { run, result } = await startRun("link-reseg-1");
+    expect(result.status).toBe("suspended");
+    const final = await run.resume({
+      step: "reviewGate",
+      resumeData: { action: "approve", approved_dealer_ids: [srcA] },
+    });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const row = db.$client
+      .prepare("SELECT match_status, model, trim FROM inventory_listings")
+      .get() as { match_status: string; model: string; trim: string };
+    // Without the resegment, model "Tucson" ≠ profile "Tucson Hybrid" → mismatch → rejected.
+    // Resegmented: model "Tucson Hybrid" matches; trim SEL ≠ Limited → near → persisted.
+    expect(row.match_status).toBe("near");
+    expect(row.model).toBe("Tucson Hybrid");
+    expect(row.trim).toBe("Limited");
   });
 
   it("a card-less capture accepts the LINK's own URL as listing_url provenance", async () => {

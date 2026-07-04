@@ -1,0 +1,66 @@
+# harness/cases/inventory_trim_filter.func.toml — FUNCTIONAL lane: the
+# FILTER-BY-TRIM proof (owner directive: scan results must be filterable by the
+# profile trim). Over the same populated inventory_listings world, open the All
+# scope (3 candidates: lst_strong=Limited, lst_incomplete=SEL, lst_nostock=SEL),
+# then select the PROFILE trim ("Limited") in the trim filter — the list narrows
+# to exactly the 1 row matching that trim (lst_strong).
+#
+# WHY A SIBLING CASE (not a step on inventory_compare.func.toml): the trim-filter
+# assertion is its own FINAL DOM state (All scope + trim=Limited), and the harness
+# forbids two steps sharing a fixture_state within one case + a runless ui step has
+# no prior run to inherit. A sibling case reuses the EXISTING fixture (zero new
+# data), the standard pattern.
+#
+# WHY THIS PROVES A SHRINK (not just the Recommended default): the case clicks the
+# All scope FIRST — the list is definitively 3 rows — then selects the trim, so the
+# final count=1 can only be the trim filter narrowing All's 3 to the 1 Limited row
+# (a broken/no-op filter would leave 3 and RED this anchor). The func runner scores
+# every anchor AFTER replaying every ui_action, so this is a single final-state
+# assert (no mid-step interleaving).
+
+[meta]
+id = "inventory_trim_filter_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: All scope → filter by the profile trim → the set shrinks to it -----
+
+[[steps]]
+id = "trim_filter"
+kind = "ui"
+fixture_state = "inventory_listings"
+purpose = "Inventory tab → All scope (3 candidates) → select the profile trim 'Limited' in inventory-filter-trim: the list narrows to the 1 exact-trim row (lst_strong)."
+
+# Open the Inventory tab (mounts + waits for the candidates section + controls).
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-inventory"
+
+# Switch to the All scope so all 3 surviving candidates are in view (the default
+# Recommended scope holds only lst_strong — the shrink would not be observable).
+[[steps.ui_actions]]
+verb = "click"
+testid = "inventory-filter-all"
+
+# Select the profile trim in the trim filter <select> (option value = the trim
+# string). Composes with the All scope; narrows the 3 rows to the Limited ones.
+[[steps.ui_actions]]
+verb = "select"
+testid = "inventory-filter-trim"
+value = "Limited"
+
+# From 3 (All) down to exactly 1 — the single row matching the profile trim
+# (lst_strong, the only "Limited" candidate; the two SEL rows are filtered out).
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-candidate-row"
+expect = "count"
+count = 1
+match = "exact"

@@ -124,6 +124,7 @@ import {
   normalizeListingUrl,
   NULL_EMITTER,
   persistScanResults as persistScanResultsImpl,
+  resegmentModelTrim,
   resolveActiveProfile as resolveActiveProfileImpl,
   resolveSrp,
   selectTopListingsForDealer,
@@ -155,6 +156,7 @@ export type InventoryScanStopCode =
   | "no_active_profile"
   | "multiple_active_profiles"
   | "profile_missing_fields"
+  | "trim_missing"
   | "no_dealers";
 
 /** Typed STOP from the pre-scan steps. The message is the user-facing wording
@@ -1850,6 +1852,16 @@ const resolveProfileStep = createStep({
       );
     }
 
+    // Trim is REQUIRED before scanning: the scan results must show and be filterable
+    // by the profile trim. STOP rather than run a trim-less degraded scan.
+    if (profile.trim === null || profile.trim.trim() === "") {
+      throw new InventorySiteScanStopError(
+        "trim_missing",
+        "Your search profile doesn't have a trim yet — trim is required before " +
+          "scanning. Start a new search (intake) to set the exact trim.",
+      );
+    }
+
     return {
       searchProfileId: profile.id,
       resolution: resolved.kind,
@@ -2215,19 +2227,27 @@ const extractStep = createStep({
             }
           }
 
+          // Re-segment a model/trim boundary drift ("Tucson" + "Hybrid Limited"
+          // against a "Tucson Hybrid" profile) BEFORE classifying, so the corrected
+          // split both drives match_status and persists on the row.
+          const seg = resegmentModelTrim(state.model, listing.model, listing.trim);
+          const l =
+            seg.model === listing.model && seg.trim === listing.trim
+              ? listing
+              : { ...listing, model: seg.model, trim: seg.trim };
           const matchStatus = classifyMatchStatus(
             state.year,
             state.make,
             state.model,
             state.trim,
             state.acceptableTrims,
-            listing.year,
-            listing.make,
-            listing.model,
-            listing.trim,
+            l.year,
+            l.make,
+            l.model,
+            l.trim,
           );
           classified.push({
-            listing: { ...listing, vin, price, listing_url: listingUrl },
+            listing: { ...l, vin, price, listing_url: listingUrl },
             matchStatus,
             msrp,
             // Omit the keys entirely (vs explicit undefined) when the VDP was
@@ -2317,6 +2337,14 @@ const persistConfirmStep = createStep({
 
       const approvedCount = (state.approvedDealerIds ?? []).length;
       const skippedCount = (state.skipped ?? []).length;
+      // Trim-aware tally: how many of the classified (already resegmented) rows
+      // match the profile trim exactly. Derived from the in-run carry — no re-query.
+      const exactTrimCount = carry
+        ? [...carry.classified.values()].reduce(
+            (n, rows) => n + rows.filter((r) => r.matchStatus === "exact").length,
+            0,
+          )
+        : 0;
       const summary =
         `Scanned ${persist.sourcesScanned} of ${approvedCount} approved dealer(s)` +
         (persist.sourcesBlocked > 0 ? `, ${persist.sourcesBlocked} blocked` : "") +
@@ -2341,6 +2369,7 @@ const persistConfirmStep = createStep({
         (state.listingsDroppedBeyondCap > 0
           ? `, ${state.listingsDroppedBeyondCap} listing(s) beyond the per-site record cap dropped`
           : "") +
+        `. ${exactTrimCount} match your ${state.trim} trim exactly` +
         `. Filter ladder: ${state.rungUrlTemplateHits} URL-template hit(s), ` +
         `${state.rungDomFilterHits} on-page filter hit(s), ` +
         `${state.rungUnfilteredFallbacks} unfiltered fallback(s).`;
