@@ -54,6 +54,7 @@ function renderRail(activeAwaiting: unknown | null) {
       onSelectSession={() => {}}
       onRunSkill={() => {}}
       onRunSuggested={() => {}}
+      onMinimize={() => {}}
     />,
   );
 }
@@ -112,6 +113,7 @@ function renderRunActive(runActive: boolean) {
       onSelectSession={() => {}}
       onRunSkill={() => {}}
       onRunSuggested={() => {}}
+      onMinimize={() => {}}
     />,
   );
 }
@@ -150,6 +152,7 @@ function renderPinned(pinLabel: string | null, pinZip: string | null) {
       onSelectSession={() => {}}
       onRunSkill={() => {}}
       onRunSuggested={() => {}}
+      onMinimize={() => {}}
     />,
   );
 }
@@ -252,6 +255,7 @@ function renderGateError(gateKind: string) {
       onSelectSession={() => {}}
       onRunSkill={() => {}}
       onRunSuggested={() => {}}
+      onMinimize={() => {}}
     />,
   );
 }

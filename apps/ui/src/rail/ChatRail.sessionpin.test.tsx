@@ -48,6 +48,7 @@ function baseProps(over: Partial<ChatRailProps>): ChatRailProps {
     onSelectSession: () => {},
     onRunSkill: () => {},
     onRunSuggested: () => {},
+    onMinimize: () => {},
     ...over,
   };
 }

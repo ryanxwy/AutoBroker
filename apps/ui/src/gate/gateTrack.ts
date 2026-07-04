@@ -25,6 +25,14 @@
 
 export type GateTrack = "rail" | "banner";
 
+/** Read the gate `kind` off a pending suspend's spec_inline payload. The ONE
+ *  derivation both consumers share: the rail's error routing and App's
+ *  minimized-rail auto-restore must see the same kind, never drift. */
+export function gateKindOf(specInline: Record<string, unknown> | null | undefined): string | null {
+  const kind = specInline?.["kind"];
+  return typeof kind === "string" ? kind : null;
+}
+
 /** Gate kinds reserved for the app-level banner surface. The typed-YES
  *  destructive confirm is emitted as `confirmation_gate` (pipeline_reset). The
  *  batch-review family renders in the rail (see gateTrack's doc). */

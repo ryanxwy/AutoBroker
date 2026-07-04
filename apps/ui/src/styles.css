@@ -2502,3 +2502,34 @@ p.muted, span.muted { font-size: 0.95em; }
   color: var(--ink-soft); padding: 4px 2px;
 }
 .topbar-portfolio-link:hover { color: var(--run); }
+
+/* ---- minimized rail → floating chat-head launcher ------------------------ */
+/* display:none, NOT unmount: the rail keeps its React state (the composer
+   draft) while leaving the tab order / a11y tree; the resizer seam hides with
+   it. Restoring is the launcher, a bindAck launch, or a rail-tracked gate. */
+[data-rail-minimized] .chat-rail,
+[data-rail-minimized] .rail-resizer { display: none; }
+.chat-launcher {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.15s;
+}
+.chat-launcher:hover { transform: translateY(-1px); box-shadow: var(--shadow-mid); }
+.chat-launcher:focus-visible { outline: 2px solid var(--gate); outline-offset: 2px; }
+.chat-launcher img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block; }
+/* The "Needs you" widget shares the corner — stack it ABOVE the launcher only
+   while minimized (expanded keeps its regular bottom: 18px spot). */
+[data-rail-minimized] .needsyou-widget { bottom: 82px; }

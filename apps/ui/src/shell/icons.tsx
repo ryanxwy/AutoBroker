@@ -65,6 +65,26 @@ export function PinIcon({ filled, size = 15 }: { filled: boolean; size?: number 
   );
 }
 
+/** Minimize — a chevron into the right edge (the rail folds away rightward). */
+export function MinimizeIcon({ size = 17 }: { size?: number }): JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 /** History — a clock (recent sessions). */
 export function HistoryIcon({ size = 17 }: { size?: number }): JSX.Element {
   return (

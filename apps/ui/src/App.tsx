@@ -68,6 +68,7 @@ import {
 import { RunChatTransport } from "./chat/transport.js";
 import { useDecision } from "./chat/useDecision.js";
 import { GateBannerHost } from "./gate/GateBannerHost.js";
+import { gateKindOf, gateTrack } from "./gate/gateTrack.js";
 import { NeedsYouInbox } from "./gate/NeedsYouInbox.js";
 import { toSnapshot, vehicleLabel, zipOf } from "./home/profileView.js";
 import { launchIntake, launchSkill, type LaunchMode } from "./launch.js";
@@ -87,6 +88,7 @@ import { ProfileWorkspace } from "./routes/ProfileWorkspace.js";
 import { Settings } from "./routes/Settings.js";
 import { SettingsBody } from "./settings/SettingsBody.js";
 import { navigate, useRoute } from "./router.js";
+import { ChatLauncher } from "./shell/ChatLauncher.js";
 import { Modal } from "./shell/Modal.js";
 import { PortfolioStatusBar } from "./shell/PortfolioStatusBar.js";
 import { RailResizer } from "./shell/RailResizer.js";
@@ -174,6 +176,19 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
   // body in a Modal so the owner never leaves the workbench to adjust env config.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsTitleId = useId();
+
+  // ---- rail minimize → floating chat-head launcher ---------------------------
+  // Session-only ON PURPOSE (no persistence): a fresh context always opens
+  // expanded, so every existing rail flow starts from the default. The rail is
+  // hidden with display:none via data-rail-minimized on .app-shell — NEVER
+  // unmounted — so the composer draft and all rail state survive.
+  const [railMinimized, setRailMinimized] = useState(false);
+  const onMinimizeRail = (): void => {
+    setRailMinimized(true);
+    // Focus sits on the minimize button inside the about-to-hide subtree —
+    // park it on the body so it isn't stranded in a display:none tree.
+    (document.activeElement as HTMLElement | null)?.blur();
+  };
 
   // ---- draggable rail width: own the --rail-width on the .app-body host ------
   // RailResizer writes the CSS var imperatively during a drag; App sets the
@@ -512,6 +527,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     setRailTitle(title);
     setScopeNotice(ack.scope_notice);
     setActiveRunId(ack.run_id);
+    setRailMinimized(false); // every launch surfaces its run in the rail.
     setServerSuggested([]); // clear the prior run's re-rank until this one completes.
     sessionIdRef.current = ack.session_id;
     recoveredRef.current = ack.run_id; // a fresh launch needs no recovery.
@@ -794,6 +810,16 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
       : null;
   const decision = useDecision(client, activeRunId, activeAwaiting?.decisionId ?? null);
 
+  // AUTO-RESTORE (load-bearing safety rule): a pending gate whose kind routes
+  // to the RAIL re-expands a minimized rail — a human-approval gate must NEVER
+  // sit hidden behind the launcher. Banner-tracked kinds (approval /
+  // confirmation_gate) render in the GateBannerHost above the workbench/rail
+  // split, which minimizing never hides, so they do NOT force a restore.
+  useEffect(() => {
+    if (!railMinimized || activeAwaiting === null) return;
+    if (gateTrack(gateKindOf(activeAwaiting.specInline)) === "rail") setRailMinimized(false);
+  }, [railMinimized, activeAwaiting]);
+
   // Hybrid skills-popover re-rank: when a run COMPLETES, fetch a conversation-
   // aware ordering + reasons for the deterministic top-3 (ONCE per run id). The
   // deterministic set still renders instantly; this only re-orders/re-words the
@@ -861,7 +887,7 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     mode.kind === "error" ? mode.message : skills.kind === "error" ? skills.message : null;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" {...(railMinimized ? { "data-rail-minimized": "" } : {})}>
       {/* In-app toast for a background notification delivered while the window
           is focused (Electron shell only; inert in a plain browser). */}
       <Toast />
@@ -983,8 +1009,13 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
           onSelectSession={onSelectSession}
           onRunSkill={onRunSkill}
           onRunSuggested={(skill) => doLaunchSkill(skill)}
+          onMinimize={onMinimizeRail}
         />
       </div>
+
+      {/* Floating chat-head — the minimized rail's restore handle. Mounts only
+          while minimized; the RAIL stays mounted (display:none) throughout. */}
+      {railMinimized && <ChatLauncher onOpen={() => setRailMinimized(false)} />}
 
       {/* Profile dialogs — the unified view/edit modal and the irreversible
           hard-delete confirm (App owns the state so both Canvas and the Searches

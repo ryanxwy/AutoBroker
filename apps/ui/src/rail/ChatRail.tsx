@@ -17,8 +17,8 @@ import type { IntakeScopeNotice, SkillManifest } from "../api/wire.js";
 import type { BrowserView } from "../chat/browserView.js";
 import type { TurnView } from "../chat/messageModel.js";
 import type { DecisionController } from "../chat/useDecision.js";
-import { gateTrack } from "../gate/gateTrack.js";
-import { HistoryIcon, PinIcon } from "../shell/icons.js";
+import { gateKindOf, gateTrack } from "../gate/gateTrack.js";
+import { HistoryIcon, MinimizeIcon, PinIcon } from "../shell/icons.js";
 import { Popover } from "../shell/Popover.js";
 import { SearchPicker } from "../shell/SearchPicker.js";
 import { SkillsPopoverList, type ServerSuggestion } from "../shell/SkillsPopover.js";
@@ -90,6 +90,8 @@ export interface ChatRailProps {
   onRunSkill: (skill: SkillManifest) => void;
   /** Launch a clarify turn's suggested skill ("Run it explicitly"; gates downstream). */
   onRunSuggested: (skill: string) => void;
+  /** Minimize the rail to the floating launcher (App owns the state). */
+  onMinimize: () => void;
 }
 
 export function ChatRail({
@@ -123,6 +125,7 @@ export function ChatRail({
   onSelectSession,
   onRunSkill,
   onRunSuggested,
+  onMinimize,
 }: ChatRailProps): JSX.Element {
   // The most-recently-run skill drives the Skills-tray suggested-set window:
   // the last turn's skill if the last turn is an assistant run, else null.
@@ -139,10 +142,7 @@ export function ChatRail({
     (t): t is Extract<TurnView, { kind: "assistant" }> => t.kind === "assistant" && t.id === activeRunId,
   );
   const activeAwaiting = activeTurn?.turn.status === "awaiting_approval" ? activeTurn.turn.awaitingUser : null;
-  const activeGateKind =
-    typeof activeAwaiting?.specInline?.["kind"] === "string"
-      ? (activeAwaiting.specInline["kind"] as string)
-      : null;
+  const activeGateKind = gateKindOf(activeAwaiting?.specInline);
   const railErrorVisible =
     activeAwaiting === null || (gateTrack(activeGateKind) === "rail" && activeGateKind !== "batch_review");
   return (
@@ -226,6 +226,16 @@ export function ChatRail({
             />
           )}
         </Popover>
+        <button
+          type="button"
+          className="icon-btn"
+          data-testid="rail-minimize"
+          aria-label="Minimize chat"
+          title="Minimize chat"
+          onClick={onMinimize}
+        >
+          <MinimizeIcon />
+        </button>
       </div>
 
       <div className="conversation" data-testid="conversation">
