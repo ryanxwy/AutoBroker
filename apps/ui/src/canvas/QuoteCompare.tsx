@@ -150,7 +150,6 @@ export function QuoteCompare({ quotes, onOpenCompare }: QuoteCompareProps): JSX.
 
   return (
     <section data-testid="quote-compare">
-      <h2>Quote compare</h2>
       {quotes.kind === "loading" && <p className="muted">Loading quotes…</p>}
       {quotes.kind === "error" && (
         <p className="danger-text" role="alert">

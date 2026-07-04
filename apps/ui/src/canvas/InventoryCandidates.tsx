@@ -512,7 +512,6 @@ export function InventoryCandidates({
 
   return (
     <section data-testid="canvas-inventory-candidates">
-      <h2>Inventory candidates</h2>
       {showCrossCheck && (
         <ColorCrossCheckTile
           items={colorCrossCheck}

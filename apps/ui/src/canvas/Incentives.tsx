@@ -80,7 +80,6 @@ export function Incentives({ incentives }: IncentivesProps): JSX.Element {
   const [detail, setDetail] = useState<IncentiveRow | null>(null);
   return (
     <section data-testid="canvas-incentives">
-      <h2>Incentives</h2>
       {incentives.kind === "loading" && <p className="muted">Loading incentives…</p>}
       {incentives.kind === "error" && (
         <p className="danger-text" role="alert">

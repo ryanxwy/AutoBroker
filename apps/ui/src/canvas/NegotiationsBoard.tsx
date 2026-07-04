@@ -201,7 +201,6 @@ export function NegotiationsBoard({
 
   return (
     <section data-testid="canvas-negotiations">
-      <h2>Negotiations</h2>
       {negotiations.kind === "loading" && <p className="muted">Loading negotiations…</p>}
       {negotiations.kind === "error" && (
         <p className="danger-text" role="alert">

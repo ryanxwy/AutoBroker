@@ -1012,13 +1012,12 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding-top: 4px;
 }
 .inventory-tally {
-  flex-basis: 100%;
+  margin: 0 0 0 auto;
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-mute);
-  margin: 0;
 }
 /* A grouping for a labeled segmented control / filter cluster. */
 .inventory-sortgroup,
@@ -1113,15 +1112,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 
 .feed { margin-top: 16px; }
-.app-main .feed > h2 {
-  font-family: var(--mono);
-  font-weight: 400;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-}
-.feed ul { margin: 8px 0; padding-left: 18px; }
 .feed li { font-family: var(--serif); font-size: 12.5px; color: var(--ink-soft); padding: 2px 0; }
 .feed .feed-done::marker { color: var(--go); }
 .feed li.muted::marker { color: var(--ink-mute); }
@@ -2274,14 +2264,14 @@ p.muted, span.muted { font-size: 0.95em; }
   z-index: 20;
   background: var(--panel);
   border-bottom: 1px solid var(--rule);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 /* ---- canvas summary bento header (folds digest headline + tallies) ---------- */
 .canvas-summary {
   background: var(--panel);
   border-bottom: 1px solid var(--rule-soft);
-  padding: 10px 16px 8px;
+  padding: 6px 16px 6px;
   display: flex;
   align-items: baseline;
   gap: 16px;
@@ -2348,7 +2338,11 @@ p.muted, span.muted { font-size: 0.95em; }
   padding: 1px 5px;
 }
 .canvas-summary-headline {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin: 2px 0 0;
   font-family: var(--serif);
   font-style: italic;

@@ -1,10 +1,10 @@
 /**
  * Canvas — the workbench main pane: a READ-ONLY projection of the active
- * search. Profile strip (vehicle + location + preference chips + controls),
- * dealer tiles (the dealers projection route), and the what-happened/what's-next
- * feed, all derived from DB state over the read routes. With no active profile
- * it renders the empty state — the start-here surface (headline, the
- * first-steps walkthrough, and the Start CTA, one of the intake entries).
+ * search. Profile strip (vehicle + location + preference chips + controls) and
+ * dealer tiles (the dealers projection route), all derived from DB state over
+ * the read routes. With no active profile it renders the empty state — the
+ * start-here surface (headline, the first-steps walkthrough, and the Start
+ * CTA, one of the intake entries).
  *
  * Budget red-line: the canvas consumes the dealer-safe ProfileSnapshot (no
  * budget accessor) — budget can render only as the "internal-only" lock chip,
@@ -211,78 +211,32 @@ function ProfileCard({
 }
 
 // ---------------------------------------------------------------------------
-// feed — what happened / what's next, derived from the projected state
+// overview panel — the calm orientation tab (deterministic next-actions only;
+// everything else already has a home in the strip/summary/tabs). It surfaces
+// NO quote/OTD numbers — the best OTD lives in the sticky summary, so each
+// number keeps a single home (no redundancy).
 // ---------------------------------------------------------------------------
 
-function CanvasFeed({
-  snapshot,
-  dealerCount,
-}: {
-  snapshot: ProfileSnapshot;
-  dealerCount: number | null;
-}): JSX.Element {
-  const happened: string[] = [`Intake captured the ${vehicleLabel(snapshot) || "active"} search.`];
-  if (dealerCount !== null && dealerCount > 0) {
-    happened.push(`Geosearch found ${dealerCount} dealer(s).`);
+function OverviewPanel({ digest }: { digest: AsyncState<DigestView> }): JSX.Element {
+  const nextActions = digest.kind === "ok" ? digest.data.nextActions : [];
+  if (nextActions.length === 0) {
+    return (
+      <p className="muted" data-testid="canvas-overview-empty">
+        Nothing needs you right now — scans and dealer replies land here.
+      </p>
+    );
   }
-  const next: string[] =
-    dealerCount === null || dealerCount === 0
-      ? ["Find dealers near you to get started."]
-      : ["Quotes land here as dealers reply."];
-
   return (
-    <section className="card feed" data-testid="canvas-feed">
-      <h2>What happened / what&apos;s next</h2>
+    <section className="card" data-testid="canvas-next-actions">
+      <p className="control-label">Next actions</p>
       <ul>
-        {happened.map((line) => (
-          <li className="feed-done" key={line}>
-            {line}
-          </li>
-        ))}
-      </ul>
-      <ul>
-        {next.map((line) => (
-          <li className="muted" key={line}>
-            {line}
+        {nextActions.map((a) => (
+          <li className="muted" key={`${a.kind}-${a.profileId}`}>
+            {a.label}
           </li>
         ))}
       </ul>
     </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// overview panel — the calm orientation tab (the feed + deterministic
-// next-actions). It surfaces NO quote/OTD numbers — the best OTD lives in the
-// sticky summary, so each number keeps a single home (no redundancy).
-// ---------------------------------------------------------------------------
-
-function OverviewPanel({
-  snapshot,
-  dealerCount,
-  digest,
-}: {
-  snapshot: ProfileSnapshot;
-  dealerCount: number | null;
-  digest: AsyncState<DigestView>;
-}): JSX.Element {
-  const nextActions = digest.kind === "ok" ? digest.data.nextActions : [];
-  return (
-    <>
-      <CanvasFeed snapshot={snapshot} dealerCount={dealerCount} />
-      {nextActions.length > 0 && (
-        <section className="card" data-testid="canvas-next-actions">
-          <h2>Next actions</h2>
-          <ul>
-            {nextActions.map((a) => (
-              <li className="muted" key={`${a.kind}-${a.profileId}`}>
-                {a.label}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </>
   );
 }
 
@@ -516,13 +470,7 @@ export function Canvas({
             aria-labelledby={`canvas-tab-${tab}-tab`}
             data-testid={`canvas-panel-${tab}`}
           >
-            {tab === "overview" && (
-              <OverviewPanel
-                snapshot={active}
-                dealerCount={dealers.kind === "ok" ? dealers.data.length : null}
-                digest={digest}
-              />
-            )}
+            {tab === "overview" && <OverviewPanel digest={digest} />}
             {tab === "dealers" && <DealerTiles dealers={dealers} />}
             {tab === "inventory" && (
               <InventoryCandidates

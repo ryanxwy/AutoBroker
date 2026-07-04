@@ -97,7 +97,6 @@ export function DealerTiles({ dealers }: { dealers: AsyncState<DealerList> }): J
   const pager = usePagedList(rows, DEALER_PAGE_SIZE);
   return (
     <section data-testid="canvas-dealer-tiles">
-      <h2>Dealers</h2>
       {dealers.kind === "loading" && <p className="muted">Loading dealers…</p>}
       {dealers.kind === "error" && (
         <p className="danger-text" role="alert">

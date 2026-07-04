@@ -85,7 +85,7 @@ export function ProfileSummary({
 
       {/* Optional headline from digest — serif italic, muted */}
       {headline !== null && (
-        <p className="canvas-summary-headline" data-testid="canvas-summary-headline">
+        <p className="canvas-summary-headline" data-testid="canvas-summary-headline" title={headline}>
           {headline}
         </p>
       )}
