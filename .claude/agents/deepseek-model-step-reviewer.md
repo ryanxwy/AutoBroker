@@ -23,8 +23,9 @@ bounded-recovery lane were deleted 2026-07-03; the fail-closed floor is now this
 typed throw.)
 
 Source-of-truth files (read these to ground the review):
-- `packages/model/src/policy.ts` — `chooseStructuredOutputStrategy` +
-  `supportsOutputObjectWithTools` capability gate, `resolveModel(alias)`,
+- `packages/model/src/harness.ts` — `chooseStructuredOutputStrategy` (the
+  strategy gate over `supportsOutputObjectWithTools`).
+- `packages/model/src/policy.ts` — capability flags, `resolveModel(alias)`,
   `policy(useCase→ModelAlias)`.
 - `packages/workflows/src/harness.ts` — the `emit_result` lane, the Zod post-validation
   belt, and the typed fail-closed `EmitResultNotCalledError` (thrown when the tool never
@@ -64,7 +65,7 @@ model file and the model step(s) inside it.
 ## Method
 
 - Read the changed model step alongside `harness.ts` (the `emit_result` lane) and
-  `policy.ts` (`chooseStructuredOutputStrategy`); confirm the new step matches one of the
+  the model-layer `harness.ts` (`chooseStructuredOutputStrategy`); confirm the new step matches one of the
   two sanctioned shapes and that a non-emit / Zod-fail path throws the typed error rather
   than proceeding.
 - `git grep -n "response_format\|json_schema\|emit_result\|experimental_repairToolCall"`
