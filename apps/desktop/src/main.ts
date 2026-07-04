@@ -30,10 +30,7 @@
  * powerMonitor resume/suspend down to the child (it alone can see those) over
  * the utilityProcess message channel, and lends a run-scoped powerSaveBlocker
  * AROUND a single job (never held long-term — a standing blocker would defeat
- * system sleep / drain the battery). notify() is a degradation ladder
- * (focused → in-app toast; else native Notification + dock badge; failure →
- * badge + toast-on-next-focus); a notification click shows/focuses the window
- * and navigates to a placeholder (the deep-link digest target is a later wave).
+ * system sleep / drain the battery).
  */
 
 import { spawn } from "node:child_process";
@@ -93,20 +90,12 @@ interface DesktopHook {
   port: number | null;
   forkEnvSafety: Record<string, string>;
   secondInstanceSeen: boolean;
-  /** How the most recent notify() call was delivered (smoke introspection):
-   *  'toast' (window focused → posted to the renderer), 'native' (native
-   *  Notification shown), or 'badge' (degraded to badge + deferred toast). */
-  lastNotifyChannel: "toast" | "native" | "badge" | null;
-  /** The dock badge count main last set (the degraded-path signal). */
-  badgeCount: number;
 }
 const hook: DesktopHook = {
   serverPid: null,
   port: null,
   forkEnvSafety: {},
   secondInstanceSeen: false,
-  lastNotifyChannel: null,
-  badgeCount: 0,
 };
 (globalThis as Record<string, unknown>).__desktopHook = hook;
 
@@ -162,16 +151,12 @@ let shuttingDown = false;
  *  into the isolated demo dir. Env-only handoff (no IPC, no preload). */
 let demoMode = false;
 
-// ---- notify() ladder -------------------------------------------------------
-// Toasts the renderer should show on its NEXT focus (the degraded path: a
-// native notification could not be shown, so the user learns about it via the
-// badge now and an in-app toast when they next look at the window).
-const deferredToasts: Array<{ title: string; body: string; deepLink: string }> = [];
-
 /** Show a transient in-app toast by dispatching a window CustomEvent into the
  *  renderer. No preload/IPC bridge exists (the renderer loads over localhost
  *  HTTP), so main injects a tiny script that the App's toast listener picks up.
- *  Returns false when there is no live window to post into. */
+ *  Returns false when there is no live window to post into. The launch-freshness
+ *  path is the only caller: announceUpdateReady's no-native-notification
+ *  fallback and checkFreshnessInBackground's "preparing update" toast. */
 async function postToastToRenderer(title: string, body: string, deepLink: string): Promise<boolean> {
   const wc = mainWindow?.webContents;
   if (wc === undefined || wc.isDestroyed()) return false;
@@ -186,85 +171,6 @@ async function postToastToRenderer(title: string, body: string, deepLink: string
     return false;
   }
 }
-
-/** Set the dock badge to `n` (0 clears it). macOS-only API — a no-op elsewhere. */
-function setBadge(n: number): void {
-  hook.badgeCount = n;
-  app.setBadgeCount?.(n);
-}
-
-/**
- * notify — the degradation ladder for a background event (a finished poll, a
- * ready digest). NOT a bare `new Notification()`:
- *   - window focused → an in-app toast (posted to the renderer), no OS chrome;
- *   - else a native Notification + a dock badge bump;
- *   - the native 'failed' event → silently degrade to badge + a toast queued
- *     for the next focus;
- *   - 'click' → show/focus the window and navigate to the deep link (a
- *     placeholder/home for now — the digest result page is a later-wave seam).
- * Only title/body are used: notification action buttons / inline reply require
- * code-signing (Electron 42+), out of scope here (pinned to 41 behavior).
- */
-function notify(title: string, body: string, opts: { deepLink?: string } = {}): void {
-  const deepLink = opts.deepLink ?? "/";
-  const focused = mainWindow !== null && !mainWindow.isDestroyed() && mainWindow.isFocused();
-  if (focused) {
-    hook.lastNotifyChannel = "toast";
-    void postToastToRenderer(title, body, deepLink);
-    return;
-  }
-
-  // Not focused: native notification + badge. If the platform cannot show one
-  // (Notification.isSupported() false, or the 'failed' event), degrade to a
-  // badge bump plus a toast deferred to the next focus.
-  const degrade = (): void => {
-    hook.lastNotifyChannel = "badge";
-    setBadge(hook.badgeCount + 1);
-    deferredToasts.push({ title, body, deepLink });
-  };
-
-  if (!Notification.isSupported()) {
-    degrade();
-    return;
-  }
-  const n = new Notification({ title, body });
-  n.on("failed", degrade);
-  n.on("click", () => {
-    showAndFocusWindow();
-    // Deep-link navigation: the digest result page is a later wave, so navigate
-    // to the placeholder/home for now. The target is the only seam here.
-    void mainWindow?.webContents
-      .executeJavaScript(`window.location.hash = ${JSON.stringify(deepLink)};`, true)
-      .catch(() => {});
-    setBadge(0);
-  });
-  hook.lastNotifyChannel = "native";
-  setBadge(hook.badgeCount + 1);
-  n.show();
-}
-
-/** Flush any toasts that were deferred while the window was unfocused/closed.
- *  Called when the window regains focus; clears the dock badge once shown. */
-function flushDeferredToasts(): void {
-  if (deferredToasts.length === 0) return;
-  const pending = deferredToasts.splice(0, deferredToasts.length);
-  void (async (): Promise<void> => {
-    let shown = false;
-    for (const t of pending) {
-      if (await postToastToRenderer(t.title, t.body, t.deepLink)) shown = true;
-    }
-    if (shown) setBadge(0);
-    else deferredToasts.unshift(...pending); // window vanished mid-flush; keep them
-  })();
-}
-
-// Expose notify on the introspection hook. This is BOTH the injection point a
-// later wave calls to raise a background notification from main (e.g. when a
-// scheduled digest is ready) AND the surface the deterministic smoke suite
-// drives to exercise the focused→toast path (native notifications are not
-// scriptable headless). No new IPC: the renderer toast arrives via a window
-// CustomEvent injected through webContents.executeJavaScript.
-(hook as DesktopHook & { notify: typeof notify }).notify = notify;
 
 // ---- powerSaveBlocker: RUN-SCOPED ONLY -------------------------------------
 // A standing power-save blocker would defeat system sleep and drain the
@@ -433,8 +339,7 @@ function showAndFocusWindow(): void {
   mainWindow.focus();
 }
 
-/** Create the single BrowserWindow on the running server's port. The 'focus'
- *  listener flushes any toasts that were deferred while the window was away. */
+/** Create the single BrowserWindow on the running server's port. */
 async function createWindow(port: number): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -472,7 +377,6 @@ async function createWindow(port: number): Promise<void> {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
-  mainWindow.on("focus", flushDeferredToasts);
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
 }
 
@@ -551,8 +455,8 @@ let updateReadyAnnounced = false;
 
 /** Surface the NON-modal "Update ready — Relaunch" affordance exactly once. A
  *  native Notification whose click triggers the relaunch is the simplest action
- *  affordance that adds no preload/IPC bridge (the click handler runs in main,
- *  like the notify() ladder). If native notifications are unsupported, degrade
+ *  affordance that adds no preload/IPC bridge (the click handler runs in main).
+ *  If native notifications are unsupported, degrade
  *  to an in-app toast (informational — the staged build installs on the next
  *  manual relaunch / next cold start anyway). */
 function announceUpdateReady(ctx: FreshnessContext): void {

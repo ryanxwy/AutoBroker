@@ -4,7 +4,7 @@
  * web form does, the fork lifecycle leaves no orphans, crash recovery and the
  * single-instance lock work, the renderer has no Node reach, and the
  * long-running-background lifecycle (close-keepalive on darwin + dock-activate
- * re-create) plus the notify focused→toast ladder behave. Business behavior
+ * re-create) plus the in-app toast surface behave. Business behavior
  * (skills, gates, workflows) is covered by the website-lane harness — this
  * suite only proves the shell didn't break the product around it.
  *
@@ -445,11 +445,12 @@ describe("background lifecycle (S11)", () => {
   });
 });
 
-// notify() ladder (S12): native notifications are not scriptable headless, so
-// this proves (a) the renderer toast SURFACE end-to-end (the injected
-// autobroker:notify event renders the testid'd toast) and (b) the focused→toast
-// branch of main's notify() ladder posts to the renderer (lastNotifyChannel).
-describe("notify ladder — focused → in-app toast (S12)", () => {
+// app-toast surface (S12): the renderer's in-app toast surface, driven by an
+// injected `autobroker:notify` window CustomEvent — the same event main's
+// postToastToRenderer dispatches on the launch-freshness update path. Proves
+// the toast renders its testid'd strip end-to-end (native notifications are not
+// scriptable headless, so only this injected-event surface is exercised).
+describe("app-toast surface — injected autobroker:notify (S12)", () => {
   it("S12a: an injected autobroker:notify event renders the app-toast surface", async () => {
     const { app, page } = await launchApp();
     try {
@@ -467,43 +468,6 @@ describe("notify ladder — focused → in-app toast (S12)", () => {
       );
       expect(text).toContain("Background update");
       expect(text).toContain("An inbox poll finished.");
-    } finally {
-      await closeApp(app).catch(() => {});
-    }
-  });
-
-  it("S12b: notify() while the window is focused posts a toast to the renderer", async () => {
-    const { app, page } = await launchApp();
-    try {
-      await page.waitForSelector('[data-testid="app-main"]', { timeout: 30_000 });
-      // Force focus from the main process (a headless launch may not have OS
-      // focus), then drive main's notify() and assert the focused→toast branch.
-      await app.evaluate(({ BrowserWindow }) => {
-        const w = BrowserWindow.getAllWindows()[0];
-        w?.show();
-        w?.focus();
-        (
-          globalThis as unknown as { __desktopHook: { notify: (t: string, b: string) => void } }
-        ).__desktopHook.notify("Digest ready", "Your daily digest is ready.");
-      });
-      const channel = await poll(
-        () =>
-          app.evaluate(
-            () =>
-              (globalThis as unknown as Record<string, unknown>).__desktopHook as {
-                lastNotifyChannel: string | null;
-              },
-          ),
-        (h) => h.lastNotifyChannel !== null,
-        "notify chose a delivery channel",
-      );
-      // A focused window takes the toast branch (never a native notification).
-      expect((channel as { lastNotifyChannel: string }).lastNotifyChannel).toBe("toast");
-      await page.waitForSelector('[data-testid="app-toast"]', { timeout: 10_000 });
-      const text = await page.evaluate(
-        () => document.querySelector('[data-testid="app-toast"]')?.textContent ?? "",
-      );
-      expect(text).toContain("Digest ready");
     } finally {
       await closeApp(app).catch(() => {});
     }

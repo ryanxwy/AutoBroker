@@ -3,8 +3,9 @@
  * linear Mastra `createWorkflow`: 6 named steps chained with `.then()`, no
  * nested workflow, NO suspend, NO HITL, NO LLM. The whole digest is
  * deterministic — counts aggregated from upstream output rows → a 7-section
- * template → a local file artifact + a per-profile watermark + a notification
- * headline + deep-link target (delivery is the desktop U-G ladder's job).
+ * template → a local file artifact + a per-profile watermark + a headline +
+ * deep-link target in the step output (surfaced by the in-app read views — the
+ * SSE stream, Canvas, and the /digest page — never a native OS notification).
  *
  * STEP MAP:
  *   0 resolveScope  — explicit pin (start body) scopes to that one search;
@@ -21,8 +22,9 @@
  *                     is deliberately not surfaced), then the atomic file write.
  *   3 notify        — compute the one-line headline in CODE, `assertNoBudget`
  *                     it, and produce `{ headline, deepLink: "/digest" }` in the
- *                     step output. Does NOT call `new Notification()` — delivery
- *                     is the desktop U-G ladder.
+ *                     step output. Does NOT call `new Notification()` — the
+ *                     headline/deep-link ride the step output for the in-app
+ *                     read views (SSE + Canvas + the /digest page) to surface.
  *   4 setWatermark  — advance the PRODUCT `digest.last_at.<profileId>` watermark
  *                     for EACH summarized profile (distinct from the scheduler's
  *                     own `scheduler.last_success.daily_digest` key — keep both).
@@ -234,7 +236,8 @@ const writeArtifactStep = createStep({
 
 // ---------------------------------------------------------------------------
 // step 3 — notify (headline in CODE + assertNoBudget + deep-link target;
-// delivery is the desktop U-G ladder, NOT new Notification() here)
+// the headline/deep-link ride the step output for the in-app read views,
+// NOT new Notification() here)
 // ---------------------------------------------------------------------------
 
 const notifyStep = createStep({

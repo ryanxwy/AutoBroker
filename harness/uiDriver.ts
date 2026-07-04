@@ -1395,8 +1395,8 @@ export class UiDriver {
   }
 
   /** Navigate the SPA to a client-side route WITHOUT a full reload — the harness
-   *  analog of clicking a notification deep-link (the digest skill's notify step
-   *  deep-links to "/digest"; there is no static chrome link to it). Drives the
+   *  analog of following the digest skill's deep-link target (its notify step
+   *  sets deepLink "/digest"; there is no static chrome link to it). Drives the
    *  app's OWN History-API router exactly as the in-app navigate() helper does
    *  (pushState + the autobroker:navigate event), then waits for the named
    *  settle testid the destination route mounts (proving the route resolved and

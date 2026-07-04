@@ -1,7 +1,7 @@
 /**
- * Toast — the in-app surface for a background notification delivered while the
- * window is focused. The Electron shell's notify() ladder, when the window has
- * focus, posts the notification into the renderer as a `autobroker:notify`
+ * Toast — the in-app surface for a background notification delivered by the
+ * Electron shell. The shell's `postToastToRenderer` (used on the launch-freshness
+ * update path) posts the notification into the renderer as an `autobroker:notify`
  * window CustomEvent (injected via webContents.executeJavaScript — there is no
  * preload/IPC bridge, the renderer loads over localhost HTTP). This component
  * listens for that event and shows a transient strip that reuses the

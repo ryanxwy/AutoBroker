@@ -286,9 +286,9 @@ const notifyStep = createStep({
     const state = asState(inputData);
     if (state.declined) return state;
 
-    // Produce the headline + deep-link target ONLY; the native-notification
-    // delivery is the app-layer U-G ladder (the workflow never calls
-    // new Notification()). The headline carries no budget figure (none exists in
+    // Produce the headline + deep-link target ONLY; the workflow never calls
+    // new Notification() — the headline/deep-link surface through the app's
+    // in-app read views. The headline carries no budget figure (none exists in
     // this skill's state).
     console.info(
       JSON.stringify({

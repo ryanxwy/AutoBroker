@@ -30,8 +30,8 @@
 #                                           count is the honest scope here).
 #
 #   step 2 (digest_page, kind="ui"): navigate the SPA to "/digest" (the harness
-#     analog of a notification deep-link click — there is no static chrome link
-#     to the digest page) and assert the page projects the seeded world:
+#     analog of following the digest's deep-link target — there is no static
+#     chrome link to the digest page) and assert the page projects the seeded world:
 #       - digest-page mounts.
 #       - EXACTLY two digest-quote-row entries == the two seeded dealer_quotes.
 #       - digest-best-otd shows $31,500 (the lowest of $31,500 / $33,995 — the
