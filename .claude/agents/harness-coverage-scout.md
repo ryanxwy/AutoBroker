@@ -41,8 +41,10 @@ check the corpus for a case that drives each:
 5. **Empty / STOP outcomes** — no-lead, no-replies, no-quote→0-rows, closed
    profile, unrouted sender — the "produces nothing" branches that silently pass
    if untested.
-6. **#1244 fail-closed** — for the live-LLM extraction skills, a case (or unit
-   test) that exercises the malformed-tool-call fail-closed path.
+6. **Structured-output fail-closed** — for the live-LLM extraction skills, a case
+   (or unit test) that exercises the emit-not-called / Zod-fail path (the run throws
+   the typed `EmitResultNotCalledError` / `ZodError` and fails, never silently
+   proceeding).
 
 ## Method
 

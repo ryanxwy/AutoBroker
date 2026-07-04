@@ -73,9 +73,9 @@ The runtime flow, grounded in the 7-step workflow
 - **Source discipline in code** — SSRF validation on every candidate URL
   (https-only, no credentials, no traversal, single-placeholder templates at
   most), aggregator and non-US rejection tables, blocked-never-escalated.
-- **#1244 fail-closed** — capture and structured extraction never mix; the
-  only LLM call runs with no HITL and a malformed/suspend-shaped return
-  hard-aborts before persist (zero rows from a failed run).
+- **Structured-output fail-closed** — capture and structured extraction never mix;
+  the only LLM call runs with no HITL and if `emit_result` never fires (or its args
+  fail Zod) the run hard-fails before persist (zero rows from a failed run).
 - **Untrusted content** — offer pages ride the prompt between
   UNTRUSTED-content fences with a do-not-follow notice.
 - **Deterministic gates the LLM never sees** — the 7-day cache gate and the

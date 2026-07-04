@@ -47,6 +47,20 @@ if git grep -nE 'AUTOBROKER_BLOCK_EXTERNAL_' -- \
   status=1
 fi
 
+# (5) DELETED MALFORMED-TOOL-CALL APPARATUS (owner ruling 2026-07-03): the #1244
+#     malformed-tool-call detection/recovery machinery was removed. The fail-closed
+#     floor is now the harness's typed EmitResultNotCalledError throw. Banning the
+#     two deleted symbol names keeps a future edit from re-introducing the recovery
+#     lane or the abort class. CLAUDE.md (rule statements) and this script are
+#     excluded, per the existing exclude pattern.
+if git grep -nE 'recoverEmitWithRetry|MalformedToolCallAbort' -- \
+  ':!pnpm-lock.yaml' \
+  ':!CLAUDE.md' \
+  ':!scripts/check-forbidden-strings.sh'; then
+  echo "ERROR: a deleted malformed-tool-call-apparatus symbol found (see above). The detector/recovery machinery was removed 2026-07-03; the fail-closed floor is the harness's typed EmitResultNotCalledError throw. Do not re-introduce recoverEmitWithRetry / MalformedToolCallAbort." >&2
+  status=1
+fi
+
 # (4) RETIRED COMMIT MARKER: the '[fake-send]' commit-body marker for the three
 #     irreversible skills is retired (real-send-by-default, owner-ratified
 #     2026-06-22). Banning the bracketed literal keeps it out of commits, agent

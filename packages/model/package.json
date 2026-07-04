@@ -2,7 +2,7 @@
   "name": "@autobroker/model",
   "version": "0.0.0",
   "private": true,
-  "description": "Layer 2 of the AutoBroker (TS) monorepo: the AI SDK 6 provider layer. Owns the provider registry, useCase->ModelAlias policy, resolveModel, provider-neutral structured-generation helpers, and the #1244 fail-closed detector/Processor helpers.",
+  "description": "Layer 2 of the AutoBroker (TS) monorepo: the AI SDK 6 provider layer. Owns the provider registry, useCase->ModelAlias policy, resolveModel, and provider-neutral structured-generation helpers.",
   "type": "module",
   "exports": {
     ".": {

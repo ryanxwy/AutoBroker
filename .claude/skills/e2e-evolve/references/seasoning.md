@@ -28,7 +28,7 @@ deterministic-AND-seasoned, never OR. Recap of where a seasoned case is register
 
 Each seasoned case carries: the spawning **PIC/commit** tag, a **falsifiable expected
 outcome** (a live `/__e2e` rows/audit/dataquality delta or a DOM/testid assertion), and the
-**invariant it stresses** (e.g. inv #9 budget-redaction, #1244 fail-closed, profile-ASK).
+**invariant it stresses** (e.g. inv #9 budget-redaction, structured-output fail-closed, profile-ASK).
 It runs **ADVISORY** in the next `/e2e-loop` (it never blocks CI).
 
 ## Job 2 — the generate → soak → triage discovery pass
@@ -89,11 +89,13 @@ harvest-register's realized tail. (The original first-round seed list is retired
 - **Seasoned/LLM checks are ADVISORY and never block CI** (same posture as `frontend-taste`).
   Back every safety claim with a deterministic surface: assert PRESENCE of a resolved element
   (not LLM prose equality), assert a hard `/[0-9]/` budget absence (vacuously safe on a clean
-  run), prove #1244 recovery with a COUNTED forced fault rather than waiting for a rare organic
-  malform.
-- **#1244 is request-shape/mixing-triggered, not content-triggered** (the 2026-06-04
-  107-call probe), and is a **lane-A (deepseek) class** — lane B is structurally exempt
-  (single structured call, Zod belt, no recovery hop). Do NOT try to engineer a malformed
+  run), prove the structured-output fail-closed path (a thrown `EmitResultNotCalledError` /
+  `ZodError` + one ledgered failReason row) with a COUNTED forced fault rather than waiting
+  for a rare organic one.
+- **The structured+tools mixing bug is request-shape/mixing-triggered, not content-triggered**
+  (the 2026-06-04 107-call probe), and is a **lane-A (deepseek) class** — lane B is
+  structurally exempt (single structured call, Zod belt). Do NOT try to engineer a malformed
   tool call from a dealer email's content — a content payload cannot deterministically force
-  #1244. Season the lane-A *recovery contract* (fail-closed-then-auto-recover, 2 deepseek
-  rows, no retry button), not a content exploit; on lane B season nothing here.
+  it. Season the lane-A *fail-closed contract* (a thrown `EmitResultNotCalledError` + one
+  ledgered failReason row, no retry lane, no retry button), not a content exploit; on lane B
+  season nothing here.

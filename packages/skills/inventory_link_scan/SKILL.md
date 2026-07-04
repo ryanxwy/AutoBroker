@@ -62,9 +62,10 @@ The runtime flow, grounded in the 8-step workflow
   re-contact (`propagated` marked in the source's error record).
 - **Per-link isolation** — one dead link never fails its same-host siblings;
   a whole-bucket failure degrades to per-link failed outcomes in input order.
-- **#1244 fail-closed** — the only LLM call is a no-tools structured extract
-  with no HITL; a malformed/suspend-shaped return hard-aborts with a typed
-  error — the run fails, persist is never reached, sources stay pending.
+- **Structured-output fail-closed** — the only LLM call is a no-tools structured
+  extract with no HITL; if `emit_result` never fires (or its args fail Zod) the run
+  hard-fails with a thrown typed error — the run fails, persist is never reached,
+  sources stay pending.
 - **Untrusted content** — dealer pages ride the prompt between
   UNTRUSTED-content fences with a do-not-follow notice; writes are
   prepared-statement-only.

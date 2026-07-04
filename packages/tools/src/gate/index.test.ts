@@ -32,7 +32,7 @@ const erroringApprover: Approver = {
   },
 };
 
-describe("requestApproval — fail-closed validation (#1244 at the gate)", () => {
+describe("requestApproval — fail-closed validation (malformed gate request)", () => {
   it("throws MalformedGateRequestError on a non-object request", async () => {
     await expect(requestApproval("send the email", approveAll)).rejects.toThrow(
       MalformedGateRequestError,

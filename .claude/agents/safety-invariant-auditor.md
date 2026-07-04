@@ -1,6 +1,6 @@
 ---
 name: safety-invariant-auditor
-description: Audit a code-repo diff against the 12 load-bearing safety invariants in CLAUDE.md (no_external_mutation, the L2 fail-closed gate, #1244, structured-output, profile-ASK, budget redaction, fake-send, destructive second-confirm). Read-only — reports, does not edit. Use before committing any change that touches a side-effect path, an LLM step, a profile resolver, or an irreversible-send skill.
+description: Audit a code-repo diff against the 12 load-bearing safety invariants in CLAUDE.md (no_external_mutation, the L2 fail-closed gate, structured-output delivery fail-closed, profile-ASK, budget redaction, fake-send, destructive second-confirm). Read-only — reports, does not edit. Use before committing any change that touches a side-effect path, an LLM step, a profile resolver, or an irreversible-send skill.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -31,11 +31,13 @@ surroundings (e.g. is this write actually behind the gate?).
    through to the action (fail-open); a send seam that reaches the network without
    the per-seam `!isBuyerMode()` brake (`AUTOBROKER_MODE`, the sole send-control
    variable, is force-pinned to `test` for all test/CI contexts).
-3. **#1244 fail-closed (#4).** On `finish_reason != tool_calls` OR empty
-   `tool_calls` OR a tool-shaped blob in message content → the code must fail
-   CLOSED (HITL suspend, or hard-abort with `MalformedToolCallAbort`). Flag ANY
-   regex that pulls a function name out of `content` and executes it — that is
-   fail-open and forbidden. Flag a missing detector on a tools-capable step.
+3. **Structured-output delivery fail-closed (#4).** When the single `emit_result`
+   tool never fires (or its captured args fail Zod), the harness must ledger the
+   failure and throw the typed `EmitResultNotCalledError` / `ZodError` — the run
+   fails CLOSED, never silently proceeding to prose. Flag ANY regex that pulls a
+   function name out of `content` and executes it — that is fail-open and forbidden.
+   Flag a caller that maps the typed error to anything but a documented fail-closed
+   degradation (router→`clarify`, intake trim helper→blank form).
 4. **Structured output never mixes object-output + tools (#5).** Flag
    `Output.object` / per-step `response_format` / `json_schema` in the SAME
    DeepSeek model step as `tools`. The allowed shapes are a single `emit_result`
@@ -86,7 +88,7 @@ surroundings (e.g. is this write actually behind the gate?).
 
 ## Method
 
-Prefer `git diff HEAD` + `grep` over guessing. When you flag a gate/fallback/#1244
+Prefer `git diff HEAD` + `grep` over guessing. When you flag a gate/fallback/structured-output
 issue, open the surrounding function to confirm the path is actually reachable
 unguarded — do not flag a hunk whose safety is established two lines above the
 diff window. Distinguish a real escape from a legitimate fake/local row.

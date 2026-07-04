@@ -148,7 +148,7 @@ orchestration, `tools` owns all side effects, and `app` owns HTTP/UI shells.
 | Layer | Package | Owns | May import frameworks? |
 | --- | --- | --- | --- |
 | 1. core | `packages/core` | Pure TYPES + Zod schemas (`DealerQuote`, `AuditFlag`, `SearchProfile`, `CapabilityFlags`, `ModelAlias`, run-status projections) | **No** — AI SDK / Mastra / Drizzle / Playwright are invisible here |
-| 2. model | `packages/model` | AI SDK 6 provider layer: registry (`deepseek`, `anthropic`, `openai`), `policy(useCase->alias)`, `resolveModel(alias)`, canonical-message translation, #1244 fail-closed detector/processor helpers | AI SDK 6 |
+| 2. model | `packages/model` | AI SDK 6 provider layer: registry (`deepseek`, `anthropic`, `openai`), `policy(useCase->alias)`, `resolveModel(alias)`, canonical-message translation, structured-output strategy helpers | AI SDK 6 |
 | 3. workflows | `packages/workflows` | Mastra 1.x backbone: one flat `createWorkflow` per skill, Memory-thread/session integration, OM chat-lane compacting, durable suspend/resume projection, L2 gate orchestration | Mastra |
 | 4. tools | `packages/tools` | Gmail, browser (Playwright-native), product DB writes, calc/validators. **Only this layer touches the product DB or external APIs.** Mutating actions wear a code-level approval wrapper | Playwright, googleapis |
 | 5. app | `apps/server`, `apps/ui`, `apps/desktop` | Backend HTTP + SSE skill-run stream; React/Vite + AI SDK UI chat rail; Electron shell (Phase 6 optional placeholder) | HTTP framework TBD in Phase 0, React, Electron |

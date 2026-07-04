@@ -88,9 +88,9 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
 - (F1) `inventory_site_scan` listings with no labeled markup/add-ons: `markup_present==0` /
   `addons_present==0` on `/__e2e/dataquality` is the HEALTHY norm (LABELED-only detection, never inferred
   selling>MSRP). Re-flag ONLY the breakdown total-loss (`vdp_linked>0 AND breakdown_parsed==0`). (baseline)
-- (F2) `dealer_reply_extract` #1244 fail-closed-THEN-auto-recover (ledgered `malformed_tool_call` → one
-  fresh same-provider hop; 2 `provider=deepseek` rows, redacted `malformed_sample`, NO retry button) =
-  inv #4 bounded recovery. Re-flag ONLY a silent tool-SKIP / regex-execute / fabrication / non-deepseek egress. (baseline)
+- (F2) `dealer_reply_extract` structured-output fail-closed: when `emit_result` never fires (or its args
+  fail Zod) the hop throws a typed `EmitResultNotCalledError` / `ZodError` + one ledgered failReason row —
+  no retry lane, no retry button. Re-flag ONLY a silent tool-SKIP / regex-execute / fabrication. (baseline)
 - (F4) the give-up/switch advisory (`dealer-verdict-hold` / `dealer-verdict-switch`) + per-thread
   `thread-class-chip` firing on a ghosted/retraded dealer = the derived-on-read engine working. Re-flag
   ONLY a competing-dealer-NAME/budget leak (inv #9) or switch advice with no cheaper same-mode quote. (baseline)
@@ -194,7 +194,7 @@ DB="<dataDir>/autobroker.db"
           SUM(latency_ms) latency_ms, AVG(latency_ms) mean_ms, SUM(input_tokens) input_tok,
           SUM(output_tokens) output_tok,
           SUM(CASE WHEN fail_reason IS NOT NULL THEN 1 ELSE 0 END) fails,
-          SUM(CASE WHEN fail_reason='malformed_tool_call' THEN 1 ELSE 0 END) malformed
+          SUM(CASE WHEN fail_reason='emit_result_not_called' THEN 1 ELSE 0 END) emit_not_called
    FROM test_run_records GROUP BY skill, provider, pricing_source ORDER BY cost_usd DESC"
 "$SQ" "$DB" "SELECT printf('\$%.4f',SUM(cost_usd)), SUM(latency_ms) FROM test_run_records"
 ```

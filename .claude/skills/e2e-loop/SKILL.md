@@ -183,13 +183,11 @@ Decide each imperfection by two questions, in order:
    - a real send happened in test mode, or the fake adapter did NOT fire on a send;
    - a budget number rendered on any surface;
    - a gate appeared *after* the prose instead of before it;
-   - the largest extraction did not fail closed on a malformed tool call (it silently
-     skipped the tool, or a tool name was regex-executed from text). NOT a blocker:
-     a no-HITL extractor that fails closed on hop-1 (ledgers a `malformed_tool_call`
-     row) then AUTO-RECOVERS via one fresh same-provider generation — that is the
-     correct inv #4 bounded recovery (no user-surfaced retry button, not a silent
-     fallback); the blocker is a silent tool-SKIP, a regex-executed name, or a
-     fabricated result;
+   - the largest extraction did not fail closed when `emit_result` never fired: the
+     blocker is a silent tool-SKIP, a regex-executed tool name, or a fabricated result.
+     The correct behavior is a thrown typed error (`EmitResultNotCalledError` /
+     `ZodError`) + one ledgered failReason row — never a silent proceed. (There is no
+     retry/auto-recover lane; that machinery was deleted 2026-07-03.)
    - **data the pipeline provably held was silently dropped** — a scan wrote rows but the
      price/MSRP coverage is zero, or a dealer emailed an out-the-door number the extractor
      lost (coverage below the healthy bar with no legitimate empty/withheld escape);

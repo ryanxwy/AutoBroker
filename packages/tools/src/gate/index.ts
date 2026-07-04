@@ -19,8 +19,8 @@
  *   1. A side effect (gmail.send / browser.submit) is reachable ONLY by calling
  *      gate handlers below. There is no second code path. callers in
  *      gmail.ts / browser.ts MUST funnel mutating ops through `requestApproval`.
- *   2. FAIL-CLOSED on malformed/absent tool calls (#1244): if the structured
- *      gate request is missing or malformed, we DENY. We never fall back to
+ *   2. FAIL-CLOSED on a malformed/absent structured gate request: if the
+ *      request is missing or malformed, we DENY. We never fall back to
  *      prose, never regex a function name out of free-text content and execute
  *      it. fail-open == silent-fallback == forbidden.
  *   3. The DENY path returns an explicit decline/cancel verdict with
@@ -73,7 +73,7 @@ export class ExternalMutationsBlockedError extends Error {
   }
 }
 
-/** Thrown when the structured gate request is absent/malformed (#1244). The
+/** Thrown when the structured gate request is absent/malformed. The
  *  gate NEVER recovers by parsing prose; it aborts closed. */
 export class MalformedGateRequestError extends Error {
   constructor(detail: string) {
@@ -89,8 +89,8 @@ const VALID_KINDS: ReadonlySet<string> = new Set<MutationKind>([
 
 /**
  * Structurally validate an inbound gate request. Returns the request unchanged
- * if well-formed; THROWS (fail-closed) otherwise. This is the #1244 detector at
- * the gate boundary: a side-effect call with no/garbled structured request dies
+ * if well-formed; THROWS (fail-closed) otherwise. This is the fail-closed detector
+ * at the gate boundary: a side-effect call with no/garbled structured request dies
  * here rather than degrading to free-text execution.
  */
 function assertWellFormed(req: unknown): asserts req is GateRequest {
@@ -117,7 +117,7 @@ function assertWellFormed(req: unknown): asserts req is GateRequest {
  * ONLY when this returns an `approved` verdict.
  *
  * Order of defenses, all fail-CLOSED:
- *   (a) structural validation (#1244 detector) — throws on malformed.
+ *   (a) structural validation (fail-closed detector) — throws on malformed.
  *   (b) approver consult — any non-true / any thrown error => declined.
  */
 export async function requestApproval(

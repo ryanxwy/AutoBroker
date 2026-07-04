@@ -68,9 +68,10 @@ The runtime flow, grounded in the 6-step workflow
 - **Blocked dealers are refusals** — a 429/403 block signature is surfaced as a
   skipped viewport count; the scan never escalates with stealth or
   retry-harder tactics.
-- **#1244 fail-closed** — the snapshot-fallback LLM call runs with no HITL
-  (this workflow has no suspend step), so a malformed tool call hard-aborts the
-  run with a typed error; it never falls through to prose parsing.
+- **Structured-output fail-closed** — the snapshot-fallback LLM call delivers
+  through a single `emit_result` tool; if it never fires (or its args fail Zod) the
+  run hard-fails with a thrown typed error (`EmitResultNotCalledError` / `ZodError`);
+  it never falls through to prose parsing or a regex-executed name.
 - **Re-discovery is non-destructive** — `profile_dealers` registration is
   `INSERT OR IGNORE` on the composite PK; bound / excluded / closed-out rows
   keep their status across any number of re-runs.

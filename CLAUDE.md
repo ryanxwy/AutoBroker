@@ -97,8 +97,8 @@ core  ->  model  ->  workflows  ->  tools  ->  app
 - `packages/core` — pure TYPES + Zod schemas. **Imports no framework** (AI SDK,
   Mastra, Drizzle, Playwright must be invisible here).
 - `packages/model` — AI SDK 6 provider layer: `createProviderRegistry({deepseek,
-  anthropic, openai})`, `policy(useCase→ModelAlias→CapabilityFlags)`,
-  `resolveModel(alias)`, and the #1244 fail-closed detector/Processor helpers.
+  anthropic, openai})`, `policy(useCase→ModelAlias→CapabilityFlags)`, and
+  `resolveModel(alias)`.
 - `packages/workflows` — Mastra 1.x backbone: each skill is a flat linear
   `createWorkflow`; sessions use Mastra Memory threads/resources plus OM
   auto-compact on the chat lane; durable `suspend()` / resume and app-side
@@ -180,25 +180,19 @@ the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
    caught **only** by the L2 human-approval gate — there is no second env ring.
    Invariant #2 (side effects reach a seam only through the L2 gate, fail-closed)
    is unchanged and still true.
-4. **#1244 fail-closed.** Live-probed 2026-06-04 (107 controlled calls): pure
-   tool loops are clean (0/56); the trigger is mixing structured output
-   (`response_format`/json_schema) with tools — 27/36 silent tool-skip, 2/36
-   plain-text dump. Detection and handling unchanged: on `finish_reason !=
-   tool_calls` OR empty `tool_calls` OR tool-shaped blob in content → fail
-   **closed** through the Mastra output Processor / post-step detector path:
-   under HITL suspend and ask; with no HITL, hard-abort with a typed
-   `MalformedToolCallAbort`. **Never** regex a function name out of content and
-   execute it. fail-open == silent-fallback. **Bounded recovery (additive — never
-   weakens this floor):** the **no-HITL** lane of opt-in heavy extractors
-   (`geosearch_extract`/`inventory_extract`/`incentive_extract`/`lead_form_map` +
-   the original `dealer_reply_extract`) retries the malformed class EXACTLY ONCE on
-   the same-provider v4-pro+thinking lane (shared `recoverEmitWithRetry`: a fresh
-   generation over the ORIGINAL prompt, `provider==='deepseek'`-asserted, per-run
-   budget-capped, high-precision-signal-gated — never `retry:true` /
-   `experimental_repairToolCall` / regex-execute) before the identical hard-abort;
-   HITL stays suspend-first (recovery never fires under HITL). Every malformed trip
-   is recorded into `test_run_records` with a truncated, budget/PII-redacted sample
-   (inv #9).
+4. **Structured-output delivery fail-closed.** A DeepSeek extraction delivers its
+   result through a single `emit_result` tool (or native structured output) — never
+   by mixing per-step structured output with tools (see #5). If `emit_result` never
+   fires, or its captured args fail Zod post-validation, the harness ledgers the
+   failure and throws a typed hard error (`EmitResultNotCalledError` / `ZodError`):
+   it **NEVER** silently proceeds, falls through to prose, or regexes a function name
+   out of content and executes it (fail-open == silent-fallback == forbidden). A
+   caller may map that typed error ONLY to a documented fail-closed degradation — the
+   NL router maps it to `clarify`; the intake trim-suggestion helper degrades to the
+   blank-trim form (product rule 1) — and every other caller lets the run FAIL. The
+   former malformed-tool-call detector/Processor, the bounded no-HITL recovery lane,
+   and the ledger trip-recording columns were DELETED 2026-07-03 by owner ruling:
+   2521 post-migration-0005 run DBs carried zero malformed rows.
 5. **Structured output:** never mix structured object output + tools in the same
    DeepSeek model step (per-step json_schema injection triggers the #1244 text
    dump). Use a single `emit_result` tool with a Zod schema, or a two-phase

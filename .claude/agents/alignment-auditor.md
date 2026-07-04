@@ -30,7 +30,7 @@ The plan repo is a sibling: resolve it as
    second code path that reaches a side effect without the gate.
 3. **Structured output** (`ARCH_STRUCTURED_OUTPUT.html`): flag `Output.object`
    mixed with `tools` in the same call; flag a tool call extracted from message
-   `content` via regex (the #1244 fail-closed rule); flag missing Zod
+   `content` via regex and executed (the fail-closed rule); flag missing Zod
    post-validation.
 4. **Phase order** (`phases/`): flag a skill being implemented out of its
    documented phase (e.g. an irreversible `gmail.send`/`browser.submit` skill —

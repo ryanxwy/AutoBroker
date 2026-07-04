@@ -42,7 +42,8 @@ The runtime flow, grounded in the 6-step workflow
    phase is a no-tools structured call. Snapshots ride the prompt between
    UNTRUSTED-content fences; every row is Zod-revalidated and dropped (and
    counted) on mismatch; a VIN must appear verbatim in the captured snapshot to
-   survive (`validateVinProvenance`). A malformed tool call hard-aborts.
+   survive (`validateVinProvenance`). If `emit_result` never fires (or its args fail
+   Zod) the run hard-fails with a thrown typed error.
 6. **Persist + confirm** — ONE capture-then-serial write
    (`packages/tools/src/inventory/persist.ts`): VIN-arm and listing-URL-arm
    upserts with their composite UNIQUE keys, atomic VIN promotion, stale
@@ -80,8 +81,9 @@ The runtime flow, grounded in the 6-step workflow
 - **Untrusted content** — dealer pages are untrusted; snapshots are fenced in
   the LLM prompt with a do-not-follow notice; extraction output is
   Zod-revalidated; writes are prepared-statement-only.
-- **#1244 fail-closed** — tools-only capture and no-tools structured extract
-  never mix in one step; a malformed/skipped tool call hard-aborts the run.
+- **Structured-output fail-closed** — tools-only capture and no-tools structured
+  extract never mix in one step; if `emit_result` never fires (or its args fail Zod)
+  the run hard-fails with a thrown typed error — never a silent tool-skip.
 - **Profile-ASK three-branch** — never silently picks newest-active; pinned vs
   inferred-newest is typed, logged, and asserted by the harness `resolution`
   anchor.

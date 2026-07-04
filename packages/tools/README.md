@@ -35,7 +35,7 @@ shell and bypass the gate.
 
 ### Fail-CLOSED rules enforced in `src/gate/index.ts`
 
-- **Malformed / absent structured request (#1244):** the gate `assertWellFormed`
+- **Malformed / absent structured request:** the gate `assertWellFormed`
   check throws and DENIES. It never falls back to prose, never regexes a function
   name out of free-text content and executes it. *fail-open == silent-fallback ==
   forbidden.*

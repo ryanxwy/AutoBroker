@@ -310,8 +310,8 @@ Six tabs → six small reads, not one giant DOM.
 - **Contact-role on the negotiation card (F4).** After `POST /__e2e/inject_contact
   {role:'sales manager', isPrimary:true}` and re-opening the `negotiation-detail-modal`,
   assert a `negotiation-contact-row` carries BOTH the `mailto:` link and the role text
-  ("· sales manager"). After the live `#1244` check on `dealer_reply_extract`, the
-  affected dealer's `canvas-negotiation-card` should show `message-extract-failed-badge`
+  ("· sales manager"). After the live structured-output fail-closed check on
+  `dealer_reply_extract`, the affected dealer's `canvas-negotiation-card` should show `message-extract-failed-badge`
   — cross-check against `GET /__e2e/dataquality?skill=dealer_reply_extract`
   (`extract_failed>0`).
 
