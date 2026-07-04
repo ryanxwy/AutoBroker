@@ -51,7 +51,7 @@ import { hygieneReady } from "./hygieneReady.js";
 import { inboxNoLead, inboxReady } from "./inboxReady.js";
 import { intakeGeocodeFault } from "./intakeGeocodeFault.js";
 import { intakeMalformed } from "./intakeMalformed.js";
-import { inventoryListings } from "./inventoryListings.js";
+import { inventoryDupVin, inventoryListings } from "./inventoryListings.js";
 import { keysUnset, keysUnsetReclear } from "./keysUnset.js";
 import { leadSubmitReady } from "./leadSubmitReady.js";
 import { multiActive } from "./multiActive.js";
@@ -89,6 +89,7 @@ export const FIXTURE_STATES: Record<string, FixtureState> = {
   [dealerReplyExtractWorld.id]: dealerReplyExtractWorld,
   [dealerReplyExtractRetryWorld.id]: dealerReplyExtractRetryWorld,
   [inventoryListings.id]: inventoryListings,
+  [inventoryDupVin.id]: inventoryDupVin,
   [keysUnset.id]: keysUnset,
   [keysUnsetReclear.id]: keysUnsetReclear,
   [quoteAuditWorld.id]: quoteAuditWorld,

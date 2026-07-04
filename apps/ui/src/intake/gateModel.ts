@@ -6,7 +6,10 @@
  * (searchProfileIntake.ts suspend payloads):
  *
  *   - data_collection   → the IntakeForm. {kind, form_kind, spec_hint,
- *                         seed_fields} — seed_fields prefill the form.
+ *                         seed_fields, prose} — seed_fields prefill the form; the
+ *                         optional `prose` is a verbal ask (a freeform launch
+ *                         still missing a required trim) rendered as the form
+ *                         gate's lead-in question. Null/absent → no lead-in.
  *   - intake_confirm    → the unconditional end-of-intake buyer confirmation of
  *                         the resolved vehicle. {kind, year, make, model, trim}.
  *                         resume {action:'accept'} | {action:'edit'} |
@@ -41,7 +44,7 @@ export interface TrimCandidate {
 }
 
 export type GateModel =
-  | { kind: "data_collection"; seedFields: Record<string, unknown> | null }
+  | { kind: "data_collection"; seedFields: Record<string, unknown> | null; prose: string | null }
   // unconditional end-of-intake buyer confirmation of the resolved vehicle.
   | { kind: "intake_confirm"; year: number | null; make: string; model: string; trim: string }
   // web-grounded trim picker (pre-collect): the buyer gave make+model+year but no
@@ -83,6 +86,9 @@ export function classifyGate(specInline: Record<string, unknown> | null): GateMo
     return {
       kind: "data_collection",
       seedFields: seed !== null && typeof seed === "object" ? (seed as Record<string, unknown>) : null,
+      // Optional verbal ask (freeform launch still missing a required trim). Any
+      // non-string (absent/null) → null → no lead-in renders (slash path).
+      prose: str(specInline["prose"]),
     };
   }
 

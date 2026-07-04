@@ -94,7 +94,7 @@ export interface RankedCandidate {
   score: number;
   reasons: string[];
   match_status: "exact" | "near" | "mismatch" | "unknown";
-  /** true ⇔ match exact/near AND inventory in_stock/in_transit AND score >= 0.6.
+  /** true ⇔ match exact/near AND inventory in_stock/in_transit/unknown AND score >= 0.6.
    *  The SINGLE source of the recommended predicate; never re-derived from the three
    *  individual fields downstream. */
   recommended: boolean;

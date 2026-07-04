@@ -80,5 +80,6 @@ fix or record first — per the harness standard's GREEN→RED rule.
 - never set `AUTOBROKER_TEST_AUTO_APPROVE` — the decline path must stay
   exercised.
 - loop output toward the plan repo is drafts/reports only; commits are human.
-- no real email / real form submit exists anywhere before all 17 skills are
-  GREEN.
+- the loop's lanes never really send: every harness/test lane is force-pinned
+  `AUTOBROKER_MODE=test` fail-closed (real sends exist only in buyer mode, one
+  L2-approved action at a time — never from this loop).

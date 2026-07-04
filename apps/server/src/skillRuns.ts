@@ -2228,8 +2228,24 @@ export class SkillRunService {
           kinds: affectedKinds(descriptor.workflowId),
         },
       });
-      this.pubsub.append(runId, { kind: "done", payload: {} });
+      // Backfill the run's profile from the RESULT before the terminal fan-out.
+      // An unpinned launch starts with a null input profile (the workflow
+      // resolves inferred-newest internally), so RunState.searchProfileId is
+      // null at start — but the lifecycle listeners key on event.profileId
+      // (the scan-chain would silently never fire for an unpinned site_scan).
+      // The completed result names the profile the run ACTUALLY acted on.
+      if (run.searchProfileId === null && completedProfileId !== null) {
+        run.searchProfileId = completedProfileId;
+      }
+      // Fire the terminal fan-out BEFORE the `done` frame. A lifecycle listener
+      // (the app-layer scan-chain) may SYNCHRONOUSLY append an announce frame
+      // onto THIS channel, and post-`done` appends are discarded (the
+      // single-terminal "wire wins" rule). Every listener throw is isolated in
+      // fireTerminal, so a listener error can never swallow the `done` below.
+      // Only the success branch reorders — the declined/error/canceled branches
+      // append their terminal frame first (no listener appends for those).
       this.fireTerminal(run, runId, "completed");
+      this.pubsub.append(runId, { kind: "done", payload: {} });
       return;
     }
 
@@ -2298,6 +2314,32 @@ export class SkillRunService {
    *  association; skill_runs.session_id ↔ thread metadata). */
   sessionOf(runId: string): string | null {
     return this.runs.get(runId)?.sessionId ?? null;
+  }
+
+  /**
+   * Append a sibling-run announce onto a PARENT run's channel: a voiced text
+   * line plus the machine-readable `chained_run` metadata ({run_id, skill}) the
+   * client reads to stream the sibling as its own live assistant turn. The
+   * metadata rides a `text` frame's payload (the same channel the terminal
+   * text-frame metadata uses), so it needs no new wire kind.
+   *
+   * MUST be appended BEFORE the parent's terminal `done` (post-terminal appends
+   * are discarded — "wire wins"); the app-layer scan-chain listener calls this
+   * from inside the terminal fan-out, which now runs before the `done` append.
+   * No-op when the parent channel is gone (a headless/GC'd run).
+   */
+  appendChainedRunAnnounce(
+    parentRunId: string,
+    args: { text: string; chainRunId: string; chainSkill: string },
+  ): void {
+    if (!this.pubsub.has(parentRunId)) return;
+    this.pubsub.append(parentRunId, {
+      kind: "text",
+      payload: {
+        text: args.text,
+        chained_run: { run_id: args.chainRunId, skill: args.chainSkill },
+      },
+    });
   }
 
   /**

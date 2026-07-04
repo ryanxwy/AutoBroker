@@ -1,0 +1,203 @@
+# harness/cases/inventory_scan_chain.ui_button.toml — the site_scan→aggregator
+# AUTO-CHAIN, UI-LANE, ONE browser session end-to-end:
+#
+#   step 1  intake via chat-rail SLASH (the corpus Tucson profile, trim seeded) —
+#           the scan's input.
+#   step 2  "/dealer_geosearch" via slash — single active profile, no pin →
+#           the resolver INFERS newest-active (resolution=inferred_newest).
+#   step 3  inventory_site_scan from the TopBar Skills popover Run button. When it
+#           COMPLETES, the app-layer auto-chain fires a SIBLING
+#           inventory_aggregator_scan run for the same profile (this case opts IN
+#           via narrative.scan_chain=true — the runner otherwise exports
+#           AUTOBROKER_SITESCAN_CHAIN=0 into every host so the chain never fires in
+#           ordinary lanes). The chained_run anchor discovers that sibling off the
+#           parent stream's announce frame, waits for it to reach its OWN done turn
+#           (its own 1800s budget), and asserts the aggregator wrote its own
+#           dealer_inventory_sources rows.
+#
+# TEARDOWN: the chained_run anchor runs INSIDE the per-step loop (before the case's
+# finally-teardown), so the runner keeps the host alive until the sibling reaches
+# done (or its budget expires) — the sibling never orphans mid-browse. A sibling
+# that times out / never lands a done turn records a failing UiCheck → the case is
+# RED (never a silent orphan).
+#
+# POLITENESS: this case does TWO shopping passes in one run — the dealer-site
+# scan (site_scan) AND the chained aggregator (Cars.com/Edmunds) pass. Like the
+# other live scan cases it is accepted-but-rotated (one run's worth of shopping
+# traffic is the politeness budget) and is NOT in regression-corpus.txt.
+#
+# cost_and_time is REQUIRED on step 3 (extraction is an LLM phase). max_seconds =
+# 1800 is PER-STEP (the site_scan run); the chained_run anchor carries its OWN
+# 1800s budget for the sibling aggregator run. RADIUS 120 (live default).
+
+[meta]
+id = "inventory_scan_chain_ui_button"
+archetype = "A"
+skills = ["search_profile_intake", "dealer_geosearch", "inventory_site_scan", "inventory_aggregator_scan"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+scan_chain = true          # opt IN to the site_scan→aggregator auto-chain.
+
+[narrative.profile]
+make = "Hyundai"
+model = "Tucson Hybrid"
+year = 2026
+location_query = "Irvine, CA 92614"
+follow_up_email = "livetest@example.com"
+financing_preference = "finance"
+trim = "Limited"
+search_radius_miles = 120
+budget_max = 0
+follow_up_phone = "949-555-0100"
+phone_policy = "fake"
+preferred_exterior_colors_json = null
+preferred_interior_colors_json = null
+acceptable_trims_json = null
+feature_preferences_json = null
+trade_in_description = null
+military_first_responder = 0
+current_brand_owner = 0
+
+# ---- step 1: intake (the journey root) --------------------------------------
+
+[[steps]]
+id = "intake_create"
+skill = "search_profile_intake"
+purpose = "Create the Tucson profile through the real dashboard — the scan's input."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.resume]]
+on = "data_collection"
+action = "accept"
+content_from = "narrative.profile"
+
+[[steps.resume]]
+on = "intake_confirm"
+action = "accept"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "search_profiles"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 2: dealer_geosearch (slash, no pin — inferred_newest) ---------------
+
+[[steps]]
+id = "geosearch_run"
+skill = "dealer_geosearch"
+purpose = "Discover dealers near the just-created profile (single-active inference)."
+gate_policy = "approve_safe"
+launch = "chat_slash"
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "profile_dealers"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"
+optional = true             # zero-LLM happy path (evaluate-extract).
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# ---- step 3: inventory_site_scan from the popover Run button + the auto-chain --
+
+[[steps]]
+id = "scan_button"
+skill = "inventory_site_scan"
+purpose = "Launch the site scan from the popover Run button; on completion the app auto-chains a sibling aggregator scan (same profile)."
+gate_policy = "approve_safe"
+launch = "skills_popover"
+max_seconds = 1800          # PER-STEP budget: full-radius capture+extract.
+
+[[steps.anchors]]
+kind = "run_status"
+expect = ["done"]
+
+[[steps.anchors]]
+kind = "driver_kind"
+expect = "deepseek_apikey"
+
+[[steps.anchors]]
+kind = "browser_activity"
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "inventory_listings"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "table_min_rows"
+table = "dealer_inventory_sources"
+scope = "profile"
+delta_min = 1
+
+[[steps.anchors]]
+kind = "no_external_mutation"
+
+[[steps.anchors]]
+kind = "cost_and_time"      # REQUIRED — extraction is an LLM phase.
+
+[[steps.anchors]]
+kind = "resolution"
+expect = "inferred_newest"  # still unpinned → the inferred branch, voiced.
+
+[[steps.anchors]]
+kind = "malformed_tool_call"
+expect = "absent"
+
+# THE CHAIN: after site_scan reaches done, the auto-chain announces a sibling
+# inventory_aggregator_scan run on the parent stream. Discover it, wait for its own
+# done turn (its own 1800s budget), and assert the aggregator wrote ≥1 of its OWN
+# dealer_inventory_sources rows (the aggregator_srp source present = the chain fired
+# end-to-end). A missing announce / non-done sibling / no aggregator write → RED.
+[[steps.anchors]]
+kind = "chained_run"
+skill = "inventory_aggregator_scan"
+max_seconds = 1800
+table = "dealer_inventory_sources"
+delta_min = 1

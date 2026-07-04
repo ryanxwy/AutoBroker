@@ -95,6 +95,7 @@ import {
   normalizeListingUrl,
   NULL_EMITTER,
   persistScanResults as persistScanResultsImpl,
+  resegmentModelTrim,
   resolveActiveProfile as resolveActiveProfileImpl,
   resolveOrMintDealer,
   selectExistingVinOwners,
@@ -129,7 +130,8 @@ type AggregatorScalar = AggregatorCollected["scalars"][number];
 export type InventoryAggregatorScanStopCode =
   | "no_active_profile"
   | "multiple_active_profiles"
-  | "profile_missing_fields";
+  | "profile_missing_fields"
+  | "trim_missing";
 
 /** Typed STOP from the pre-scan step. The message is the user-facing wording —
  *  the server surfaces it verbatim on the run's error frame. */
@@ -490,39 +492,10 @@ export interface AggregatorSelectionCounts {
   dedupedCrossSource: number;
 }
 
-/**
- * Deterministic model/trim RE-SEGMENTATION against the profile's model. Pure.
- *
- * Aggregator tile titles run model and trim together ("TUCSON Hybrid Limited
- * AWD"), and the extraction's split of that character stream varies: the same
- * page has yielded {model:"TUCSON Hybrid", trim:"Limited"} on one run and
- * {model:"Tucson", trim:"Hybrid Limited"} on the next — the second shape fails
- * the exact-model comparison and silently zeroes a lot full of real matches.
- * When the extracted model differs from the profile's but the CONCATENATED
- * model+trim token stream starts with the profile model's tokens, re-split at
- * the profile-model boundary. This only re-partitions the tokens the page
- * already carried — it never invents or reorders text — and rows whose tokens
- * genuinely diverge pass through unchanged.
- */
-export function resegmentModelTrim(
-  profileModel: string,
-  model: string | null,
-  trim: string | null,
-): { model: string | null; trim: string | null } {
-  if (model === null || model === "") return { model, trim };
-  const profileTokens = profileModel.toLowerCase().split(/\s+/).filter((t) => t !== "");
-  if (profileTokens.length === 0) return { model, trim };
-  if (model.trim().toLowerCase() === profileModel.trim().toLowerCase()) return { model, trim };
-  const combined = `${model} ${trim ?? ""}`.trim();
-  const combinedTokens = combined.split(/\s+/).filter((t) => t !== "");
-  if (combinedTokens.length < profileTokens.length) return { model, trim };
-  for (let i = 0; i < profileTokens.length; i += 1) {
-    if (combinedTokens[i]!.toLowerCase() !== profileTokens[i]) return { model, trim };
-  }
-  const newModel = combinedTokens.slice(0, profileTokens.length).join(" ");
-  const rest = combinedTokens.slice(profileTokens.length).join(" ");
-  return { model: newModel, trim: rest === "" ? null : rest };
-}
+// Model/trim re-segmentation lives in the tools layer (trimMatch.ts) so the
+// browser-scan classify paths share one implementation; re-exported here for the
+// existing skill-facing import surface.
+export { resegmentModelTrim };
 
 /**
  * Deterministic keep-set + dedup selection. Pure. In registry order:
@@ -775,6 +748,8 @@ interface SummaryPerSite {
  *  names, never budget. Pure (exported for unit tests). */
 export function buildAggregatorSummary(args: {
   perSite: readonly SummaryPerSite[];
+  /** The profile trim the kept rows were matched against (voiced in the tally). */
+  trim: string;
   keptWritten: number;
   duplicatesSkipped: number;
   droppedNoDealer: number;
@@ -815,7 +790,9 @@ export function buildAggregatorSummary(args: {
   if (args.droppedOutOfRadius > 0) {
     parens.push(`${args.droppedOutOfRadius} outside your radius`);
   }
-  let keptLine = `Kept ${args.keptWritten} exact-match listing${args.keptWritten === 1 ? "" : "s"}`;
+  let keptLine =
+    `Kept ${args.keptWritten} listing${args.keptWritten === 1 ? "" : "s"} ` +
+    `matching your ${args.trim} trim`;
   if (parens.length > 0) keptLine += ` (${parens.join(", ")})`;
   keptLine += ". Prices as shown on the shopping sites.";
 
@@ -1045,6 +1022,17 @@ const resolveProfileStep = createStep({
           `${missing.join(", ")} — inventory_aggregator_scan needs the vehicle ` +
           "identity and a ZIP to search near you. Run /search_profile_intake to " +
           "complete or recreate the profile, then re-run /inventory_aggregator_scan.",
+      );
+    }
+
+    // Trim is REQUIRED for a scan: a null/blank trim would make the keep-set drop
+    // every row (a trim subset test against "" never matches), silently reading as
+    // "no inventory". STOP before any browser work rather than run a degraded scan.
+    if (profile.trim === null || profile.trim.trim() === "") {
+      throw new InventoryAggregatorScanStopError(
+        "trim_missing",
+        "Your search profile doesn't have a trim yet — trim is required before " +
+          "scanning. Start a new search (intake) to set the exact trim.",
       );
     }
 
@@ -1325,6 +1313,7 @@ const persistConfirmStep = createStep({
       const duplicatesSkipped = counts.dedupedCrossSource + persist.dedupedExisting;
       const summary = buildAggregatorSummary({
         perSite,
+        trim: state.trim ?? "",
         keptWritten: persist.listingsWritten,
         duplicatesSkipped,
         droppedNoDealer: state.droppedNoDealer,

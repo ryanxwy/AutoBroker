@@ -295,6 +295,34 @@ describe("InventoryDetailModal — interior color / availability / caveat / gate
 });
 
 // ---------------------------------------------------------------------------
+// Trim row (ALWAYS rendered — explicit "—" when null, never omitted)
+// ---------------------------------------------------------------------------
+
+describe("InventoryDetailModal — Trim row", () => {
+  it("renders the Trim row with the value", () => {
+    const close = open(makeRow({ trim: "Limited" }));
+    const trim = doc("inventory-detail-trim");
+    expect(trim).not.toBeNull();
+    expect(trim!.textContent).toBe("Limited");
+    close();
+  });
+
+  it("renders the Trim row as '—' when trim is null (never omitted like the other rows)", () => {
+    const close = open(makeRow({ trim: null }));
+    const trim = doc("inventory-detail-trim");
+    expect(trim).not.toBeNull();
+    expect(trim!.textContent).toBe("—");
+    close();
+  });
+
+  it("renders the Trim row as '—' when trim is an empty string", () => {
+    const close = open(makeRow({ trim: "" }));
+    expect(doc("inventory-detail-trim")!.textContent).toBe("—");
+    close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // "Found on" provenance row (aggregator rows only)
 // ---------------------------------------------------------------------------
 

@@ -24,6 +24,16 @@ function clickDoc(node: HTMLElement): void {
   });
 }
 
+/** Set a <select> value + fire React's change inside act() (the shared `change`
+ *  helper is typed for input/textarea; a select needs its own setter). */
+function changeSelect(node: HTMLSelectElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+  act(() => {
+    setter?.call(node, value);
+    node.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -110,6 +120,7 @@ function makeResult(
     sourcesBlocked: number;
     shoppingSourcesScanned: number;
     shoppingSourcesBlocked: number;
+    sameVinCollapsed: number;
   }> = {},
 ): InventoryCompareResult {
   return {
@@ -883,6 +894,163 @@ describe("InventoryCandidates — curated filters", () => {
     expect(all("inventory-candidate-row")).toHaveLength(3);
     click(get("inventory-filter-nomarkup")); // none have markup → still 15, new identity → page 1.
     expect(all("inventory-candidate-row")).toHaveLength(12);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trim visible per row (explicit unknown, never silently dropped)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — trim per row", () => {
+  it("renders the trim value on the row", () => {
+    const result = makeResult([makeCandidate({ trim: "Limited" })]);
+    const { get } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(get("inventory-candidate-trim").textContent).toContain("Limited");
+  });
+
+  it("renders an explicit 'trim —' when trim is null (never silently dropped)", () => {
+    const result = makeResult([makeCandidate({ trim: null })]);
+    const { get } = render(<InventoryCandidates inventory={ok(result)} />);
+    const el = get("inventory-candidate-trim");
+    expect(el.textContent).toContain("trim");
+    expect(el.textContent).toContain("—");
+  });
+
+  it("renders an explicit 'trim —' when trim is an empty string", () => {
+    const result = makeResult([makeCandidate({ trim: "" })]);
+    const { get } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(get("inventory-candidate-trim").textContent).toContain("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trim filter (<select> over the loaded trims; composes with scope)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — trim filter", () => {
+  it("lists the distinct trims (case-insensitively deduped, first-seen casing, sorted) after All trims", () => {
+    const rows = [
+      makeCandidate({ listing_id: "a", trim: "SEL", recommended: false }),
+      makeCandidate({ listing_id: "b", trim: "Limited", recommended: false }),
+      makeCandidate({ listing_id: "c", trim: "limited", recommended: false }), // dup by case
+    ];
+    const { get } = render(
+      <InventoryCandidates inventory={ok(makeResult(rows, { recommendedCount: 0 }))} />,
+    );
+    const select = get("inventory-filter-trim") as HTMLSelectElement;
+    const opts = Array.from(select.options).map((o) => o.textContent);
+    // Sorted, first-seen casing kept ("Limited" not "limited"), no "No trim listed".
+    expect(opts).toEqual(["All trims", "Limited", "SEL"]);
+    // Default value = All trims (empty).
+    expect(select.value).toBe("");
+  });
+
+  it("offers 'No trim listed' only when a candidate has a null/empty trim", () => {
+    const noNull = [makeCandidate({ listing_id: "a", trim: "Limited", recommended: false })];
+    const { get, unmount } = render(
+      <InventoryCandidates inventory={ok(makeResult(noNull, { recommendedCount: 0 }))} />,
+    );
+    let opts = Array.from((get("inventory-filter-trim") as HTMLSelectElement).options).map(
+      (o) => o.textContent,
+    );
+    expect(opts).not.toContain("No trim listed");
+    unmount();
+
+    const withNull = [
+      makeCandidate({ listing_id: "a", trim: "Limited", recommended: false }),
+      makeCandidate({ listing_id: "b", trim: null, recommended: false }),
+    ];
+    const r2 = render(
+      <InventoryCandidates inventory={ok(makeResult(withNull, { recommendedCount: 0 }))} />,
+    );
+    opts = Array.from((r2.get("inventory-filter-trim") as HTMLSelectElement).options).map(
+      (o) => o.textContent,
+    );
+    expect(opts).toContain("No trim listed");
+  });
+
+  it("filters to the selected trim (case-insensitive) and composes with the scope toggle", () => {
+    const recLimited = makeCandidate({ listing_id: "rl", vin: "VIN-RL-000000001", trim: "Limited", recommended: true });
+    const recSel = makeCandidate({ listing_id: "rs", vin: "VIN-RS-000000002", trim: "SEL", recommended: true });
+    const allLimited = makeCandidate({ listing_id: "al", vin: "VIN-AL-000000003", trim: "limited", recommended: false });
+    const { all, get } = render(
+      <InventoryCandidates inventory={ok(makeResult([recLimited, recSel, allLimited]))} />,
+    );
+    // Default Recommended → both recommended rows.
+    expect(all("inventory-candidate-row")).toHaveLength(2);
+    // Pick Limited → within Recommended, only recLimited.
+    changeSelect(get("inventory-filter-trim") as HTMLSelectElement, "Limited");
+    expect(all("inventory-candidate-vin").map((n) => n.textContent)).toEqual(["VIN-RL-000000001"]);
+    // Switch scope to All → Limited across all (case-insensitive) = recLimited + allLimited.
+    click(get("inventory-filter-all"));
+    expect(all("inventory-candidate-vin").map((n) => n.textContent)).toEqual([
+      "VIN-RL-000000001",
+      "VIN-AL-000000003",
+    ]);
+  });
+
+  it("filters to the 'No trim listed' bucket (null/empty trim only)", () => {
+    const withTrim = makeCandidate({ listing_id: "t", vin: "VIN-T-0000000001", trim: "Limited", recommended: false });
+    const nullTrim = makeCandidate({ listing_id: "n", vin: "VIN-N-0000000002", trim: null, recommended: false });
+    const emptyTrim = makeCandidate({ listing_id: "e", vin: "VIN-E-0000000003", trim: "", recommended: false });
+    const { all, get } = render(
+      <InventoryCandidates
+        inventory={ok(makeResult([withTrim, nullTrim, emptyTrim], { recommendedCount: 0 }))}
+      />,
+    );
+    expect(all("inventory-candidate-row")).toHaveLength(3);
+    changeSelect(get("inventory-filter-trim") as HTMLSelectElement, "\u0000");
+    expect(all("inventory-candidate-vin").map((n) => n.textContent)).toEqual([
+      "VIN-N-0000000002",
+      "VIN-E-0000000003",
+    ]);
+  });
+
+  it("shows the filters-empty guard when the trim filter matches nothing in scope", () => {
+    const recSel = makeCandidate({ listing_id: "rs", trim: "SEL", recommended: true });
+    const allLimited = makeCandidate({ listing_id: "al", trim: "Limited", recommended: false });
+    const { all, get, query } = render(
+      <InventoryCandidates inventory={ok(makeResult([recSel, allLimited]))} />,
+    );
+    // Default Recommended shows only recSel.
+    expect(all("inventory-candidate-row")).toHaveLength(1);
+    // Limited is a valid option (allLimited) but no recommended row has it → empty.
+    changeSelect(get("inventory-filter-trim") as HTMLSelectElement, "Limited");
+    expect(query("inventory-filters-empty")).not.toBeNull();
+    expect(all("inventory-candidate-row")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Merged-count transparency note (same-VIN duplicates collapsed across sources)
+// ---------------------------------------------------------------------------
+
+describe("InventoryCandidates — merged-count note", () => {
+  it("renders the merged note when sameVinCollapsed > 0", () => {
+    const result = makeResult([makeCandidate()], { sameVinCollapsed: 3 });
+    const { get } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(get("inventory-merged-note").textContent).toContain(
+      "3 duplicate listings merged across sources",
+    );
+  });
+
+  it("uses the singular for exactly 1 merged listing", () => {
+    const result = makeResult([makeCandidate()], { sameVinCollapsed: 1 });
+    const { get } = render(<InventoryCandidates inventory={ok(result)} />);
+    expect(get("inventory-merged-note").textContent).toContain(
+      "1 duplicate listing merged across sources",
+    );
+  });
+
+  it("omits the merged note when sameVinCollapsed is 0 or absent", () => {
+    const zero = render(
+      <InventoryCandidates inventory={ok(makeResult([makeCandidate()], { sameVinCollapsed: 0 }))} />,
+    );
+    expect(zero.query("inventory-merged-note")).toBeNull();
+    zero.unmount();
+
+    const absent = render(<InventoryCandidates inventory={ok(makeResult([makeCandidate()]))} />);
+    expect(absent.query("inventory-merged-note")).toBeNull();
   });
 });
 

@@ -285,6 +285,25 @@ These are durable product rules, distinct from the safety invariants above:
    placeholder-phone note — budget NEVER shown, inv #9) so the user sees the minimal
    payload before approving; the dealer list is height-capped + scrollable so the gate
    never swamps the layout. The summary block is opt-in on the shared `BatchReviewCard`.
+6. **Trim is load-bearing in every browser-scan skill (owner, 2026-07-03).** The three
+   read-only scans (`inventory_site_scan`, `inventory_aggregator_scan`,
+   `inventory_link_scan`) act on the profile's REQUIRED trim: a profile without a trim
+   STOPs typed (`trim_missing` — reachable only via legacy/restored/hand-seeded rows;
+   intake blocks trimless submits and verbally ASKS on a trimless freeform launch),
+   scan summaries voice the trim, every inventory row displays it
+   (`inventory-candidate-trim`, explicit "trim —" when unknown) and the inventory tab
+   filters by it (`inventory-filter-trim`). Powertrain words are MODEL, not trim:
+   "Tucson Hybrid" vs "Tucson" is a model mismatch in every scan —
+   `resegmentModelTrim` may pull Hybrid/Electric/Plug-in/PHEV/EV INTO the model,
+   never out of it.
+7. **`inventory_site_scan` auto-chains `inventory_aggregator_scan` (owner,
+   2026-07-03).** A successfully completed site_scan starts an aggregator scan for the
+   same profile as its own sibling run (voiced on the parent stream; its own chat
+   turn). Both are read-only — no gate. `AUTOBROKER_SITESCAN_CHAIN=0` is the kill
+   switch (default on); harness regression lanes and the soak lane pin it off,
+   `scan_chain = true` cases and serve-live keep it on. The two sources
+   dedup/integrate in the local DB (VIN belts + enrich-only) and aggregate into ONE
+   inventory list and ONE recommendation set.
 
 ## One skill, one commit
 

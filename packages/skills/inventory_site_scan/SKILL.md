@@ -55,8 +55,10 @@ The runtime flow, grounded in the 6-step workflow
    no markup CLEARS it (sentinel `0` / empty blob → `COALESCE` clears), a VDP not
    visited PRESERVES the prior value (`null` → `COALESCE` keeps), so a red markup
    flag de-ratchets honestly when the dealer removes it.
-   Confirm is a zero-LLM templated summary; the run ends here — no auto-chain
-   into lead submission.
+   Confirm is a zero-LLM templated summary. A successfully completed run
+   auto-chains the READ-ONLY `inventory_aggregator_scan` as its own sibling run
+   (voiced; `AUTOBROKER_SITESCAN_CHAIN=0` disables) — it never chains into lead
+   submission or any send.
 
 ## Guardrails
 

@@ -101,6 +101,9 @@ export function buildSoakHostEnv(parentEnv: NodeJS.ProcessEnv, dataDir: string, 
     // Test mode pinned — AUTOBROKER_MODE is the sole send-control floor; the
     // Gmail backend projects to fake from it, so the soak can never really send.
     AUTOBROKER_MODE: "test",
+    // The site_scan→aggregator auto-chain is product-default ON; the soak lane
+    // is deterministic and must never reach a real shopping site — pin it off.
+    AUTOBROKER_SITESCAN_CHAIN: "0",
   };
   // Keep the gate live to exercise the decline path (never auto-approve).
   delete env.AUTOBROKER_TEST_AUTO_APPROVE;

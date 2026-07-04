@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AmbiguousLocationPicker,
+  DataCollectionProse,
   IntakeConfirmCard,
   LocationFailureBanner,
   TrimSuggestionPicker,
@@ -17,6 +18,28 @@ import {
 import { change, click, clickRadio, render } from "../test/render.js";
 
 const noop = (): void => {};
+
+describe("DataCollectionProse (form gate lead-in)", () => {
+  const ask = "Which exact trim do you want? The trim field is required — pick the trim before submitting.";
+
+  it("renders the verbal ask as the emphasized lead-in line", () => {
+    const r = render(<DataCollectionProse prose={ask} />);
+    expect(r.get("intake-form-prose").textContent).toBe(ask);
+    r.unmount();
+  });
+
+  it("renders NOTHING for null prose (slash path — backward compatible)", () => {
+    const r = render(<DataCollectionProse prose={null} />);
+    expect(r.query("intake-form-prose")).toBeNull();
+    r.unmount();
+  });
+
+  it("renders NOTHING for empty/whitespace prose", () => {
+    const r = render(<DataCollectionProse prose="   " />);
+    expect(r.query("intake-form-prose")).toBeNull();
+    r.unmount();
+  });
+});
 
 describe("AmbiguousLocationPicker", () => {
   it("renders one radio per candidate; pick dispatches {action:'pick', picked_index}", () => {

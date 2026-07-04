@@ -67,14 +67,20 @@ export function makeTmpDb(): TmpDb {
   };
 }
 
-/** Insert a search_profiles row (the shape the intake persist writes). Returns id. */
-export function insertProfile(db: Db, id: string, opts: { brand?: string; status?: string } = {}): void {
+/** Insert a search_profiles row (the shape the intake persist writes). Returns id.
+ *  trim defaults to a real value so seeded profiles are trim-complete (the scan
+ *  skills STOP on a null/blank trim). */
+export function insertProfile(
+  db: Db,
+  id: string,
+  opts: { brand?: string; status?: string; trim?: string } = {},
+): void {
   db.$client
     .prepare(
-      `INSERT INTO search_profiles (search_profile_id, make, model, year, brand, location_query, account_id, status)
-       VALUES (?, 'Hyundai', 'Tucson Hybrid', 2026, ?, 'Irvine, CA', 'acct-test-1', ?)`,
+      `INSERT INTO search_profiles (search_profile_id, make, model, trim, year, brand, location_query, account_id, status)
+       VALUES (?, 'Hyundai', 'Tucson Hybrid', ?, 2026, ?, 'Irvine, CA', 'acct-test-1', ?)`,
     )
-    .run(id, opts.brand ?? "Hyundai", opts.status ?? "active");
+    .run(id, opts.trim ?? "SEL", opts.brand ?? "Hyundai", opts.status ?? "active");
 }
 
 /** Insert an audit_log row (e.g. action='search_profile_intake' for the created

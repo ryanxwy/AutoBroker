@@ -1,0 +1,70 @@
+# harness/cases/inventory_combined_display.func.toml — FUNCTIONAL lane: the
+# COMBINED (multi-source) display proof over the SAME populated inventory_listings
+# world. The world now carries BOTH source families in dealer_inventory_sources:
+# lst_strong joins an 'aggregator_srp' (Cars.com) source, lst_incomplete joins a
+# dealer-site 'srp' source. The compare view renders every candidate in ONE list
+# regardless of source_type, and only the aggregator listing carries a "via {host}"
+# provenance line.
+#
+# WHY A SIBLING CASE (not a step on inventory_compare.func.toml): the harness
+# forbids two steps sharing a fixture_state within one case, and a runless ui step
+# has no prior run to inherit — the combined-display assertion is its own final DOM
+# state (All scope), distinct from that case's Recommended-default assertion. A
+# sibling case reuses the EXISTING fixture (zero new data), the standard pattern.
+#
+# FIXTURE COUNTS (inventoryListings fixture, authoritative): 3 surviving candidates
+# (lst_strong / lst_incomplete / lst_nostock). In the All scope all 3 render in one
+# list (both source families present); exactly ONE (lst_strong, aggregator_srp)
+# carries the provenance line. The func runner scores every anchor AFTER replaying
+# every ui_action, so this is a single final-state assert (no mid-step interleaving).
+
+[meta]
+id = "inventory_combined_display_func"
+archetype = "B"
+skills = ["inventory_compare"]
+risk_group = "E"
+
+[narrative]
+session_origin = "fresh_unpinned"
+input_mode = "slash"
+provider = "deepseek"
+lane = "ui"
+
+# ---- step 1: All scope → both source families in one list, one provenance line --
+
+[[steps]]
+id = "combined_display"
+kind = "ui"
+fixture_state = "inventory_listings"
+purpose = "Inventory tab → All scope: all 3 candidates render in one list (both aggregator + dealer-site source families); exactly one row (the aggregator_srp listing) shows the 'via {host}' provenance line."
+
+# Open the Inventory tab (mounts + waits for the candidates section).
+[[steps.ui_actions]]
+verb = "click"
+testid = "canvas-tab-inventory"
+
+# Switch to the All scope so every candidate (both source families) is in view
+# (the default Recommended scope holds only lst_strong).
+[[steps.ui_actions]]
+verb = "click"
+testid = "inventory-filter-all"
+
+# All 3 surviving candidates render together in ONE list — both source families
+# (aggregator_srp lst_strong + dealer-site 'srp' lst_incomplete + source-less
+# lst_nostock) coexist in the same candidate grid.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-candidate-row"
+expect = "count"
+count = 3
+match = "exact"
+
+# Exactly ONE provenance line: only the aggregator_srp listing (lst_strong) shows
+# "via {host}"; the dealer-site 'srp' row and the source-less row show none. This
+# is the source-type gating proof for the combined list.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "inventory-source-line"
+expect = "count"
+count = 1
+match = "exact"

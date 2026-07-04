@@ -99,6 +99,13 @@ export function InventoryDetailModal({
         <dl className="inventory-detail-list">
           <DetailRow label="VIN" value={row.vin} />
           <DetailRow label="Stock #" value={row.stock_number} />
+          {/* Trim ALWAYS renders (even null → "—") — trim is a first-class match
+              axis, so an unknown trim must be explicit here rather than dropping
+              its row the way DetailRow omits the other null fields. */}
+          <dt>Trim</dt>
+          <dd data-testid="inventory-detail-trim">
+            {row.trim !== null && row.trim !== "" ? row.trim : "—"}
+          </dd>
           <DetailRow label="Exterior color" value={row.exterior_color} />
           {row.interior_color !== null && row.interior_color !== "" && (
             <>

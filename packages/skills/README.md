@@ -18,7 +18,7 @@ The skill manifest layer: a typed `SkillDef` registry plus a per-skill
 
 ## The 18 skills
 
-Derived from `src/registry.ts` (build order, phase 1 → 5). All 17 are
+Derived from `src/registry.ts` (build order, phase 1 → 5). All 18 are
 **implemented**. Where a per-skill `SKILL.md` exists the Doc column links it; the
 remaining skills are implemented in code but carry no standalone `SKILL.md`.
 

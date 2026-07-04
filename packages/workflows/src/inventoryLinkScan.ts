@@ -153,6 +153,7 @@ import {
   normalizeListingUrl,
   NULL_EMITTER,
   persistScanResults as persistScanResultsImpl,
+  resegmentModelTrim,
   resolveActiveProfile as resolveActiveProfileImpl,
   validateVinProvenance,
   withBrowserContext,
@@ -191,7 +192,8 @@ type SessionPage = Awaited<ReturnType<BrowserSession["newPage"]>>;
 export type InventoryLinkScanStopCode =
   | "no_active_profile"
   | "multiple_active_profiles"
-  | "profile_missing_fields";
+  | "profile_missing_fields"
+  | "trim_missing";
 
 /** Typed STOP from the pre-review steps. The message is the user-facing
  *  wording — the server surfaces it verbatim on the run's error frame. */
@@ -902,6 +904,16 @@ const resolveProfileStep = createStep({
       );
     }
 
+    // Trim is REQUIRED before matching listings: the results must show and be
+    // filterable by the profile trim. STOP rather than match against a blank trim.
+    if (profile.trim === null || profile.trim.trim() === "") {
+      throw new InventoryLinkScanStopError(
+        "trim_missing",
+        "Your search profile doesn't have a trim yet — trim is required before " +
+          "scanning. Start a new search (intake) to set the exact trim.",
+      );
+    }
+
     return {
       searchProfileId: profile.id,
       resolution: resolved.kind,
@@ -1217,19 +1229,27 @@ const visitExtractStep = createStep({
             urlProvenanceStripped += 1;
           }
 
+          // Re-segment a model/trim boundary drift ("Tucson" + "Hybrid Limited"
+          // against a "Tucson Hybrid" profile) BEFORE classifying, so the corrected
+          // split both drives match_status and persists on the row.
+          const seg = resegmentModelTrim(state.model, listing.model, listing.trim);
+          const l =
+            seg.model === listing.model && seg.trim === listing.trim
+              ? listing
+              : { ...listing, model: seg.model, trim: seg.trim };
           const matchStatus = classifyMatchStatus(
             state.year,
             state.make,
             state.model,
             state.trim,
             state.acceptableTrims,
-            listing.year,
-            listing.make,
-            listing.model,
-            listing.trim,
+            l.year,
+            l.make,
+            l.model,
+            l.trim,
           );
           classified.push({
-            listing: { ...listing, vin, listing_url: listingUrl },
+            listing: { ...l, vin, listing_url: listingUrl },
             matchStatus,
             raw: { ...raw },
           });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyTrimAvailability, normalizeTrim, trimSubsetMatch } from "./trimMatch.js";
+import {
+  classifyTrimAvailability,
+  normalizeTrim,
+  resegmentModelTrim,
+  trimSubsetMatch,
+} from "./trimMatch.js";
 
 describe("normalizeTrim", () => {
   it("drops powertrain/transmission/body noise tokens", () => {
@@ -68,5 +73,83 @@ describe("classifyTrimAvailability", () => {
     const r = classifyTrimAvailability(null, accord);
     expect(r.matched).toBe(false);
     expect(r.suggestions.length).toBeGreaterThan(0);
+  });
+});
+
+describe("resegmentModelTrim", () => {
+  it("re-splits when the model/trim boundary drifted into the trim", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson", "Hybrid Limited")).toEqual({
+      model: "Tucson Hybrid",
+      trim: "Limited",
+    });
+  });
+
+  it("re-splits a trim-less compound model", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "TUCSON Hybrid Limited", null)).toEqual({
+      model: "TUCSON Hybrid",
+      trim: "Limited",
+    });
+  });
+
+  it("is a no-op when the extracted model already equals the profile model", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "TUCSON Hybrid", "Limited")).toEqual({
+      model: "TUCSON Hybrid",
+      trim: "Limited",
+    });
+  });
+
+  it("passes through when the token stream does NOT start with the profile model", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", "Santa Fe", "Limited")).toEqual({
+      model: "Santa Fe",
+      trim: "Limited",
+    });
+    // Prefix present but too short to cover all profile tokens → unchanged.
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson", null)).toEqual({
+      model: "Tucson",
+      trim: null,
+    });
+  });
+
+  it("null trim is preserved on the pass-through / no-op paths", () => {
+    expect(resegmentModelTrim("Tucson Hybrid", null, null)).toEqual({
+      model: null,
+      trim: null,
+    });
+    // Re-split yields a null trim when nothing remains after the model boundary.
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson", "Hybrid")).toEqual({
+      model: "Tucson Hybrid",
+      trim: null,
+    });
+  });
+
+  it("REFUSES to move a powertrain word OUT of the model (different model, not a trim)", () => {
+    // A real "Tucson Hybrid" against a plain "Tucson" profile must stay a
+    // model mismatch — shortening it would upgrade it to near (and "hybrid"
+    // is a trimSubsetMatch noise token, so the mis-split could even pass a
+    // trim-subset keep).
+    expect(resegmentModelTrim("Tucson", "Tucson Hybrid", "Limited")).toEqual({
+      model: "Tucson Hybrid",
+      trim: "Limited",
+    });
+    expect(resegmentModelTrim("Kona", "Kona Electric", null)).toEqual({
+      model: "Kona Electric",
+      trim: null,
+    });
+    // Whole-string variant with no trim at all: same refusal.
+    expect(resegmentModelTrim("Tucson", "Tucson Hybrid Limited", null)).toEqual({
+      model: "Tucson Hybrid Limited",
+      trim: null,
+    });
+    // The guard is asymmetric: pulling the powertrain word INTO the model
+    // (the shipped drift rescue) still works…
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson", "Hybrid Limited")).toEqual({
+      model: "Tucson Hybrid",
+      trim: "Limited",
+    });
+    // …and moving a NON-powertrain token out (over-run model) still works.
+    expect(resegmentModelTrim("Tucson Hybrid", "Tucson Hybrid Limited", null)).toEqual({
+      model: "Tucson Hybrid",
+      trim: "Limited",
+    });
   });
 });

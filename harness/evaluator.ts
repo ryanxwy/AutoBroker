@@ -127,6 +127,29 @@ export type AnchorSpec =
       value?: string;
       /** expect="count": how many matching widgets must be present. */
       count?: number;
+    }
+  | {
+      /** The site_scan→aggregator AUTO-CHAIN proof (UI lane only). This anchor is
+       *  NOT scored by evalAnchor — it is driven by the runner after the PARENT
+       *  step (inventory_site_scan) reaches its terminal: the runner discovers the
+       *  sibling aggregator run id off the parent stream's `chained_run` announce
+       *  frame, waits for that sibling's own assistant turn to reach done (its own
+       *  bounded budget), and asserts the sibling wrote ≥ deltaMin rows into the
+       *  profile-scoped `table`. Each fact is recorded as a UiCheck the verdict
+       *  carries through its ui_checks channel (a failing chain check → RED). */
+      kind: "chained_run";
+      /** The skill the auto-chain must start as a sibling top-level run
+       *  (inventory_aggregator_scan). */
+      skill: string;
+      /** The sibling run's OWN wall-clock budget (seconds) to reach done — the
+       *  aggregator browse+extract is a fresh long run, independent of the parent
+       *  step's budget. */
+      maxSeconds: number;
+      /** The profile-scoped table the sibling aggregator run must grow (the
+       *  aggregator's own writes prove the chain fired end-to-end). */
+      table: string;
+      /** The minimum profile-scoped delta the sibling must write to `table`. */
+      deltaMin: number;
     };
 
 export interface AnchorResult {
@@ -288,6 +311,19 @@ export function evalAnchor(
         kind: spec.kind,
         ok: true,
         expected: "(driver-recorded)",
+        observed: "(see ui_checks)",
+      };
+    }
+
+    case "chained_run": {
+      // chained_run is driven+scored by the runner (it discovers the sibling run,
+      // waits for its terminal, and reads the sibling's DB delta), then recorded
+      // as UiChecks. evalAnchor sees no live page/sibling, so this is a no-op
+      // passthrough mirroring dom_state — the real assertions live in ui_checks.
+      return {
+        kind: spec.kind,
+        ok: true,
+        expected: "(runner-recorded)",
         observed: "(see ui_checks)",
       };
     }
