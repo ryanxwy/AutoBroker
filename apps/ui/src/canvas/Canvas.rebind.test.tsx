@@ -62,9 +62,7 @@ const NOOP = (): void => {};
 describe("Canvas rebind to the explicit focused profile", () => {
   it("binds to data[0] when no profileId is supplied (byte-identical home path)", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });
-    const r = render(
-      <Canvas client={client} onStartIntake={NOOP} onEditProfile={NOOP} onDeleteProfile={NOOP} />,
-    );
+    const r = render(<Canvas client={client} onStartIntake={NOOP} onEditProfile={NOOP} />);
     await flush();
     expect(r.get("canvas-vehicle").textContent).toContain("Accord"); // data[0] = P1
     expect(r.get("canvas-vehicle").textContent).not.toContain("Camry");
@@ -74,13 +72,7 @@ describe("Canvas rebind to the explicit focused profile", () => {
   it("binds to the EXPLICIT profile (not data[0]) when profileId is set", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });
     const r = render(
-      <Canvas
-        client={client}
-        onStartIntake={NOOP}
-        profileId="p2"
-        onEditProfile={NOOP}
-        onDeleteProfile={NOOP}
-      />,
+      <Canvas client={client} onStartIntake={NOOP} profileId="p2" onEditProfile={NOOP} />,
     );
     await flush();
     expect(r.get("canvas-vehicle").textContent).toContain("Camry"); // explicit P2
@@ -91,7 +83,7 @@ describe("Canvas rebind to the explicit focused profile", () => {
   it("falls back to data[0] when the pinned profile is CLOSED (stale pin must not strand)", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });
     const r = render(
-      <Canvas client={client} onStartIntake={NOOP} profileId="p-closed" onEditProfile={NOOP} onDeleteProfile={NOOP} />,
+      <Canvas client={client} onStartIntake={NOOP} profileId="p-closed" onEditProfile={NOOP} />,
     );
     await flush();
     expect(r.get("canvas-vehicle").textContent).toContain("Accord"); // data[0] fallback
@@ -101,7 +93,7 @@ describe("Canvas rebind to the explicit focused profile", () => {
   it("falls back to data[0] when the pinned profile was DELETED (404)", async () => {
     const client = new ApiClient({ fetchImpl: mockFetch() });
     const r = render(
-      <Canvas client={client} onStartIntake={NOOP} profileId="p-gone" onEditProfile={NOOP} onDeleteProfile={NOOP} />,
+      <Canvas client={client} onStartIntake={NOOP} profileId="p-gone" onEditProfile={NOOP} />,
     );
     await flush();
     expect(r.get("canvas-vehicle").textContent).toContain("Accord"); // data[0] fallback

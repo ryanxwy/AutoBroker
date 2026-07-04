@@ -75,7 +75,7 @@ describe("budget redaction — summary surfaces", () => {
   it("the Canvas profile card renders no budget value — only the lock chip", async () => {
     const client = new ApiClient({ fetchImpl: canvasFetch() });
     const r = render(
-      <Canvas client={client} onStartIntake={() => {}} onEditProfile={() => {}} onDeleteProfile={() => {}} />,
+      <Canvas client={client} onStartIntake={() => {}} onEditProfile={() => {}} />,
     );
     await flush();
     const card = r.get("canvas-profile-card");

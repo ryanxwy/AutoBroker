@@ -1,18 +1,18 @@
 /**
  * Canvas — the workbench main pane: a READ-ONLY projection of the active
- * search. Profile card (frozen identity chips + preference chips), dealer
- * tiles (the dealers projection route), and the what-happened/what's-next
+ * search. Profile strip (vehicle + location + preference chips + controls),
+ * dealer tiles (the dealers projection route), and the what-happened/what's-next
  * feed, all derived from DB state over the read routes. With no active profile
  * it renders the empty state — the start-here surface (headline, the
  * first-steps walkthrough, and the Start CTA, one of the intake entries).
  *
  * Budget red-line: the canvas consumes the dealer-safe ProfileSnapshot (no
  * budget accessor) — budget can render only as the "internal-only" lock chip,
- * never a number. Identity chips are display-only: identity freezes at
- * confirm, so there is no identity edit here, ever.
+ * never a number. Identity freezes at confirm, so there is no identity edit
+ * here, ever.
  *
- * At /runs/:id the canvas doubles as the run workbench view: the run id line
- * binds the route to the run (stable run-view-id testid).
+ * At /runs/:id the canvas doubles as the run workbench view: a visually-hidden
+ * run-id binder ties the route to the run (stable run-view-id testid).
  */
 
 import { useState } from "react";
@@ -30,12 +30,10 @@ import type {
   ProfileRow,
   QuoteCompareResult,
   QuoteList,
-  SkillRunSummary,
   ThreadList,
 } from "../api/wire.js";
 import {
   formatLocation,
-  prettifySkill,
   toSnapshot,
   vehicleLabel,
   type ProfileSnapshot,
@@ -111,8 +109,6 @@ export interface CanvasProps {
   deepseekReady?: boolean;
   /** Open the unified view/edit modal for the active profile. */
   onEditProfile: (id: string, name: string) => void;
-  /** Open the irreversible hard-delete confirm for the active profile. */
-  onDeleteProfile: (id: string, name: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,62 +155,44 @@ function CanvasEmptyState({
 }
 
 // ---------------------------------------------------------------------------
-// profile card — frozen identity chips + preference chips (read-only)
+// profile strip — one slim row: vehicle + location + preference chips + controls
+// (read-only; identity freezes at confirm — to change the vehicle, replace the
+// search. Hard delete lives in the edit modal's danger zone, not here.)
 // ---------------------------------------------------------------------------
 
 function ProfileCard({
   snapshot,
   client,
   onEditProfile,
-  onDeleteProfile,
 }: {
   snapshot: ProfileSnapshot;
   client: ApiClient;
   /** Open the unified view/edit modal for this profile. */
   onEditProfile: (id: string, name: string) => void;
-  /** Open the irreversible hard-delete confirm for this profile. */
-  onDeleteProfile: (id: string, name: string) => void;
 }): JSX.Element {
-  const identity = [
-    snapshot.year !== null ? String(snapshot.year) : null,
-    snapshot.make,
-    snapshot.model,
-    snapshot.trim,
-    formatLocation(snapshot.location),
-  ].filter((c): c is string => c !== null && c !== "");
   const name = vehicleLabel(snapshot) || "this search";
+  const location = formatLocation(snapshot.location);
 
   return (
     <section className="card profile-card" data-testid="canvas-profile-card">
       <h2 data-testid="canvas-vehicle">{vehicleLabel(snapshot) || "Active search"}</h2>
-
-      {/* Frozen identity — display-only chips (never inputs; identity freezes at
-          confirm — to change the vehicle, replace the search). */}
-      <div className="chip-row" data-testid="profile-identity-frozen">
-        <span className="chip-row-label">Identity</span>
-        {identity.map((chip) => (
-          <span className="mini-chip locked" key={chip}>
-            {chip}
-          </span>
-        ))}
-        <span className="muted chip-note">frozen at confirm — to change, replace the search</span>
-      </div>
-
-      <div className="chip-row">
-        <span className="chip-row-label">Preferences</span>
-        {snapshot.searchRadiusMiles !== null && (
-          <span className="mini-chip" data-testid="profile-pref-radius">
-            {snapshot.searchRadiusMiles} mi radius
-          </span>
-        )}
-        {snapshot.financingPreference !== null && (
-          <span className="mini-chip">financing · {snapshot.financingPreference}</span>
-        )}
-        {snapshot.phonePolicy !== "real" && <span className="mini-chip">fake-phone</span>}
-        {/* budget is a lock affordance ONLY — never a number, anywhere. */}
-        <span className="mini-chip budget-lock">budget · internal-only</span>
-        <span style={{ flex: 1 }} />
-        {snapshot.id !== null && (
+      {location !== null && location !== "" && (
+        <span className="muted profile-strip-location">{location}</span>
+      )}
+      {snapshot.searchRadiusMiles !== null && (
+        <span className="mini-chip" data-testid="profile-pref-radius">
+          {snapshot.searchRadiusMiles} mi radius
+        </span>
+      )}
+      {snapshot.financingPreference !== null && (
+        <span className="mini-chip">financing · {snapshot.financingPreference}</span>
+      )}
+      {snapshot.phonePolicy !== "real" && <span className="mini-chip">fake-phone</span>}
+      {/* budget is a lock affordance ONLY — never a number, anywhere. */}
+      <span className="mini-chip budget-lock">budget · internal-only</span>
+      <span style={{ flex: 1 }} />
+      {snapshot.id !== null && (
+        <>
           <button
             type="button"
             className="profile-edit-open"
@@ -223,24 +201,10 @@ function ProfileCard({
           >
             Edit preferences
           </button>
-        )}
-      </div>
-
-      {/* Card foot — removal controls behind a ledger rule. The recoverable soft
-          "Remove" (→ Closed searches) is the default; the irreversible
-          "Delete permanently" sits beside it, one click to the confirm modal. */}
-      {snapshot.id !== null && (
-        <div className="profile-card-foot profile-card-removal">
+          {/* The recoverable soft "Remove" (→ Closed searches); its inline
+              confirm gate-card wraps below the strip row. */}
           <ProfileRemoveControl client={client} profileId={snapshot.id} />
-          <button
-            type="button"
-            className="btn-danger profile-hard-delete-open"
-            data-testid="profile-hard-delete-open"
-            onClick={() => onDeleteProfile(snapshot.id!, name)}
-          >
-            Delete permanently…
-          </button>
-        </div>
+        </>
       )}
     </section>
   );
@@ -369,7 +333,6 @@ export function Canvas({
   profileId = null,
   deepseekReady = true,
   onEditProfile,
-  onDeleteProfile,
 }: CanvasProps): JSX.Element {
   const [tab, setTab] = useState<TabKey>("overview");
   const profiles = useAsync<ProfileList>(() => client.listProfiles("active"), []);
@@ -441,15 +404,6 @@ export function Canvas({
     [activeId],
     activeId !== null,
   );
-  // At /runs/:id the header shows a human-friendly name (vehicle, else the
-  // running skill's prettified name) instead of the raw run id — the buyer
-  // never reads a slug. Fetched only when a run is in view.
-  const runStatus = useAsync<SkillRunSummary>(
-    () => client.runStatus(runId!),
-    [runId],
-    runId !== null,
-  );
-
   // Fresh-by-default: a data.changed pulse (or a window refocus) refetches
   // exactly these views in place — no manual reload. The active-profile list
   // tracks "profiles"; the dealer tiles track "dealers"; the Threads section
@@ -474,14 +428,6 @@ export function Canvas({
   const digestProfile =
     digest.kind === "ok" && digest.data.profiles.length > 0 ? digest.data.profiles[0]! : null;
 
-  // The visible run-view header: the active vehicle if known, else the running
-  // skill's friendly name, else a neutral fallback. The raw run id stays in a
-  // visually-hidden <code> for the harness binding (run-view-id), never on screen.
-  const headerLabel =
-    (active !== null ? vehicleLabel(active) : "") ||
-    (runStatus.kind === "ok" ? prettifySkill(runStatus.data.skill) : "") ||
-    "Your search";
-
   // Color cross-check one-tap add: APPEND a real stocked color name to the
   // CANVAS-BOUND profile's preferred exterior colors via the existing PATCH path
   // (never re-resolving newest-active — inv #6). Read the current colors so the
@@ -499,13 +445,10 @@ export function Canvas({
 
   return (
     <div className="canvas" data-testid="canvas">
+      {/* The raw run id in a visually-hidden <code> — the harness binds the
+          route to the run via run-view-id; nothing visible renders for it. */}
       {runId !== null && (
-        <p className="muted canvas-runline" data-testid="run-view-line">
-          <span className="run-view-label">
-            {headerLabel} — follow along in the conversation on the right.
-          </span>
-          <code data-testid="run-view-id" className="run-view-id-hidden">{runId}</code>
-        </p>
+        <code data-testid="run-view-id" className="run-view-id-hidden">{runId}</code>
       )}
       {profiles.kind === "ok" && active === null && (
         // Mid-run (intake still collecting) the CTA would just duplicate the
@@ -525,12 +468,7 @@ export function Canvas({
               below scrolls, so the profile card + summary + tabs stay put while
               the active panel's content (incl. its bottom pager) scrolls in a
               bounded region. See .canvas / [role=tabpanel] in styles.css. */}
-          <ProfileCard
-            client={client}
-            snapshot={active}
-            onEditProfile={onEditProfile}
-            onDeleteProfile={onDeleteProfile}
-          />
+          <ProfileCard client={client} snapshot={active} onEditProfile={onEditProfile} />
 
           {/* Header region — the summary + tab strip; the bottom of the fixed
               header zone, above the single scrolling panel. */}

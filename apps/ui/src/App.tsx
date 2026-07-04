@@ -203,7 +203,6 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
     setDeleteError(null);
   };
   const onViewProfile = (id: string, name: string): void => setProfileModal({ kind: "edit", id, name });
-  const onDeleteProfile = (id: string, name: string): void => setProfileModal({ kind: "delete", id, name });
 
   // First-run gate: on a fresh install (no DeepSeek key) land the owner on
   // Settings once, framing setup. Only redirect from the home route (a direct
@@ -921,7 +920,6 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               profileId={pinnedProfileId}
               deepseekReady={deepseekReady}
               onEditProfile={onViewProfile}
-              onDeleteProfile={onDeleteProfile}
             />
           )}
           {route.name === "run" && (
@@ -932,7 +930,6 @@ export function App({ client = apiClient }: { client?: ApiClient } = {}): JSX.El
               profileId={pinnedProfileId}
               deepseekReady={deepseekReady}
               onEditProfile={onViewProfile}
-              onDeleteProfile={onDeleteProfile}
             />
           )}
           {route.name === "portfolio" && <Portfolio client={client} onOpen={onOpenPortfolioProfile} />}

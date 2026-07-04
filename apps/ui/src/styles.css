@@ -815,12 +815,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .snapshot-card dd { margin: 0; font-size: 13px; }
 
-.canvas-runline { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
-.canvas-runline code { color: var(--run); }
-/* The visible run-view label reads as prose (not a mono slug) in the warm-paper
- * skin; the raw run id lives in a visually-hidden <code> beside it (the harness
- * binds to its text via run-view-id, so it must stay in the DOM, just off-screen). */
-.run-view-label { font-family: var(--chrome); }
+/* The raw run id lives in a visually-hidden <code> at the canvas root (the
+ * harness binds to its text via run-view-id, so it must stay in the DOM, just
+ * off-screen). */
 .run-view-id-hidden {
   position: absolute;
   width: 1px;
@@ -838,36 +835,37 @@ body.resizing { cursor: col-resize; user-select: none; }
 .canvas-empty ol { margin: 12px 0 18px; padding-left: 20px; font-family: var(--serif); font-size: 13.5px; line-height: 1.7; }
 .canvas-empty ol li::marker { font-family: var(--mono); color: var(--ink-mute); }
 
-/* profile card — graphite-blue keyline, frozen identity vs open preferences */
-.profile-card { margin-bottom: 16px; position: relative; }
+/* profile strip — one slim wrapping flex row under the graphite-blue keyline:
+   vehicle + location + preference chips, controls flushed right */
+.profile-card {
+  margin-bottom: 16px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+}
 .profile-card::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 14px;
-  bottom: 14px;
+  top: 10px;
+  bottom: 10px;
   width: 3px;
   background: var(--run);
   border-radius: 0 2px 2px 0;
 }
 .app-main .profile-card > h2 {
-  display: block;
-  font-size: 17px;
+  display: inline;
+  font-size: 14px;
   font-weight: 700;
   color: var(--ink);
-  margin: 0 0 4px;
+  margin: 0;
 }
 .app-main .profile-card > h2::after { content: none; }
+.profile-strip-location { font-size: 12px; }
 .chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
-.chip-row-label {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  min-width: 86px;
-}
-.chip-note { font-family: var(--mono); font-size: 9.5px; }
 .mini-chip {
   display: inline-flex;
   align-items: center;
@@ -881,7 +879,6 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding: 2px 7px;
   color: var(--ink-soft);
 }
-.mini-chip.locked { color: var(--ink-mute); background: var(--paper); }
 .mini-chip[aria-disabled="true"] { opacity: 0.55; }
 /* budget = a lock affordance only, never a number anywhere */
 .mini-chip.budget-lock { color: var(--ink-mute); background: var(--paper); border-style: dashed; }
@@ -971,16 +968,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* Edit-preferences trigger — a quiet ledger-plate button on the prefs row */
 .profile-card .profile-edit-open { font-size: 11px; padding: 5px 11px; }
 
-/* card foot — the soft-delete control, set off by a ledger rule */
-.profile-card-foot {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--rule-soft);
-}
-/* the removal row: soft "Remove" (recoverable) beside hard "Delete permanently" */
-.profile-card-removal { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-.profile-card-removal .profile-remove { display: inline-flex; }
-.profile-hard-delete-open { font-size: 11px; padding: 5px 11px; }
 /* low-emphasis remove trigger; the inline confirm uses the shared gate-card */
 .profile-remove .profile-remove-open { font-size: 11px; padding: 5px 11px; }
 .profile-remove .gate-card { margin-top: 4px; animation: popIn 0.16s ease both; }
@@ -2240,7 +2227,7 @@ p.muted, span.muted { font-size: 0.95em; }
 
 /* ---- canvas = contained workbench frame (fits the viewport; panel scrolls) ---
  * The canvas fills app-main's height and lays its children out as a column:
- * a fixed header zone (run line, profile card, summary+tabs) and ONE scrolling
+ * a fixed header zone (profile card, summary+tabs) and ONE scrolling
  * region — the active tab panel. Only the panel scrolls, so its bottom controls
  * (the pager) are ALWAYS reachable inside a bounded region instead of trailing
  * off the end of a page-length scroll. min-height:0 lets the panel shrink so its
@@ -2253,7 +2240,6 @@ p.muted, span.muted { font-size: 0.95em; }
   height: 100%;
   min-height: 0;
 }
-.canvas > .canvas-runline,
 .canvas > .profile-card,
 .canvas > .canvas-stickyhead {
   flex: 0 0 auto;
