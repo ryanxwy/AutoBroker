@@ -149,6 +149,18 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
 - The `chat-launcher` floating button bottom-right (with `needs-you-widget` raised above it
   while minimized) — a designed floating element, never an overlap/covered defect. Shipped
   2026-07-04 (`phase6/ui` workbench rebalance).
+- `dealer_reply_extract` demoting a $/mo reply with an INCOMPLETE mode (lease w/o
+  money-factor+residual, finance w/o APR) to a `financing_mode='unspecified'` provenance row
+  with otd NULL — the number was genuinely un-completable, so this is CORRECT fail-closed
+  demotion (`reclassifyRule2Failures`), NOT had-and-lost data-loss. Re-flag ONLY a `failed`
+  message or a `zod_validation` fail_reason on a $/mo body, OR a COMPLETE lease/finance being
+  demoted (that would lose real quote data). Shipped 2026-07-04 (`phase3/dealer_reply_extract`
+  `73077c5`).
+- `negotiation_followup` skipping a thread whose draft call failed (draft_body null, voiced
+  `X thread(s) failed to draft`, thread stays a candidate) while gating + sending the rest —
+  the designed per-thread fail-closed degradation (inv #4), never a fabricated draft. Re-flag
+  ONLY a single draft failure zeroing the whole batch (0 sends) again. Shipped 2026-07-04
+  (`phase3/negotiation_followup` `a3e0d78`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)

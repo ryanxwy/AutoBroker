@@ -113,6 +113,14 @@ ends with a full report; it does **not** need an empty backlog.
    `AUTOBROKER_AGENT_PROVIDER` value silently resolves to the DeepSeek default (exact
    strings `claude`/`deepseek` only), and a whole run on the wrong lane poisons every
    cross-lane conclusion.
+   **localStorage-shadow trap (2026-07-04):** the UI persists its reflected agent
+   default to `localStorage['autobroker:agent-selection']` and then sends it as each
+   run's explicit selection — which SHADOWS the server env default for an existing
+   browser profile. Before trusting the lane, CLEAR the key in the driven tab
+   (`browser_evaluate` → `localStorage.removeItem('autobroker:agent-selection')`, then
+   reload) so the env default wins; a stale key silently splits ground truth (a run
+   pinned `anthropic+oauth` while `chat_route` still read `deepseek`) and contaminates
+   the FIRST cross-lane diagnosis. Clear it again whenever you flip lanes mid-session.
 
 ## The journey
 
@@ -162,8 +170,14 @@ verdict. When ANY skill misbehaves on the run's lane, classify before you blame:
 
 0. Browser-fed 0-yield? Read /__e2e/dataquality `rendered_empty_count` FIRST —
    >0 = host thrash (environment; browse has no LLM in it), no re-run needed.
-1. Infra signal (429 / timeout / lane-B subprocess failure / credential)? An
+1. Infra signal (429 / timeout / lane-B subprocess crash / credential)? An
    availability fault, not a product fault — re-run ONCE on the SAME lane to confirm.
+   BUT a lane-B `error_max_turns` / `error_max_structured_output_retries` is NOT an
+   availability fault — it is a deterministic-ish product/prompt condition (the SDK's
+   turn accounting), so it goes to exit 2 (diagnose + record), never a retry-to-green.
+   If ONE such error kills a whole batch (0 sends), that whole-batch death is itself a
+   blocker (a missing per-thread catch), independent of the underlying call error
+   (2026-07-04 B2).
 2. Anything else: re-run that ONE skill on the OTHER provider
    (`AUTOBROKER_AGENT_PROVIDER` flipped, fresh dir), AT MOST ONCE, as DIAGNOSIS:
    - fails on BOTH lanes → a general product/environment cause — fix provider-agnostically;

@@ -159,7 +159,21 @@ distribution — most are no-price first touches:
     on a ≤$1000 positive govt-fee residual, or FAILS to fire on a >$1000 shortfall.
   - a clean LOWER price — the eventual front-runner.
 - **~15% LUMP-OTD only** ("$XX,XXX out the door, best I can do") → `MISSING_BREAKDOWN`.
-- **~8% PAYMENT-ONLY** ("just $429/mo!", no OTD) → monthly-without-total handling.
+- **~8% PAYMENT-ONLY / LEASE $/mo** (seasoned SC-704-1, advisory — spawned by
+  `73077c5`, lane B) — three shapes stress the emit-boundary fix:
+  (a) a bare monthly ("just $429/mo!", no mode word), (b) a **lease** monthly with NO
+  money-factor/residual ("$329/mo, 36mo, $1,999 down" — the exact shape that
+  deterministically ZodErrored on lane B pre-fix), and (c) a body mixing an itemized
+  finance OTD **and** a lease $/mo (two rows). Expected (falsifiable, `/__e2e/rows` +
+  `/__e2e/dataquality`): the message is `succeeded` (NOT `failed`), each incomplete
+  monthly row persists as `financing_mode='unspecified'` with otd NULL (records
+  provenance, never ranks), and there is NO `zod_validation`/`ZodError` fail_reason on
+  a $/mo body. **Anti-over-demotion hardener:** a COMPLETE lease (money-factor +
+  residual stated) or a finance $/mo WITH APR must extract as a REAL `lease`/`finance`
+  quote — re-flag if a complete lease/finance is demoted to `unspecified` (that would
+  silently lose real quote data). Stresses inv #4 (structured-output fail-closed) and
+  the bounded extract retry cap (`MAX_EXTRACT_ATTEMPTS`: a persistently-failing message
+  drops out of the candidate set after 3 attempts, no scheduler retry-burn).
 - **Ghosts:** leave **≥2 dealers with no round-0 reply at all** (silent the whole
   run) — the structurally-untested mainstream experience.
 
@@ -216,6 +230,16 @@ each buyer follow-up is answered by a dealer counter (higher message rowid →
    to capture the floor OTDs and keep wall-clock down.
 5. **Ghosts:** for the dealers you want to drop, inject NO counter. After the buyer's
    2nd unanswered follow-up the responsive cap removes them from the batch.
+
+**Lane-B batch-drafting robustness (seasoned SC-704-2, advisory — spawned by `a3e0d78`).**
+The round-2+ follow-up batch is exactly where the lane-B draft prompt gets LONG and NOISY
+(accumulated thread transcripts + any failed-extract residue) — the condition that used to
+trip `error_max_turns` and kill the whole batch (0 sends). Expected on a `--provider claude`
+deep run: every eligible thread drafts (`Drafted N of N`) with NO `error_max_turns` /
+`'unavailable'` `negotiation_followup` row in `test_run_records`, and if ONE draft ever does
+fail, the batch STILL gates + sends the others (summary voices `X thread(s) failed to draft
+— they stay queued`, the failed thread is never gated/sent, stays a candidate). Re-flag ONLY
+if a single draft failure zeroes the whole batch again.
 
 A scripted injector (`inject_round.sh <N>` over a `counters.json` keyed by
 dealerName→threadId, with the `isEscalation` contact-flip baked in) keeps the
