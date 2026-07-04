@@ -14,15 +14,11 @@
  *   4. PROMOTE: UPDATE the draft, backfilling `gmail_message_id`, only WHERE it
  *      is still NULL — so a double-fire promote is a harmless no-op.
  *
- * The four outcomes follow from WHERE control left the flow:
+ * The three outcomes follow from WHERE control left the flow:
  *   - sent     — buyer mode (or an approved fake) + approve: one draft →
  *                promoted once.
  *   - declined — the L2 gate verdict was not approved: the commit callback never
  *                ran, so `draftRowId` stays null and ZERO rows were written.
- *   - blocked  — defensive: kept for the structural guard. The test-mode brake
- *                throws INSIDE the commit (after the draft insert) so the test
- *                path falls through to `partial`; this branch is unreachable from
- *                the fake path now but retained so the error type still maps.
  *   - partial  — the send threw AFTER the draft was inserted: the draft row is
  *                retained with `gmail_message_id` still NULL (a reconcile hook
  *                can later promote or discard it).
@@ -35,11 +31,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getDb, type Db } from "../db.js";
-import {
-  withGate,
-  ExternalMutationsBlockedError,
-  type Approver,
-} from "../gate/index.js";
+import { withGate, type Approver } from "../gate/index.js";
 import {
   buildRaw,
   createGmailAdapter,
@@ -78,7 +70,6 @@ export interface PartialSendResult {
 export type SendRecordOutcome =
   | { kind: "sent"; messageRowId: string; gmailMessageId: string; mode: SendMode }
   | { kind: "declined"; messageRowId: string | null }
-  | { kind: "blocked"; messageRowId: string | null; reconcile_hint: string }
   | { kind: "partial"; messageRowId: string; partial: PartialSendResult };
 
 /** Injected dependencies. `adapter`/`db` default to the live factory/connection;
@@ -159,9 +150,9 @@ export function promoteOutbound(db: Db, messageRowId: string, gmailMessageId: st
 /**
  * Send one outbound message and record it, draft-then-promote, inside one gated
  * commit. Returns a discriminated outcome; NEVER throws for the expected
- * declined/blocked/partial paths (those are returned as outcomes). An error
- * thrown BEFORE any draft exists (e.g. a failed preflight) re-throws — fail
- * closed, no state.
+ * declined/partial paths (those are returned as outcomes). An error thrown
+ * BEFORE any draft exists (e.g. a failed preflight) re-throws — fail closed, no
+ * state.
  */
 export async function sendAndRecord(
   target: SendRecordTarget,
@@ -174,8 +165,8 @@ export async function sendAndRecord(
   const db = deps.db ?? getDb();
 
   // `draftRowId` is the witness of how far the gated flow got: it stays null if
-  // the commit callback never ran (decline) or threw before the insert (blocked
-  // / preflight); it is set once the draft is durable.
+  // the commit callback never ran (decline) or threw before the insert (a failed
+  // preflight, rethrown fail-closed); it is set once the draft is durable.
   let draftRowId: string | null = null;
 
   try {
@@ -211,17 +202,9 @@ export async function sendAndRecord(
     }
     return { kind: "sent", ...result };
   } catch (err) {
-    // Structural guard (defensive): an ExternalMutationsBlockedError before any
-    // draft was inserted means zero rows — a clean blocked outcome. This is no
-    // longer reachable from the fake path (the test-mode brake throws INSIDE the
-    // commit, after the draft insert, so that race falls through to `partial`
-    // below); kept so the error type still maps to a zero-row outcome.
-    if (err instanceof ExternalMutationsBlockedError && draftRowId === null) {
-      return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
-    }
-    // The send was prevented after the draft was inserted (the mid-commit
-    // test-mode brake or an adapter throw): retain the draft (NULL gmail id) and report a partial
-    // so a reconcile pass can promote or discard it.
+    // The send threw AFTER the draft was inserted (an adapter throw): retain the
+    // draft (NULL gmail id) and report a partial so a reconcile pass can promote
+    // or discard it.
     if (draftRowId !== null) {
       return {
         kind: "partial",
@@ -238,47 +221,4 @@ export async function sendAndRecord(
     // fail closed with no state.
     throw err;
   }
-}
-
-/** The result of a serial batch send. `failed_index` is the index of the first
- *  non-`sent` outcome (null when every target sent); trailing targets after a
- *  failure are NOT attempted and write zero rows. */
-export interface SendBatchResult {
-  outcomes: SendRecordOutcome[];
-  failed_index: number | null;
-}
-
-/**
- * Send a batch of targets serially. STOPS at the FIRST non-`sent` outcome
- * (declined / blocked / partial): that index is recorded as `failed_index`, the
- * trailing targets get NO call (zero rows), and each receives a synthesized
- * `blocked` outcome carrying `batch_stopped_at_index(k)` so the caller can see
- * exactly where the batch halted.
- */
-export async function sendBatch(
-  targets: readonly SendRecordTarget[],
-  deps: SendRecordDeps,
-): Promise<SendBatchResult> {
-  const outcomes: SendRecordOutcome[] = [];
-  let failedIndex: number | null = null;
-
-  for (let k = 0; k < targets.length; k++) {
-    if (failedIndex !== null) {
-      // A prior target failed — do not call for this one. Record a not-attempted
-      // blocked outcome so the outcomes array stays aligned with the inputs.
-      outcomes.push({
-        kind: "blocked",
-        messageRowId: null,
-        reconcile_hint: `batch_stopped_at_index(${failedIndex})`,
-      });
-      continue;
-    }
-    const outcome = await sendAndRecord(targets[k]!, deps);
-    outcomes.push(outcome);
-    if (outcome.kind !== "sent") {
-      failedIndex = k;
-    }
-  }
-
-  return { outcomes, failed_index: failedIndex };
 }

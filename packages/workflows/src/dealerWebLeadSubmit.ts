@@ -1372,9 +1372,16 @@ const emailFallbackStep = createStep({
       // {sent} writes one fake draft+promote (a fake sandbox row, no real
       // outbound); in buyer mode it is a real send behind the L2 gate.
       const target = fallbackEmailTarget(state, d);
-      await deps().sendAndRecord(target, { approver: APPROVED, runId });
-      d.channel = "email";
-      d.email_fallback_reason = d.email_fallback_reason ?? "no_form";
+      const outcome = await deps().sendAndRecord(target, { approver: APPROVED, runId });
+      // TRUTHFUL channel: record `email` ONLY when the send actually landed. A
+      // non-sent outcome (a `partial` mid-commit failure — `declined` cannot occur
+      // under APPROVED) leaves the dealer un-submitted (channel stays
+      // needs_fallback → recordConfirm writes no row) so a reconcile pass can
+      // resolve the retained draft; NO retry here.
+      if (outcome.kind === "sent") {
+        d.channel = "email";
+        d.email_fallback_reason = d.email_fallback_reason ?? "no_form";
+      }
     }
 
     return { ...state, submitDecisions: decided };

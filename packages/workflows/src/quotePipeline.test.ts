@@ -348,7 +348,7 @@ describe("quote_pipeline targeted-VIN", () => {
     __setQuotePipelineDepsForTests({
       sendAndRecord: async () => {
         sends += 1;
-        return { kind: "blocked", messageRowId: null, reconcile_hint: "mode_blocked" };
+        return { kind: "declined", messageRowId: null };
       },
     });
 

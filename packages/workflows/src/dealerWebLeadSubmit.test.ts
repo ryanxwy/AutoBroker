@@ -289,6 +289,28 @@ const sendNeverCalled = (async () => {
   throw new Error("sendAndRecord must not be called on this path");
 }) as unknown as DealerWebLeadSubmitWorkflowDeps["sendAndRecord"];
 
+/** A sendAndRecord spy whose send threw AFTER the draft was inserted (a `partial`
+ *  outcome — the email fallback did NOT reach the dealer). Records the call but
+ *  reports no landed send. */
+function sendAndRecordPartial(record: { calls: SendRecordTargetLike[] }): DealerWebLeadSubmitWorkflowDeps["sendAndRecord"] {
+  return (async (target: {
+    email: { to: string; from: string; subject: string; body: string };
+    searchProfileId: string | null;
+  }) => {
+    record.calls.push({ to: target.email.to, profileId: target.searchProfileId });
+    return {
+      kind: "partial" as const,
+      messageRowId: "msg-partial-1",
+      partial: {
+        message_recorded: true,
+        state_updated: false,
+        reconcile_hint: "send_failed_draft_retained",
+        external_id: null,
+      },
+    };
+  }) as unknown as DealerWebLeadSubmitWorkflowDeps["sendAndRecord"];
+}
+
 /** A harness stub returning a valid LeadFormMap for every call. */
 function harnessStubMap(record?: { prompts: string[] }): DealerWebLeadSubmitWorkflowDeps["harnessGenerate"] {
   return (async (input: { prompt: string }) => {
@@ -641,6 +663,51 @@ describe("dealer_web_lead_submit — email_fallback re-confirm (the X1 fix point
     expect(rows.length).toBe(1);
     expect(rows[0]!["outcome"]).toBe("failed");
     expect(rows[0]!["fail_reason"]).toBe("user_skipped");
+  });
+
+  it("(c) approve the re-confirm but the send returns {partial} → dealer NOT recorded, email_fallback_count 0", async () => {
+    seedProfile();
+    seedBoundDealer({
+      dealerId: DEALER_NOFORM,
+      name: "Tucson Kia",
+      website: "https://tucsonkia.example.com",
+      contactEmail: "sales@tucsonkia.example.com",
+    });
+    const sends: { calls: SendRecordTargetLike[] } = { calls: [] };
+    __setDealerWebLeadSubmitDepsForTests({
+      scoutForms: scoutStub({ [DEALER_NOFORM]: NO_FORM_SHAPE }),
+      submitOne: submitNeverCalled,
+      sendAndRecord: sendAndRecordPartial(sends),
+      harnessGenerate: harnessNeverCalled,
+    });
+
+    const { run, result } = await startRun("ls-fallback-partial", { search_profile_id: PROFILE_ID });
+    expect(result.status).toBe("suspended");
+    const afterBatch = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [DEALER_NOFORM] },
+    });
+    expect(afterBatch.status).toBe("suspended");
+    expect(suspendPayloadOf(afterBatch, "emailFallback")["reason"]).toBe("email_fallback");
+
+    // Approve the re-confirm → the gmail.send scope fires but the send does NOT land.
+    const final = await run.resume({ step: "emailFallback", resumeData: { action: "approve" } });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as {
+      outcome: string;
+      email_fallback_count: number;
+      submissions_successful: number;
+    };
+    expect(out.outcome).toBe("submitted");
+
+    // The send WAS attempted once...
+    expect(sends.calls.length).toBe(1);
+    // ...but it did NOT land, so the dealer is NOT recorded as submitted (no
+    // channel='email' row) — left un-submitted for reconcile, no retry.
+    expect(out.email_fallback_count).toBe(0);
+    expect(out.submissions_successful).toBe(0);
+    expect(leadRows().length).toBe(0);
   });
 });
 

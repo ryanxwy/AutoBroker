@@ -817,12 +817,11 @@ const sendRecordStep = createStep({
 
       // THE ONE send face. In test mode sendAndRecord fake-sends → {sent} (one
       // promoted fake sandbox row, no real outbound), counted. In buyer mode →
-      // {sent} (a real send). A {blocked} outcome is a defensive legacy zero-row
-      // branch, still counted. A {partial} is a mid-commit failure →
+      // {sent} (a real send). A {partial} is a mid-commit failure →
       // STOP-and-reconcile (do not backfill the trailing targets; leave them
       // un-sent so a reconcile pass can finish them).
       const outcome = await deps().sendAndRecord(target, { approver: APPROVED, runId });
-      if (outcome.kind === "sent" || outcome.kind === "blocked") {
+      if (outcome.kind === "sent") {
         emailsSent += 1;
         sentThreadIds.push(t.thread_id);
         continue;

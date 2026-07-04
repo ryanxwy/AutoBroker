@@ -34,7 +34,6 @@ import type { OutboundEmail } from "../gmail.js";
 import {
   promoteOutbound,
   sendAndRecord,
-  sendBatch,
   ThreadFlagMismatchError,
   type SendRecordTarget,
 } from "./sendRecord.js";
@@ -277,41 +276,5 @@ describe("promoteOutbound double-fire safety", () => {
       .prepare("SELECT gmail_message_id FROM messages WHERE message_id = ?")
       .get(outcome.messageRowId) as { gmail_message_id: string | null };
     expect(row.gmail_message_id).toBe(outcome.gmailMessageId);
-  });
-});
-
-describe("sendBatch", () => {
-  it("stops at the first failure; trailing targets write zero rows", async () => {
-    const { FakeGmailAdapter } = await import("./fakeAdapter.js");
-    // A single adapter whose 2nd send throws — drives a partial at index 1.
-    const adapter = new FakeGmailAdapter(db);
-    let calls = 0;
-    Object.defineProperty(adapter, "send", {
-      value: (): Promise<{ messageId: string }> => {
-        calls++;
-        if (calls === 2) return Promise.reject(new Error("injected send failure"));
-        return Promise.resolve({ messageId: `fake-msg-${calls}` });
-      },
-    });
-    const before = messageRowCount();
-
-    const result = await sendBatch(
-      [topLevelTarget(), topLevelTarget(), topLevelTarget()],
-      { approver: recordingApprover(true), runId: "run-8", adapter, db },
-    );
-
-    expect(result.failed_index).toBe(1);
-    expect(result.outcomes).toHaveLength(3);
-    expect(result.outcomes[0]?.kind).toBe("sent");
-    expect(result.outcomes[1]?.kind).toBe("partial");
-    // index 2 was never attempted → a synthesized blocked outcome.
-    const trailing = result.outcomes[2];
-    expect(trailing?.kind).toBe("blocked");
-    if (trailing?.kind === "blocked") {
-      expect(trailing.reconcile_hint).toBe("batch_stopped_at_index(1)");
-    }
-    // row 1 (sent) + row 2 (partial draft retained) = 2 rows; row 3 never ran.
-    expect(messageRowCount()).toBe(before + 2);
-    expect(calls).toBe(2);
   });
 });

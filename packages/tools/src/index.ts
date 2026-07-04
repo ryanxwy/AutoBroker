@@ -408,18 +408,15 @@ export {
 // Outbound send+record writer — the single skill-facing draft-then-promote
 // send path (test-mode brake → draft row → send [real in buyer mode, fake in
 // test mode] → promote, all inside one
-// gated commit). Four discriminated outcomes (sent/declined/blocked/partial) +
-// the serial batch variant that stops at the first failure.
+// gated commit). Three discriminated outcomes (sent/declined/partial).
 export {
   sendAndRecord,
-  sendBatch,
   promoteOutbound,
   ThreadFlagMismatchError,
   type SendRecordTarget,
   type SendRecordDeps,
   type SendRecordOutcome,
   type PartialSendResult,
-  type SendBatchResult,
 } from "./gmail/sendRecord.js";
 
 // Lead-submission XOR writer — the INSERT-only typed-union writer over the three

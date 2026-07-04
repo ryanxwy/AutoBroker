@@ -387,6 +387,38 @@ const sendNeverCalled = (async () => {
   throw new Error("sendAndRecord must not be called on this path");
 }) as unknown as NegotiationFollowupWorkflowDeps["sendAndRecord"];
 
+/** A sendAndRecord spy whose send threw AFTER the draft was inserted (a `partial`
+ *  outcome — the ask did NOT reach the dealer). It records the call but reports
+ *  no landed send, so the caller must never count it or advance thread state. */
+function sendAndRecordPartial(record: { calls: SendCallLike[] }): NegotiationFollowupWorkflowDeps["sendAndRecord"] {
+  return (async (target: {
+    email: { to: string; from: string; subject: string; body: string };
+    threadId: string | null;
+    searchProfileId: string | null;
+    inReplyToGmailId?: string | null;
+  }) => {
+    record.calls.push({
+      to: target.email.to,
+      from: target.email.from,
+      threadId: target.threadId,
+      inReplyToGmailId: target.inReplyToGmailId,
+      subject: target.email.subject,
+      body: target.email.body,
+      profileId: target.searchProfileId,
+    });
+    return {
+      kind: "partial" as const,
+      messageRowId: "msg-partial-1",
+      partial: {
+        message_recorded: true,
+        state_updated: false,
+        reconcile_hint: "send_failed_draft_retained",
+        external_id: null,
+      },
+    };
+  }) as unknown as NegotiationFollowupWorkflowDeps["sendAndRecord"];
+}
+
 // ---------------------------------------------------------------------------
 // run/resume drivers
 // ---------------------------------------------------------------------------
@@ -564,6 +596,41 @@ describe("negotiation_followup — SEND n (the fake send happy path)", () => {
 
     // The sent thread moved to 'negotiating' — NEVER 'agreed'.
     expect(threadState(THREAD_TARGET)).toBe("negotiating");
+  });
+
+  it("approve ① but the send returns {partial} → emails_sent 0, thread NOT 'negotiating', summary truthful", async () => {
+    seedAssertiveScenario();
+    const prose = { prompts: [] as string[], bodies: [] as string[] };
+    const sends: { calls: SendCallLike[] } = { calls: [] };
+    __setNegotiationFollowupDepsForTests({
+      draftProse: draftProseStub(prose),
+      sendAndRecord: sendAndRecordPartial(sends),
+    });
+
+    const { run, result } = await startRun("nf-partial-1", { search_profile_id: PROFILE_ID });
+    expect(result.status).toBe("suspended");
+
+    const final = await run.resume({
+      step: "batchReview",
+      resumeData: { action: "approve", approved_dealer_ids: [THREAD_TARGET] },
+    });
+    expect(final.status).toBe("success");
+    if (final.status !== "success") return;
+    const out = final.result as {
+      outcome: string;
+      drafts_created: number;
+      emails_sent: number;
+      summary: string;
+    };
+
+    // The send WAS attempted (the gate approved + sendAndRecord ran once)...
+    expect(sends.calls.length).toBe(1);
+    // ...but it did NOT land, so nothing is counted as a send.
+    expect(out.emails_sent).toBe(0);
+    expect(out.drafts_created).toBe(1); // the draft was composed; only the send failed.
+    expect(out.summary).toContain("sent 0"); // the summary reports the truth.
+    // A partial NEVER advances thread state — it stays 'replied', not 'negotiating'.
+    expect(threadState(THREAD_TARGET)).toBe("replied");
   });
 });
 

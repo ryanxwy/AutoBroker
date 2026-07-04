@@ -350,7 +350,7 @@ const QuotePipelineStateSchema = z.object({
   completedSteps: z.array(z.enum(PIPELINE_STEPS)),
   /** True when the targeted record-quote landed (drives the targeted finalState). */
   recorded: z.boolean(),
-  /** The targeted SEND did not complete (a `partial`/`blocked` outcome) — no quote
+  /** The targeted SEND did not complete (a `partial` outcome) — no quote
    *  was recorded and a retained draft awaits reconcile (drives a non-"ok"
    *  finalState distinct from the recorded/no_work paths). */
   sendIncomplete: z.boolean(),
@@ -605,20 +605,16 @@ const targetedStep = createStep({
 
     // TRUTHFUL send status: record the quote and report a send ONLY when the send
     // actually landed. A `partial` (the send threw AFTER its draft was inserted —
-    // the draft is retained with a NULL gmail id) or a defensive `blocked` means
-    // the ask did NOT reach the dealer, so we backfill NOTHING and stop-and-
-    // reconcile (mirrors negotiationFollowup): skip recordQuoteFromListing and
-    // carry a reconcile hint so a later pass can promote or discard the retained
-    // draft. `declined` cannot occur here (APPROVED always decides true), but any
-    // non-"sent" outcome is treated as not-sent defensively. The gate is unchanged
-    // — the send still fired only after the approved suspend above.
+    // the draft is retained with a NULL gmail id) means the ask did NOT reach the
+    // dealer, so we backfill NOTHING and stop-and-reconcile (mirrors
+    // negotiationFollowup): skip recordQuoteFromListing and carry a reconcile hint
+    // so a later pass can promote or discard the retained draft. `declined` cannot
+    // occur here (APPROVED always decides true), but any non-"sent" outcome is
+    // treated as not-sent defensively. The gate is unchanged — the send still
+    // fired only after the approved suspend above.
     if (outcome.kind !== "sent") {
       const reconcileHint =
-        outcome.kind === "partial"
-          ? outcome.partial.reconcile_hint
-          : outcome.kind === "blocked"
-            ? outcome.reconcile_hint
-            : "send_not_completed";
+        outcome.kind === "partial" ? outcome.partial.reconcile_hint : "send_not_completed";
       return { ...state, sendIncomplete: true, sendReconcileHint: reconcileHint };
     }
 
@@ -712,7 +708,7 @@ const logCompletionStep = createStep({
     // writes no audit_log completion row (it is a single-listing ask, not a
     // pipeline pass) — its truth is the recorded dealer_quotes row.
     if (state.targeted) {
-      // SEND DID NOT COMPLETE (a `partial`/`blocked` outcome): report a non-"ok"
+      // SEND DID NOT COMPLETE (a `partial` outcome): report a non-"ok"
       // reconcile state, NEVER "sent". No quote was recorded; surface the reconcile
       // hint so a later pass (or the user) resolves the retained draft.
       if (state.sendIncomplete) {
