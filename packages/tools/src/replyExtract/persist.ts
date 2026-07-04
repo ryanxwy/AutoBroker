@@ -148,7 +148,8 @@ const MARK_FAILED = `
 UPDATE messages SET
   quote_extraction_status = 'failed',
   quote_extraction_intent = NULL,
-  processed_at = NULL
+  processed_at = NULL,
+  quote_extraction_attempts = quote_extraction_attempts + 1
 WHERE message_id = ?
 `;
 

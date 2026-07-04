@@ -59,6 +59,7 @@ const MIGRATION_SQLS = [
   "0000_military_red_skull.sql",
   "0001_redundant_ozymandias.sql",
   "0002_pale_thunderball.sql",
+  "0009_legal_dreaming_celestial.sql",
 ].map((f) => join(here, "..", "..", "db", "drizzle", f));
 
 let tmpDir: string;
@@ -398,6 +399,46 @@ describe("dealer_reply_extract — happy paths", () => {
     const m = messageRow("msg-nq");
     expect(m["quote_extraction_status"]).toBe("succeeded");
     expect(m["quote_extraction_intent"]).toBe("stall");
+  });
+
+  it("a $/mo-only lease reply (Rule2 gap) → succeeded via reclass: one unspecified row, lease fields NULL", async () => {
+    seedProfile();
+    seedDealer();
+    seedThread("thread-1");
+    seedMessage({
+      messageId: "msg-mo",
+      threadId: "thread-1",
+      gmailMessageId: "gmail-mo",
+      body: "We can do $389/mo for 36 months on the Tucson Hybrid.",
+    });
+    // The model faithfully emits a lease row with term + payment but neither
+    // money_factor nor residual_pct — the structural emit boundary accepts it,
+    // reclassifyRule2Failures demotes it to unspecified (both blocks nulled),
+    // and the refined persist belt then passes.
+    installDeps({
+      harnessGenerate: harnessFixed(
+        [row({ financing_mode: "lease", lease_term_months: 36, lease_monthly_payment: 389 })],
+        "real_quote",
+      ),
+    });
+
+    const { result } = await startRun("run-mo");
+    expect(statusOf(result)).toBe("success");
+    const out = outputOf(result);
+    expect(out["messages_processed"]).toBe(1);
+    expect(out["messages_failed"]).toBe(0);
+    expect(out["quotes_upserted"]).toBe(1);
+
+    const rows = quoteRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!["financing_mode"]).toBe("unspecified");
+    expect(rows[0]!["lease_monthly_payment"]).toBeNull();
+    expect(rows[0]!["lease_term_months"]).toBeNull();
+    expect(rows[0]!["otd_total"]).toBeNull();
+
+    const m = messageRow("msg-mo");
+    expect(m["quote_extraction_status"]).toBe("succeeded");
+    expect(m["quote_extraction_intent"]).toBe("real_quote");
   });
 
   it("a finance+lease reply → BOTH rows upsert under one message", async () => {
