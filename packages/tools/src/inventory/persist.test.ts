@@ -1133,3 +1133,63 @@ describe("persistScanResults — persist options (sourceType / discoveryMethod /
     });
   });
 });
+
+describe("persistScanResults — cross-source MSRP inversion guard", () => {
+  it("nulls an msrp below the observed listed price (cross-source mis-parse), keeps the price", () => {
+    // SRP-extracted listed_price 33915 paired with a mismatched-VDP msrp 19991 —
+    // listed > msrp, so the derived msrp is dropped and the observed price stays.
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [
+        scanned(DEALER_A, SRP_A, [
+          { listing: listing({ vin: VIN, price: 33915 }), matchStatus: "exact", raw: { via: "test" }, msrp: 19991 },
+        ]),
+      ],
+      db,
+      now: T1,
+    });
+    const r = liveListings()[0]!;
+    expect(r.listed_price).toBe(33915);
+    expect(r.msrp).toBeNull();
+  });
+
+  it("preserves an msrp at/above the listed price (the normal case)", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [
+        scanned(DEALER_A, SRP_A, [
+          { listing: listing({ vin: VIN, price: 33915 }), matchStatus: "exact", raw: { via: "test" }, msrp: 35980 },
+        ]),
+      ],
+      db,
+      now: T1,
+    });
+    const r = liveListings()[0]!;
+    expect(r.listed_price).toBe(33915);
+    expect(r.msrp).toBe(35980);
+  });
+
+  it("applies the guard on the VIN-absent (URL) arm too", () => {
+    persistScanResults({
+      searchProfileId: PROFILE_ID,
+      runStartedAt: T0,
+      outcomes: [
+        scanned(DEALER_A, SRP_A, [
+          {
+            listing: listing({ vin: null, listing_url: "https://alpha-hyundai.example/vdp/1", price: 33915 }),
+            matchStatus: "exact",
+            raw: { via: "test" },
+            msrp: 19991,
+          },
+        ]),
+      ],
+      db,
+      now: T1,
+    });
+    const r = liveListings()[0]!;
+    expect(r.listed_price).toBe(33915);
+    expect(r.msrp).toBeNull();
+  });
+});
