@@ -1667,7 +1667,12 @@ function affectedKinds(workflowId: string): string[] {
     case DEALER_INBOX_CHECK_WORKFLOW_ID:
       return ["threads", "messages", "contacts"];
     case DEALER_REPLY_EXTRACT_WORKFLOW_ID:
-      return ["quotes", "messages"];
+      // +digest: reply-extract writes dealer_quotes, which the digest headline
+      // ("N quote(s), lowest $X") re-aggregates. Without pulsing digest the
+      // headline count stays stale until the next daily_digest run while best-OTD
+      // self-heals from the live quotes fetch — a jarring "0 quote(s)" beside a
+      // real best price. GET /api/digest recomputes fresh, so this is a harmless refetch.
+      return ["quotes", "messages", "digest"];
     case DEALER_HYGIENE_WORKFLOW_ID:
       return ["threads", "contacts"];
     case PIPELINE_RESET_WORKFLOW_ID:
@@ -1701,8 +1706,9 @@ function affectedKinds(workflowId: string): string[] {
       // (reply-extract + the targeted-VIN record), manufacturer_incentives
       // (scrape), inventory_listings (the targeted listing is re-touched), and
       // messages (the targeted send draft). Name the data families those
-      // surfaces refetch on.
-      return ["quotes", "incentives", "listings", "messages"];
+      // surfaces refetch on. +digest for the same reason as reply-extract: the
+      // dealer_quotes write must refresh the stale digest headline count.
+      return ["quotes", "incentives", "listings", "messages", "digest"];
     case DEALER_WEB_LEAD_SUBMIT_WORKFLOW_ID:
       // A submitted lead writes a lead_submissions row, may update a dealer's
       // contact_email, and an email fallback writes a messages row (fake in test mode).

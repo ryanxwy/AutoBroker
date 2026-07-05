@@ -406,6 +406,42 @@ describe("data.changed pulse — fresh-by-default auto-refresh", () => {
     expect(pubsub.snapshot(runId).filter((e) => e.kind === "data.changed")).toHaveLength(1);
   });
 
+  it("dealer_reply_extract's pulse includes digest — the stale headline quote count refetches after an extract", async () => {
+    const pubsub = new RunPubSub();
+    // reply-extract writes dealer_quotes; the digest headline ("N quote(s),
+    // lowest $X") re-aggregates from them, so the digest data family must ride
+    // the pulse or the count stays stale until the next daily_digest while
+    // best-OTD self-heals from the live quotes fetch.
+    const svc = new SkillRunService(
+      fakeMastra([
+        { status: "success", result: { summary: "Extracted 3 quote(s).", searchProfileId: "prof-9" } },
+      ]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_reply_extract",
+      input: { search_profile_id: "prof-9" },
+    });
+    const pulse = pubsub.snapshot(runId).find((e) => e.kind === "data.changed")!;
+    expect(pulse.payload["kinds"]).toEqual(["quotes", "messages", "digest"]);
+  });
+
+  it("quote_pipeline's pulse includes digest (its reply-extract child writes dealer_quotes)", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([
+        { status: "success", result: { summary: "Pipeline complete.", searchProfileId: "prof-10" } },
+      ]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "quote_pipeline",
+      input: { search_profile_id: "prof-10" },
+    });
+    const pulse = pubsub.snapshot(runId).find((e) => e.kind === "data.changed")!;
+    expect(pulse.payload["kinds"]).toEqual(["quotes", "incentives", "listings", "messages", "digest"]);
+  });
+
   it("the affectedKinds mapping is keyed on the skill (intake → profiles+sessions)", async () => {
     const pubsub = new RunPubSub();
     const svc = new SkillRunService(fakeMastra([SUSPEND_COLLECT, SUCCESS_CREATED]), pubsub);
