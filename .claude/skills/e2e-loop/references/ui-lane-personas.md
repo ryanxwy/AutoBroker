@@ -99,9 +99,13 @@ quotes so "Compared 0" is impossible.
 ### P6 — ESL / terse texter
 **Voice:** short, lowercase, dropped articles, occasional misspelling, sms register.
 **Sample:** `find car dealer near me` · `compair quote pls` · `delete this search`
-**Router stress:** typo robustness + **destructive-confidence downgrade**: bare
-"delete this search" / "reset everything" in lowercase must degrade to the
-`clarify-run-explicit` button — never a guessed `pipeline_reset` launch.
+**Router stress:** typo robustness + the **destructive-confidence gate**
+(`router.ts:248-254`, `DESTRUCTIVE_CONFIDENCE = 0.85`): a destructive route is
+downgraded to the `clarify-run-explicit` button ONLY when the live model's
+self-assessed confidence is < 0.85 (a genuinely vague fragment). A CLEAR ask
+("reset everything" / "delete this search") is rated ≥ 0.85 and LAUNCHES straight
+to `pipeline_reset`'s OWN typed-YES gate — the stronger floor, nothing
+pre-approved. The router never *guesses* a destructive launch below the bar.
 
 ### P7 — Payment-buyer ($/month tunnel-vision)
 **Voice:** frames EVERYTHING as a monthly payment; ignores OTD / selling price.
@@ -149,7 +153,7 @@ touched (every prior persona already knew its one car).
 | J3 | **Mid-flow correction → 2-active** | After intake, type `actually I want a RAV4 not a CR-V` | Routes to a second intake → 2nd active profile → `multiple_active_profiles` StopCard with vehicle-name picker |
 | J4 | **Returns-next-day cold session** | New session id, immediately type `compare my quotes` | `pin_required` or `no_active_profile` STOP → `stop-pick-option` picker → one click persists session pin (run2 fix) |
 | J5 | **Two things at once** | `find dealers near me and tell me whats in stock` | Router picks ONE skill; record which; note the unpicked intent for the frontend-taste "discoverable affordances" check |
-| J6 | **Vague destructive (0.85 trap)** | `clear all this` / `start over` / `send it to everyone` | Clarify reason "…run it explicitly…" + `clarify-run-explicit` button (`router.ts:265-270`); then click — skill's OWN gate renders, nothing pre-approved |
+| J6 | **Destructive confidence gate (0.85)** | genuinely vague `maybe clean things up` vs a clear `reset everything` / `clear all this and start over` | Confidence-gated (`router.ts:248-254`): < 0.85 → clarify "…run it explicitly…" + `clarify-run-explicit` button, then click → skill's OWN gate; ≥ 0.85 (a clear ask) → LAUNCH straight to the skill's OWN typed-YES gate. Either way nothing is pre-approved (clear phrases went straight to the typed-YES gate live, 2026-07-04-run2) |
 | J7 | **Question-not-command** | `how much should I pay for this?` / `is this a good deal?` | `none` → clarify, calm assistant turn, no run |
 | J8 | **Re-ask after clarify** | After any clarify, rephrase more directly | Second clearer message launches — proves clarify is recoverable, not a wall |
 | J9 | **Multi-intent run-on** | `find dealers, get quotes, tell me which is cheapest, and is leasing better?` | Router picks ONE skill (`router.ts:273-279`); model-extracted `params` are deliberately dropped (`router.ts:143-148`) → assert the **dropped intents are acknowledged/told-back, not silently lost**. The most common real phrasing shape |
@@ -198,7 +202,7 @@ one, add a targeted message.
 |---|---|---|---|
 | E1 | `none`→clarify (question/greeting/vague) | `is this a good deal?` / `do the thing` | Clarify turn, no run, NO `clarify-run-explicit` button (`router.ts:251,254`) |
 | E2 | <0.6 confidence floor→clarify | `prices` / `the car` / `compair` alone | Clarify with candidate hint, no launch (`router.ts:259-263`) |
-| E3 | 0.85 destructive downgrade | `clear all this` / `start over` / `send it to everyone` | Clarify "…run it explicitly…" + `clarify-run-explicit` button (`router.ts:265-270`, `AssistantTurn.tsx:108`) |
+| E3 | 0.85 destructive gate | genuinely vague `maybe clean things up` vs a clear `reset everything` / `clear all this and start over` | Confidence-gated (`router.ts:248-254`, `AssistantTurn.tsx:108`): < 0.85 → clarify "…run it explicitly…" + `clarify-run-explicit` button; ≥ 0.85 (a clear ask) → LAUNCH to the skill's OWN typed-YES gate. The clear phrases are rated ≥ 0.85 live → expect the typed-YES gate, NOT a clarify (verified 2026-07-04-run2) |
 | E4 | run-explicit button → still gated | Click `clarify-run-explicit` after E3 | Skill's OWN typed-YES / approval / batch gate renders; nothing pre-approved |
 | E5 | `pin_required` (1 profile, unpinned) | New session + `compare my quotes` | StopCard `pin_required`, `stop-pick-option` picker; pick once → session pin persists |
 | E6 | `no_active_profile` (0 profiles) | Clean DB + `audit my quotes` | StopCard `no_active_profile` → points to intake |
