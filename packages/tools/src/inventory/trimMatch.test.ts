@@ -152,4 +152,27 @@ describe("resegmentModelTrim", () => {
       trim: "Limited",
     });
   });
+
+  it("de-doubles a trim the page carried in BOTH the model and trim fields", () => {
+    // The aggregator prompt pins the model, but the LLM sometimes ALSO leaves the
+    // trim inside it (model "RAV4 XLE", trim "XLE"). A blind concat would double
+    // the token ("RAV4 XLE XLE" -> trim "XLE XLE"), which then fails exact-match
+    // and downgrades a genuine XLE to "near". The suffix guard re-splits from the
+    // model alone so the trim stays single.
+    expect(resegmentModelTrim("RAV4", "RAV4 XLE", "XLE")).toEqual({
+      model: "RAV4",
+      trim: "XLE",
+    });
+    expect(resegmentModelTrim("RAV4", "RAV4 XLE Premium", "XLE Premium")).toEqual({
+      model: "RAV4",
+      trim: "XLE Premium",
+    });
+    // Boundary safety: a trim FRAGMENT that merely ends the model string (trim
+    // "SE" vs model "…XSE") is NOT an already-present suffix — the space boundary
+    // keeps them distinct, so the ordinary re-split still runs (no false de-dup).
+    expect(resegmentModelTrim("RAV4", "RAV4 XSE", "SE")).toEqual({
+      model: "RAV4",
+      trim: "XSE SE",
+    });
+  });
 });
