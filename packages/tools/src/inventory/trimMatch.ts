@@ -140,7 +140,15 @@ export function resegmentModelTrim(
   const profileTokens = profileModel.toLowerCase().split(/\s+/).filter((t) => t !== "");
   if (profileTokens.length === 0) return { model, trim };
   if (model.trim().toLowerCase() === profileModel.trim().toLowerCase()) return { model, trim };
-  const combined = `${model} ${trim ?? ""}`.trim();
+  // When the page carried the trim in BOTH fields (model "RAV4 XLE" AND trim
+  // "XLE"), a blind `${model} ${trim}` concat would double the trim token
+  // ("RAV4 XLE XLE" -> trim "XLE XLE"). If trim is already a whole trailing
+  // token-run of model, re-split from model alone. The space boundary keeps a
+  // fragment like trim "SE" from matching model "…XSE".
+  const trimLc = (trim ?? "").trim().toLowerCase();
+  const modelLc = model.trim().toLowerCase();
+  const trimAlreadyInModel = trimLc !== "" && (modelLc === trimLc || modelLc.endsWith(` ${trimLc}`));
+  const combined = (trimAlreadyInModel ? model : `${model} ${trim ?? ""}`).trim();
   const combinedTokens = combined.split(/\s+/).filter((t) => t !== "");
   if (combinedTokens.length < profileTokens.length) return { model, trim };
   for (let i = 0; i < profileTokens.length; i += 1) {

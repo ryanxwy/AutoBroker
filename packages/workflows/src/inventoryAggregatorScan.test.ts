@@ -392,6 +392,23 @@ describe("inventory_aggregator_scan — selectAggregatorKeepRows", () => {
     expect(kept[0]!.siteId).toBe("cars_com");
     expect(counts.dedupedCrossSource).toBe(1);
   });
+
+  it("de-doubles a trim the aggregator carried in BOTH the model and trim fields, restoring exact", () => {
+    // The Cars.com row arrives with the trim inside the model too (model
+    // "Tucson Sport-L", trim "Sport-L"). Pre-fix the blind concat doubled it to
+    // "Sport-L Sport-L", which classified as NEAR (kept only via trim-subset) and
+    // rendered broken. The suffix guard keeps the trim single and restores exact.
+    // Mirrors the live RAV4 "XLE" / "XLE Premium" doubling.
+    const { kept, counts } = selectAggregatorKeepRows({
+      rows: [selInput("cars_com", { vin: VIN_A, model: "Tucson Sport-L", trim: "Sport-L" })],
+      profile: PROFILE,
+      radiusMiles: 50,
+    });
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.listing.trim).toBe("Sport-L");
+    expect(kept[0]!.matchStatus).toBe("exact");
+    expect(counts.droppedNoMatch).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
