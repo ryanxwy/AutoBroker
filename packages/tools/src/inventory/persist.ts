@@ -557,6 +557,20 @@ export function persistScanResults(opts: {
         }
         const rawJson = truncateRawJson(row.raw);
 
+        // Cross-source MSRP inversion guard. Within one VDP snapshot the same-page
+        // harvest resolves an inversion by nulling the *listed price* and trusting
+        // the MSRP; an inversion that survives to here is the CROSS-source case —
+        // the directly-observed SRP listing price paired with an MSRP fanned out
+        // from a possibly-mismatched VDP. Here the reliability flips: the SRP price
+        // is the observed field and the MSRP is the derived, cross-attributed one
+        // and the likelier mis-parse (e.g. a $19,991 "MSRP" beneath a $33,915
+        // listed price), so null the MSRP and keep the price. dealerMarkup is a
+        // separate labeled field, so this never disturbs the markup signal.
+        const msrp =
+          row.msrp != null && row.listing.price != null && row.listing.price > row.msrp
+            ? null
+            : row.msrp ?? null;
+
         // Positional params shared by both INSERT arms (listing_id first).
         const insertParams = (listingId: string): unknown[] => [
           listingId,
@@ -580,7 +594,7 @@ export function persistScanResults(opts: {
           now,
           now,
           now,
-          row.msrp ?? null,
+          msrp,
           // Harvest-aware sentinel (caller-supplied): 0 / empty-blob string =
           // "VDP visited, none" → CLEAR; null = "not harvested" → PRESERVE.
           row.dealerMarkup ?? null,
@@ -625,7 +639,7 @@ export function persistScanResults(opts: {
               row.listing.exterior_color,
               row.listing.interior_color,
               row.listing.price,
-              row.msrp ?? null,
+              msrp,
               // Harvest-aware sentinel (same order as UPDATE_LIVE_ROW's new ?s,
               // BEFORE the trailing listing_id): 0/empty-blob CLEARS, null PRESERVES.
               row.dealerMarkup ?? null,
