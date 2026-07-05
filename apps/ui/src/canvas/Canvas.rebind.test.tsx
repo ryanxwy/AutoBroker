@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act } from "react";
 
 import { ApiClient } from "../api/client.js";
-import { resetDataRefetchForTests } from "../api/useDataChanged.js";
+import { invalidate, resetDataRefetchForTests } from "../api/useDataChanged.js";
 import { render } from "../test/render.js";
 import { Canvas } from "./Canvas.js";
 
@@ -97,6 +97,64 @@ describe("Canvas rebind to the explicit focused profile", () => {
     );
     await flush();
     expect(r.get("canvas-vehicle").textContent).toContain("Accord"); // data[0] fallback
+    r.unmount();
+  });
+});
+
+/** Same routes as mockFetch, but records every requested URL for assertions. */
+function recordingFetch(urls: string[]): typeof fetch {
+  return (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    urls.push(url);
+    const json = (body: unknown, status = 200): Response =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    const single = /\/api\/profiles\/([^/?]+)$/.exec(url);
+    if (single !== null) {
+      const id = single[1]!;
+      if (id === "p-gone") return json({ error: { code: "not_found", message: "gone" } }, 404);
+      return json(id === "p2" ? P2 : P1);
+    }
+    if (url.includes("/api/profiles")) return json([P1, P2]);
+    return json({ error: { code: "not_found", message: "no route" } }, 404);
+  }) as typeof fetch;
+}
+
+/** A single-profile read: /api/profiles/<id> with no further segment/query. */
+const SINGLE_PROFILE = /\/api\/profiles\/[^/?]+$/;
+
+describe("Canvas — never issues a doomed getProfile on a null or gone pin (console 404 guard)", () => {
+  it("never fetches /api/profiles/<id> for a null pin, even on a profiles pulse", async () => {
+    const urls: string[] = [];
+    const client = new ApiClient({ fetchImpl: recordingFetch(urls) });
+    const r = render(<Canvas client={client} onStartIntake={NOOP} onEditProfile={NOOP} />);
+    await flush();
+    // A global "profiles" pulse (e.g. a STOP/clarify run completing). The explicit
+    // fetch's refetch bypasses its enabled flag, so pre-fix this fired
+    // getProfile(null) -> /api/profiles/null. The closure guard now skips it.
+    await act(async () => {
+      invalidate(["profiles"], null);
+      await new Promise((res) => setTimeout(res, 0));
+    });
+    expect(urls.filter((u) => SINGLE_PROFILE.test(u))).toEqual([]);
+    r.unmount();
+  });
+
+  it("does not re-fetch a just-deleted pin on a profiles pulse (post-reset accumulation stopped)", async () => {
+    const urls: string[] = [];
+    const client = new ApiClient({ fetchImpl: recordingFetch(urls) });
+    const r = render(
+      <Canvas client={client} onStartIntake={NOOP} profileId="p-gone" onEditProfile={NOOP} />,
+    );
+    await flush(); // the active list [P1, P2] loads; p-gone is not in it
+    urls.length = 0; // ignore the one bounded mount-race fetch; assert the PULSE is suppressed
+    // The pipeline_reset pulse carries profile_id null and matches every
+    // registration; pre-fix this re-fired getProfile("p-gone") (a fresh 404) each
+    // pulse. With the list resolved, the membership guard now skips it.
+    await act(async () => {
+      invalidate(["profiles"], null);
+      await new Promise((res) => setTimeout(res, 0));
+    });
+    expect(urls.filter((u) => /\/api\/profiles\/p-gone$/.test(u))).toEqual([]);
     r.unmount();
   });
 });
