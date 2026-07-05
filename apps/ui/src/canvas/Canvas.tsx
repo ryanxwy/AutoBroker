@@ -294,7 +294,24 @@ export function Canvas({
   // when a profileId is supplied — the multi-profile rebind. When absent the
   // workbench falls back to the newest-active `data[0]`, byte-identical to before.
   const explicit = useAsync<ProfileRow>(
-    () => client.getProfile(profileId!),
+    () => {
+      // Skip a null or no-longer-active pin — never issue GET /api/profiles/<id>.
+      // useAsync's refetch() (the data.changed bus) ignores the `enabled` arg
+      // below — that arg gates only the mount effect — so a "profiles" pulse
+      // would otherwise re-fire this with a null id (/api/profiles/null on a
+      // STOP/clarify run) or a just-deleted id (post-reset), each a browser
+      // console 404. fetcherRef always holds the latest closure, so `profiles`
+      // is current here without widening deps. A skipped fetch lands kind:"error",
+      // which the explicitActive fallback already treats as "use newest-active data[0]".
+      if (profileId === null) return Promise.reject(new Error("no pinned profile"));
+      if (
+        profiles.kind === "ok" &&
+        !profiles.data.some((p) => p["search_profile_id"] === profileId)
+      ) {
+        return Promise.reject(new Error("pinned profile no longer active"));
+      }
+      return client.getProfile(profileId);
+    },
     [profileId],
     profileId !== null,
   );
