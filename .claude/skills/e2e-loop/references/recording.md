@@ -179,10 +179,15 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   it stays consistent with `canvas-summary-best-otd` WITHOUT a manual `daily_digest`. Re-flag
   ONLY a stale "0 quote(s)" headline sitting beside a populated best-OTD after an extract.
   Shipped 2026-07-05 (`phase4/daily_digest` `a7c927c`).
-- A STOP / clarify / post-reset run NOT issuing `GET /api/profiles/<null|deleted-id>` (the
-  Canvas explicit-fetch closure skips a null or no-longer-active pin; the browser console
-  no longer accrues those 404s). Re-flag ONLY a recurring `/api/profiles/null` on a
-  no-profile run, or a post-reset stale-pinned-id fetch. Shipped 2026-07-05 (`phase0/ui` `7bcc17a`).
+- A STOP / clarify / post-reset run NOT ACCRUING `GET /api/profiles/<null|deleted-id>` 404s
+  (the Canvas explicit-fetch closure skips a null or no-longer-active pin). The null-pin path
+  is fully skipped. KNOWN BOUNDED RESIDUAL: on the FIRST `pipeline_reset` pulse the closure
+  can read stale `profiles.data` (the fresh list hasn't landed in that synchronous
+  `invalidate()` tick) so ONE `/api/profiles/<deleted-id>` may still fire before it
+  self-corrects — the fix stops the accrual (1→5), not the single reset-tick race. Re-flag
+  ONLY a recurring `/api/profiles/null` on a no-profile run, or a REPEATING/accruing
+  post-reset stale-pinned-id fetch (a single one on the reset tick is the known residual →
+  seasoned candidate 2026-07-05 #5, live-confirm before any follow-up). Shipped 2026-07-05 (`phase0/ui` `7bcc17a`).
 
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
