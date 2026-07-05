@@ -162,6 +162,28 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   ONLY a single draft failure zeroing the whole batch (0 sends) again. Shipped 2026-07-04
   (`phase3/negotiation_followup` `a3e0d78`).
 
+- `inventory_aggregator_scan` persisting a trim EQUAL to the profile trim (no `<word> <word>`
+  self-repeat) — `resegmentModelTrim` de-doubles a trim the LLM left in BOTH the model and
+  trim fields (model "RAV4 XLE" + trim "XLE" no longer persists "XLE XLE"), so a genuine exact
+  listing keeps `match_status='exact'`. Re-flag ONLY a self-repeated trim in an
+  `aggregator_srp` row (`inventory-candidate-trim` showing "XLE XLE"), or a real exact-trim
+  listing reading `near`. Shipped 2026-07-05 (`phase2/inventory_aggregator_scan` `6392ede`).
+- `inventory_site_scan`/persist nulling an MSRP that is inverted below the observed listed
+  price (a cross-source SRP-price + mismatched-VDP-msrp mis-parse) while keeping the observed
+  price — the derived MSRP is dropped, the markup signal (a separate labeled field) is
+  untouched. Re-flag ONLY a persisted `inventory_listings` row with `msrp>0 AND
+  msrp<listed_price`, or a nulled msrp on an at/above-price listing. Shipped 2026-07-05
+  (`phase2/inventory_site_scan` `7de7ba3`).
+- The overview `canvas-summary-headline` quote count refetching after
+  `dealer_reply_extract`/`quote_pipeline` (the `data.changed` pulse now carries `digest`), so
+  it stays consistent with `canvas-summary-best-otd` WITHOUT a manual `daily_digest`. Re-flag
+  ONLY a stale "0 quote(s)" headline sitting beside a populated best-OTD after an extract.
+  Shipped 2026-07-05 (`phase4/daily_digest` `a7c927c`).
+- A STOP / clarify / post-reset run NOT issuing `GET /api/profiles/<null|deleted-id>` (the
+  Canvas explicit-fetch closure skips a null or no-longer-active pin; the browser console
+  no longer accrues those 404s). Re-flag ONLY a recurring `/api/profiles/null` on a
+  no-profile run, or a post-reset stale-pinned-id fetch. Shipped 2026-07-05 (`phase0/ui` `7bcc17a`).
+
 (When `e2e-evolve` ships a fix that resolves a recorded issue, it moves the corresponding
 known-correct entry here so it is never re-flagged.)
 
