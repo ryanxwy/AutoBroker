@@ -403,18 +403,19 @@ export function isEdmunds403Shell(title: string, h1: string | null): boolean {
 /**
  * Visor outcome mapping (pure, order matters — fail-closed): unit-tests the
  * whole branch tree without a browser.
- *   1. Echo gate FIRST, evaluated only when rows>0 or the listings query
- *      succeeded: a non-null echo that disagrees with the requested zip/
- *      radius/year, OR a null echo while rows already arrived, fails
+ *   1. rows.length > 0: echo gate first — a non-null echo that disagrees with
+ *      the requested zip/radius/year, OR a null echo, fails
  *      'location_not_applied' — the page must PROVE what it searched before
- *      its rows are trusted.
- *   2. rows.length > 0 → scanned (rows take precedence over any challenge
- *      marker still sitting in the DOM).
- *   3. Any challenge marker with zero rows → failed 'session_needed' (the
+ *      its rows are trusted; else scanned (rows take precedence over any
+ *      challenge marker still sitting in the DOM).
+ *   2. Any challenge marker with zero rows → failed 'session_needed' (the
  *      live-verified shape: queryStatus 'error' + cfInput true).
- *   4. A successful query reporting total===0 → scanned with 0 rows (the only
- *      honest empty market).
- *   5. Everything else (router/client/query missing, pending/error without a
+ *   3. A successful query reporting total===0 (the only honest empty market)
+ *      ALSO requires a non-null, matching echo (same zip/radius/year equality
+ *      as branch 1) — an empty-market claim must prove WHAT it searched, so a
+ *      null or mismatched echo here fails 'collector_drift' instead; a
+ *      matching echo → scanned with 0 rows.
+ *   4. Everything else (router/client/query missing, pending/error without a
  *      challenge marker, shape surprises) → failed 'collector_drift' — a
  *      drifted page must never read as an empty market.
  */
@@ -427,18 +428,13 @@ export function mapVisorCollectedToOutcome(
 ): AggregatorCaptureOutcome {
   const { probe, rows, challenge, echo } = collected;
   const querySuccess = probe.listingsQueryFound && probe.queryStatus === "success";
-
-  if (rows.length > 0 || querySuccess) {
-    if (echo !== null) {
-      if (echo.zip !== slice.zip || echo.radiusMiles !== slice.radiusMiles || echo.year !== slice.year) {
-        return failedAggOutcome(adapter, srpUrl, observedRobots, "location_not_applied");
-      }
-    } else if (rows.length > 0) {
-      return failedAggOutcome(adapter, srpUrl, observedRobots, "location_not_applied");
-    }
-  }
+  const echoMatchesSlice =
+    echo !== null && echo.zip === slice.zip && echo.radiusMiles === slice.radiusMiles && echo.year === slice.year;
 
   if (rows.length > 0) {
+    if (!echoMatchesSlice) {
+      return failedAggOutcome(adapter, srpUrl, observedRobots, "location_not_applied");
+    }
     return {
       siteId: adapter.siteId,
       status: "scanned",
@@ -458,6 +454,9 @@ export function mapVisorCollectedToOutcome(
   }
 
   if (querySuccess && probe.total === 0) {
+    if (!echoMatchesSlice) {
+      return failedAggOutcome(adapter, srpUrl, observedRobots, "collector_drift");
+    }
     return {
       siteId: adapter.siteId,
       status: "scanned",
@@ -564,13 +563,15 @@ const realSiteRunner: SiteScanRunner = async (args, adapter) => {
       }
 
       // Aggregator SRPs can fire a late client-side navigation (geo/consent
-      // reload) that destroys the evaluate's execution context mid-collect —
+      // reload, or — on visor.vin — a human clearing a Turnstile challenge
+      // mid-poll) that destroys the evaluate's execution context mid-collect —
       // live-hit on Edmunds. One bounded same-page retry after a settle; a
       // second failure is the site's honest failed outcome for the run. Wraps
       // EVERY evaluate(collect) call below (cards sites call it twice: once to
-      // discover kind, once more after lazyScroll for the real result) — for
-      // Edmunds, the retry ALSO re-checks the shell before trusting its result
-      // (the re-nav that killed the context often lands on the shell).
+      // discover kind, once more after lazyScroll for the real result; the
+      // visor settle-poll loop calls it once per iteration) — for Edmunds, the
+      // retry ALSO re-checks the shell before trusting its result (the re-nav
+      // that killed the context often lands on the shell).
       const evaluateCollect = async (): Promise<AggregatorCollected | "edmunds_shell"> => {
         try {
           return await page.evaluate(adapter.collect);
@@ -609,9 +610,13 @@ const realSiteRunner: SiteScanRunner = async (args, adapter) => {
           if (hasChallenge) deadline = Math.max(deadline, start + VISOR_CHALLENGE_WAIT_MS);
           if (Date.now() >= deadline) break;
           await page.waitForTimeout(VISOR_SETTLE_POLL_STEP_MS);
-          const next = await page.evaluate(adapter.collect);
-          if (next.kind === "rows") current = next;
+          const next = await evaluateCollect();
+          if (next !== "edmunds_shell" && next.kind === "rows") current = next;
         }
+        args.emitter.action(
+          "visor_probe",
+          JSON.stringify({ probe: current.probe, challenge: current.challenge }),
+        );
         return mapVisorCollectedToOutcome(current, args.slice, adapter, srpUrl, nav.robotsDisallowed);
       }
 

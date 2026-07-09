@@ -453,6 +453,38 @@ describe("inventory_aggregator_scan — mapVisorCollectedToOutcome", () => {
     expect(outcome.structuredRows).toEqual([]);
   });
 
+  it("an honest-empty-market claim with a null echo fails collector_drift, not an empty market", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({
+        rows: [],
+        probe: { routerFound: true, queryClientFound: true, listingsQueryFound: true, queryStatus: "success", total: 0 },
+        echo: null,
+      }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("collector_drift");
+  });
+
+  it("an honest-empty-market claim with a mismatched echo fails collector_drift (not location_not_applied)", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({
+        rows: [],
+        probe: { routerFound: true, queryClientFound: true, listingsQueryFound: true, queryStatus: "success", total: 0 },
+        echo: { zip: "98021", radiusMiles: 25, year: 2026 },
+      }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("collector_drift");
+  });
+
   it("everything else (router/client/query missing, no challenge) is collector_drift, never an empty market", () => {
     const outcome = mapVisorCollectedToOutcome(
       visorCollected({
