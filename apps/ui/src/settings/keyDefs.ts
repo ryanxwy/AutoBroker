@@ -1,5 +1,5 @@
 /**
- * keyDefs — the static descriptor table for the four managed API keys. A
+ * keyDefs — the static descriptor table for the five managed API keys. A
  * hand-written map (matching the codebase's data-driven-but-explicit stance):
  * the Settings page renders one KeyRow per entry, in this fixed order. Each
  * descriptor carries the wire id, the human label, a one-line description, the
@@ -8,7 +8,8 @@
  *
  * REQUIREDNESS: deepseek is required (the default provider + the keystone that
  * gates first-run skill launch); google_places is required for dealer search.
- * anthropic + openai are optional switchable providers.
+ * anthropic + openai are optional switchable providers; claude_oauth is an
+ * optional presence-only row (a subscription token, no connection probe).
  *
  * Dependency wall: app/ui layer. Imports the wire ids only.
  */
@@ -33,7 +34,7 @@ export interface KeyDef {
   testKind: KeyTestKind;
 }
 
-/** The four rows, in the fixed display order (deepseek first — it is the
+/** The five rows, in the fixed display order (deepseek first — it is the
  *  keystone the first-run gate reads). */
 export const KEY_DEFS: readonly KeyDef[] = [
   {

@@ -1286,7 +1286,8 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
 
   // ========================================================================
-  // settings/keys — the four user-supplied API keys. The route layer NEVER
+  // settings/keys — the five user-supplied secrets (four API keys + the Claude
+  // subscription OAuth token). The route layer NEVER
   // reads/writes the keys file or holds a secret; it delegates to the tools
   // secretsStore/probe. A key VALUE is never returned on any of these.
   // ========================================================================

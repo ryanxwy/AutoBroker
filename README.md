@@ -6,7 +6,7 @@ negotiate — driven by 18 skills (9 LLM-backed for extraction and drafting, 9
 deterministic for the load-bearing math and orchestration), with humans approving
 anything irreversible.
 
-![AutoBroker dashboard — the dual-pane workbench: a Canvas projection of one search (dealers, quotes, replies, inventory) beside a minimizable chat rail that drives the 18 skills.](readme-assets/dashboard.png)
+![AutoBroker dashboard — the dual-pane workbench: a Canvas projection of one search (dealers, inventory, quotes, negotiations, incentives) beside a minimizable chat rail that drives the 18 skills.](readme-assets/dashboard.png)
 
 > Shown with the built-in zero-config demo data (`AUTOBROKER_DEMO_SEED=1`) — no
 > API key, Gmail, or network required.
