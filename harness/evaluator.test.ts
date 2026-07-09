@@ -354,6 +354,63 @@ describe("resolution anchor (profile-resolution provenance)", () => {
   });
 });
 
+describe("site_contribution anchor (per-site aggregator-scan tally)", () => {
+  function framesWithPerSite(perSite: unknown | null) {
+    return [
+      { ts: "t0", kind: "init", payload: { run_id: "r1", skill: "inventory_aggregator_scan", driver_kind: "deepseek_apikey" } },
+      {
+        ts: "t1",
+        kind: "text",
+        payload: { text: "Scanned 2 sites.", ...(perSite !== null ? { per_site: perSite } : {}) },
+      },
+      { ts: "t2", kind: "done", payload: {} },
+    ];
+  }
+
+  it("present-pass: an entry with status=scanned and listing_count >= min_listings passes", () => {
+    const perSite = [
+      { site_id: "cars_com", status: "scanned", listing_count: 5, error: null },
+      { site_id: "visor_vin", status: "scanned", listing_count: 3, error: null },
+    ];
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(perSite), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(true);
+    expect(r.observed).toMatchObject({ site_id: "visor_vin", listing_count: 3 });
+  });
+
+  it("low-count-fail: listing_count below min_listings fails", () => {
+    const perSite = [{ site_id: "visor_vin", status: "scanned", listing_count: 0, error: null }];
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(perSite), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/listing_count=0 < min_listings=1/);
+  });
+
+  it("failed-status-fail: a blocked/failed site status fails even with listings", () => {
+    const perSite = [{ site_id: "visor_vin", status: "blocked", listing_count: 5, error: "turnstile" }];
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(perSite), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/status="blocked"/);
+  });
+
+  it("absent-field-fail: the site is missing from a present per_site array", () => {
+    const perSite = [{ site_id: "cars_com", status: "scanned", listing_count: 5, error: null }];
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(perSite), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/absent from per_site/);
+  });
+
+  it("absent-field-fail: no text frame carries per_site at all (not threaded)", () => {
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(null), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.observed).toBeNull();
+    expect(r.detail).toMatch(/no text frame carried a per_site payload/);
+  });
+});
+
 describe("browser_activity anchor (present default; absent for the decline path)", () => {
   function framesWithBrowser(withBrowser: boolean) {
     return [

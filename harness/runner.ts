@@ -62,6 +62,7 @@ import {
   snapshotCounts,
   openReadHandle,
   externalMutationDbCount,
+  sourceBreakdown,
   type TableCounts,
 } from "./dbReads.js";
 import { assertEnvEnvelope, assertServerActiveDbMatches, PROVIDER_KEY_ENV } from "./preflight.js";
@@ -1998,6 +1999,19 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         externalMutationBaseline: mutationBaseline,
         expectsWipe: step.expectsWipe,
       });
+      // F9: a step asserting site_contribution also gets its per-site source
+      // breakdown captured as evidence (the sourceBreakdown GROUP BY, not the
+      // anchor's own scoring channel — the anchor reads per_site off detail;
+      // this is the extra observability artifact the brief asks for).
+      let sourceBreakdownRows: ReturnType<typeof sourceBreakdown> | null = null;
+      if (profileId !== null && step.anchors.some((a) => a.kind === "site_contribution")) {
+        const { db: readDb, close: closeReadDb } = openReadHandle();
+        try {
+          sourceBreakdownRows = sourceBreakdown(readDb, profileId);
+        } finally {
+          closeReadDb();
+        }
+      }
       const dir = writeEvidence(opts.evidenceRoot, verdict.cell_id, step.id, {
         "verdict.json": verdict,
         "narrative.json": { case: c.id, step: step.id, provider: c.provider, inputMode: c.inputMode, lane: "ui", launch: step.launch, profileId },
@@ -2005,6 +2019,7 @@ async function cmdUiCase(opts: RunnerOpts, c: Case): Promise<number> {
         "transcript.json": detail.events,
         "db-before.json": before,
         "db-after.json": after,
+        ...(sourceBreakdownRows !== null ? { "source-breakdown.json": sourceBreakdownRows } : {}),
       });
       console.log(
         JSON.stringify({ harness: "ui", step: step.id, verdict: verdict.verdict, status: verdict.status, cell: verdict.cell_id, evidence: dir }),
