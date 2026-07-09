@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { closeDb, openDb, type Db } from "@autobroker/tools";
+import { AGGREGATOR_ADAPTERS, closeDb, openDb, type AggregatorCollectedRows, type Db } from "@autobroker/tools";
 
 import { EmitResultNotCalledError } from "./harness.js";
 import { createMastraInstance } from "./mastra.js";
@@ -44,6 +44,8 @@ import {
   edmundsLocationApplied,
   INVENTORY_AGGREGATOR_SCAN_WORKFLOW_ID,
   inventoryAggregatorScanWorkflow,
+  isEdmunds403Shell,
+  mapVisorCollectedToOutcome,
   persistAggregatorScanImpl,
   scanAggregatorsImpl,
   selectAggregatorKeepRows,
@@ -323,6 +325,168 @@ describe("inventory_aggregator_scan — edmundsLocationApplied", () => {
 });
 
 // ---------------------------------------------------------------------------
+// pure — Edmunds honest-blocked 403-shell predicate
+// ---------------------------------------------------------------------------
+
+describe("inventory_aggregator_scan — isEdmunds403Shell", () => {
+  it("a 403 title reads as the shell", () => {
+    expect(isEdmunds403Shell("403 - Access Denied | Edmunds", null)).toBe(true);
+  });
+  it("an ordinary SRP title/h1 is not the shell", () => {
+    expect(isEdmunds403Shell("New Toyota RAV4 for Sale Near Redmond, WA", null)).toBe(false);
+  });
+  it("an h1-only 403 (ordinary title) still reads as the shell", () => {
+    expect(isEdmunds403Shell("Edmunds", "403")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pure — visor outcome mapping (fail-closed, order matters)
+// ---------------------------------------------------------------------------
+
+const VISOR_ADAPTER = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!;
+const VISOR_SLICE = { make: "Hyundai", model: "Tucson", year: 2026, zip: "92602", radiusMiles: 25 };
+const VISOR_SRP_URL = "https://visor.vin/search/listings?x";
+
+function visorCollected(over: Partial<AggregatorCollectedRows> = {}): AggregatorCollectedRows {
+  return {
+    kind: "rows",
+    probe: { routerFound: true, queryClientFound: true, listingsQueryFound: true, queryStatus: "success", total: 3 },
+    rows: [],
+    challenge: { cfIframe: false, cfInput: false, interstitial: false },
+    echo: { zip: "92602", radiusMiles: 25, year: 2026 },
+    ...over,
+  };
+}
+
+describe("inventory_aggregator_scan — mapVisorCollectedToOutcome", () => {
+  it("rows>0 with a matching echo → scanned, rows carried as structuredRows", () => {
+    const rows = [{ vin: "x" }, { vin: "y" }];
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({ rows }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("scanned");
+    expect(outcome.cardCount).toBe(2);
+    expect(outcome.structuredRows).toBe(rows);
+  });
+
+  it("echo-gate mismatch (zip differs) fails location_not_applied even with rows present", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({ rows: [{ vin: "x" }], echo: { zip: "98021", radiusMiles: 25, year: 2026 } }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("location_not_applied");
+  });
+
+  it("a degenerate quoted-empty radius (echo.radiusMiles 0) fails the echo gate — never special-cased", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({ rows: [{ vin: "x" }], echo: { zip: "92602", radiusMiles: 0, year: 2026 } }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("location_not_applied");
+  });
+
+  it("echo null with rows>0 is treated as a mismatch (fail closed — the page must prove what it searched)", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({ rows: [{ vin: "x" }], echo: null }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("location_not_applied");
+  });
+
+  it("rows take precedence over challenge markers still sitting in the DOM", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({
+        rows: [{ vin: "x" }],
+        challenge: { cfIframe: false, cfInput: true, interstitial: false },
+      }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("scanned");
+  });
+
+  it("the live-verified session_needed shape: queryStatus 'error' + cfInput true, zero rows", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({
+        rows: [],
+        probe: { routerFound: true, queryClientFound: true, listingsQueryFound: true, queryStatus: "error", total: null },
+        challenge: { cfIframe: false, cfInput: true, interstitial: false },
+      }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("session_needed");
+  });
+
+  it("a successful query reporting total===0 is the only honest empty market", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({ rows: [], probe: { routerFound: true, queryClientFound: true, listingsQueryFound: true, queryStatus: "success", total: 0 } }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("scanned");
+    expect(outcome.cardCount).toBe(0);
+    expect(outcome.structuredRows).toEqual([]);
+  });
+
+  it("everything else (router/client/query missing, no challenge) is collector_drift, never an empty market", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({
+        rows: [],
+        probe: { routerFound: false, queryClientFound: false, listingsQueryFound: false, queryStatus: null, total: null },
+        echo: null,
+      }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("collector_drift");
+  });
+
+  it("a pending query with no challenge marker also falls to collector_drift", () => {
+    const outcome = mapVisorCollectedToOutcome(
+      visorCollected({
+        rows: [],
+        probe: { routerFound: true, queryClientFound: true, listingsQueryFound: true, queryStatus: "pending", total: null },
+        echo: null,
+      }),
+      VISOR_SLICE,
+      VISOR_ADAPTER,
+      VISOR_SRP_URL,
+      false,
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toBe("collector_drift");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // pure — keep-set + radius + in-stock + cross-site dedup
 // ---------------------------------------------------------------------------
 
@@ -462,6 +626,78 @@ describe("inventory_aggregator_scan — buildAggregatorSummary", () => {
       droppedInTransit: 0,
     });
     expect(s).toContain("Edmunds: couldn't confirm your location — skipped its results this run");
+  });
+
+  it("voices the visor session_needed failure with the one-time-verification instructions", () => {
+    const s = buildAggregatorSummary({
+      perSite: [
+        { siteId: "visor_vin", label: "visor.vin", status: "failed", error: "session_needed", robotsDisallowed: false, listingCount: 0 },
+      ],
+      trim: "Limited",
+      keptWritten: 0,
+      duplicatesSkipped: 0,
+      droppedNoDealer: 0,
+      droppedOutOfRadius: 0,
+      droppedNoMatch: 0,
+      droppedInTransit: 0,
+    });
+    expect(s).toContain("visor.vin: needs a one-time human verification");
+    expect(s).toContain('Verify you are human');
+    expect(s).toContain("session is remembered for future scans");
+  });
+
+  it("voices collector_drift as a maintenance note, never as an empty market", () => {
+    const s = buildAggregatorSummary({
+      perSite: [
+        { siteId: "visor_vin", label: "visor.vin", status: "failed", error: "collector_drift", robotsDisallowed: false, listingCount: 0 },
+      ],
+      trim: "Limited",
+      keptWritten: 0,
+      duplicatesSkipped: 0,
+      droppedNoDealer: 0,
+      droppedOutOfRadius: 0,
+      droppedNoMatch: 0,
+      droppedInTransit: 0,
+    });
+    expect(s).toContain("visor.vin: the site changed its page layout — this source needs maintenance");
+  });
+
+  it("falls back to the generic phrase for an unrecognized or absent error code", () => {
+    const s = buildAggregatorSummary({
+      perSite: [
+        { siteId: "visor_vin", label: "visor.vin", status: "failed", error: "some_future_code", robotsDisallowed: false, listingCount: 0 },
+        { siteId: "cars_com", label: "Cars.com", status: "failed", error: null, robotsDisallowed: true, listingCount: 0 },
+      ],
+      trim: "Limited",
+      keptWritten: 0,
+      duplicatesSkipped: 0,
+      droppedNoDealer: 0,
+      droppedOutOfRadius: 0,
+      droppedNoMatch: 0,
+      droppedInTransit: 0,
+    });
+    expect(s).toContain("visor.vin: couldn't be reached this run");
+    expect(s).toContain("Cars.com: couldn't be reached this run");
+  });
+
+  it("renders a 3-site summary (scanned, session_needed, blocked) in registry order", () => {
+    const s = buildAggregatorSummary({
+      perSite: [
+        { siteId: "cars_com", label: "Cars.com", status: "scanned", error: null, robotsDisallowed: true, listingCount: 4 },
+        { siteId: "visor_vin", label: "visor.vin", status: "failed", error: "session_needed", robotsDisallowed: false, listingCount: 0 },
+        { siteId: "edmunds", label: "Edmunds", status: "blocked", error: null, robotsDisallowed: true, listingCount: 0 },
+      ],
+      trim: "Limited",
+      keptWritten: 4,
+      duplicatesSkipped: 0,
+      droppedNoDealer: 0,
+      droppedOutOfRadius: 0,
+      droppedNoMatch: 0,
+      droppedInTransit: 0,
+    });
+    expect(s).toContain("Cars.com: 4 listings");
+    expect(s).toContain("visor.vin: needs a one-time human verification");
+    expect(s).toContain("Edmunds: blocked automated scanning");
   });
 });
 
@@ -743,6 +979,168 @@ describe("inventory_aggregator_scan — provenance guards", () => {
 });
 
 // ---------------------------------------------------------------------------
+// workflow — visor deterministic extract bypass (zero-LLM path)
+// ---------------------------------------------------------------------------
+
+function visorRow(over: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    vin: VIN_A,
+    year: 2026,
+    make: "Hyundai",
+    model: "Tucson",
+    trim: "SEL",
+    price: 33999,
+    exteriorColor: "White",
+    state: "CA",
+    city: "Irvine",
+    latitude: 33.6695,
+    longitude: -117.7669,
+    dealerName: "Irvine Hyundai",
+    vdpUrl: "https://www.irvinehyundai.com/vdp/1",
+    ...over,
+  };
+}
+
+function visorScannedOutcome(
+  rows: unknown[],
+  over: Partial<AggregatorCaptureOutcome> = {},
+): AggregatorCaptureOutcome {
+  return {
+    siteId: "visor_vin",
+    status: "scanned",
+    robotsDisallowed: false,
+    robotsDisallowedObserved: false,
+    srpUrl: "https://visor.vin/search/listings?x",
+    cardCount: rows.length,
+    weave: "",
+    hrefs: [],
+    scalars: [],
+    structuredRows: rows,
+    ...over,
+  };
+}
+
+const harnessNeverCalled: InventoryAggregatorScanWorkflowDeps["harnessGenerate"] = (async () => {
+  throw new Error("harnessGenerate must not be called on the visor deterministic bypass path");
+}) as unknown as InventoryAggregatorScanWorkflowDeps["harnessGenerate"];
+
+describe("inventory_aggregator_scan — visor extract bypass (deterministic, zero-LLM)", () => {
+  it("a scanned visor capture with structuredRows never calls harnessGenerate; the row persists", async () => {
+    seedProfile();
+    __setAggregatorScanDepsForTests({
+      scanAggregators: scanStub({ calls: [] }, [visorScannedOutcome([visorRow()])]),
+      harnessGenerate: harnessNeverCalled,
+    });
+    const { result } = await startRun("agg-visor-bypass-1");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as Record<string, unknown>;
+    expect(out["listingsFound"]).toBe(1);
+    expect(out["listingsWritten"]).toBe(1);
+    expect(out["rowsInvalidDropped"]).toBe(0);
+    expect(out["droppedNoDealer"]).toBe(0);
+    expect(rowCount("inventory_listings")).toBe(1);
+    const src = db.$client
+      .prepare("SELECT discovery_method FROM dealer_inventory_sources")
+      .get() as { discovery_method: string };
+    expect(src.discovery_method).toBe("aggregator_visor_vin");
+  });
+
+  it("folds invalidDropped + droppedNoDealer counters from a mixed-validity capture", async () => {
+    seedProfile();
+    __setAggregatorScanDepsForTests({
+      scanAggregators: scanStub({ calls: [] }, [
+        visorScannedOutcome([
+          visorRow(), // valid
+          visorRow({ vin: "TOO_SHORT" }), // fails VisorRowSchema (vin below min length)
+          visorRow({ vin: "5NMJFCDE8RH000099", dealerName: null }), // valid shape, no dealer
+        ]),
+      ]),
+      harnessGenerate: harnessNeverCalled,
+    });
+    const { result } = await startRun("agg-visor-bypass-2");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as Record<string, unknown>;
+    expect(out["rowsInvalidDropped"]).toBe(1);
+    expect(out["droppedNoDealer"]).toBe(1);
+    expect(out["listingsFound"]).toBe(1);
+  });
+
+  it("a non-empty capture whose rows are ALL Zod-invalid flips that site's row to failed collector_drift (never an empty market)", async () => {
+    seedProfile();
+    __setAggregatorScanDepsForTests({
+      scanAggregators: scanStub({ calls: [] }, [
+        visorScannedOutcome([visorRow({ vin: "TOO_SHORT" }), visorRow({ vin: "ALSO_BAD" })]),
+      ]),
+      harnessGenerate: harnessNeverCalled,
+    });
+    const { result } = await startRun("agg-visor-drift-1");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as Record<string, unknown>;
+    const perSite = out["per_site"] as {
+      site_id: string;
+      status: string;
+      listing_count: number;
+      error: string | null;
+    }[];
+    const visorEntry = perSite.find((s) => s.site_id === "visor_vin")!;
+    expect(visorEntry.status).toBe("failed");
+    expect(visorEntry.error).toBe("collector_drift");
+    expect(visorEntry.listing_count).toBe(0);
+    expect(out["summary"]).toContain("visor.vin: the site changed its page layout");
+    expect(rowCount("inventory_listings")).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// workflow — per_site output (the pre-dedup per-site contribution tally)
+// ---------------------------------------------------------------------------
+
+describe("inventory_aggregator_scan — per_site output", () => {
+  it("returns one per_site entry per registry adapter, in registry order", async () => {
+    seedProfile();
+    const edmundsOutcome: AggregatorCaptureOutcome = {
+      siteId: "edmunds",
+      status: "blocked",
+      robotsDisallowed: true,
+      robotsDisallowedObserved: false,
+      srpUrl: "https://www.edmunds.com/inventory/srp.html?x",
+      cardCount: 0,
+      weave: "",
+      hrefs: [],
+      scalars: [],
+    };
+    const visorOutcome: AggregatorCaptureOutcome = {
+      siteId: "visor_vin",
+      status: "failed",
+      robotsDisallowed: false,
+      robotsDisallowedObserved: false,
+      srpUrl: "https://visor.vin/search/listings?x",
+      cardCount: 0,
+      error: "session_needed",
+      weave: "",
+      hrefs: [],
+      scalars: [],
+    };
+    __setAggregatorScanDepsForTests({
+      scanAggregators: scanStub({ calls: [] }, [scannedOutcome(), visorOutcome, edmundsOutcome]),
+      harnessGenerate: harnessStub([aggListing()]),
+    });
+    const { result } = await startRun("agg-persite-1");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    const out = result.result as Record<string, unknown>;
+    expect(out["per_site"]).toEqual([
+      { site_id: "cars_com", status: "scanned", listing_count: 1, error: null },
+      { site_id: "visor_vin", status: "failed", listing_count: 0, error: "session_needed" },
+      { site_id: "edmunds", status: "blocked", listing_count: 0, error: null },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // workflow — cross-site dedup reaches the (injected) persist closure in order
 // ---------------------------------------------------------------------------
 
@@ -828,8 +1226,8 @@ describe("inventory_aggregator_scan — scanAggregatorsImpl (injected site runne
         };
       },
     );
-    expect(outcomes.map((o) => o.siteId)).toEqual(["cars_com", "edmunds"]);
-    expect(seenSites.sort()).toEqual(["cars_com", "edmunds"]);
+    expect(outcomes.map((o) => o.siteId)).toEqual(["cars_com", "visor_vin", "edmunds"]);
+    expect(seenSites.sort()).toEqual(["cars_com", "edmunds", "visor_vin"]);
   });
 
   it("a throwing site degrades to a failed outcome, never kills the run", async () => {

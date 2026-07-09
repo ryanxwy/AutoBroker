@@ -22,9 +22,9 @@
 # RED (never a silent orphan).
 #
 # POLITENESS: this case does TWO shopping passes in one run — the dealer-site
-# scan (site_scan) AND the chained aggregator (Cars.com/Edmunds) pass. Like the
-# other live scan cases it is accepted-but-rotated (one run's worth of shopping
-# traffic is the politeness budget) and is NOT in regression-corpus.txt.
+# scan (site_scan) AND the chained aggregator (Cars.com/visor.vin/Edmunds) pass.
+# Like the other live scan cases it is accepted-but-rotated (one run's worth of
+# shopping traffic is the politeness budget) and is NOT in regression-corpus.txt.
 #
 # cost_and_time is REQUIRED on step 3 (extraction is an LLM phase). max_seconds =
 # 1800 is PER-STEP (the site_scan run); the chained_run anchor carries its OWN
