@@ -57,7 +57,7 @@ gate recorded FROM a live run, never a substitute within it.
 
 ## The reality model (research-grounded — do NOT regress to "cooperative")
 
-(Research grounding: `AutoBroker-dev-plan/ts-rebuild/20260622-email-negotiation-realism-research/`;
+(Research grounding: `AutoBroker-dev-plan/researches/finished/20260622-email-negotiation-realism-research/`;
 live-validated.) The dealer side MUST exhibit:
 
 1. **One dealer ≠ one contact.** A lead flows through a titled hierarchy:

@@ -26,7 +26,7 @@
 set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-PLAN_NEWDAY="$(git rev-parse --show-toplevel 2>/dev/null)/../AutoBroker-dev-plan/ts-rebuild/tools/new-day.sh"
+PLAN_NEWDAY="$(git rev-parse --show-toplevel 2>/dev/null)/../AutoBroker-dev-plan/tools/new-day.sh"
 TODAY="$(date +%Y-%m-%d)"
 
 # 1. harness export (best-effort; tolerate missing pnpm / script)
@@ -43,13 +43,13 @@ if [ -x "$PLAN_NEWDAY" ] \
   #    plan remote — NOT passive). Narrow-staged ($TODAY.html + index.html only),
   #    main-pinned, fail-fast push. Failures stay VISIBLE (no 2>/dev/null) so a
   #    stale index.lock / non-fast-forward surfaces; || true keeps the turn alive.
-  PLAN_REPO="$(cd "$(dirname "$PLAN_NEWDAY")/../.." 2>/dev/null && pwd)"
+  PLAN_REPO="$(cd "$(dirname "$PLAN_NEWDAY")/.." 2>/dev/null && pwd)"
   if [ -n "$PLAN_REPO" ] && [ -d "$PLAN_REPO/.git" ] \
     && [ "$(git -C "$PLAN_REPO" symbolic-ref --short -q HEAD 2>/dev/null)" = main ]; then
-    git -C "$PLAN_REPO" add -- "ts-rebuild/daily/$TODAY.html" "ts-rebuild/daily/index.html" || true
-    if ! git -C "$PLAN_REPO" diff --cached --quiet -- "ts-rebuild/daily/$TODAY.html" "ts-rebuild/daily/index.html"; then
+    git -C "$PLAN_REPO" add -- "daily/$TODAY.html" "daily/index.html" || true
+    if ! git -C "$PLAN_REPO" diff --cached --quiet -- "daily/$TODAY.html" "daily/index.html"; then
       git -C "$PLAN_REPO" commit -q -m "docs(daily): auto-sync $TODAY" \
-        -- "ts-rebuild/daily/$TODAY.html" "ts-rebuild/daily/index.html" || true
+        -- "daily/$TODAY.html" "daily/index.html" || true
       TO=""; command -v timeout  >/dev/null 2>&1 && TO="timeout 20"
       command -v gtimeout >/dev/null 2>&1 && TO="gtimeout 20"
       GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=5' GIT_TERMINAL_PROMPT=0 \

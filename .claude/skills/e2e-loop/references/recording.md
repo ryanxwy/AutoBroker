@@ -273,7 +273,7 @@ the local OAuth subscription — `$0` API-key cost (lane-independent).
 
 ## Step 6d — write the HTML report → plan repo
 
-Home: `~/vscode/AutoBroker/AutoBroker-dev-plan/ts-rebuild/live-e2e/<run-id>/` where
+Home: `~/vscode/AutoBroker/AutoBroker-dev-plan/live-e2e/<run-id>/` where
 `<run-id>` = `<YYYY-MM-DD>` for the day's first run, then `-run2`, `-run3`, … for same-day
 re-runs. Self-contained `index.html`, warm-paper ledger CSS, key sections 中文.
 
@@ -326,7 +326,7 @@ columns so the daily sync parses them mechanically: `技能 / Skill` · `provide
 
 ### The metadata line + ledger rebuild
 
-The ledger at `ts-rebuild/live-e2e/index.html` is auto-built — never hand-edit its rows.
+The ledger at `live-e2e/index.html` is auto-built — never hand-edit its rows.
 
 1. **E2E-META line** — one comment line right after `<head>`. ` | `-separated
    `key=value`, summary last; values must be free of `|`, `--`, and raw `< > &`. All 15
@@ -340,13 +340,13 @@ The ledger at `ts-rebuild/live-e2e/index.html` is auto-built — never hand-edit
      **`complete` | `partial` | `blocked`** (the journey outcome — `partial` = some step
      incomplete; `blocked` = an unworked safety blocker; the bucket counts live in
      `findings`).
-2. **Rebuild** — from `ts-rebuild/`, run `bash tools/build-e2e-index.sh`. It rescans every
+2. **Rebuild** — from the plan-repo root, run `bash tools/build-e2e-index.sh`. It rescans every
    report's E2E-META line and regenerates the reverse-chron ledger table (pure bash +
    python3, read-only on the code repo).
 
 ### Mirror backlog to the harvest-register
 
-Append each new backlog item to `ts-rebuild/live-e2e/harvest-register.md` — the cross-run
+Append each new backlog item to `live-e2e/harvest-register.md` — the cross-run
 accumulator `e2e-evolve` reads. Use **semantic dedup**: if the same buyer-value gap was
 recorded in a prior run, **bump its `recurrence`** rather than adding a duplicate row. The
 runner is the only actor that re-observes a gap live, so the **runner owns the recurrence
@@ -363,7 +363,7 @@ recurrence; `e2e-evolve` prioritizes, graduates, fixes, and clears.)
 ### Refresh the live-status box
 
 Replace (do not append) the single latest-run paragraph in the `CURRENT STATE (live)` box
-at the top of `ts-rebuild/index.html` with this run's (date, verdict, the bucket counts, a
+at the top of the root `index.html` with this run's (date, verdict, the bucket counts, a
 `Full report →` link to `live-e2e/<run-id>/index.html`). The box keeps only the newest
 run + the ledger link; the ledger is the canonical history.
 

@@ -11,8 +11,8 @@ or from the just-concluded discussion.
 ## Resolve paths
 
 - PLAN = `$(git rev-parse --show-toplevel)/../AutoBroker-dev-plan`
-- DECISIONS = `$PLAN/ts-rebuild/architecture/DECISIONS.md`
-- Today's daily report (if present) = `$PLAN/ts-rebuild/daily/$(date +%Y-%m-%d).html`
+- DECISIONS = `$PLAN/architecture/DECISIONS.md`
+- Today's daily report (if present) = `$PLAN/daily/$(date +%Y-%m-%d).html`
 
 ## Steps
 
@@ -36,7 +36,7 @@ or from the just-concluded discussion.
 
 ## Guardrails
 
-- Write only in the plan repo (`$PLAN/ts-rebuild/architecture/DECISIONS.md` and,
+- Write only in the plan repo (`$PLAN/architecture/DECISIONS.md` and,
   optionally, today's daily report). Never the code repo.
 - Markdown is canonical; do not regenerate any HTML mirror — flag it for a
   deliberate sync instead.

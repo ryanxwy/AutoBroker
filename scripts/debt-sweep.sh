@@ -46,19 +46,19 @@ else
   echo "  WARN: no regression report yet — run scripts/regression.sh"
 fi
 
-if [ -d "$PLAN/ts-rebuild" ]; then
-  echo "-- plan-repo round dirs not registered in ts-rebuild/index.html:"
+if [ -d "$PLAN/researches" ]; then
+  echo "-- plan-repo round dirs not registered in index.html:"
   found=0
-  for d in "$PLAN"/ts-rebuild/2026*/; do
+  for d in "$PLAN"/researches/*/2026*/; do
     name="$(basename "$d")"
-    if ! grep -q "$name" "$PLAN/ts-rebuild/index.html"; then
+    if ! grep -q "$name" "$PLAN/index.html"; then
       echo "  $name"
       found=1
     fi
   done
   [ "$found" = 0 ] && echo "  (none — index current)"
   echo "-- today's daily report:"
-  if [ -f "$PLAN/ts-rebuild/daily/$TODAY.html" ]; then
+  if [ -f "$PLAN/daily/$TODAY.html" ]; then
     echo "  present"
   else
     echo "  WARN: missing — run /daily-sync"

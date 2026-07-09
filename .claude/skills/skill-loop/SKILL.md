@@ -6,7 +6,7 @@ description: Drive one skill through the 7-step build loop (contract → determi
 You drive **one skill = one full loop** for the AutoBroker rebuild. The args
 name the skill (and optionally the phase / milestone, e.g.
 `/skill-loop inventory_site_scan B2`). Doctrine lives in the plan repo:
-`../AutoBroker-dev-plan/ts-rebuild/phases/SKILL_LOOP.html` + the current
+`../AutoBroker-dev-plan/phases/SKILL_LOOP.html` + the current
 `PHASE_<n>` page — read them, they win over this file on conflict.
 
 ## The one green signal
@@ -21,7 +21,7 @@ explicitly instead of silently retrying.
 
 ## Step ⓪ — fresh-context opening (every session, ~2 min)
 
-1. Read the latest `../AutoBroker-dev-plan/ts-rebuild/daily/*.html` — yesterday
+1. Read the latest `../AutoBroker-dev-plan/daily/*.html` — yesterday
    + planned next.
 2. Read the skill's ①–⑦ plan block in `PHASE_<n>` + `SKILL_LOOP.html`.
 3. `git log --oneline -20` in BOTH repos — prefixes are the narrative.

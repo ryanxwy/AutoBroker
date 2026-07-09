@@ -12,8 +12,8 @@ This is the deliberate counterpart to the passive Stop hook.
 
 - CODE = `git rev-parse --show-toplevel` (this repo)
 - PLAN = `$CODE/../AutoBroker-dev-plan`
-- DAILY = `$PLAN/ts-rebuild/daily`
-- NEWDAY = `$PLAN/ts-rebuild/tools/new-day.sh`
+- DAILY = `$PLAN/daily`
+- NEWDAY = `$PLAN/tools/new-day.sh`
 - DATE = today (`date +%Y-%m-%d`), unless the user passed one in args.
 
 ## Steps
@@ -35,7 +35,7 @@ This is the deliberate counterpart to the passive Stop hook.
 3. **Draft the human sections** (then let the user edit). Read this code repo's
    commits for the day (`git -C "$CODE" log --since="$DATE 00:00" --until="$DATE 23:59"`)
    and the current phase's `exitCriteria` from
-   `$PLAN/ts-rebuild/phases/PHASE_<n>_*.md`, and write:
+   `$PLAN/phases/PHASE_<n>_*.md`, and write:
    - **进展叙事** — which skill's 7-step loop advanced and to which step; blockers;
      the gap to the current phase's exitCriteria. (Optionally invoke the
      `burndown-scout` agent for the precise per-skill step state.)
@@ -47,7 +47,7 @@ This is the deliberate counterpart to the passive Stop hook.
      `PHASE_<n>` deliverable.
 
 4. **Rebuild the index** (`new-day.sh` already calls `build-index.sh`; if you
-   refreshed manually, run `"$PLAN/ts-rebuild/tools/build-index.sh"`).
+   refreshed manually, run `"$PLAN/tools/build-index.sh"`).
 
 5. **Present.** Show the drafted human sections and the refreshed machine tables
    for the user to edit. This skill itself does NOT commit. Note, however, that the
@@ -59,6 +59,6 @@ This is the deliberate counterpart to the passive Stop hook.
 
 ## Guardrails
 
-- Read-only on the code repo. Write only under `$PLAN/ts-rebuild/daily/`.
+- Read-only on the code repo. Write only under `$PLAN/daily/`.
 - Preserve any existing human narrative across a refresh (step 2).
 - Absolute dates `YYYY-MM-DD`. Keep the report self-contained (inline CSS).

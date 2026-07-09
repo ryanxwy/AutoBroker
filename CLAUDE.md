@@ -329,7 +329,7 @@ so the old `[fake-send]` commit-body marker is retired.)
   secondary where present); **this** repo is source-of-truth (runnable TS). The
   plan repo never writes into this repo, and this repo never holds long-form
   plan prose NOR design docs — **all design docs / ADRs live in the plan repo**
-  (`AutoBroker-dev-plan/ts-rebuild/architecture/`); the long-range phase order
+  (`AutoBroker-dev-plan/architecture/`); the long-range phase order
   and harness standard live there too.
 - The plan repo's `tools/new-day.sh` reads this repo's git log (bucketing by the
   `phaseN/<skill>:` prefix and the touched monorepo layer) plus the
@@ -360,6 +360,7 @@ destructive-action approval gates above still apply.
 `landing-changes` skill (`.claude/skills/landing-changes/`) to wrap up: it runs
 the git "definition of done" above AND a doc-freshness sweep — find every doc
 (this repo's `CLAUDE.md` / `.claude/skills/**` and the plan repo's
-`ts-rebuild/**` reports + ADRs + live-status box) that the change made stale, and
+`researches/**` rounds + pillar reports + ADRs + the live-status box in its root
+`index.html`) that the change made stale, and
 strip the stale data/discussion so docs reflect ONLY the latest code. A doc that
 contradicts the merged code is an unfinished task, not a finished one.

@@ -43,19 +43,19 @@ make_sandbox(){
   cp "$HOOK_SRC" "$code/.claude/hooks/sync-daily.sh"
   # deliberately NO package.json in $code -> hook step-1 pnpm export is skipped
 
-  mkdir -p "$plan/ts-rebuild/tools" "$plan/ts-rebuild/daily"
-  cat > "$plan/ts-rebuild/tools/new-day.sh" <<'STUB'
+  mkdir -p "$plan/tools" "$plan/daily"
+  cat > "$plan/tools/new-day.sh" <<'STUB'
 #!/usr/bin/env bash
 # stub new-day.sh: deterministically write a dated report + index into the plan
 # repo (no LLM, no real generation — just the two files the hook stages).
 set -uo pipefail
 DATE="$1"
-PLAN_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-printf '<html>daily report %s</html>\n' "$DATE" > "$PLAN_ROOT/ts-rebuild/daily/$DATE.html"
-printf '<html>rolling index</html>\n' > "$PLAN_ROOT/ts-rebuild/daily/index.html"
+PLAN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+printf '<html>daily report %s</html>\n' "$DATE" > "$PLAN_ROOT/daily/$DATE.html"
+printf '<html>rolling index</html>\n' > "$PLAN_ROOT/daily/index.html"
 exit 0
 STUB
-  chmod +x "$plan/ts-rebuild/tools/new-day.sh"
+  chmod +x "$plan/tools/new-day.sh"
   git -C "$plan" init -q -b main
   git -C "$plan" config user.email t@t; git -C "$plan" config user.name t
   git -C "$plan" add -A; git -C "$plan" commit -q -m "seed"
@@ -77,7 +77,7 @@ run_hook "$code"; rc=$?
 subj="$(git -C "$plan" log -1 --pretty=%s 2>/dev/null)"
 [ "$subj" = "docs(daily): auto-sync $TODAY" ] && pass "commit subject" || fail "subject: '$subj'"
 files="$(git -C "$plan" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ',')"
-exp="ts-rebuild/daily/$TODAY.html,ts-rebuild/daily/index.html,"
+exp="daily/$TODAY.html,daily/index.html,"
 [ "$files" = "$exp" ] && pass "only 2 daily files staged" || fail "files: '$files'"
 [ "$(git -C "$plan" rev-parse HEAD)" = "$(git -C "$plan" rev-parse origin/main 2>/dev/null)" ] \
   && pass "pushed to remote" || fail "remote not advanced"
@@ -88,12 +88,12 @@ exp="ts-rebuild/daily/$TODAY.html,ts-rebuild/daily/index.html,"
 # this exercises that path (not just the weaker untracked-file case).
 echo "c2 isolation"
 P="$(make_sandbox)"; code="$P/AutoBroker"; plan="$P/AutoBroker-dev-plan"
-echo junk > "$plan/ts-rebuild/other.txt"
-git -C "$plan" add ts-rebuild/other.txt
+echo junk > "$plan/other.txt"
+git -C "$plan" add other.txt
 run_hook "$code" >/dev/null 2>&1
 intree="$(git -C "$plan" diff-tree --no-commit-id --name-only -r HEAD | grep -c 'other.txt' || true)"
 [ "$intree" = 0 ] && pass "other.txt excluded from the auto-sync commit" || fail "other.txt leaked into commit"
-st="$(git -C "$plan" status --porcelain -- ts-rebuild/other.txt)"
+st="$(git -C "$plan" status --porcelain -- other.txt)"
 case "$st" in
   'A '*) pass "other.txt still staged + uncommitted (partial commit isolated it)";;
   *)     fail "other.txt status: '$st'";;

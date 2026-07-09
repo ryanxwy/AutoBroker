@@ -74,8 +74,8 @@ Do NOT just grep the new symbol's name. Work from what the change **invalidated*
 2. **Locate the docs that assert them.** Search BOTH repos for each fact (the old
    number, the old behavior phrase, the old name):
    - code repo: `CLAUDE.md`, `.claude/skills/**`, code comments, README.
-   - plan repo: `ts-rebuild/**` reports, `ts-rebuild/architecture/**` ADRs, the
-     `CURRENT STATE (live)` box in `ts-rebuild/index.html`.
+   - plan repo: `researches/**` rounds, `architecture/**` ADRs, the
+     `CURRENT STATE (live)` box in the root `index.html`.
 3. **Strip stale DATA.** Fix every number/claim the change invalidated (e.g. a
    "records ≤80" that is now 20; a cost figure; a "TODO: add X" for an X now
    shipped). A roughly-right old number is still wrong — fix it.
@@ -97,7 +97,7 @@ Do NOT just grep the new symbol's name. Work from what the change **invalidated*
 | merge to main | `git merge --ff-only <branch>` (never `--no-ff`) |
 | sync proof | `git rev-list --left-right --count HEAD...origin/main` → `0  0` |
 | stale-fact search | grep old number / old behavior phrase / old name across both repos |
-| plan-repo docs | `ts-rebuild/**` reports + `architecture/**` ADRs + live-status box |
+| plan-repo docs | `researches/**` rounds + `architecture/**` ADRs + live-status box |
 
 ## Common mistakes / red flags — STOP and finish
 

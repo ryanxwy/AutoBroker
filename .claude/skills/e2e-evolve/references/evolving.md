@@ -7,10 +7,10 @@ better runner. Loaded at steps 1, 2, 6, 7.
 
 Read, in this order:
 
-1. `ts-rebuild/live-e2e/harvest-register.md`'s **"Open blockers (handed off)"** section
+1. `live-e2e/harvest-register.md`'s **"Open blockers (handed off)"** section
    FIRST — these are the highest priority; carry every open blocker forward across sessions
    until it is fixed (a blocker never ages out of the worklist).
-2. The last few `ts-rebuild/live-e2e/<run-id>/index.html` reports — pull their **本轮发现**
+2. The last few `live-e2e/<run-id>/index.html` reports — pull their **本轮发现**
    sections (the three buckets) and any headline blocker.
 3. The rest of `harvest-register.md` — the cross-run backlog accumulator (open items + their
    recurrence counts + the realized-harvest tail). You **read** recurrence to prioritize and
@@ -112,9 +112,12 @@ do not merge a UI change that breaks the desktop bundle.
 ## Step 7 — record (evolve-report + write-back)
 
 - **Evolve-report** — a short self-contained HTML page under
-  `ts-rebuild/<date>-e2e-evolve/index.html` (warm-paper style, key sections 中文):
+  `researches/finished/<date>-e2e-evolve/index.html` (owner ruling 2026-07-09: new
+  rounds land directly in `finished/`; warm-paper style, key sections 中文):
   what was read, the ranked worklist, what shipped (with commits + live re-verify
   evidence), what was graduated, what changed in `/e2e-loop`, and the calibration two-liner.
+  Register the round in the master index: add it to the `#researches` section's Finished
+  group in the plan-repo root `index.html` (bump the group's count badge).
   Add a short **Seasoning coverage** section (step 6.5): the seasoned cases registered this
   session (with their spawning PIC/commit), the discovery pass's WINNER/HARDENER/DUD tally,
   and anything that GRADUATED DOWN.

@@ -3,7 +3,7 @@
 Loaded at step 3 (reused by `--light`). The spine owns the verdict rule and the 5
 control routes; this file owns the *detail*: where each skill renders, what gate to
 press, the order, and the live-only edges. The FULL matrix lives in the design doc
-(`ts-rebuild/20260617-e2e-loop-skill-conversion/`); here = must-exercise +
+(`researches/finished/20260617-e2e-loop-skill-conversion/`); here = must-exercise +
 no-coverage edges. Testids are harvested from `apps/ui/src` — if one drifts,
 re-harvest live (`grep data-testid`), don't trust a stale string.
 
