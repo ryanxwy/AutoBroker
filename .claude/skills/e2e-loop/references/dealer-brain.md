@@ -57,6 +57,12 @@ gate recorded FROM a live run, never a substitute within it.
 
 ## The reality model (research-grounded — do NOT regress to "cooperative")
 
+**Adding an archetype/persona to this model enters under the e2e-evolve golden rule — tier (b)**
+(`e2e-evolve/SKILL.md`, Guardrails): a citable real-world research finding or documented industry
+playbook IS the met case (the same evidentiary standard the archetype percentages below already
+use). Its PRODUCT-side consequence — a new verdict, handling branch, or extractor change — still
+needs **tier (a)**: a live case observed in a run or an existing PIC.
+
 (Research grounding: `AutoBroker-dev-plan/researches/finished/20260622-email-negotiation-realism-research/`;
 live-validated.) The dealer side MUST exhibit:
 

@@ -88,6 +88,15 @@ never left half-done.
   method ships without a met live case** — a merely-hypothesised failure mode is a *discovery*
   job (a seasoned candidate to go find it, `references/seasoning.md`), never
   pre-emptively-shipped code nor an "assert this someday" probe baked into the runner docs.
+  **"Met live case" has two tiers.** **(a) PRODUCT fallback / handling code** — unchanged:
+  it needs a live case the sim actually generated (or an owner-run live probe / an existing
+  PIC). **(b) dealer-brain / persona / archetype ADDITIONS to the sim** — a citable real-world
+  research finding or documented industry playbook IS the met case (the same evidentiary
+  standard `e2e-loop/references/dealer-brain.md`'s 2026-06-22 reality model already uses for
+  its archetype percentages). Tier (b) grows the SIM only — it NEVER authorizes product code.
+  Ordering is fixed: **research citation → sim archetype ships → a live run observes the
+  product's ACTUAL behavior → THAT observation is the tier-(a) met case** for any product
+  change the archetype provokes.
 - **Never** set `AUTOBROKER_TEST_AUTO_APPROVE`; never touch a production DB; isolated
   throwaway data-dir (CLAUDE.md inv #11). The 12 safety invariants hold — your fixes
   strengthen the floor, never lower it.

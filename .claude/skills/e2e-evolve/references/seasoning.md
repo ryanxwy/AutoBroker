@@ -53,6 +53,13 @@ input or dealer behavior, a falsifiable expected-outcome contract, the invariant
 stresses }`. Bias toward inputs a planted fixture cannot reproduce: live-LLM pages, live
 dealer replies, real buyer phrasing, cross-profile collisions.
 
+**Third candidate source (no generation — feeds the soak directly):** never-ran registry rows
+that carry a research citation but have never been exercised in a run — an archetype admitted
+to the sim under the golden rule's **tier (b)** (`e2e-evolve/SKILL.md`, Guardrails). These are
+already-cited candidates awaiting their FIRST live observation: soak drives one so the run
+observes the product's ACTUAL behavior, and THAT observation becomes the **tier-(a)** met live
+case for any product change the archetype provokes.
+
 ### (2) Soak — bounded, against a fresh serve-live
 
 Run the handful of candidates against a **fresh serve-live** (isolated tmp DB,
