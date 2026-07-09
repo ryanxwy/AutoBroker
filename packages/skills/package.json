@@ -2,7 +2,7 @@
   "name": "@autobroker/skills",
   "version": "0.0.0",
   "private": true,
-  "description": "The 17 AutoBroker skill definitions — the typed SkillDef registry (single cross-layer source of skill identity) plus a per-skill SKILL.md human doc. Pure data + types: imports no framework, so both the server and the UI can consume it.",
+  "description": "The 18 AutoBroker skill definitions — the typed SkillDef registry (single cross-layer source of skill identity) plus a per-skill SKILL.md human doc. Pure data + types: imports no framework, so both the server and the UI can consume it.",
   "type": "module",
   "exports": {
     ".": {

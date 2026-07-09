@@ -8,7 +8,7 @@
 #   packages/tools      — Gmail / browser / DB / calc / validators (only layer
 #                         that touches product DB or external APIs)
 #   packages/db         — Drizzle schema + better-sqlite3 connection
-#   packages/skills     — the 17 skill definitions (built one-at-a-time by risk)
+#   packages/skills     — the 18 skill definitions (built one-at-a-time by risk)
 #   apps/server         — backend HTTP + SSE skill-run stream
 #   apps/ui             — React/Vite + AI SDK UI chat rail
 #   apps/desktop        — Electron shell (Phase 6 placeholder)

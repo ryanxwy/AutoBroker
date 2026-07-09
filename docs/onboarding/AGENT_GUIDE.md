@@ -78,7 +78,11 @@ agent.
 
 The Settings panel lives at the `/settings` route. Reach it by clicking the
 **Settings** button (`data-testid="topbar-settings"`) in the top bar. The
-panel (`data-testid="settings-page"`) renders four key rows and a Gmail card.
+panel (`data-testid="settings-page"`) renders **five** key rows (DeepSeek, Google
+Places, Anthropic, OpenAI, and Claude subscription (OAuth)) and a Gmail card. The
+Claude-subscription row (`key-row-claude_oauth`) is **presence-only** — it has no
+Test-connection button (`testKind: "none"`), so verify its presence and never
+trigger a probe for it (see Step 3b).
 
 ---
 
@@ -197,6 +201,23 @@ the `driver_kind` in the SSE `init` frame matches the expected provider.
 
 ---
 
+## Step 3b — Claude subscription (OAuth), presence-only (optional)
+
+A fifth Settings row, **Claude subscription (OAuth)**
+(`data-testid="key-row-claude_oauth"`), is backed by `CLAUDE_CODE_OAUTH_TOKEN`. It
+lets the chat-rail AgentBar run Claude on the user's Pro/Max **subscription**
+(lane B, via Anthropic's Agent SDK) instead of the per-token `ANTHROPIC_API_KEY`
+(lane A). Human steps: **[CREDENTIALS_SETUP.md §2b](CREDENTIALS_SETUP.md#claude-oauth)**
+— run `claude setup-token`, paste the token into the row, Save.
+
+This row is unique: **presence-only** (`testKind: "none"`), so it has **no
+Test-connection button** and the backend runs no probe. Verify only that the token
+is present — do **not** look for or trigger a `key-test-*` result for it. It is for
+personal, single-user use of the user's own token; a multi-user deployment must use
+`ANTHROPIC_API_KEY` instead.
+
+---
+
 ## Step 4 — Gmail (required for the email pipeline)
 
 The Gmail **backend is fully shipped and live**: a real loopback OAuth flow plus
@@ -301,7 +322,7 @@ authoritative, the refresh build performs no sends, and the relaunch is env-clea
 | Intake suspends at the location step with `GOOGLE_PLACES_API_KEY is not set` | No Google Places key configured | Complete Step 2 |
 | `key-test-result-google_places` shows `data-state="fail"` | Wrong key or Geocoding API not enabled | Check the GCP project and re-paste |
 | `pnpm install` fails (engine-strict) | Node.js < 24.13.0 or pnpm < 9 | Install Node >= 24.13.0 (`nvm install 24.13` — `.nvmrc` pins only `24`) + pnpm 9, then retry. `pnpm doctor` pinpoints which. |
-| Backend banner (`data-testid="backend-banner"`) visible | Server not running or unreachable | Start the server with `pnpm -F @autobroker/server start` |
+| Backend banner (`data-testid="backend-banner"`) visible | Server not running or unreachable | Build (`pnpm --filter @autobroker/server build`) then run `node apps/server/dist/index.js` — there is no `start` script (see Step 3 / line 51). `pnpm demo` boots the seeded demo the same way. |
 
 ---
 

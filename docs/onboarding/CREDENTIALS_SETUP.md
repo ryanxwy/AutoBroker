@@ -29,6 +29,7 @@ itself.
 | Credential | Required? | What it unlocks |
 |---|---|---|
 | **DeepSeek** *or* Anthropic *or* OpenAI | **One is required** | The LLM that drives extraction/negotiation. DeepSeek is the default. |
+| **Claude subscription (OAuth)** | Optional | Run Claude on your Pro/Max subscription instead of a per-token API key (§2b). |
 | **Google Places (Geocoding)** | Required for dealer search | Turns your city/zip into coordinates so `dealer_geosearch` can run. |
 | **Gmail OAuth** | Required for the email pipeline | Reading dealer replies and (in `buyer` mode) sending. |
 
@@ -94,6 +95,37 @@ empty if you want to use Anthropic exclusively.
 
 **Verify:** `key-test-result-anthropic` shows `pass`; after a skill run the
 `driver_kind` in the SSE `init` frame matches Anthropic.
+
+---
+
+## 2b. Claude on your Pro/Max subscription (OAuth, optional)  <a id="claude-oauth"></a>
+
+An alternative to the per-token Anthropic **API key** (§2): run Claude on your
+existing **Pro/Max subscription** instead of paying per token. This uses
+Anthropic's official Agent SDK on a subscription **OAuth token**, selectable as
+**Claude · OAuth** in the chat-rail AgentBar. It is for **personal, single-user**
+use of *your own* token — a multi-user deployment must use the API key (§2).
+
+**Get it:** run the Claude Code setup command and copy the token it prints (a
+long-lived string):
+
+```bash
+claude setup-token
+```
+
+**Install it:** Settings → **Claude subscription (OAuth)** row
+(`key-row-claude_oauth`) → paste the token → **Save**. This row is
+**presence-only**: it has **no Test-connection button** (there is nothing to
+probe — the token is exercised on first use, not validated by a network call), so
+don't wait for a "Connected" result.
+
+**Verify:** the row shows the token is set, and **Claude · OAuth** becomes
+selectable in the AgentBar. Subscription usage is flat-rate — the cost ledger
+records it as `subscription`, not a per-call dollar amount.
+
+> Backed by the `CLAUDE_CODE_OAUTH_TOKEN` environment variable. Privacy: this
+> routes your Gmail content / dealer PII to Anthropic (US) — a stronger posture
+> than the DeepSeek default (PRC).
 
 ---
 

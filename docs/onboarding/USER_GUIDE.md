@@ -159,7 +159,7 @@ stays authoritative. The refresh build performs no sends and the relaunch is env
 | "Connected" on test but the Setup notice is still visible | You haven't clicked Save yet | Click Save in the DeepSeek row |
 | Skills menu shows a lock message ("Add your DeepSeek key in Settings first") | No DeepSeek key is saved | Follow the "Adding your DeepSeek key" steps above |
 | Search gets stuck at the location step | Google Maps key is missing or wrong | Follow the "Adding your Google Maps key" steps above |
-| The app shows a red "Backend unreachable" banner | The server isn't running | Start the server (`pnpm -F @autobroker/server start` from the repo folder) |
+| The app shows a red "Backend unreachable" banner | The server isn't running | Start the server: build once with `pnpm --filter @autobroker/server build`, then run `node apps/server/dist/index.js` (or `pnpm demo` for the seeded demo). Run both from the repo folder. |
 
 ---
 

@@ -53,6 +53,15 @@ TypeScript project references and `dependency-cruiser` at CI time. Treat any new
 cross-layer import not already encoded in a package `tsconfig.json` as an
 architecture change.
 
+Check the wall yourself before pushing with `pnpm lint:deps` (it runs the same
+`dependency-cruiser` rules CI uses). Those rules also pin each framework to its
+owning layer — `ai`/`@ai-sdk/*` in `model`, `@mastra/*` in `workflows`,
+`drizzle-orm`/`better-sqlite3` in `db`, `playwright`/`@googleapis/*` in `tools` —
+so an import in the wrong package fails `lint:deps` even when the layer direction
+is legal. (`packages/db` and `packages/skills` sit beside the chain, and the
+`harness` package sits outside the wall, consuming the built `@autobroker/*`
+output read-only.)
+
 Commit message prefix convention: **`phaseN/<skill>:`** (e.g.
 `phase1/quote_audit:`). For general fixes, `fix:` or `chore:` are acceptable.
 The `feat:` prefix is rejected by the commit hook; use the phase/skill prefix
