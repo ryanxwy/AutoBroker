@@ -10,6 +10,7 @@ import {
   AGGREGATOR_ADAPTERS,
   buildCarsComUrl,
   buildEdmundsUrl,
+  buildVisorUrl,
   extractVinFromListingBlob,
   flattenCarsComBody,
   slugifyCarsComModel,
@@ -47,6 +48,17 @@ describe("URL builders", () => {
     const forbidden = /price|budget|trim|list_price/i;
     expect(forbidden.test(buildCarsComUrl(SLICE))).toBe(false);
     expect(forbidden.test(buildEdmundsUrl(SLICE))).toBe(false);
+    expect(forbidden.test(buildVisorUrl(SLICE))).toBe(false);
+  });
+
+  it("visor.vin SRP URL snapshot (JSON-quoted year/zip/radius, no trim/state param)", () => {
+    expect(
+      buildVisorUrl({ make: "Toyota", model: "RAV4", year: 2026, zip: "98052", radiusMiles: 50 }),
+    ).toBe(
+      "https://visor.vin/search/listings?make=Toyota&model=RAV4&car_type=new" +
+        "&year=%222026%22&geo_origin_kind=postal_code&geo_origin_value=%2298052%22" +
+        "&geo_mode=radius&geo_distance_value=%2250%22&geo_distance_unit=mi",
+    );
   });
 });
 
@@ -124,12 +136,22 @@ describe("extractVinFromListingBlob", () => {
 });
 
 describe("AGGREGATOR_ADAPTERS registry", () => {
-  it("orders the launch adapters [cars_com, edmunds] (dedup priority) and excludes iSeeCars", () => {
-    expect(AGGREGATOR_ADAPTERS.map((a) => a.siteId)).toEqual(["cars_com", "edmunds"]);
+  it("orders the adapters [cars_com, visor_vin, edmunds] (dedup priority) and excludes iSeeCars", () => {
+    expect(AGGREGATOR_ADAPTERS.map((a) => a.siteId)).toEqual(["cars_com", "visor_vin", "edmunds"]);
   });
 
-  it("marks both launch sites robots-disallowed (compile-time constant)", () => {
-    expect(AGGREGATOR_ADAPTERS.every((a) => a.robotsDisallowed)).toBe(true);
+  it("marks cars.com and Edmunds robots-disallowed, visor.vin robots-allowed (compile-time constant)", () => {
+    expect(AGGREGATOR_ADAPTERS.find((a) => a.siteId === "cars_com")!.robotsDisallowed).toBe(true);
+    expect(AGGREGATOR_ADAPTERS.find((a) => a.siteId === "edmunds")!.robotsDisallowed).toBe(true);
+    expect(AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!.robotsDisallowed).toBe(false);
+  });
+
+  it("only visor_vin carries a persistentProfileKey (session posture per-site)", () => {
+    expect(AGGREGATOR_ADAPTERS.find((a) => a.siteId === "cars_com")!.persistentProfileKey).toBeNull();
+    expect(AGGREGATOR_ADAPTERS.find((a) => a.siteId === "edmunds")!.persistentProfileKey).toBeNull();
+    expect(AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!.persistentProfileKey).toBe(
+      "aggregator/visor_vin",
+    );
   });
 });
 
@@ -151,6 +173,7 @@ describe("cars_com collect() (self-contained, stubbed page)", () => {
     });
 
     const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "cars_com")!.collect();
+    if (collected.kind !== "cards") throw new Error("expected kind: cards");
 
     expect(collected.cards).toHaveLength(2); // ad module dropped
     expect(collected.scalars).toEqual([
@@ -222,6 +245,7 @@ describe("edmunds collect() (self-contained, stubbed page)", () => {
     vi.stubGlobal("EDM", { preloadedState: edmundsState });
 
     const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "edmunds")!.collect();
+    if (collected.kind !== "cards") throw new Error("expected kind: cards");
 
     expect(collected.scalars).toEqual([
       { vin: "5J6RS6H91TL027406", dealerName: "Lynnwood Honda" },
@@ -243,6 +267,7 @@ describe("edmunds collect() (self-contained, stubbed page)", () => {
     vi.stubGlobal("EDM", { preloadedState: edmundsState });
 
     const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "edmunds")!.collect();
+    if (collected.kind !== "cards") throw new Error("expected kind: cards");
     expect(collected.appliedLocation).toBe("98021");
   });
 
@@ -254,6 +279,7 @@ describe("edmunds collect() (self-contained, stubbed page)", () => {
     });
 
     const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "edmunds")!.collect();
+    if (collected.kind !== "cards") throw new Error("expected kind: cards");
     expect(collected.appliedLocation).toBe("Near Bothell, WA");
   });
 
@@ -263,8 +289,98 @@ describe("edmunds collect() (self-contained, stubbed page)", () => {
     vi.stubGlobal("EDM", {});
 
     const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "edmunds")!.collect();
+    if (collected.kind !== "cards") throw new Error("expected kind: cards");
     expect(collected.cards).toEqual([]);
     expect(collected.scalars).toEqual([]);
     expect(collected.appliedLocation).toBe("Near Bothell, WA");
+  });
+});
+
+describe("visor_vin collect() (self-contained, stubbed page)", () => {
+  const visorRow = {
+    vin: "2T36CRAV9TC331812",
+    year: 2026,
+    make: "Toyota",
+    model: "RAV4",
+    trim: "XLE",
+    price: 45799,
+    dealerName: "Swickard Toyota",
+    vdpUrl: "https://www.swickardtoyota.com/auto/new-2026-toyota-rav4/123",
+  };
+
+  function stubRouter(a: { queryKey: unknown[]; status?: string; pages?: unknown[] }): void {
+    const listingsQuery = {
+      queryKey: a.queryKey,
+      state: { status: a.status ?? "success", data: { pages: a.pages ?? [] } },
+    };
+    vi.stubGlobal("__TSR_ROUTER__", {
+      options: {
+        context: {
+          queryClient: {
+            getQueryCache: () => ({ getAll: () => [listingsQuery] }),
+          },
+        },
+      },
+    });
+  }
+
+  it("walks the query cache: returns rows, probe flags, total, and the location echo", () => {
+    stubRouter({
+      queryKey: [
+        "listings",
+        { geo_origin_zipcode: "98052", geo_distance_value: "50", year: "2026" },
+      ],
+      pages: [{ rows: [visorRow], total: 124 }],
+    });
+    vi.stubGlobal("document", { title: "RAV4 for sale", querySelector: () => null });
+
+    const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!.collect();
+    if (collected.kind !== "rows") throw new Error("expected kind: rows");
+
+    expect(collected.probe).toEqual({
+      routerFound: true,
+      queryClientFound: true,
+      listingsQueryFound: true,
+      queryStatus: "success",
+      total: 124,
+    });
+    expect(collected.rows).toHaveLength(1);
+    expect((collected.rows[0] as { vin: string }).vin).toBe("2T36CRAV9TC331812");
+    expect(collected.challenge).toEqual({ cfIframe: false, cfInput: false, interstitial: false });
+    expect(collected.echo).toEqual({ zip: "98052", radiusMiles: 50, year: 2026 });
+  });
+
+  it("strips JSON-quoted echo values (the site's own UI param shape)", () => {
+    stubRouter({
+      queryKey: ["listings", { geo_origin_value: '"98052"', geo_value: '"50"', year: '"2026"' }],
+      pages: [],
+    });
+    vi.stubGlobal("document", { title: "", querySelector: () => null });
+
+    const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!.collect();
+    if (collected.kind !== "rows") throw new Error("expected kind: rows");
+    expect(collected.echo).toEqual({ zip: "98052", radiusMiles: 50, year: 2026 });
+  });
+
+  it("detects a Turnstile challenge wall and reports honest false/null probe flags", () => {
+    vi.stubGlobal("document", {
+      title: "Just a moment...",
+      querySelector: (sel: string) =>
+        sel.includes("challenges.cloudflare.com") || sel.includes("cf-turnstile-response") ? {} : null,
+    });
+    // No __TSR_ROUTER__ global stubbed — a walled page never hydrates the cache.
+
+    const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!.collect();
+    if (collected.kind !== "rows") throw new Error("expected kind: rows");
+    expect(collected.probe).toEqual({
+      routerFound: false,
+      queryClientFound: false,
+      listingsQueryFound: false,
+      queryStatus: null,
+      total: null,
+    });
+    expect(collected.rows).toEqual([]);
+    expect(collected.challenge).toEqual({ cfIframe: true, cfInput: true, interstitial: true });
+    expect(collected.echo).toBeNull();
   });
 });

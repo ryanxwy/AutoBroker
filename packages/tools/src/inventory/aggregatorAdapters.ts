@@ -7,14 +7,16 @@
  * change here — never widened from anything observed at runtime (the
  * TRUSTED_TRIM_HOSTS positive-allowlist stance).
  *
- * Registry ORDER is the cross-site dedup priority: [cars.com, edmunds]. iSeeCars
- * is intentionally absent (its search path renders used cars for a new-inventory
- * request and carries no per-tile seller channel, so no adapter lands for it).
+ * Registry ORDER is the cross-site dedup priority: [cars.com, visor.vin, edmunds].
+ * iSeeCars is intentionally absent (its search path renders used cars for a
+ * new-inventory request and carries no per-tile seller channel, so no adapter
+ * lands for it).
  *
- * Both launch sites Disallow their SRP paths for generic crawlers; `robotsDisallowed`
- * is therefore a hard-coded `true` per adapter (recorded downstream, never derived
- * from a live robots fetch — a literal-prefix robots matcher cannot see the wildcard
- * SRP rule and would report false).
+ * `robotsDisallowed` is a hard-coded per-adapter constant (recorded downstream,
+ * never derived from a live robots fetch — a literal-prefix robots matcher cannot
+ * see a wildcard SRP rule and would report false): cars.com and Edmunds Disallow
+ * their SRP paths for generic crawlers (`true`); visor.vin's robots.txt reads
+ * "Allow: /" (`false`, read in-browser 2026-07-09).
  */
 
 /**
@@ -33,32 +35,61 @@ export interface AggregatorFilterSlice {
 }
 
 /**
- * What one adapter's in-page `collect` returns:
- *   - `cards`: one {text, href} per real vehicle tile, index-aligned with `scalars`.
+ * What one adapter's in-page `collect` returns — a two-arm discriminated union:
+ *   - `kind: "cards"` (cars.com, Edmunds): a card+scalar-per-tile LLM-extraction feed.
+ *     `cards[]`: one {text, href} per real vehicle tile, index-aligned with `scalars`.
  *     `text` is the flattened tile copy the extractor reads; `href` is the tile's
  *     own vehicle-detail URL (absolute), or "" when the tile exposes none.
- *   - `scalars`: the deterministic per-tile facts read straight from the site's
+ *     `scalars[]`: the deterministic per-tile facts read straight from the site's
  *     embedded state (never the LLM): the tile's VIN and, where the site carries it
  *     in structured data, the dealer name. Joined to extracted rows post-emit.
- *   - `appliedLocation`: the most precise applied-search-location signal the page
+ *     `appliedLocation`: the most precise applied-search-location signal the page
  *     exposes (a ZIP when available, else a human-readable location line), or null.
  *     The workflow compares it to the requested ZIP to catch a site that silently
  *     ignored the location and searched a different metro.
+ *   - `kind: "rows"` (visor.vin): a pre-structured, deterministic row feed — no LLM
+ *     extraction step reads these. `probe` records how the in-page react-query cache
+ *     walk went (each step is guarded; a false flag pinpoints where a drifted page
+ *     stopped yielding data). `rows` are pruned page rows, untrusted until Zod
+ *     validates them (see visorMap.ts). `challenge` records Cloudflare Turnstile
+ *     markers seen on the page. `echo` is what the page's OWN listings query
+ *     actually searched (zip/radius/year), read back for the location-echo gate.
  */
-export interface AggregatorCollected {
+export interface AggregatorCollectedCards {
+  kind: "cards";
   cards: { text: string; href: string }[];
   scalars: { vin: string; dealerName: string | null }[];
   appliedLocation: string | null;
 }
+export interface AggregatorCollectedRows {
+  kind: "rows";
+  probe: {
+    routerFound: boolean;
+    queryClientFound: boolean;
+    listingsQueryFound: boolean;
+    queryStatus: string | null;
+    total: number | null;
+  };
+  /** Pruned page rows — untrusted until Zod (visorMap.ts) validates them. */
+  rows: unknown[];
+  challenge: { cfIframe: boolean; cfInput: boolean; interstitial: boolean };
+  /** What the page's own listings query ACTUALLY searched (echo-gate input). */
+  echo: { zip: string | null; radiusMiles: number | null; year: number | null } | null;
+}
+export type AggregatorCollected = AggregatorCollectedCards | AggregatorCollectedRows;
 
 /** One aggregator site. `collect` MUST be a self-contained serializable function
  *  (it runs inside the page via page.evaluate; module-scope references do not
  *  exist after serialization). */
 export interface AggregatorAdapter {
-  siteId: "cars_com" | "edmunds";
+  siteId: "cars_com" | "edmunds" | "visor_vin";
   host: string;
   label: string;
   robotsDisallowed: boolean;
+  /** Compile-time session posture: a `resolvePersistentProfileDir` key when this
+   *  site needs a warmed, challenge-cleared browser profile to load reliably, else
+   *  null. Per-site, not global — evidence-backed per adapter (see registry). */
+  persistentProfileKey: string | null;
   buildSrpUrl(slice: AggregatorFilterSlice): string;
   collect: () => AggregatorCollected;
 }
@@ -120,6 +151,26 @@ export function buildEdmundsUrl(slice: AggregatorFilterSlice): string {
   params.set("radius", String(slice.radiusMiles));
   params.set("zip", slice.zip);
   return `https://www.edmunds.com/inventory/srp.html?${params.toString()}`;
+}
+
+/** Build the visor.vin new-inventory SRP URL from the closed slice, matching the
+ *  site's OWN UI URL shape: the string-typed search params (`year`,
+ *  `geo_origin_value`, `geo_distance_value`) are JSON-quoted literal strings (e.g.
+ *  `year=%222026%22`) the way the site's own filter UI emits them.
+ *  NO trim param, NO state param — trim never reaches a URL (existing red line);
+ *  visor's own trim vocabulary is coarse and this dodges that risk entirely. */
+export function buildVisorUrl(slice: AggregatorFilterSlice): string {
+  const params = new URLSearchParams();
+  params.set("make", slice.make);
+  params.set("model", slice.model);
+  params.set("car_type", "new");
+  params.set("year", JSON.stringify(String(slice.year)));
+  params.set("geo_origin_kind", "postal_code");
+  params.set("geo_origin_value", JSON.stringify(slice.zip));
+  params.set("geo_mode", "radius");
+  params.set("geo_distance_value", JSON.stringify(String(slice.radiusMiles)));
+  params.set("geo_distance_unit", "mi");
+  return `https://visor.vin/search/listings?${params.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +253,12 @@ export function extractVinFromListingBlob(listing: unknown): string | null {
  *  the card text itself, so the scalar dealer name is null; the location is honored
  *  in probes, so `appliedLocation` is null. Self-contained. */
 function collectCarsCom(): AggregatorCollected {
-  const out: AggregatorCollected = { cards: [], scalars: [], appliedLocation: null };
+  const out: AggregatorCollectedCards = {
+    kind: "cards",
+    cards: [],
+    scalars: [],
+    appliedLocation: null,
+  };
   const g = globalThis as {
     document?: { getElementById(id: string): { textContent: string | null } | null };
     location?: { origin?: string };
@@ -302,7 +358,12 @@ function collectCarsCom(): AggregatorCollected {
  *  so the workflow can fail the site when it ignored the requested location.
  *  Self-contained. */
 function collectEdmunds(): AggregatorCollected {
-  const out: AggregatorCollected = { cards: [], scalars: [], appliedLocation: null };
+  const out: AggregatorCollectedCards = {
+    kind: "cards",
+    cards: [],
+    scalars: [],
+    appliedLocation: null,
+  };
   const g = globalThis as {
     document?: {
       querySelector(
@@ -388,6 +449,134 @@ function collectEdmunds(): AggregatorCollected {
   return out;
 }
 
+/** visor.vin collector: reads the TanStack-Start react-query cache the SSR page
+ *  hydrates — `window.__TSR_ROUTER__.options.context.queryClient`'s query whose
+ *  `queryKey[0] === "listings"` — the deterministic source (DOM tiles carry no
+ *  dealer name and link only to visor's own VDP, never the dealer's site). Every
+ *  probe step is individually guarded (missing/renamed field → a false/null
+ *  probe flag, never a throw) and the whole walk sits behind a try/catch as a
+ *  final backstop against page drift. Challenge markers detect a Cloudflare
+ *  Turnstile interstitial; `echo` reports what the page's own listings query
+ *  actually searched, for the location-echo gate. Self-contained. */
+function collectVisor(): AggregatorCollected {
+  const g = globalThis as {
+    document?: { title?: string; querySelector(sel: string): unknown };
+  };
+  const doc = g.document;
+  const cfIframe =
+    doc !== undefined &&
+    doc.querySelector('iframe[src*="challenges.cloudflare.com"]') !== null;
+  const cfInput =
+    doc !== undefined && doc.querySelector('input[name="cf-turnstile-response"]') !== null;
+  const interstitial =
+    doc !== undefined && typeof doc.title === "string" && /^just a moment/i.test(doc.title);
+  const challenge = { cfIframe, cfInput, interstitial };
+
+  const asObj = (v: unknown): Record<string, unknown> | null =>
+    v !== null && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  const stripQuotes = (s: string): string =>
+    s.length >= 2 && s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1) : s;
+
+  let routerFound = false;
+  let queryClientFound = false;
+  let listingsQueryFound = false;
+  let queryStatus: string | null = null;
+  let total: number | null = null;
+  const rows: unknown[] = [];
+  let echo: { zip: string | null; radiusMiles: number | null; year: number | null } | null = null;
+
+  try {
+    const w = globalThis as Record<string, unknown>;
+    const router = asObj(w.__TSR_ROUTER__);
+    routerFound = router !== null;
+    const options = router !== null ? asObj(router.options) : null;
+    const context = options !== null ? asObj(options.context) : null;
+    const queryClient = context !== null ? asObj(context.queryClient) : null;
+    const cache =
+      queryClient !== null && typeof queryClient.getQueryCache === "function"
+        ? asObj((queryClient.getQueryCache as () => unknown)())
+        : null;
+    queryClientFound = cache !== null;
+    const allRaw =
+      cache !== null && typeof cache.getAll === "function"
+        ? (cache.getAll as () => unknown)()
+        : [];
+    const all = Array.isArray(allRaw) ? allRaw : [];
+    const listingsQuery = asObj(
+      all.find((x) => {
+        const rec = asObj(x);
+        return rec !== null && Array.isArray(rec.queryKey) && rec.queryKey[0] === "listings";
+      }),
+    );
+    listingsQueryFound = listingsQuery !== null;
+
+    const state = listingsQuery !== null ? asObj(listingsQuery.state) : null;
+    queryStatus = state !== null && typeof state.status === "string" ? state.status : null;
+    const data = state !== null ? asObj(state.data) : null;
+    const pages = data !== null && Array.isArray(data.pages) ? data.pages : [];
+    const firstPage = asObj(pages[0]);
+    total = firstPage !== null && typeof firstPage.total === "number" ? firstPage.total : null;
+
+    for (const page of pages) {
+      const pageObj = asObj(page);
+      const pageRows = pageObj !== null && Array.isArray(pageObj.rows) ? pageObj.rows : [];
+      for (const r of pageRows) {
+        const rec = asObj(r);
+        if (rec === null) continue;
+        rows.push({
+          vin: rec.vin,
+          year: rec.year,
+          make: rec.make,
+          model: rec.model,
+          trim: rec.trim,
+          price: rec.price,
+          miles: rec.miles,
+          exteriorColor: rec.exteriorColor,
+          state: rec.state,
+          city: rec.city,
+          latitude: rec.latitude,
+          longitude: rec.longitude,
+          dealerName: rec.dealerName,
+          dealerId: rec.dealerId,
+          stockNumber: rec.stockNumber,
+          vdpUrl: rec.vdpUrl,
+          inventoryType: rec.inventoryType,
+        });
+      }
+    }
+
+    const queryKey =
+      listingsQuery !== null && Array.isArray(listingsQuery.queryKey) ? listingsQuery.queryKey : [];
+    const keyArg = asObj(queryKey[1]);
+    if (keyArg !== null) {
+      const zipRaw = keyArg.geo_origin_zipcode ?? keyArg.geo_origin_value;
+      const zip = zipRaw === null || zipRaw === undefined ? null : stripQuotes(String(zipRaw));
+      const radiusRaw = keyArg.geo_distance_value ?? keyArg.geo_value;
+      const radiusNum =
+        radiusRaw === null || radiusRaw === undefined ? NaN : Number(stripQuotes(String(radiusRaw)));
+      const yearRaw = keyArg.year;
+      const yearNum =
+        yearRaw === null || yearRaw === undefined ? NaN : Number(stripQuotes(String(yearRaw)));
+      echo = {
+        zip,
+        radiusMiles: Number.isNaN(radiusNum) ? null : radiusNum,
+        year: Number.isNaN(yearNum) ? null : yearNum,
+      };
+    }
+  } catch {
+    // Page drift mid-walk: fall back to whatever was already resolved above —
+    // the probe flags and outcome mapping downstream classify this honestly.
+  }
+
+  return {
+    kind: "rows",
+    probe: { routerFound, queryClientFound, listingsQueryFound, queryStatus, total },
+    rows,
+    challenge,
+    echo,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The registry. Order IS the cross-site dedup priority.
 // ---------------------------------------------------------------------------
@@ -398,14 +587,31 @@ export const AGGREGATOR_ADAPTERS: readonly AggregatorAdapter[] = [
     host: "www.cars.com",
     label: "Cars.com",
     robotsDisallowed: true,
+    // Loads reliably on fresh headed profiles (2026-07-09 probes); no met case
+    // for a warmed profile.
+    persistentProfileKey: null,
     buildSrpUrl: buildCarsComUrl,
     collect: collectCarsCom,
+  },
+  {
+    siteId: "visor_vin",
+    host: "visor.vin",
+    label: "visor.vin",
+    robotsDisallowed: false, // robots.txt reads "Allow: /" — 2026-07-09 in-browser read
+    // freeway data plane requires a challenge-cleared session; the human passes
+    // Turnstile once in this profile and scans reuse it.
+    persistentProfileKey: "aggregator/visor_vin",
+    buildSrpUrl: buildVisorUrl,
+    collect: collectVisor,
   },
   {
     siteId: "edmunds",
     host: "www.edmunds.com",
     label: "Edmunds",
     robotsDisallowed: true,
+    // Akamai bm_* cookies persist the bot verdict across runs — a warmed profile
+    // makes Edmunds strictly worse (2026-07-09 probe).
+    persistentProfileKey: null,
     buildSrpUrl: buildEdmundsUrl,
     collect: collectEdmunds,
   },

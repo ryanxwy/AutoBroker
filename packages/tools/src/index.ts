@@ -294,11 +294,20 @@ export {
   AGGREGATOR_ADAPTERS,
   buildCarsComUrl,
   buildEdmundsUrl,
+  buildVisorUrl,
   slugifyCarsComModel,
   type AggregatorAdapter,
   type AggregatorCollected,
+  type AggregatorCollectedCards,
+  type AggregatorCollectedRows,
   type AggregatorFilterSlice,
 } from "./inventory/aggregatorAdapters.js";
+export {
+  VisorRowSchema,
+  mapVisorStructuredRows,
+  type VisorMapResult,
+  type VisorProfileCoords,
+} from "./inventory/visorMap.js";
 export {
   readInventoryChangesSince,
   emitInventoryPriceChange,
