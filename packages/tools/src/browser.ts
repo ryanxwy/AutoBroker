@@ -4,13 +4,21 @@
  * lives in packages/tools alone; workflows/app reach the web only through this
  * surface).
  *
- * ENGINE — always throwaway, never the user's Chrome profile:
- *   - headless (product default): `chromium.launch()` + an incognito-style
- *     `newContext({serviceWorkers:"block"})` — no profile directory on disk.
- *   - headed (debug): `launchPersistentContext` over a FRESH mkdtemp dir under
- *     os.tmpdir(), removed unconditionally in `finally`. Temp profile dirs
- *     accumulate fast when debugging (one per launch), so cleanup must never
- *     be conditional on the happy path.
+ * ENGINE — never the USER's real Chrome profile:
+ *   - ephemeral by default: headless (product default) uses `chromium.launch()`
+ *     + an incognito-style `newContext({serviceWorkers:"block"})` — no profile
+ *     directory on disk; headed (debug) uses `launchPersistentContext` over a
+ *     FRESH mkdtemp dir under os.tmpdir(), removed unconditionally in
+ *     `finally`. Temp profile dirs accumulate fast when debugging (one per
+ *     launch), so cleanup must never be conditional on the happy path.
+ *   - persistent (opt-in, `persistentProfileKey` only): a stable,
+ *     AutoBroker-OWNED profile dir under ~/.autobroker-ts/browser-profiles —
+ *     headed-only (refused before any launch if headless resolves true, since
+ *     a human must be able to see and pass a site challenge), NEVER rm'd, and
+ *     an ANONYMOUS challenge-cleared session only (launch-time hygiene purges
+ *     any Google identity cookies that leak in). Code may DETECT a challenge
+ *     widget for classification only — locating/clicking/solving one, or
+ *     waiting beyond the caller's bounded settle window, is out of bounds.
  *   An isolation denylist additionally STOPS the session cold if a personal
  *   page (Gmail, Google account, chrome:// internals) ever appears in the
  *   controlled browser — that smell means we are somehow inside a real profile.
@@ -208,6 +216,14 @@ export interface BrowserContextOptions {
    *  teardown (incl. browser.close()). A caller wraps this with a per-call deadline so
    *  one slow/hung site can never leave a Chromium process (and its FDs) leaked. */
   signal?: AbortSignal;
+  /**
+   * Opt-in stable AutoBroker-OWNED profile, keyed (never a path — resolved via
+   * `resolvePersistentProfileDir`). Requires headed: if resolved `headless`
+   * is true, `withBrowserContext` throws `PersistentProfileRefusedError`
+   * before any launch. The profile dir is created if missing and is NEVER
+   * removed — it is an anonymous, challenge-cleared session only.
+   */
+  persistentProfileKey?: string;
 }
 
 export interface DealerLeadForm {
@@ -438,15 +454,103 @@ export async function ensureBrowserAcquired(
 }
 
 // ---------------------------------------------------------------------------
+// Persistent profile — the opt-in, AutoBroker-OWNED browser profile seam. See
+// the file header ENGINE paragraph for the doctrine this seam commits to.
+// ---------------------------------------------------------------------------
+
+export class PersistentProfileRefusedError extends Error {
+  constructor(why: string) {
+    super(`REFUSED persistent browser profile: ${why}`);
+    this.name = "PersistentProfileRefusedError";
+  }
+}
+
+/** Constrained key syntax: lowercase alnum, underscore, hyphen, forward slash
+ *  only — no uppercase, no spaces, no traversal. */
+const PERSISTENT_PROFILE_KEY_RE = /^[a-z0-9_/-]+$/;
+
+/**
+ * Resolve a persistent-profile KEY (never a caller-supplied path) to its
+ * on-disk directory. Pure; throws `PersistentProfileRefusedError` on any key
+ * that isn't the constrained shape (refuse loudly rather than resolve
+ * something unintended). The root is the SAME tilde-free construction as
+ * `defaultTracesDir` — hardcoded, no env knob (an env-configurable root would
+ * let a misconfigured env point this at an arbitrary directory).
+ */
+export function resolvePersistentProfileDir(key: string): string {
+  if (!PERSISTENT_PROFILE_KEY_RE.test(key) || key.includes("..") || key.startsWith("/")) {
+    throw new PersistentProfileRefusedError(
+      `"${key}" is not a valid profile key (expected /^[a-z0-9_/-]+$/, no ".." or leading "/")`,
+    );
+  }
+  return join(homedir(), ".autobroker-ts", "browser-profiles", key);
+}
+
+// Per-resolved-profileDir in-process mutex: two concurrent withBrowserContext
+// calls on the SAME persistent key must run strictly serially (a persistent
+// Chromium profile directory cannot be driven by two contexts at once).
+// Ephemeral sessions never touch this map. A module-level Promise<void> chain
+// per dir: each caller awaits the previous tail before running, and always
+// hands the next waiter a settled (never-rejecting) tail so one failed run
+// can't wedge the queue.
+const profileDirLocks = new Map<string, Promise<void>>();
+
+/** Run `fn` under the per-`dir` mutex; exported so the queuing/serialization
+ *  is unit-testable without a real browser. */
+export function withProfileDirLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const prev = profileDirLocks.get(dir) ?? Promise.resolve();
+  const result = prev.then(fn, fn);
+  profileDirLocks.set(
+    dir,
+    result.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return result;
+}
+
+/** Google identity-cookie domains: the apex plus accounts./mail. subdomains. */
+const GOOGLE_IDENTITY_COOKIE_DOMAIN_RE = /(^|\.)((accounts|mail)\.)?google\.com$/i;
+
+/**
+ * Launch-time identity hygiene for a persistent profile: purge any Google
+ * identity cookies that leaked into the warmed session (the profile is an
+ * ANONYMOUS challenge-cleared session only — "do NOT log into any account in
+ * this window" rides the voiced message). The installed Playwright's
+ * `clearCookies` supports a `{domain: RegExp}` filter (confirmed against the
+ * shipped playwright-core types), so only matching cookies are ever removed —
+ * never the whole warmed session. Best-effort: never throws.
+ */
+async function purgeIdentityCookies(
+  context: BrowserContext,
+  emitter: BrowserEmitter,
+): Promise<void> {
+  try {
+    const cookies = await context.cookies();
+    const matched = cookies.filter((c) => GOOGLE_IDENTITY_COOKIE_DOMAIN_RE.test(c.domain));
+    if (matched.length === 0) return;
+    await context.clearCookies({ domain: GOOGLE_IDENTITY_COOKIE_DOMAIN_RE });
+    emitter.action("profile_hygiene", `${matched.length} identity cookies purged`);
+  } catch {
+    // best-effort — identity hygiene never fails the launch
+  }
+}
+
+// ---------------------------------------------------------------------------
 // withBrowserContext — the lifecycle owner.
 // ---------------------------------------------------------------------------
 
 /**
- * Open a throwaway browser context for one run, hand the caller a
- * `BrowserSession`, and tear everything down in `finally` regardless of how
- * `fn` exits. Guarantees:
- *   - the user's real Chrome profile is never opened (ephemeral context, or a
- *     fresh temp profile dir for headed debug — removed unconditionally);
+ * Open a browser context for one run, hand the caller a `BrowserSession`, and
+ * tear everything down in `finally` regardless of how `fn` exits (except a
+ * persistent profile dir itself — see below). Guarantees:
+ *   - the user's real Chrome profile is NEVER opened: ephemeral by default (a
+ *     throwaway context, or a fresh temp profile dir for headed debug —
+ *     removed unconditionally), or, only when `opts.persistentProfileKey` is
+ *     passed, a stable AutoBroker-OWNED profile dir (headed-only — refused
+ *     BEFORE any launch if resolved `headless` is true) that is NEVER rm'd
+ *     and holds an anonymous, challenge-cleared session only;
  *   - `closed()` is emitted exactly when `opened()` was ever emitted;
  *   - cleanup never throws (each step is isolated, so a failed close cannot
  *     leak the next resource or mask `fn`'s own result/error).
@@ -459,106 +563,145 @@ export async function withBrowserContext<T>(
   const headless = opts.headless ?? process.env.AUTOBROKER_CHROME_HEADLESS !== "0";
   const emitter = opts.emitter ?? NULL_EMITTER;
   const tracesDir = opts.tracesDir ?? defaultTracesDir();
-  mkdirSync(tracesDir, { recursive: true });
 
-  const open = openedOnce(emitter);
-  let browser: Browser | null = null;
-  let context: BrowserContext | null = null;
-  let tempProfileDir: string | null = null;
-
-  try {
-    // Ensure the browser binary exists before launching. Present → instant
-    // no-op (launch behavior unchanged); absent → install-on-demand with
-    // progress voiced on the emitter, then launch into the freshly-cached
-    // binary. Both engines below need the same binary, so this guards both.
-    await ensureBrowserAcquired(emitter);
-
+  // Persistent-profile refusal happens BEFORE any launch (and before the
+  // browser-acquire check below) — a headless persistent session can never
+  // satisfy a human challenge, so there is nothing to launch into.
+  let persistentDir: string | null = null;
+  if (opts.persistentProfileKey !== undefined) {
     if (headless) {
-      // Product engine: ephemeral browser + incognito-style context. No profile
-      // directory exists on disk; nothing persists between sessions.
-      // channel:"chromium" = the NEW headless mode (the full browser binary,
-      // not the legacy headless shell) — its network fingerprint matches real
-      // Chrome, which measurably lowers first-request anti-bot refusals on
-      // dealer sites; the legacy shell announced itself at the TLS layer.
-      browser = await chromium.launch({ headless: true, channel: "chromium" });
-      context = await browser.newContext({ serviceWorkers: "block" });
-    } else {
-      // Headed debug engine: a persistent context needs a profile dir — give it
-      // a FRESH throwaway one under os.tmpdir(), never the user's real profile.
-      // Removed in the finally below: temp profiles leak one-per-launch when
-      // debugging, so removal must be unconditional.
-      tempProfileDir = mkdtempSync(join(tmpdir(), "autobroker-chromium-"));
-      context = await chromium.launchPersistentContext(tempProfileDir, {
-        headless: false,
-        serviceWorkers: "block",
-      });
+      throw new PersistentProfileRefusedError(
+        "a persistent profile session is headed by definition — a human must " +
+          "be able to see and pass a site challenge",
+      );
     }
-
-    // Abort → close the context so a per-call timeout actually frees the browser
-    // tree. Closing the context rejects any in-flight nav, `fn` settles, and the
-    // finally below runs full teardown (incl. browser.close()). Without this an
-    // un-deadlined hung nav never lets `fn` settle, so the finally never runs and
-    // the Chromium process + its FDs leak — the batch-submit hang root cause when
-    // many dealer sites are navigated at once.
-    if (opts.signal !== undefined) {
-      const ctx = context;
-      if (opts.signal.aborted) {
-        void ctx.close().catch(() => undefined);
-      } else {
-        opts.signal.addEventListener(
-          "abort",
-          () => void ctx.close().catch(() => undefined),
-          { once: true },
-        );
-      }
-    }
-
-    await context.tracing.start({ snapshots: true, screenshots: true });
-
-    const session = makeSession({ runId, context, emitter, open, tracesDir });
-    return await fn(session);
-  } catch (err) {
-    try {
-      emitter.error(err instanceof Error ? err.message : String(err));
-    } catch {
-      // a throwing emitter must not mask the original error
-    }
-    throw err;
-  } finally {
-    if (open.didOpen()) {
-      try {
-        emitter.closed();
-      } catch {
-        // cleanup never throws
-      }
-    }
-    if (context !== null) {
-      try {
-        await context.tracing.stop();
-      } catch {
-        // tracing may already be stopped / never started
-      }
-      try {
-        await context.close();
-      } catch {
-        // already closed (e.g. isolation hard-stop)
-      }
-    }
-    if (browser !== null) {
-      try {
-        await browser.close();
-      } catch {
-        // already closed
-      }
-    }
-    if (tempProfileDir !== null) {
-      try {
-        rmSync(tempProfileDir, { recursive: true, force: true });
-      } catch {
-        // best effort — never throw from cleanup
-      }
-    }
+    persistentDir = resolvePersistentProfileDir(opts.persistentProfileKey);
   }
+
+  const run = async (): Promise<T> => {
+    mkdirSync(tracesDir, { recursive: true });
+
+    const open = openedOnce(emitter);
+    let browser: Browser | null = null;
+    let context: BrowserContext | null = null;
+    let tempProfileDir: string | null = null;
+    let tracingStarted = false;
+
+    try {
+      // Ensure the browser binary exists before launching. Present → instant
+      // no-op (launch behavior unchanged); absent → install-on-demand with
+      // progress voiced on the emitter, then launch into the freshly-cached
+      // binary. All three engines below need the same binary, so this guards
+      // all of them.
+      await ensureBrowserAcquired(emitter);
+
+      if (persistentDir !== null) {
+        // Persistent engine: a stable, AutoBroker-OWNED profile dir. Created
+        // if missing; NEVER removed below — the whole point is a warmed,
+        // challenge-cleared session that survives across runs.
+        mkdirSync(persistentDir, { recursive: true });
+        context = await chromium.launchPersistentContext(persistentDir, {
+          headless: false,
+          serviceWorkers: "block",
+        });
+        await purgeIdentityCookies(context, emitter);
+      } else if (headless) {
+        // Product engine: ephemeral browser + incognito-style context. No profile
+        // directory exists on disk; nothing persists between sessions.
+        // channel:"chromium" = the NEW headless mode (the full browser binary,
+        // not the legacy headless shell) — its network fingerprint matches real
+        // Chrome, which measurably lowers first-request anti-bot refusals on
+        // dealer sites; the legacy shell announced itself at the TLS layer.
+        browser = await chromium.launch({ headless: true, channel: "chromium" });
+        context = await browser.newContext({ serviceWorkers: "block" });
+      } else {
+        // Headed debug engine: a persistent context needs a profile dir — give it
+        // a FRESH throwaway one under os.tmpdir(), never the user's real profile.
+        // Removed in the finally below: temp profiles leak one-per-launch when
+        // debugging, so removal must be unconditional.
+        tempProfileDir = mkdtempSync(join(tmpdir(), "autobroker-chromium-"));
+        context = await chromium.launchPersistentContext(tempProfileDir, {
+          headless: false,
+          serviceWorkers: "block",
+        });
+      }
+
+      // Abort → close the context so a per-call timeout actually frees the browser
+      // tree. Closing the context rejects any in-flight nav, `fn` settles, and the
+      // finally below runs full teardown (incl. browser.close()). Without this an
+      // un-deadlined hung nav never lets `fn` settle, so the finally never runs and
+      // the Chromium process + its FDs leak — the batch-submit hang root cause when
+      // many dealer sites are navigated at once.
+      if (opts.signal !== undefined) {
+        const ctx = context;
+        if (opts.signal.aborted) {
+          void ctx.close().catch(() => undefined);
+        } else {
+          opts.signal.addEventListener(
+            "abort",
+            () => void ctx.close().catch(() => undefined),
+            { once: true },
+          );
+        }
+      }
+
+      // Persistent sessions skip tracing entirely — a long-lived profile's
+      // snapshots/screenshots must not land in the product traces dir.
+      if (persistentDir === null) {
+        await context.tracing.start({ snapshots: true, screenshots: true });
+        tracingStarted = true;
+      }
+
+      const session = makeSession({ runId, context, emitter, open, tracesDir });
+      return await fn(session);
+    } catch (err) {
+      try {
+        emitter.error(err instanceof Error ? err.message : String(err));
+      } catch {
+        // a throwing emitter must not mask the original error
+      }
+      throw err;
+    } finally {
+      if (open.didOpen()) {
+        try {
+          emitter.closed();
+        } catch {
+          // cleanup never throws
+        }
+      }
+      if (context !== null) {
+        if (tracingStarted) {
+          try {
+            await context.tracing.stop();
+          } catch {
+            // tracing may already be stopped / never started
+          }
+        }
+        try {
+          await context.close();
+        } catch {
+          // already closed (e.g. isolation hard-stop)
+        }
+      }
+      if (browser !== null) {
+        try {
+          await browser.close();
+        } catch {
+          // already closed
+        }
+      }
+      if (tempProfileDir !== null) {
+        try {
+          rmSync(tempProfileDir, { recursive: true, force: true });
+        } catch {
+          // best effort — never throw from cleanup
+        }
+      }
+      // persistentDir is NEVER rm'd here — see the file header ENGINE doctrine.
+    }
+  };
+
+  return persistentDir !== null ? withProfileDirLock(persistentDir, run) : run();
 }
 
 // ---------------------------------------------------------------------------
@@ -607,13 +750,22 @@ function makeSession(deps: SessionDeps): BrowserSession {
     }
   }
 
-  async function newPage(): Promise<Page> {
-    assertNotBreached();
-    const page = await context.newPage();
+  // CONTEXT-level isolation wiring: every page the context ever produces —
+  // whether opened via newPage() below OR a human-opened tab/popup in a
+  // headed window — is guarded at creation and on every frame navigation.
+  // This covers newPage()'s own pages too, so newPage() below no longer wires
+  // its own framenavigated listener (that would be a duplicate).
+  context.on("page", (page) => {
+    guard(page.url());
     page.on("framenavigated", (frame) => {
       guard(frame.url());
     });
-    guard(page.url()); // creation check
+  });
+
+  async function newPage(): Promise<Page> {
+    assertNotBreached();
+    const page = await context.newPage();
+    guard(page.url()); // post-create guard (redirect races since the context hook fired)
     assertNotBreached();
     return page;
   }
