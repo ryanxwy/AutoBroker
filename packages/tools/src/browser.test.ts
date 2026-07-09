@@ -2,11 +2,14 @@
  * Browser service unit tests — NO real browser. Covers the pure, load-bearing
  * pieces: the personal-page isolation denylist, the robots.txt Disallow parse,
  * the backoff/politeness math (with injected rand), the snapshot cap, the
- * extract-vs-snapshot completeness decision, and the opened-once emitter
- * wrapper. Real-chromium coverage lives in browser.smoke.test.ts behind
- * AUTOBROKER_BROWSER_SMOKE=1.
+ * extract-vs-snapshot completeness decision, the opened-once emitter wrapper,
+ * the persistent-profile key resolver + its headless-conflict refusal, and
+ * the per-profileDir mutex. Real-chromium coverage lives in
+ * browser.smoke.test.ts behind AUTOBROKER_BROWSER_SMOKE=1.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -23,13 +26,19 @@ import {
   NULL_EMITTER,
   openedOnce,
   parseRobotsDisallow,
+  PersistentProfileRefusedError,
   politenessDelayMs,
   probeFilterTarget,
   probeZipTarget,
+  resolvePersistentProfileDir,
   rowsComplete,
   runFilterVerb,
   runLocationZip,
   SNAPSHOT_CAP_CHARS,
+  withBrowserContext,
+  withProfileDirLock,
+  __resetBrowserAcquireDepsForTests,
+  __setBrowserAcquireDepsForTests,
   type BrowserEmitter,
   type FilterControlPage,
   type FilterDomDocument,
@@ -236,6 +245,96 @@ describe("openedOnce — opened fires at most once per session", () => {
   it("didOpen stays false when never opened (no closed() pairing in cleanup)", () => {
     const open = openedOnce(NULL_EMITTER);
     expect(open.didOpen()).toBe(false);
+  });
+});
+
+describe("resolvePersistentProfileDir — constrained key, hardcoded root", () => {
+  it("accepts a lowercase key with slashes/underscores/hyphens, resolved under the hardcoded root", () => {
+    const dir = resolvePersistentProfileDir("aggregator/visor_vin");
+    expect(dir).toBe(
+      join(homedir(), ".autobroker-ts", "browser-profiles", "aggregator/visor_vin"),
+    );
+  });
+
+  it.each(["../x", "/abs", "UPPER", "a b", ""])("rejects %j", (bad) => {
+    expect(() => resolvePersistentProfileDir(bad)).toThrow(PersistentProfileRefusedError);
+  });
+});
+
+describe("withProfileDirLock — per-resolved-dir in-process mutex", () => {
+  function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  it("two concurrent calls on the SAME dir run strictly serially", async () => {
+    const order: string[] = [];
+    const a = withProfileDirLock("/profiles/x", async () => {
+      order.push("a-enter");
+      await delay(20);
+      order.push("a-exit");
+    });
+    const b = withProfileDirLock("/profiles/x", async () => {
+      order.push("b-enter");
+      await delay(5);
+      order.push("b-exit");
+    });
+    await Promise.all([a, b]);
+    expect(order).toEqual(["a-enter", "a-exit", "b-enter", "b-exit"]);
+  });
+
+  it("different dirs run concurrently (no cross-dir blocking)", async () => {
+    const order: string[] = [];
+    const a = withProfileDirLock("/profiles/y1", async () => {
+      order.push("a-enter");
+      await delay(20);
+      order.push("a-exit");
+    });
+    const b = withProfileDirLock("/profiles/y2", async () => {
+      order.push("b-enter");
+      await delay(5);
+      order.push("b-exit");
+    });
+    await Promise.all([a, b]);
+    // b (shorter delay, DIFFERENT dir) finishes before a despite starting after it.
+    expect(order).toEqual(["a-enter", "b-enter", "b-exit", "a-exit"]);
+  });
+
+  it("a throwing fn still releases the lock for the next waiter on the same dir", async () => {
+    const order: string[] = [];
+    const a = withProfileDirLock("/profiles/z", async () => {
+      order.push("a-enter");
+      throw new Error("boom");
+    });
+    const b = withProfileDirLock("/profiles/z", async () => {
+      order.push("b-enter");
+    });
+    await expect(a).rejects.toThrow("boom");
+    await b;
+    expect(order).toEqual(["a-enter", "b-enter"]);
+  });
+});
+
+describe("withBrowserContext — persistentProfileKey + headless is refused before any launch", () => {
+  afterEach(() => {
+    __resetBrowserAcquireDepsForTests();
+  });
+
+  it("throws PersistentProfileRefusedError and never touches the browser-acquire seam (no spawn)", async () => {
+    let isPresentCalls = 0;
+    __setBrowserAcquireDepsForTests({
+      isPresent: () => {
+        isPresentCalls += 1;
+        return true;
+      },
+    });
+    await expect(
+      withBrowserContext(
+        "run-1",
+        { headless: true, persistentProfileKey: "aggregator/visor_vin" },
+        async () => "unreachable",
+      ),
+    ).rejects.toThrow(PersistentProfileRefusedError);
+    expect(isPresentCalls).toBe(0); // the refusal throws BEFORE ensureBrowserAcquired
   });
 });
 
