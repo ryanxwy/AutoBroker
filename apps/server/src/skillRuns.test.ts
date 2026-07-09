@@ -378,6 +378,45 @@ describe("terminal text frame — resolution provenance copy", () => {
   });
 });
 
+describe("terminal text frame — per_site provenance copy (F9 site_contribution)", () => {
+  it("a success result carrying per_site puts the array on the text frame payload verbatim", async () => {
+    const perSite = [
+      { site_id: "cars_com", status: "scanned", listing_count: 5, error: null },
+      { site_id: "visor_vin", status: "scanned", listing_count: 3, error: null },
+    ];
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([
+        {
+          status: "success",
+          result: { summary: "Scanned 2 sites.", per_site: perSite },
+        },
+      ]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "inventory_aggregator_scan",
+      input: { search_profile_id: null },
+    });
+    const text = pubsub.snapshot(runId).find((e) => e.kind === "text")!;
+    expect(text.payload["per_site"]).toEqual(perSite);
+  });
+
+  it("a result with no per_site leaves the text frame metadata-free (skill-agnostic)", async () => {
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([{ status: "success", result: { summary: "Registered 3 new dealer candidate(s)." } }]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_geosearch",
+      input: { search_profile_id: "prof-1" },
+    });
+    const text = pubsub.snapshot(runId).find((e) => e.kind === "text")!;
+    expect("per_site" in text.payload).toBe(false);
+  });
+});
+
 describe("data.changed pulse — fresh-by-default auto-refresh", () => {
   it("a successful run emits exactly one data.changed{profile_id, kinds} BEFORE done (not discarded)", async () => {
     const pubsub = new RunPubSub();

@@ -363,6 +363,39 @@ export function externalMutationByProfile(
   return { perProfile, nullBucket, portfolioTotal };
 }
 
+/** One discovery_method's source/listing tally for a profile (the F9 per-site
+ *  evidence — how many dealer_inventory_sources rows + inventory_listings rows
+ *  each discovery method contributed, e.g. "geosearch_website" vs
+ *  "aggregator_cars_com" / "aggregator_visor_vin"). */
+export interface SourceBreakdownRow {
+  discoveryMethod: string;
+  sources: number;
+  listings: number;
+}
+
+/** GROUP BY discovery_method over dealer_inventory_sources (the source rows),
+ *  LEFT JOIN'd to inventory_listings by source_id (a source with zero listings
+ *  still reports its row, listings=0). Read-only; profile-scoped. */
+export function sourceBreakdown(db: Db, searchProfileId: string): SourceBreakdownRow[] {
+  const rows = readAll<{ discovery_method: string; sources: number; listings: number }>(
+    db,
+    `SELECT dis.discovery_method AS discovery_method,
+            COUNT(DISTINCT dis.source_id) AS sources,
+            COUNT(il.listing_id) AS listings
+       FROM dealer_inventory_sources dis
+       LEFT JOIN inventory_listings il ON il.source_id = dis.source_id
+      WHERE dis.search_profile_id = ?
+      GROUP BY dis.discovery_method
+      ORDER BY dis.discovery_method`,
+    [searchProfileId],
+  );
+  return rows.map((r) => ({
+    discoveryMethod: r.discovery_method,
+    sources: r.sources,
+    listings: r.listings,
+  }));
+}
+
 /** Read every test_run_records row for a runId (the cost_and_time ledger rows the
  *  SUT wrote, one per harness.generate call). Read-only. */
 export function readLedgerRowsForRun(db: Db, runId: string): LedgerRow[] {

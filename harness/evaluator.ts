@@ -109,6 +109,19 @@ export type AnchorSpec =
       expect: "pinned" | "inferred_newest";
     }
   | {
+      /** The per-site aggregator-scan contribution proof (F9/visor round): the
+       *  run's terminal TEXT frame must carry payload.per_site (the workflow
+       *  result's [{site_id, status, listing_count, error}] tally, copied through
+       *  the same skill-agnostic text-frame channel `resolution` rides). PASS iff
+       *  an entry for `site` exists with status="scanned" and
+       *  listing_count >= minListings. Fail-closed: a missing per_site payload,
+       *  a missing site entry, a non-"scanned" status, or a below-floor count all
+       *  FAIL with a detail naming what was absent. */
+      kind: "site_contribution";
+      site: string;
+      minListings: number;
+    }
+  | {
       /** A pure-DOM assertion against a widget by its stable data-testid. This
        *  anchor is NOT scored by evalAnchor — the evaluator has no live page.
        *  The UI-lane driver runs the assertion live and records a UiCheck the
@@ -292,6 +305,10 @@ export function evalAnchor(
 
     case "latency_budget": {
       return evalLatencyBudget(spec, detail, db);
+    }
+
+    case "site_contribution": {
+      return evalSiteContribution(spec, detail);
     }
 
     case "dom_state": {
@@ -540,6 +557,82 @@ function evalLatencyBudget(
             ...timed.map((r) => r.latencyMs as number),
           )}ms)`,
         }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// site_contribution — per-site aggregator-scan tally, read off the SAME
+// terminal-text-frame channel the resolution anchor uses (skillRuns.ts copies
+// r.result.per_site onto the text frame's payload alongside resolution). No DB
+// read: the frame IS the run's result, so this never re-derives from SQLite.
+// ---------------------------------------------------------------------------
+
+interface PerSiteEntry {
+  site_id: string;
+  status: string;
+  listing_count: number;
+  error: string | null;
+}
+
+/** The LAST text frame carrying a per_site array wins (mirrors resolutionOf's
+ *  last-carrying-frame rule). null when no frame ever carried one. */
+function perSiteOf(detail: RunDetail): PerSiteEntry[] | null {
+  let observed: PerSiteEntry[] | null = null;
+  for (const ev of detail.events) {
+    if (ev.kind !== "text") continue;
+    const ps = ev.payload["per_site"];
+    if (Array.isArray(ps)) observed = ps as PerSiteEntry[];
+  }
+  return observed;
+}
+
+function evalSiteContribution(
+  spec: Extract<AnchorSpec, { kind: "site_contribution" }>,
+  detail: RunDetail,
+): AnchorResult {
+  const perSite = perSiteOf(detail);
+  if (perSite === null) {
+    return {
+      kind: "site_contribution",
+      ok: false,
+      expected: `per_site entry for site="${spec.site}"`,
+      observed: null,
+      detail: "no text frame carried a per_site payload (per-site provenance not threaded?)",
+    };
+  }
+  const entry = perSite.find((e) => e.site_id === spec.site);
+  if (entry === undefined) {
+    return {
+      kind: "site_contribution",
+      ok: false,
+      expected: `per_site entry for site="${spec.site}"`,
+      observed: perSite.map((e) => e.site_id),
+      detail: `site "${spec.site}" absent from per_site`,
+    };
+  }
+  if (entry.status !== "scanned") {
+    return {
+      kind: "site_contribution",
+      ok: false,
+      expected: "status=scanned",
+      observed: entry,
+      detail: `site "${spec.site}" status="${entry.status}" (want scanned)`,
+    };
+  }
+  if (entry.listing_count < spec.minListings) {
+    return {
+      kind: "site_contribution",
+      ok: false,
+      expected: `listing_count >= ${spec.minListings}`,
+      observed: entry,
+      detail: `site "${spec.site}" listing_count=${entry.listing_count} < min_listings=${spec.minListings}`,
+    };
+  }
+  return {
+    kind: "site_contribution",
+    ok: true,
+    expected: `site="${spec.site}" status=scanned listing_count>=${spec.minListings}`,
+    observed: entry,
   };
 }
 

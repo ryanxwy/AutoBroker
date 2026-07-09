@@ -86,6 +86,11 @@ const RawAnchorSchema = z.object({
   /** chained_run only: the sibling run's OWN wall-clock budget (seconds) to reach
    *  done. Required for that kind (a chained_run with no max_seconds fails LOUD). */
   max_seconds: z.number().int().positive().optional(),
+  /** site_contribution only: the site_id key in the run's per_site tally. Required
+   *  for that kind (a site_contribution with no site fails LOUD at parse). */
+  site: z.string().optional(),
+  /** site_contribution only: the floor on that site's listing_count. Defaults to 1. */
+  min_listings: z.number().int().positive().optional(),
 });
 type RawAnchor = z.infer<typeof RawAnchorSchema>;
 
@@ -605,6 +610,12 @@ function toAnchorSpec(raw: RawAnchor, provider: string): AnchorSpec {
       }
       const deltaMin = raw.delta_min ?? 1;
       return { kind: "chained_run", skill: raw.skill, maxSeconds: raw.max_seconds, table: raw.table, deltaMin };
+    }
+    case "site_contribution": {
+      if (raw.site === undefined || raw.site.trim() === "") {
+        throw new Error("site_contribution anchor requires site (the per_site site_id key)");
+      }
+      return { kind: "site_contribution", site: raw.site, minListings: raw.min_listings ?? 1 };
     }
     default:
       throw new Error(`unknown anchor kind "${raw.kind}" in case (typo? unsupported anchor?)`);

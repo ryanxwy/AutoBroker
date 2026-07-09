@@ -2209,6 +2209,10 @@ export class SkillRunService {
       };
       const resolution = (r.result as { resolution?: unknown } | undefined)?.resolution;
       if (typeof resolution === "string") textPayload["resolution"] = resolution;
+      // inventory_aggregator_scan's per-site tally (F9 site_contribution anchor)
+      // rides the SAME skill-agnostic channel — copy it through when present.
+      const perSite = (r.result as { per_site?: unknown } | undefined)?.per_site;
+      if (Array.isArray(perSite)) textPayload["per_site"] = perSite;
       this.pubsub.append(runId, { kind: "text", payload: textPayload });
       // A successful skill run = forward progress for its profile: advance the
       // durable progress watermark (the dormancy marker the profileHealth /
