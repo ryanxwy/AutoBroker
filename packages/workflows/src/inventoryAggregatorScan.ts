@@ -3,8 +3,9 @@
  * inventory_site_scan. ONE flat linear Mastra `createWorkflow`: 5 named steps
  * chained with `.then()`, no nested workflow. Instead of a profile's bound
  * dealer sites, this scans a small static registry of new-car AGGREGATOR
- * shopping sites (one search-results page load per site) and persists the top
- * matching in-stock listings with provenance + dedup.
+ * shopping sites — [cars_com, visor_vin, edmunds], in cross-site dedup priority
+ * order — one search-results page load per site, and persists the top matching
+ * in-stock listings with provenance + dedup.
  *
  * STEP MAP:
  *   0 resolveProfile   — the SAME typed three-branch resolver every
@@ -13,36 +14,44 @@
  *                        typed STOP pointing at /search_profile_intake; 2+ →
  *                        typed STOP asking by vehicle name). A resolved profile
  *                        missing make / model / year / postal_code → typed STOP
- *                        back at intake (coordinates are NOT required — the
- *                        shopping sites search by ZIP, not lat/lng). The closed
- *                        filter slice {make, model, year, zip, radiusMiles} is
- *                        built here; budget/trim/email/phone are structurally
- *                        absent from it.
+ *                        back at intake (coordinates are NOT required for the
+ *                        search itself — the shopping sites search by ZIP, not
+ *                        lat/lng — but ARE carried through, nullable, for
+ *                        visor's deterministic haversine distance belt). The
+ *                        closed filter slice {make, model, year, zip,
+ *                        radiusMiles} is built here; budget/trim/email/phone
+ *                        are structurally absent from it.
  *   1 buildTargets     — read the static adapter registry (ids only). No DB, no
  *                        gating — the registry is a compile-time positive
  *                        allowlist.
  *   2 scanAggregators  — PURE CAPTURE, performs NO SQLite writes and holds NO
  *                        gate Approver. One ISOLATED throwaway browser per site
- *                        host (withBrowserContext per site). Per site: navigate
- *                        the site's SRP URL (the full navigate result is
- *                        preserved — blocked AND the observed robots flag both
- *                        thread into the outcome), lazy-scroll, run the
- *                        adapter's self-contained in-page collector, then in
- *                        Node: containment-dedup the cards, cap 40, weave whole
- *                        card blocks under the snapshot char cap. The per-site
- *                        robots posture is the adapter's COMPILE-TIME constant
- *                        (a live robots parse cannot see a wildcard SRP rule).
- *                        Edmunds location gate: when the applied search location
- *                        the page reports is not the requested ZIP, the whole
- *                        Edmunds outcome fails closed (the site silently searched
- *                        a different metro). Heavy text (weave, hrefs, the
- *                        deterministic {vin, dealer} scalars) lives ONLY in the
- *                        in-process per-run carry; the step output keeps light
- *                        per-site rows + counts.
- *   3 extract          — the LLM phase: per scanned site ONE separate NO-TOOLS
- *                        structured emit_result generate (fail-closes as a typed
- *                        EmitResultNotCalledError when the tool never fires —
- *                        never a prose fallthrough).
+ *                        host (withBrowserContext per site, threaded with each
+ *                        adapter's compile-time session posture). Per site:
+ *                        navigate the site's SRP URL (the full navigate result
+ *                        is preserved — blocked AND the observed robots flag
+ *                        both thread into the outcome), then branch on the
+ *                        adapter's collect-result kind: cards sites (cars_com,
+ *                        edmunds) lazy-scroll then collect, containment-dedup
+ *                        the cards, cap 40, weave whole card blocks under the
+ *                        snapshot char cap — Edmunds additionally clears an
+ *                        Akamai 403-shell poll before collecting (honest
+ *                        `blocked`) and gates on its applied search location;
+ *                        the rows site (visor.vin) skips lazy-scroll and
+ *                        settle-polls its already-structured react-query rows,
+ *                        classified fail-closed by `mapVisorCollectedToOutcome`
+ *                        (echo-gate, session_needed, honest-empty-market,
+ *                        collector_drift). The per-site robots posture is the
+ *                        adapter's COMPILE-TIME constant (a live robots parse
+ *                        cannot see a wildcard SRP rule). Heavy text (weave,
+ *                        hrefs, the deterministic {vin, dealer} scalars, or
+ *                        visor's structuredRows) lives ONLY in the in-process
+ *                        per-run carry; the step output keeps light per-site
+ *                        rows + counts.
+ *   3 extract          — the LLM phase for cards sites: per scanned site ONE
+ *                        separate NO-TOOLS structured emit_result generate
+ *                        (fail-closes as a typed EmitResultNotCalledError when
+ *                        the tool never fires — never a prose fallthrough).
  *                        Zod re-validates every row (invalid dropped + counted);
  *                        an LLM-emitted VIN must appear verbatim in the site's
  *                        provenance text or it is cleared to null + counted; an
@@ -51,7 +60,14 @@
  *                        must appear verbatim in the provenance text (Edmunds
  *                        takes it EXCLUSIVELY from the deterministic scalar
  *                        joined by VIN), else the row drops + counts. Guarded
- *                        rows stay in the in-process carry.
+ *                        rows stay in the in-process carry. A site whose
+ *                        capture carries structuredRows (visor) BYPASSES this
+ *                        LLM phase entirely — zero harnessGenerate calls, mapped
+ *                        deterministically by the tools-layer
+ *                        mapVisorStructuredRows (the rows ARE the provenance);
+ *                        a non-empty capture mapping to zero listings entirely
+ *                        via Zod rejection flips that site's row to failed
+ *                        collector_drift (never an honest empty market).
  *   4 persistConfirm   — the ONLY DB write, all deterministic selection in code:
  *                        keep-set (exact | near-with-trim-subset), drop
  *                        in-transit/ordered, drop beyond radius, cross-site VIN
@@ -60,7 +76,9 @@
  *                        enrich-only writer (source_type 'aggregator_srp',
  *                        no stale sweep, fill-if-null on collision). Confirm
  *                        summary is a deterministic ZERO-LLM plain-words template
- *                        (never budget, never internal counter names).
+ *                        (never budget, never internal counter names), and the
+ *                        same per-site tally is returned as `per_site` on the
+ *                        workflow output.
  *
  * KEYSTONE: this capture path holds NO Approver and imports NOTHING from the
  * gate module — the one mutating browser face (submitForm) structurally
@@ -91,6 +109,7 @@ import {
   capTopListings,
   classifyMatchStatus,
   getDb,
+  mapVisorStructuredRows,
   normalizeListingUrl,
   NULL_EMITTER,
   persistScanResults as persistScanResultsImpl,
@@ -104,6 +123,8 @@ import {
   withBrowserContext,
   type AggregatorAdapter,
   type AggregatorCollected,
+  type AggregatorCollectedCards,
+  type AggregatorCollectedRows,
   type AggregatorFilterSlice,
   type BrowserEmitter,
   type ClassifiedListingRow,
@@ -116,8 +137,9 @@ import { harness, type HarnessLedgerContext } from "./harness.js";
 import { parseAcceptableTrims, runWorkerPool } from "./inventorySiteScan.js";
 
 /** One deterministic per-tile fact the adapter's collector reads straight from
- *  the site's embedded state (never the LLM). */
-type AggregatorScalar = AggregatorCollected["scalars"][number];
+ *  the site's embedded state (never the LLM). Cards-kind only (cars.com,
+ *  Edmunds) — visor's rows-kind collect carries no scalars. */
+type AggregatorScalar = AggregatorCollectedCards["scalars"][number];
 
 // ---------------------------------------------------------------------------
 // typed terminal errors (the run fails loud with a user-facing message)
@@ -221,8 +243,9 @@ export function buildAggregatorExtractPrompt(
 /** Per-site cap on cards kept after dedup (cards beyond it aren't extracted). */
 export const AGGREGATOR_CARD_CAP = 40;
 
-/** One collected card as an adapter's in-page collector returns it. */
-export type AggregatorCard = AggregatorCollected["cards"][number];
+/** One collected card as an adapter's in-page collector returns it. Cards-kind
+ *  only (cars.com, Edmunds). */
+export type AggregatorCard = AggregatorCollectedCards["cards"][number];
 
 /**
  * Containment + href dedup over the collected cards. A card is accepted only
@@ -318,6 +341,11 @@ export interface AggregatorCaptureOutcome {
   weave: string;
   hrefs: string[];
   scalars: AggregatorScalar[];
+  /** visor.vin only: the deterministic, already-structured page rows. When set,
+   *  the extract step BYPASSES harnessGenerate entirely (mapVisorStructuredRows
+   *  does the mapping — the rows ARE the provenance, no LLM fabrication surface
+   *  to guard). Cards-kind outcomes never set this. */
+  structuredRows?: unknown[];
 }
 
 function blockedAggOutcome(
@@ -358,6 +386,95 @@ function failedAggOutcome(
   };
 }
 
+/**
+ * Edmunds honest-blocked shell predicate (pure): true when the page's title or
+ * h1 reads as Akamai's "403 - Access Denied" interstitial. Checked BEFORE any
+ * collect (a bounded poll right after navigate) and again after the destroyed-
+ * context retry (the re-nav that killed the evaluate context often lands on
+ * this very shell) — a page that never clears it classifies `blocked`, never
+ * the misleading `location_not_applied` its SSR-frozen preloadedState used to
+ * read off the shell.
+ */
+export function isEdmunds403Shell(title: string, h1: string | null): boolean {
+  const re = /\b403\b|access denied/i;
+  return re.test(title) || (h1 !== null && re.test(h1));
+}
+
+/**
+ * Visor outcome mapping (pure, order matters — fail-closed): unit-tests the
+ * whole branch tree without a browser.
+ *   1. Echo gate FIRST, evaluated only when rows>0 or the listings query
+ *      succeeded: a non-null echo that disagrees with the requested zip/
+ *      radius/year, OR a null echo while rows already arrived, fails
+ *      'location_not_applied' — the page must PROVE what it searched before
+ *      its rows are trusted.
+ *   2. rows.length > 0 → scanned (rows take precedence over any challenge
+ *      marker still sitting in the DOM).
+ *   3. Any challenge marker with zero rows → failed 'session_needed' (the
+ *      live-verified shape: queryStatus 'error' + cfInput true).
+ *   4. A successful query reporting total===0 → scanned with 0 rows (the only
+ *      honest empty market).
+ *   5. Everything else (router/client/query missing, pending/error without a
+ *      challenge marker, shape surprises) → failed 'collector_drift' — a
+ *      drifted page must never read as an empty market.
+ */
+export function mapVisorCollectedToOutcome(
+  collected: AggregatorCollectedRows,
+  slice: AggregatorFilterSlice,
+  adapter: AggregatorAdapter,
+  srpUrl: string,
+  observedRobots: boolean,
+): AggregatorCaptureOutcome {
+  const { probe, rows, challenge, echo } = collected;
+  const querySuccess = probe.listingsQueryFound && probe.queryStatus === "success";
+
+  if (rows.length > 0 || querySuccess) {
+    if (echo !== null) {
+      if (echo.zip !== slice.zip || echo.radiusMiles !== slice.radiusMiles || echo.year !== slice.year) {
+        return failedAggOutcome(adapter, srpUrl, observedRobots, "location_not_applied");
+      }
+    } else if (rows.length > 0) {
+      return failedAggOutcome(adapter, srpUrl, observedRobots, "location_not_applied");
+    }
+  }
+
+  if (rows.length > 0) {
+    return {
+      siteId: adapter.siteId,
+      status: "scanned",
+      robotsDisallowed: adapter.robotsDisallowed,
+      robotsDisallowedObserved: observedRobots,
+      srpUrl,
+      cardCount: rows.length,
+      weave: "",
+      hrefs: [],
+      scalars: [],
+      structuredRows: rows,
+    };
+  }
+
+  if (challenge.cfIframe || challenge.cfInput || challenge.interstitial) {
+    return failedAggOutcome(adapter, srpUrl, observedRobots, "session_needed");
+  }
+
+  if (querySuccess && probe.total === 0) {
+    return {
+      siteId: adapter.siteId,
+      status: "scanned",
+      robotsDisallowed: adapter.robotsDisallowed,
+      robotsDisallowedObserved: observedRobots,
+      srpUrl,
+      cardCount: 0,
+      weave: "",
+      hrefs: [],
+      scalars: [],
+      structuredRows: [],
+    };
+  }
+
+  return failedAggOutcome(adapter, srpUrl, observedRobots, "collector_drift");
+}
+
 /** One site's capture runner (the seam a test fakes; the real one drives the
  *  browser session). */
 export type SiteScanRunner = (
@@ -365,12 +482,32 @@ export type SiteScanRunner = (
   adapter: AggregatorAdapter,
 ) => Promise<AggregatorCaptureOutcome>;
 
+// Edmunds pre-collect shell/ready poll (bounded ~15s, ~1.5s steps).
+const EDMUNDS_READY_POLL_MS = 15_000;
+const EDMUNDS_READY_POLL_STEP_MS = 1_500;
+// visor settle-poll: bounded ~15s ordinarily; extended to a single longer
+// constant (120s TOTAL, no env knob) once a challenge marker is seen with no
+// rows yet, so a watching human can pass the one-time Turnstile mid-run.
+const VISOR_SETTLE_POLL_MS = 15_000;
+const VISOR_SETTLE_POLL_STEP_MS = 1_500;
+const VISOR_CHALLENGE_WAIT_MS = 120_000;
+
 /**
  * The REAL per-site runner: ONE isolated throwaway browser for the site host
- * (named `${runId}-${siteId}` so trace files never collide). Navigate the SRP
- * (the full navigate result is preserved — never narrowed to just `blocked`),
- * lazy-scroll, run the adapter's self-contained in-page collector, gate Edmunds
- * on the applied location, then dedup + cap + weave in Node.
+ * (named `${runId}-${siteId}` so trace files never collide), threaded with the
+ * adapter's compile-time session posture (`persistentProfileKey` — headed-only,
+ * a stable AutoBroker-owned profile only for the sites evidence says need one).
+ * Navigate the SRP (the full navigate result is preserved — never narrowed to
+ * just `blocked`), then branch by the adapter's collect-result kind:
+ *   - Edmunds gets a pre-collect bounded poll for either a ready preloadedState
+ *     or the Akamai 403 shell (honest `blocked`, never the shell's misleading
+ *     location text) — only a page that clears the shell proceeds.
+ *   - `cards` (cars.com, Edmunds): the probe collect above only established the
+ *     kind; lazyScroll THEN collect AGAIN stays the real, output-producing call
+ *     (current order preserved), then the (unchanged) Edmunds location gate.
+ *   - `rows` (visor): NO lazyScroll — a bounded settle-poll re-evaluates collect
+ *     until a terminal condition, then the pure `mapVisorCollectedToOutcome`
+ *     classifies the result (fail-closed).
  */
 const realSiteRunner: SiteScanRunner = async (args, adapter) => {
   const srpUrl = adapter.buildSrpUrl(args.slice);
@@ -382,7 +519,13 @@ const realSiteRunner: SiteScanRunner = async (args, adapter) => {
   // masquerade is attempted, and an edge block still ends the site's scan.
   return withBrowserContext(
     `${args.runId}-${adapter.siteId}`,
-    { emitter: args.emitter, headless: false },
+    {
+      emitter: args.emitter,
+      headless: false,
+      ...(adapter.persistentProfileKey !== null
+        ? { persistentProfileKey: adapter.persistentProfileKey }
+        : {}),
+    },
     async (session) => {
     const page = await session.newPage();
     try {
@@ -390,23 +533,108 @@ const realSiteRunner: SiteScanRunner = async (args, adapter) => {
       if (nav.blocked !== null) {
         return blockedAggOutcome(adapter, srpUrl, nav.robotsDisallowed);
       }
-      await session.lazyScroll(page);
+
+      const readEdmundsTitleH1 = (): Promise<{ title: string; h1: string | null }> =>
+        page.evaluate(() => {
+          const doc = (globalThis as { document?: { title: string; querySelector(sel: string): unknown } })
+            .document;
+          if (doc === undefined) return { title: "", h1: null };
+          const h1el = doc.querySelector("h1") as { textContent: string | null } | null;
+          return { title: doc.title, h1: h1el !== null ? h1el.textContent : null };
+        });
+
+      // Edmunds: Akamai's post-load sensor re-navigates the SAME page to a 403
+      // shell around 2-3s in. Poll BEFORE any collect so the shell classifies
+      // honestly (blocked) instead of the misleading location_not_applied noise
+      // the SSR-frozen preloadedState gate used to read off the shell.
+      if (adapter.siteId === "edmunds") {
+        const deadline = Date.now() + EDMUNDS_READY_POLL_MS;
+        for (;;) {
+          const { title, h1 } = await readEdmundsTitleH1();
+          if (isEdmunds403Shell(title, h1)) {
+            return blockedAggOutcome(adapter, srpUrl, nav.robotsDisallowed);
+          }
+          const ready = await page.evaluate(() => {
+            const w = globalThis as { EDM?: { preloadedState?: unknown } };
+            return w.EDM?.preloadedState !== undefined;
+          });
+          if (ready || Date.now() >= deadline) break;
+          await page.waitForTimeout(EDMUNDS_READY_POLL_STEP_MS);
+        }
+      }
+
       // Aggregator SRPs can fire a late client-side navigation (geo/consent
       // reload) that destroys the evaluate's execution context mid-collect —
       // live-hit on Edmunds. One bounded same-page retry after a settle; a
-      // second failure is the site's honest failed outcome for the run.
-      let collected: AggregatorCollected;
-      try {
-        collected = await page.evaluate(adapter.collect);
-      } catch (err) {
-        if (!/execution context was destroyed/i.test(String(err))) throw err;
-        await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-        await page.waitForTimeout(3_000);
-        collected = await page.evaluate(adapter.collect);
+      // second failure is the site's honest failed outcome for the run. Wraps
+      // EVERY evaluate(collect) call below (cards sites call it twice: once to
+      // discover kind, once more after lazyScroll for the real result) — for
+      // Edmunds, the retry ALSO re-checks the shell before trusting its result
+      // (the re-nav that killed the context often lands on the shell).
+      const evaluateCollect = async (): Promise<AggregatorCollected | "edmunds_shell"> => {
+        try {
+          return await page.evaluate(adapter.collect);
+        } catch (err) {
+          if (!/execution context was destroyed/i.test(String(err))) throw err;
+          await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+          await page.waitForTimeout(3_000);
+          if (adapter.siteId === "edmunds") {
+            const { title, h1 } = await readEdmundsTitleH1();
+            if (isEdmunds403Shell(title, h1)) return "edmunds_shell";
+          }
+          return page.evaluate(adapter.collect);
+        }
+      };
+
+      const first = await evaluateCollect();
+      if (first === "edmunds_shell") {
+        return blockedAggOutcome(adapter, srpUrl, nav.robotsDisallowed);
       }
 
+      if (first.kind === "rows") {
+        // visor.vin: NO lazyScroll. Settle-poll — re-evaluate collect until a
+        // terminal condition (rows arrived, or the listings query itself
+        // succeeded), extending the deadline once to the longer challenge
+        // window the first time a challenge marker shows with no rows yet.
+        let current = first;
+        const start = Date.now();
+        let deadline = start + VISOR_SETTLE_POLL_MS;
+        for (;;) {
+          const hasChallenge =
+            current.challenge.cfIframe || current.challenge.cfInput || current.challenge.interstitial;
+          const terminal =
+            current.rows.length > 0 ||
+            (current.probe.listingsQueryFound && current.probe.queryStatus === "success");
+          if (terminal) break;
+          if (hasChallenge) deadline = Math.max(deadline, start + VISOR_CHALLENGE_WAIT_MS);
+          if (Date.now() >= deadline) break;
+          await page.waitForTimeout(VISOR_SETTLE_POLL_STEP_MS);
+          const next = await page.evaluate(adapter.collect);
+          if (next.kind === "rows") current = next;
+        }
+        return mapVisorCollectedToOutcome(current, args.slice, adapter, srpUrl, nav.robotsDisallowed);
+      }
+
+      // cards kind (cars_com, edmunds): lazyScroll BEFORE collect stays — the
+      // probe collect above only established the kind; this post-scroll
+      // collect is the one whose output is actually used (current order
+      // preserved, byte-identical to the pre-restructure single-collect flow).
+      await session.lazyScroll(page);
+      const second = await evaluateCollect();
+      if (second === "edmunds_shell") {
+        return blockedAggOutcome(adapter, srpUrl, nav.robotsDisallowed);
+      }
+      if (second.kind !== "cards") {
+        // Structurally impossible (the same adapter.collect always returns one
+        // literal kind) — an honest drift fail rather than a crash if it ever
+        // isn't.
+        return failedAggOutcome(adapter, srpUrl, nav.robotsDisallowed, "collector_drift");
+      }
+      const collected = second;
+
       // Edmunds location gate: a page that silently searched a different metro
-      // fails closed (zero rows) before any extraction wiring.
+      // fails closed (zero rows) before any extraction wiring. Unreachable from
+      // the shell state now (both polls above already classify it `blocked`).
       if (
         adapter.siteId === "edmunds" &&
         !edmundsLocationApplied(collected.appliedLocation, args.slice.zip)
@@ -742,6 +970,20 @@ interface SummaryPerSite {
   listingCount: number;
 }
 
+/** Failed-outcome error code → buyer-facing phrase. An unrecognized/absent code
+ *  falls back to the generic "couldn't be reached this run". */
+const FAILED_SITE_PHRASES: Record<string, (label: string) => string> = {
+  location_not_applied: (label) =>
+    `${label}: couldn't confirm your location — skipped its results this run`,
+  session_needed: (label) =>
+    `${label}: needs a one-time human verification — run a scan with the browser window ` +
+    'visible and click "Verify you are human" once (don\'t log into any account in that ' +
+    "window); your session is remembered for future scans",
+  collector_drift: (label) =>
+    `${label}: the site changed its page layout — this source needs maintenance; skipped ` +
+    "its results this run",
+};
+
 /** The deterministic confirm summary. Zero-LLM, plain words, no internal counter
  *  names, never budget. Pure (exported for unit tests). */
 export function buildAggregatorSummary(args: {
@@ -758,9 +1000,8 @@ export function buildAggregatorSummary(args: {
   const siteParts = args.perSite.map((s) => {
     if (s.status === "blocked") return `${s.label}: blocked automated scanning`;
     if (s.status === "failed") {
-      return s.error === "location_not_applied"
-        ? `${s.label}: couldn't confirm your location — skipped its results this run`
-        : `${s.label}: couldn't be reached this run`;
+      const phrase = s.error !== null ? FAILED_SITE_PHRASES[s.error] : undefined;
+      return phrase !== undefined ? phrase(s.label) : `${s.label}: couldn't be reached this run`;
     }
     return `${s.label}: ${s.listingCount} listing${s.listingCount === 1 ? "" : "s"}`;
   });
@@ -801,8 +1042,16 @@ export function buildAggregatorSummary(args: {
 // the in-process capture carry (heavy text NEVER enters Mastra step outputs)
 // ---------------------------------------------------------------------------
 
+interface AggregatorCarryCapture {
+  weave: string;
+  hrefs: string[];
+  scalars: AggregatorScalar[];
+  /** visor.vin only — set when the site's capture is deterministic rows (see
+   *  AggregatorCaptureOutcome.structuredRows). */
+  structuredRows?: unknown[];
+}
 interface AggregatorCarry {
-  captures: Map<string, { weave: string; hrefs: string[]; scalars: AggregatorScalar[] }>;
+  captures: Map<string, AggregatorCarryCapture>;
   classified: Map<string, AggregatorListing[]>;
 }
 const aggregatorCarryByRun = new Map<string, AggregatorCarry>();
@@ -908,6 +1157,10 @@ const AggregatorScanStateSchema = z.object({
   slice: AggregatorSliceSchema,
   trim: z.string().nullable(),
   acceptableTrims: z.array(z.string()).nullable(),
+  /** The resolved profile's coordinates — used ONLY for the visor deterministic
+   *  mapping's haversine distance belt; null when the profile has none. */
+  profileLat: z.number().nullable(),
+  profileLng: z.number().nullable(),
   siteIds: z.array(z.string()).nullable(),
   runStartedAt: z.string().nullable(),
   captured: z.array(CapturedAggregatorRowSchema).nullable(),
@@ -947,6 +1200,16 @@ const AggregatorScanOutputSchema = z.object({
   vinProvenanceNulled: z.number().int(),
   urlProvenanceStripped: z.number().int(),
   summary: z.string(),
+  /** Pre-dedup per-site contribution — the same tally the summary is built
+   *  from, in registry order. */
+  per_site: z.array(
+    z.object({
+      site_id: z.string(),
+      status: z.enum(["scanned", "blocked", "failed"]),
+      listing_count: z.number().int(),
+      error: z.string().nullable(),
+    }),
+  ),
 });
 
 // ---------------------------------------------------------------------------
@@ -1047,6 +1310,8 @@ const resolveProfileStep = createStep({
       },
       trim: profile.trim,
       acceptableTrims: parseAcceptableTrims(profile.acceptableTrimsJson),
+      profileLat: profile.latitude,
+      profileLng: profile.longitude,
       siteIds: null,
       runStartedAt: null,
       captured: null,
@@ -1091,12 +1356,18 @@ const scanAggregatorsStep = createStep({
       emitter: browserEmitterFactory(runId),
     });
 
-    // Heavy capture data (weave + hrefs + scalars) goes into the in-process
-    // carry; the step output keeps light per-site rows only.
-    const captures = new Map<string, { weave: string; hrefs: string[]; scalars: AggregatorScalar[] }>();
+    // Heavy capture data (weave + hrefs + scalars + visor's structuredRows)
+    // goes into the in-process carry; the step output keeps light per-site
+    // rows only.
+    const captures = new Map<string, AggregatorCarryCapture>();
     const captured = outcomes.map((o) => {
       if (o.status === "scanned") {
-        captures.set(o.siteId, { weave: o.weave, hrefs: o.hrefs, scalars: o.scalars });
+        captures.set(o.siteId, {
+          weave: o.weave,
+          hrefs: o.hrefs,
+          scalars: o.scalars,
+          ...(o.structuredRows !== undefined ? { structuredRows: o.structuredRows } : {}),
+        });
       }
       return {
         site_id: o.siteId,
@@ -1142,10 +1413,41 @@ const extractStep = createStep({
       let vinProvenanceNulled = 0;
       let urlProvenanceStripped = 0;
       let droppedNoDealer = 0;
+      let capturedOut = captured;
 
       for (const row of scanned) {
         const capture = carry.captures.get(row.site_id);
         if (capture === undefined) throw new AggregatorScanCaptureLostError();
+
+        if (capture.structuredRows !== undefined) {
+          // visor.vin: the deterministic page rows ARE the provenance — zero
+          // harnessGenerate calls, and the VIN/URL/dealer LLM-fabrication
+          // guards below never run (there is nothing an LLM invented to guard
+          // against).
+          const mapped = mapVisorStructuredRows(capture.structuredRows, {
+            lat: state.profileLat,
+            lng: state.profileLng,
+          });
+          rowsInvalidDropped += mapped.invalidDropped;
+          droppedNoDealer += mapped.droppedNoDealer;
+          listingsFound += mapped.listings.length;
+          carry.classified.set(row.site_id, mapped.listings);
+
+          // Drift belt: every row on a non-empty capture failing Zod means the
+          // site changed shape — never let that read as an honest empty market.
+          if (
+            capture.structuredRows.length > 0 &&
+            mapped.listings.length === 0 &&
+            mapped.invalidDropped === capture.structuredRows.length
+          ) {
+            capturedOut = capturedOut.map((c) =>
+              c.site_id === row.site_id
+                ? { ...c, status: "failed" as const, error: "collector_drift" }
+                : c,
+            );
+          }
+          continue;
+        }
 
         const result = await deps().harnessGenerate(
           {
@@ -1230,6 +1532,7 @@ const extractStep = createStep({
 
       return {
         ...state,
+        captured: capturedOut,
         listingsFound,
         rowsInvalidDropped,
         vinProvenanceNulled,
@@ -1261,7 +1564,8 @@ const persistConfirmStep = createStep({
       }
 
       // Gather the extract-phase rows in registry order (the cross-site dedup
-      // priority) — Cars.com before Edmunds.
+      // priority) — Cars.com, then visor.vin (deterministic, no-LLM rows),
+      // then Edmunds.
       const selectionInput: AggregatorSelectionInput[] = [];
       for (const adapter of AGGREGATOR_ADAPTERS) {
         const cap = captured.find((c) => c.site_id === adapter.siteId);
@@ -1339,6 +1643,12 @@ const persistConfirmStep = createStep({
         vinProvenanceNulled: state.vinProvenanceNulled,
         urlProvenanceStripped: state.urlProvenanceStripped,
         summary,
+        per_site: perSite.map((s) => ({
+          site_id: s.siteId,
+          status: s.status,
+          listing_count: s.listingCount,
+          error: s.error,
+        })),
       };
     } finally {
       aggregatorCarryByRun.delete(runId); // the heavy capture never outlives the run
