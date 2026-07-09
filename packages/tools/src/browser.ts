@@ -465,9 +465,13 @@ export class PersistentProfileRefusedError extends Error {
   }
 }
 
-/** Constrained key syntax: lowercase alnum, underscore, hyphen, forward slash
- *  only — no uppercase, no spaces, no traversal. */
-const PERSISTENT_PROFILE_KEY_RE = /^[a-z0-9_/-]+$/;
+/** Constrained key syntax: slash-separated segments of lowercase alnum,
+ *  underscore, hyphen — no uppercase, no spaces, no traversal, and (unlike a
+ *  bare `[a-z0-9_/-]+` charset) no leading/trailing/double slash, so "a" and
+ *  "a/" can never resolve to the same on-disk dir under two different
+ *  `profileDirLocks` map keys (a trailing/double slash would otherwise be a
+ *  mutex bypass — see `withProfileDirLock`). */
+const PERSISTENT_PROFILE_KEY_RE = /^[a-z0-9_-]+(\/[a-z0-9_-]+)*$/;
 
 /**
  * Resolve a persistent-profile KEY (never a caller-supplied path) to its
@@ -475,12 +479,15 @@ const PERSISTENT_PROFILE_KEY_RE = /^[a-z0-9_/-]+$/;
  * that isn't the constrained shape (refuse loudly rather than resolve
  * something unintended). The root is the SAME tilde-free construction as
  * `defaultTracesDir` — hardcoded, no env knob (an env-configurable root would
- * let a misconfigured env point this at an arbitrary directory).
+ * let a misconfigured env point this at an arbitrary directory). The ".."
+ * substring check is redundant against the regex (".." never matches
+ * `[a-z0-9_-]+`) but kept as a belt-and-suspenders traversal guard.
  */
 export function resolvePersistentProfileDir(key: string): string {
   if (!PERSISTENT_PROFILE_KEY_RE.test(key) || key.includes("..") || key.startsWith("/")) {
     throw new PersistentProfileRefusedError(
-      `"${key}" is not a valid profile key (expected /^[a-z0-9_/-]+$/, no ".." or leading "/")`,
+      `"${key}" is not a valid profile key (expected /^[a-z0-9_-]+(\\/[a-z0-9_-]+)*$/, ` +
+        'no "..", and no leading/trailing/double "/")',
     );
   }
   return join(homedir(), ".autobroker-ts", "browser-profiles", key);
@@ -750,17 +757,35 @@ function makeSession(deps: SessionDeps): BrowserSession {
     }
   }
 
+  /** Wire the isolation guard onto one page: a creation-time check plus a
+   *  framenavigated listener for every later navigation. Shared by the
+   *  context's own "page" event (pages created AFTER wiring) and the initial
+   *  pages() sweep below (the one page `launchPersistentContext` already
+   *  holds BEFORE this module ever sees the context) so both paths guard
+   *  identically. */
+  function wirePage(page: Page): void {
+    guard(page.url());
+    page.on("framenavigated", (frame) => {
+      guard(frame.url());
+    });
+  }
+
   // CONTEXT-level isolation wiring: every page the context ever produces —
   // whether opened via newPage() below OR a human-opened tab/popup in a
   // headed window — is guarded at creation and on every frame navigation.
   // This covers newPage()'s own pages too, so newPage() below no longer wires
   // its own framenavigated listener (that would be a duplicate).
-  context.on("page", (page) => {
-    guard(page.url());
-    page.on("framenavigated", (frame) => {
-      guard(frame.url());
-    });
-  });
+  context.on("page", wirePage);
+
+  // `launchPersistentContext` returns a context that already holds ONE initial
+  // page (about:blank, or the profile's restored tab) — that page was created
+  // BEFORE the "page" listener above was attached, so it would otherwise be
+  // completely unguarded. In the headed persistent window a human can type a
+  // URL into exactly that initial tab, so it must get the SAME guard(url) +
+  // framenavigated wiring as every page.on("page") arrival.
+  for (const page of context.pages()) {
+    wirePage(page);
+  }
 
   async function newPage(): Promise<Page> {
     assertNotBreached();
