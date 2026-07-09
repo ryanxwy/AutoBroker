@@ -259,6 +259,22 @@ describe("resolvePersistentProfileDir — constrained key, hardcoded root", () =
   it.each(["../x", "/abs", "UPPER", "a b", ""])("rejects %j", (bad) => {
     expect(() => resolvePersistentProfileDir(bad)).toThrow(PersistentProfileRefusedError);
   });
+
+  // A trailing slash resolves to the SAME on-disk dir as its bare form (Node's
+  // `join` collapses "a/" and "a" alike) but would hash to a DIFFERENT
+  // `profileDirLocks` map key — i.e. a mutex bypass — if the regex allowed it.
+  // Reject any leading/trailing/double slash so key !== canonical-key can
+  // never happen.
+  it.each(["a/", "aggregator/visor_vin/", "/aggregator", "aggregator//visor_vin"])(
+    "rejects trailing/leading/double slash %j (would mutex-bypass a canonical key)",
+    (bad) => {
+      expect(() => resolvePersistentProfileDir(bad)).toThrow(PersistentProfileRefusedError);
+    },
+  );
+
+  it("still accepts the canonical slash-separated key", () => {
+    expect(() => resolvePersistentProfileDir("aggregator/visor_vin")).not.toThrow();
+  });
 });
 
 describe("withProfileDirLock — per-resolved-dir in-process mutex", () => {
@@ -337,6 +353,18 @@ describe("withBrowserContext — persistentProfileKey + headless is refused befo
     expect(isPresentCalls).toBe(0); // the refusal throws BEFORE ensureBrowserAcquired
   });
 });
+
+// NOTE: the initial-page wiring fix (makeSession now also iterates
+// `context.pages()`, applying the same `wirePage` guard as the `context.on("page")`
+// handler, so `launchPersistentContext`'s pre-existing initial tab is guarded
+// too) has no unit-level seam here: `makeSession` is unexported and its
+// `context` param is a real Playwright `BrowserContext`, and this file's
+// existing isolation coverage (`assertIsolated`) is pure-function-only — there
+// is no fake/mock `BrowserContext` seam to attach a spy to. Covering it for
+// real requires a headed `launchPersistentContext` launch, which this suite
+// deliberately never does (see the file banner: real-chromium coverage is
+// smoke-only, behind AUTOBROKER_BROWSER_SMOKE=1, and even that smoke file
+// only exercises the ephemeral headless engine, never a persistent profile).
 
 describe("gatedSubmitForm — the gate/decline/mode-brake safety branches", () => {
   const FORM = {
