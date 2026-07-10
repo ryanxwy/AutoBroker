@@ -32,7 +32,7 @@
  * create a run for a given profile.
  */
 
-import type { ProfileHealth } from "@autobroker/tools";
+import type { PipelineAdmissionDecision, ProfileHealth } from "@autobroker/tools";
 
 import type { ActivationRegistry } from "./activationRegistry.js";
 import type { RunLifecycleEvent, RunLifecycleListener, RunTerminalEvent } from "../skillRuns.js";
@@ -47,10 +47,18 @@ export interface ProfileHealthProvider {
   snapshot(liveRunProfileIds: ReadonlySet<string>): ProfileHealth[];
 }
 
+/** Durable same-input admission seam. The decision captures an exact frontier;
+ * record() persists that same frontier only after startProfileRun succeeds. */
+export interface PortfolioAdmissionGate {
+  evaluate(profileId: string): PipelineAdmissionDecision;
+  record(profileId: string, decision: PipelineAdmissionDecision): void;
+}
+
 export interface PortfolioSchedulerDeps {
   /** Classifies the active set hot/warm/cold (lock-blocked profiles are non-hot —
    *  the provider derives that, matching the documented profileHealth producer). */
   healthProvider: ProfileHealthProvider;
+  admissionGate: PortfolioAdmissionGate;
   activationRegistry: ActivationRegistry;
   /** Start one profile's ProfilePipeline run (the explicit-pin N=1 case). The
    *  SkillRunService atomically claims the profile before creating the run.
@@ -107,8 +115,13 @@ export class PortfolioScheduler implements RunLifecycleListener {
       let available = Math.max(0, this.deps.cap - this.running.size);
       for (const profileId of candidates) {
         if (available <= 0) break; // the rest stay WARM — the cap bound (see DELETION TEST)
+        const admission = this.deps.admissionGate.evaluate(profileId);
+        if (!admission.shouldAdmit) continue;
         const started = await this.deps.startProfileRun(profileId);
         if (started === null) continue;
+        // Run creation succeeded. Persist the exact pre-start input frontier;
+        // never re-read here, because input arriving during start is NEW work.
+        this.deps.admissionGate.record(profileId, admission);
         const { runId } = started;
         try {
           // Idempotent mirror: SkillRunService already owns this exact pair.

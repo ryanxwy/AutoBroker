@@ -69,6 +69,23 @@ export {
 } from "./progressWatermark.js";
 
 export {
+  PIPELINE_AUTO_ADMISSION_FLOOR_MS,
+  pipelineAdmissionKey,
+  lastComparedQuotesKey,
+  readPipelineInputWatermark,
+  readQuoteInputWatermark,
+  evaluatePipelineAdmission,
+  writePipelineAdmission,
+  readLastComparedQuoteInput,
+  writeLastComparedQuoteInput,
+  sameQuoteInput,
+  type QuoteInputWatermark,
+  type PipelineInputWatermark,
+  type PipelineAdmissionReason,
+  type PipelineAdmissionDecision,
+} from "./admissionWatermark.js";
+
+export {
   profileHealth,
   type ProfileHealth,
   type ProfileHealthLevel,

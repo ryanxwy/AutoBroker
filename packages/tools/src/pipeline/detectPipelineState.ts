@@ -29,8 +29,11 @@
  *              source constant in this layer (the audit skill defines it), so it
  *              is a REQUIRED parameter — never hardcoded here.
  *
- *   compare  — at least two dealer_quotes rows exist for the profile (the
- *              comparable set). Pure existence count ≥ 2.
+ *   compare  — at least two dealer_quotes rows exist for the profile AND that
+ *              exact quote frontier has not already completed quote_compare.
+ *              A successful compare advances a separate watermark; a failed
+ *              attempt does not. A newly inserted quote changes the frontier
+ *              and makes compare applicable again.
  *
  * SQLITE INVARIANT: reads go through the raw better-sqlite3 handle (db.$client)
  * like the sibling persist/watermark modules — tools never imports drizzle-orm
@@ -38,6 +41,13 @@
  */
 
 import type { Db } from "@autobroker/db";
+
+import {
+  readLastComparedQuoteInput,
+  readQuoteInputWatermark,
+  sameQuoteInput,
+  type QuoteInputWatermark,
+} from "./admissionWatermark.js";
 
 /** Inclusive 7-day freshness window for the incentive scrape predicate. A row
  *  scraped exactly 7 days before `nowMs` is still fresh. */
@@ -50,6 +60,9 @@ export interface DetectPipelineStateArgs {
   auditPassVersion: string;
   /** Epoch-ms "now" used by the scrape 7-day window. */
   nowMs: number;
+  /** Optional already-captured quote frontier. The orchestrator supplies this
+   *  so a successful compare can persist the exact snapshot detect evaluated. */
+  quoteInputWatermark?: QuoteInputWatermark;
   db?: Db;
 }
 
@@ -109,13 +122,6 @@ SELECT 1
  LIMIT 1
 `;
 
-// ≥2 comparable dealer_quotes for the profile.
-const SELECT_QUOTE_COUNT = `
-SELECT COUNT(*) AS n
-  FROM dealer_quotes
- WHERE search_profile_id = ?
-`;
-
 /**
  * Re-derive the four applicable-step flags for one profile from the live DB.
  * Pure read; no writes, no checkpoint. The scrape predicate is FALSE-by-skip
@@ -166,15 +172,15 @@ export function detectPipelineState(args: DetectPipelineStateArgs): PipelineStat
     db.$client.prepare(SELECT_HAS_UNAUDITED_QUOTE).get(profileId, args.auditPassVersion) !==
     undefined;
 
-  const countRow = db.$client.prepare(SELECT_QUOTE_COUNT).get(profileId) as
-    | { n?: unknown }
-    | undefined;
-  const quoteCount = typeof countRow?.n === "number" ? countRow.n : 0;
+  const quoteInput = args.quoteInputWatermark ?? readQuoteInputWatermark(db, profileId);
+  const lastCompared = readLastComparedQuoteInput(db, profileId);
 
   return {
     extract: hasPending,
     scrape: needsScrape,
     audit: hasUnaudited,
-    compare: quoteCount >= 2,
+    compare:
+      quoteInput.quoteCount >= 2 &&
+      (lastCompared === null || !sameQuoteInput(lastCompared, quoteInput)),
   };
 }

@@ -94,6 +94,7 @@ import {
   listProfileRows as listProfileRowsImpl,
   NoInboundThread,
   recordQuoteFromListing as recordQuoteFromListingImpl,
+  readQuoteInputWatermark as readQuoteInputWatermarkImpl,
   resolveActiveProfile as resolveActiveProfileImpl,
   resolveTargetedListing as resolveTargetedListingImpl,
   safeBodyTemplate,
@@ -101,6 +102,7 @@ import {
   sendAndRecord as sendAndRecordImpl,
   TargetedListingNotFound,
   writePipelineCompletion as writePipelineCompletionImpl,
+  writeLastComparedQuoteInput as writeLastComparedQuoteInputImpl,
   type Approver,
   type FinalState,
   type PipelineStateFlags,
@@ -215,6 +217,10 @@ export interface QuotePipelineWorkflowDeps {
   listActiveProfiles: (db: ReturnType<typeof getDb>) => Record<string, unknown>[];
   /** The 4-predicate re-derivation (tools layer). */
   detectPipelineState: typeof detectPipelineState;
+  /** Capture the quote frontier detect evaluates and compare later marks done. */
+  readQuoteInputWatermark: typeof readQuoteInputWatermarkImpl;
+  /** Advance compare's self-clearing watermark only after child success. */
+  writeLastComparedQuoteInput: typeof writeLastComparedQuoteInputImpl;
   /** The READ-ONLY targeted-listing validator (tools layer). */
   resolveTargetedListing: typeof resolveTargetedListingImpl;
   /** Read the latest inbound message on a thread — its id (the recordQuote
@@ -249,6 +255,8 @@ const realDeps: QuotePipelineWorkflowDeps = {
   resolveProfile: resolveActiveProfileImpl,
   listActiveProfiles: (db) => listProfileRowsImpl(db, "active"),
   detectPipelineState,
+  readQuoteInputWatermark: readQuoteInputWatermarkImpl,
+  writeLastComparedQuoteInput: writeLastComparedQuoteInputImpl,
   resolveTargetedListing: resolveTargetedListingImpl,
   readLatestInbound: (db, threadId) => {
     const row = db.$client
@@ -336,12 +344,20 @@ const PipelineStateFlagsSchema = z.object({
   compare: z.boolean(),
 });
 
+const QuoteInputWatermarkSchema = z.object({
+  quoteCount: z.number().int().nonnegative(),
+  maxQuoteRowid: z.number().int().nonnegative(),
+  quoteSetHash: z.string().length(64),
+});
+
 const QuotePipelineStateSchema = z.object({
   searchProfileId: z.string(),
   dryRun: z.boolean(),
   targetListingId: z.string().nullable(),
   /** The four re-derived predicates (set at detect). */
   detected: PipelineStateFlagsSchema,
+  /** Exact quote frontier observed by detect. Persisted only if compare succeeds. */
+  compareInputWatermark: QuoteInputWatermarkSchema.nullable(),
   /** The targeted-VIN sub-path is active (skip the fan-out). */
   targeted: z.boolean(),
   /** Terminal-declined flag (the targeted SEND was declined). */
@@ -428,6 +444,7 @@ const resolveProfileStep = createStep({
       dryRun: inputData.dry_run,
       targetListingId: inputData.target_listing_id,
       detected: { extract: false, scrape: false, audit: false, compare: false },
+      compareInputWatermark: null,
       targeted: inputData.target_listing_id !== null,
       declined: false,
       completedSteps: [],
@@ -448,13 +465,16 @@ const detectStep = createStep({
   outputSchema: QuotePipelineStateSchema,
   execute: async ({ inputData }) => {
     const state = asState(inputData);
+    const db = deps().getDb();
+    const compareInputWatermark = deps().readQuoteInputWatermark(db, state.searchProfileId);
     const detected = deps().detectPipelineState({
       searchProfileId: state.searchProfileId,
       auditPassVersion: DEFAULT_AUDIT_PASS_VERSION,
       nowMs: Date.now(),
-      db: deps().getDb(),
+      quoteInputWatermark: compareInputWatermark,
+      db,
     });
-    return { ...state, detected };
+    return { ...state, detected, compareInputWatermark };
   },
 });
 
@@ -655,6 +675,13 @@ const fanOutStep = createStep({
     const completed: PipelineStep[] = [];
     for (const step of PIPELINE_STEPS) {
       if (!state.detected[step]) continue; // not applicable this run.
+      // Re-capture immediately before compare. Earlier children (especially
+      // extract) may have inserted a quote since detect; that quote is part of
+      // the set the compare child is about to consume and may be marked done.
+      const comparedInput =
+        step === "compare"
+          ? withDb((db) => deps().readQuoteInputWatermark(db, state.searchProfileId))
+          : null;
       const outcome = await deps().runChild(
         mastra,
         CHILD_FOR_STEP[step],
@@ -664,7 +691,20 @@ const fanOutStep = createStep({
       // A child that SUSPENDED (incentive_scrape OEM first-encounter) or FAILED
       // is NOT completed — no auto-retry; the run continues to `partial` and the
       // deterministic nextAction points the user at the remaining step.
-      if (outcome === "success") completed.push(step);
+      if (outcome === "success") {
+        if (step === "compare") {
+          // Persist the PRE-CHILD frontier, never a post-child re-read. A
+          // concurrent inbox pass may insert a quote while compare runs; that
+          // newer frontier must remain visible to the next admission.
+          if (comparedInput === null) {
+            throw new Error("quote_pipeline compare succeeded without an input watermark");
+          }
+          withDb((db) =>
+            deps().writeLastComparedQuoteInput(db, state.searchProfileId, comparedInput),
+          );
+        }
+        completed.push(step);
+      }
     }
 
     return { ...state, completedSteps: completed };

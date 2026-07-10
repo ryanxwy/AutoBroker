@@ -39,6 +39,8 @@ import {
   closeDb,
   FakeGmailAdapter,
   openDb,
+  readLastComparedQuoteInput,
+  readQuoteInputWatermark,
   sendAndRecord as sendAndRecordImpl,
   type Db,
 } from "@autobroker/tools";
@@ -314,6 +316,9 @@ describe("quote_pipeline fan-out", () => {
     // detect fires scrape (no fresh incentive), audit + compare (2 unaudited quotes).
     expect(out.completedSteps).toEqual(expect.arrayContaining(["scrape", "audit", "compare"]));
     expect(auditLogCount()).toBe(1); // exactly ONE completion row
+    expect(readLastComparedQuoteInput(db, PROFILE_ID)).toEqual(
+      readQuoteInputWatermark(db, PROFILE_ID),
+    );
   });
 
   it("a child that SUSPENDS (scrape OEM ask) → that step not completed → partial", async () => {
@@ -333,6 +338,47 @@ describe("quote_pipeline fan-out", () => {
     expect(out.completedSteps).toEqual(expect.arrayContaining(["audit", "compare"]));
     expect(out.nextAction).toContain("scrape");
     expect(auditLogCount()).toBe(1);
+  });
+
+  it("a failed compare does not advance the compare-input watermark", async () => {
+    seedProfile();
+    seedTwoUnauditedQuotes();
+    __setQuotePipelineDepsForTests({
+      runChild: async (_m, childId): Promise<ChildRunOutcome> =>
+        childId === QUOTE_COMPARE_WORKFLOW_ID ? "failed" : "success",
+    });
+
+    const { result } = await start({ search_profile_id: PROFILE_ID });
+    expect(statusOf(result)).toBe("success");
+    const out = quotePipelineOutputSchema.parse(outputOf(result));
+    if (out.outcome !== "completed") throw new Error("expected completed");
+    expect(out.completedSteps).not.toContain("compare");
+    expect(readLastComparedQuoteInput(db, PROFILE_ID)).toBeNull();
+  });
+
+  it("records the pre-run quote frontier so a quote arriving during compare remains new", async () => {
+    seedProfile();
+    seedTwoUnauditedQuotes();
+    const before = readQuoteInputWatermark(db, PROFILE_ID);
+    __setQuotePipelineDepsForTests({
+      runChild: async (_m, childId): Promise<ChildRunOutcome> => {
+        if (childId === QUOTE_COMPARE_WORKFLOW_ID) {
+          db.$client
+            .prepare(
+              "INSERT INTO dealer_quotes (quote_id, dealer_id, message_id, source_gmail_message_id, " +
+                "search_profile_id, otd_total, financing_mode) " +
+                "VALUES ('q3', 'd3', 'm3', 'g3', ?, 32000, 'finance')",
+            )
+            .run(PROFILE_ID);
+        }
+        return "success";
+      },
+    });
+
+    const { result } = await start({ search_profile_id: PROFILE_ID });
+    expect(statusOf(result)).toBe("success");
+    expect(readLastComparedQuoteInput(db, PROFILE_ID)).toEqual(before);
+    expect(readQuoteInputWatermark(db, PROFILE_ID)).not.toEqual(before);
   });
 });
 

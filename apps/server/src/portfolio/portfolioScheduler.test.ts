@@ -46,6 +46,25 @@ function recorder() {
   };
 }
 
+function admitAll() {
+  return {
+    evaluate: () => ({
+      shouldAdmit: true,
+      reason: "first_admission" as const,
+      observedInput: {
+        inboundMessageCount: 0,
+        maxInboundMessageRowid: 0,
+        quoteCount: 0,
+        maxQuoteRowid: 0,
+        quoteSetHash: "0".repeat(64),
+      },
+      evaluatedAtMs: 0,
+      lastAdmittedAtMs: null,
+    }),
+    record: () => undefined,
+  };
+}
+
 describe("PortfolioScheduler", () => {
   it("respects the MAX_CONCURRENT_ACTIVE_PROFILES cap and warms the least-recently-progressed", async () => {
     const health = fakeHealth();
@@ -53,6 +72,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 2,
@@ -75,6 +95,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 2,
@@ -99,6 +120,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 4,
@@ -115,6 +137,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 2,
@@ -143,6 +166,7 @@ describe("PortfolioScheduler", () => {
         { profileId: "A", health: "hot" },
         { profileId: "B", health: "warm" },
       ]),
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 4,
@@ -157,6 +181,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
       cap: 2,
@@ -185,6 +210,7 @@ describe("PortfolioScheduler", () => {
     let n = 0;
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: async (pid) => {
         starts.push(pid);
@@ -207,6 +233,7 @@ describe("PortfolioScheduler", () => {
     const starts: string[] = [];
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: async (pid) => {
         starts.push(pid);
@@ -221,5 +248,32 @@ describe("PortfolioScheduler", () => {
     expect(starts).toEqual(["A", "B"]);
     expect(reg.liveRunFor("A")).toBeUndefined();
     expect(reg.liveRunFor("B")).toBe("run-B");
+  });
+
+  it("does not start a same-input candidate denied by admission, but continues to new input", async () => {
+    const health = fakeHealth();
+    const reg = new InMemoryActivationRegistry();
+    const rec = recorder();
+    const recorded: string[] = [];
+    const sched = new PortfolioScheduler({
+      healthProvider: health,
+      admissionGate: {
+        evaluate: (profileId) => ({
+          ...admitAll().evaluate(),
+          shouldAdmit: profileId === "B",
+          reason: profileId === "B" ? "new_input" : "same_input_floor",
+        }),
+        record: (profileId) => recorded.push(profileId),
+      },
+      activationRegistry: reg,
+      startProfileRun: rec.startProfileRun,
+      cap: 2,
+    });
+    health.hot = ["A", "B"];
+
+    await sched.tick();
+
+    expect(rec.starts).toEqual(["B"]);
+    expect(recorded).toEqual(["B"]);
   });
 });

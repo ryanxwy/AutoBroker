@@ -14,6 +14,7 @@
 import { pathToFileURL } from "node:url";
 
 import {
+  evaluatePipelineAdmission,
   getDb,
   profileHealth,
   recordActivation,
@@ -21,6 +22,7 @@ import {
   lookupRunIdForProfile,
   lookupProfileIdForRunId,
   listActiveProfileIds,
+  writePipelineAdmission,
 } from "@autobroker/tools";
 
 import { buildServer, type BuiltServer } from "./server.js";
@@ -172,6 +174,18 @@ export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioSc
   const scheduler = new PortfolioScheduler({
     healthProvider,
     activationRegistry,
+    admissionGate: {
+      evaluate: (profileId) =>
+        evaluatePipelineAdmission({ db: getDb(), profileId, nowMs: Date.now() }),
+      record: (profileId, decision) => {
+        writePipelineAdmission({
+          db: getDb(),
+          profileId,
+          admittedAtMs: decision.evaluatedAtMs,
+          observedInput: decision.observedInput,
+        });
+      },
+    },
     cap: Number(process.env.MAX_CONCURRENT_ACTIVE_PROFILES ?? 4),
     startProfileRun: async (profileId) => {
       const input =

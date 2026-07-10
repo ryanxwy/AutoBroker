@@ -30,6 +30,10 @@ import { closeDb, openDb, type Db } from "@autobroker/db";
 
 import { detectPipelineState } from "./detectPipelineState.js";
 import {
+  readQuoteInputWatermark,
+  writeLastComparedQuoteInput,
+} from "./admissionWatermark.js";
+import {
   resolveTargetedListing,
   TargetedListingNotFound,
   NoInboundThread,
@@ -194,6 +198,7 @@ function clearAll(): void {
     "dealers",
     "search_profiles",
     "audit_log",
+    "pipeline_state",
   ]) {
     db.$client.prepare(`DELETE FROM ${t}`).run();
   }
@@ -337,6 +342,26 @@ describe("detectPipelineState: compare predicate", () => {
   it("TRUE with two or more quotes for the profile", () => {
     seedQuote({ quoteId: "q1", profileId: PROFILE, sourceGmailMessageId: "g1" });
     seedQuote({ quoteId: "q2", profileId: PROFILE, sourceGmailMessageId: "g2" });
+    const s = detectPipelineState({ searchProfileId: PROFILE, auditPassVersion: PASS_V1, nowMs: NOW_MS, db });
+    expect(s.compare).toBe(true);
+  });
+
+  it("self-clears after that exact quote frontier was compared successfully", () => {
+    seedQuote({ quoteId: "q1", profileId: PROFILE, sourceGmailMessageId: "g1" });
+    seedQuote({ quoteId: "q2", profileId: PROFILE, sourceGmailMessageId: "g2" });
+    const compared = readQuoteInputWatermark(db, PROFILE);
+    writeLastComparedQuoteInput(db, PROFILE, compared);
+
+    const s = detectPipelineState({ searchProfileId: PROFILE, auditPassVersion: PASS_V1, nowMs: NOW_MS, db });
+    expect(s.compare).toBe(false);
+  });
+
+  it("becomes TRUE again when a new quote changes the compared frontier", () => {
+    seedQuote({ quoteId: "q1", profileId: PROFILE, sourceGmailMessageId: "g1" });
+    seedQuote({ quoteId: "q2", profileId: PROFILE, sourceGmailMessageId: "g2" });
+    writeLastComparedQuoteInput(db, PROFILE, readQuoteInputWatermark(db, PROFILE));
+    seedQuote({ quoteId: "q3", profileId: PROFILE, sourceGmailMessageId: "g3" });
+
     const s = detectPipelineState({ searchProfileId: PROFILE, auditPassVersion: PASS_V1, nowMs: NOW_MS, db });
     expect(s.compare).toBe(true);
   });
