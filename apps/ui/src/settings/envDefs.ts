@@ -6,8 +6,8 @@
  * descriptor set in two places (which would drift):
  *
  *   - friendly display labels for enum / bool values, and
- *   - confirm-warning copy for sensitive enum values, which is a UI affordance
- *     with no server field.
+ *   - the confirm-warning copy for the one gate-before-control switch (enum →
+ *     "buyer"), which is a UI affordance with no server field.
  *
  * Everything else (row label, tooltip, the allowed-values list, the current
  * value, the keyword) comes straight from getEnvConfig(). Nothing here re-states
@@ -24,9 +24,11 @@ export const APP_MODE_OPTION_LABELS: Record<string, string> = {
   test: "Test mode",
 };
 
+export const APP_MODE_CONFIRM_VALUE = "buyer";
+
 export const APP_MODE_CONFIRM = {
   title: "Switch to buyer mode?",
-  body: "Buyer mode really emails dealers and submits forms on your behalf. Approvals stay manual unless Automatic send approvals is separately enabled.",
+  body: "Buyer mode really emails dealers and submits forms on your behalf. You still approve each one before it leaves your computer.",
   confirmLabel: "Use buyer mode",
   cancelLabel: "Keep test mode",
 } as const;
