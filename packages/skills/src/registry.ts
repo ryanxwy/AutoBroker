@@ -180,7 +180,7 @@ export const SKILLS: readonly SkillDef[] = [
     slash: "/inventory_site_scan",
     title: "Inventory site scan",
     summary:
-      "Scan the profile's dealer sites for matching inventory, then automatically check shopping sites (Cars.com, Edmunds) too.",
+      "Scan the profile's dealer sites for matching inventory, then automatically check shopping sites (Cars.com, visor.vin, Edmunds) too.",
     phase: 2,
     riskClass: "local_write",
     status: "implemented",
@@ -194,7 +194,7 @@ export const SKILLS: readonly SkillDef[] = [
     slash: "/inventory_aggregator_scan",
     title: "Inventory aggregator scan",
     summary:
-      "Search shopping sites (Cars.com, Edmunds) for matching new-car listings near you — cross-dealer marketplace search, not the dealers' own sites.",
+      "Search shopping sites (Cars.com, visor.vin, Edmunds) for matching new-car listings near you — cross-dealer marketplace search, not the dealers' own sites.",
     phase: 2,
     riskClass: "local_write",
     status: "implemented",

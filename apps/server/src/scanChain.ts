@@ -2,7 +2,7 @@
  * scanChain — the app-layer auto-chain: when an /inventory_site_scan run
  * completes, AUTO-TRIGGER an /inventory_aggregator_scan run for the SAME
  * profile so the buyer sees dealer-site inventory AND shopping-site inventory
- * (Cars.com/Edmunds) in one journey. Both scans are READ-ONLY (no send/submit),
+ * (Cars.com/visor.vin/Edmunds) in one journey. Both scans are READ-ONLY (no send/submit),
  * so there is no approval gate — the sibling just starts.
  *
  * It is a RunLifecycleListener (the PortfolioScheduler precedent), NOT a
@@ -39,7 +39,7 @@ import { SessionService } from "./sessions.js";
 
 /** The voiced line the buyer sees on the parent turn when the sibling starts —
  *  the auto-allowed follow-up must be VOICED (fallback classification). */
-const CHAIN_ANNOUNCE_TEXT = "Also checking shopping sites (Cars.com, Edmunds)…";
+const CHAIN_ANNOUNCE_TEXT = "Also checking shopping sites (Cars.com, visor.vin, Edmunds)…";
 
 /**
  * Register the site_scan → aggregator_scan auto-chain on the run-lifecycle

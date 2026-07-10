@@ -619,6 +619,15 @@ function evalSiteContribution(
       detail: `site "${spec.site}" status="${entry.status}" (want scanned)`,
     };
   }
+  if (typeof entry.listing_count !== "number") {
+    return {
+      kind: "site_contribution",
+      ok: false,
+      expected: `listing_count is a number (>= ${spec.minListings})`,
+      observed: entry,
+      detail: `site "${spec.site}" listing_count is malformed (${JSON.stringify(entry.listing_count)}, typeof ${typeof entry.listing_count}) — expected a number`,
+    };
+  }
   if (entry.listing_count < spec.minListings) {
     return {
       kind: "site_contribution",

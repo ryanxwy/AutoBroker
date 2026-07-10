@@ -298,7 +298,7 @@ headline.
   surface is the voiced kept line `Kept N listing(s) matching your <trim> trim` on the
   CHAINED run's turn, `references/skill-pipeline.md` item 4.)
 - The site_scan→aggregator AUTO-CHAIN fired: after a completed `inventory_site_scan` the
-  parent turn voiced `Also checking shopping sites (Cars.com, Edmunds)…` and a chained
+  parent turn voiced `Also checking shopping sites (Cars.com, visor.vin, Edmunds)…` and a chained
   `inventory_aggregator_scan` turn streamed for the same profile (a healthy site_scan with
   NO chained turn is a finding; `references/skill-pipeline.md` item 4).
 - After each of the 3 irreversible sends, you confirmed the **fake** adapter fired (a

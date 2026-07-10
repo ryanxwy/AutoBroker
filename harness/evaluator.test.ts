@@ -409,6 +409,24 @@ describe("site_contribution anchor (per-site aggregator-scan tally)", () => {
     expect(r.observed).toBeNull();
     expect(r.detail).toMatch(/no text frame carried a per_site payload/);
   });
+
+  it("malformed-listing-count-fail: a missing listing_count does NOT fail-open (undefined < minListings is false)", () => {
+    const perSite = [{ site_id: "visor_vin", status: "scanned", error: null }];
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(perSite), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/listing_count is malformed/);
+    expect(r.detail).toMatch(/typeof undefined/);
+  });
+
+  it("malformed-listing-count-fail: a non-numeric listing_count does NOT fail-open", () => {
+    const perSite = [{ site_id: "visor_vin", status: "scanned", listing_count: "3", error: null }];
+    const detail = buildRunDetailFromEvents("r1", framesWithPerSite(perSite), "done");
+    const r = evalAnchor({ kind: "site_contribution", site: "visor_vin", minListings: 1 }, detail, tmp.db, ctxFor(null));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/listing_count is malformed/);
+    expect(r.detail).toMatch(/typeof string/);
+  });
 });
 
 describe("browser_activity anchor (present default; absent for the decline path)", () => {

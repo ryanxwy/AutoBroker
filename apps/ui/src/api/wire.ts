@@ -502,7 +502,7 @@ export const InventoryCompareResultSchema = z
     // vs blocked. Drives the "scanned, found 0" vs "never scanned" empty-state.
     sourcesScanned: z.number().optional(),
     sourcesBlocked: z.number().optional(),
-    // Shopping-site (Cars.com/Edmunds) scan provenance, counted separately from
+    // Shopping-site (Cars.com/visor.vin/Edmunds) scan provenance, counted separately from
     // dealer sites so the empty-state can name them plainly. Optional for tolerance.
     shoppingSourcesScanned: z.number().optional(),
     shoppingSourcesBlocked: z.number().optional(),
