@@ -320,12 +320,12 @@ export const SKILLS: readonly SkillDef[] = [
     profilePin: "pin_required",
   },
 
-  // ---- Phase 5 · irreversible mutations (real in buyer, fake in test) ----
+  // ---- Phase 5 · irreversible mutations (fake-send throughout) ----
   {
     id: "dealer_web_lead_submit",
     slash: "/dealer_web_lead_submit",
     title: "Dealer web lead submit",
-    summary: "Submit a dealer web lead (L2 approval; manual by default).",
+    summary: "Submit a lead to a dealer's web form (fake-send; human approval).",
     phase: 5,
     riskClass: "irreversible",
     status: "implemented",
@@ -341,7 +341,7 @@ export const SKILLS: readonly SkillDef[] = [
     id: "negotiation_followup",
     slash: "/negotiation_followup",
     title: "Negotiation followup",
-    summary: "Send a negotiation followup (L2 approval; manual by default).",
+    summary: "Send a negotiation followup to a dealer (fake-send; human approval).",
     phase: 5,
     riskClass: "irreversible",
     status: "implemented",
@@ -354,7 +354,7 @@ export const SKILLS: readonly SkillDef[] = [
     id: "dealer_closeout_email",
     slash: "/dealer_closeout_email",
     title: "Dealer closeout email",
-    summary: "Send a dealer closeout email (L2 approval; manual by default).",
+    summary: "Send a closeout email to a dealer (fake-send; human approval).",
     phase: 5,
     riskClass: "irreversible",
     status: "implemented",

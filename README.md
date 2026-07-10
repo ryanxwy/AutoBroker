@@ -158,9 +158,8 @@ pnpm desktop:start    # launch the Electron shell
 The pipeline is **18 skills**, built one at a time in dependency × risk order
 (phase 1 → 5). Nine call an LLM (extraction, field-mapping, drafting); nine are
 fully deterministic (the load-bearing audit math, ranking, and orchestration).
-Read-only scans run freely. The two **destructive** skills require explicit human
-confirmation. The three **irreversible-send** skills use the L2 approval path;
-approvals are manual by default and can be explicitly automated by channel.
+Read-only scans run freely; the two **destructive** and three **irreversible-send**
+skills never act without an explicit human approval.
 
 | Skill (`/slash`) | Phase | Risk | Engine | What it does |
 |---|---|---|---|---|
@@ -179,9 +178,9 @@ approvals are manual by default and can be explicitly automated by channel.
 | `quote_pipeline` | 4 | local write | deterministic | Orchestrate the post-reply chain (reply-extract → incentive → audit → compare). |
 | `daily_digest` | 4 | local write | deterministic | Build a daily digest of pipeline activity across active profiles. |
 | `pipeline_reset` | 4 | **destructive** | deterministic | Wipe the entire local pipeline DB and recreate the schema (typed-YES confirm). |
-| `dealer_web_lead_submit` | 5 | **irreversible** | LLM | Submit a lead to a dealer's web form (L2 approval; manual by default). |
-| `negotiation_followup` | 5 | **irreversible** | LLM | Draft and send a negotiation follow-up email (L2 approval; manual by default). |
-| `dealer_closeout_email` | 5 | **irreversible** | deterministic | Send a templated close-out email (L2 approval; manual by default). |
+| `dealer_web_lead_submit` | 5 | **irreversible** | LLM | Submit a lead to a dealer's web form (human approval). |
+| `negotiation_followup` | 5 | **irreversible** | LLM | Draft and send a negotiation follow-up email to a dealer (human approval). |
+| `dealer_closeout_email` | 5 | **irreversible** | deterministic | Send a close-out email to a dealer (human approval; templated draft). |
 
 Two behaviors worth knowing up front: **trim is a required field** — intake asks
 for it, and all three browser scans stop with `trim_missing` without it; and a
@@ -222,20 +221,18 @@ rail and message streaming.
 Side effects can physically reach `browser.submit` / `gmail.send` **only**
 through the L2 in-process gate handler, which fails **closed**. `AUTOBROKER_MODE`
 is the single send-control variable: `AUTOBROKER_MODE=test` resolves every send
-to the local fake mailbox, while `buyer` (the code default) enables real sends
-through the always-on L2 gate. `AUTOBROKER_AUTO_SEND` is a separate approval
-policy (`off|email|web_form|all`, default `off`) that replays only new allow-listed
-first-send suspends; recovery, contact-flip, and email fallback stay manual. The three
+to the local fake mailbox, while `buyer` (the code default) enables real sends —
+still one human-approved action at a time through the always-on L2 gate. The three
 irreversible skills (`dealer_web_lead_submit`, `negotiation_followup`,
 `dealer_closeout_email`) really send in `buyer` mode through that same gate and
 fake-send in `test` mode — via the one `AUTOBROKER_MODE` switch, with no separate
-per-skill send-mode flag.
+per-skill flag — and their human approval is never hidden.
 
 **Am I about to send real email?** A fresh clone is safe by construction: the
 shipped `.env.example` sets `AUTOBROKER_MODE=test`, so copying it starts you in the
 local fake-mailbox posture. The in-app TopBar toggle is authoritative and is read
-fresh on every send. In `buyer` mode approvals are manual unless you explicitly
-enable Automatic send approvals in Settings. See `CLAUDE.md` for the full
+fresh on every send, and even in `buyer` mode nothing leaves the machine without
+your explicit per-action approval at the L2 gate. See `CLAUDE.md` for the full
 12-point invariant set.
 
 ---

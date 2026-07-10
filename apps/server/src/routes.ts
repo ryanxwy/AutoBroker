@@ -264,7 +264,6 @@ const TestKeyBodySchema = z.object({
 const SetEnvBodySchema = z.object({
   id: z.enum([
     "app_mode",
-    "auto_send",
     "auto_run_searches",
     "gmail_account",
     "chrome_headless",
