@@ -31,10 +31,17 @@ export {
   NO_ACTIVE_SEARCHES_TEXT,
 } from "./renderDigest.js";
 
+export { renderDigestHtml } from "./renderDigestHtml.js";
+
 export {
   writeDigestArtifact,
   type WriteDigestArtifactArgs,
 } from "./writeDigestArtifact.js";
+
+export {
+  writeDigestHtmlSnapshot,
+  type WriteDigestHtmlSnapshotArgs,
+} from "./writeDigestHtmlSnapshot.js";
 
 export {
   buildDigestView,

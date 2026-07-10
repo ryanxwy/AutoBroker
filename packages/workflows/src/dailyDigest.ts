@@ -18,8 +18,8 @@
  *                     offers (best-first, trimmed), freshness mix, and the
  *                     deterministic Next Actions.
  *   2 writeArtifact — render the 7-section text, `assertNoBudget(text)` BEFORE
- *                     the write (the digest is "technically outbound" → budget
- *                     is deliberately not surfaced), then the atomic file write.
+ *                     the write; render + check the static HTML from the SAME
+ *                     payload, then atomically replace digests/latest.html.
  *   3 notify        — compute the one-line headline in CODE, `assertNoBudget`
  *                     it, and produce `{ headline, deepLink: "/digest" }` in the
  *                     step output. Does NOT call `new Notification()` — the
@@ -49,9 +49,11 @@ import {
   generateDigest as generateDigestImpl,
   getDb,
   renderDigestText as renderDigestTextImpl,
+  renderDigestHtml as renderDigestHtmlImpl,
   digestHeadline as digestHeadlineImpl,
   resolveDataDir as resolveDataDirImpl,
   writeDigestArtifact as writeDigestArtifactImpl,
+  writeDigestHtmlSnapshot as writeDigestHtmlSnapshotImpl,
   writeLastDigestAt as writeLastDigestAtImpl,
   type DigestPayload,
 } from "@autobroker/tools";
@@ -79,8 +81,10 @@ export const DIGEST_SECTIONS_COUNT = 7;
 export interface DailyDigestWorkflowDeps {
   generateDigest: typeof generateDigestImpl;
   renderDigestText: typeof renderDigestTextImpl;
+  renderDigestHtml: typeof renderDigestHtmlImpl;
   digestHeadline: typeof digestHeadlineImpl;
   writeDigestArtifact: typeof writeDigestArtifactImpl;
+  writeDigestHtmlSnapshot: typeof writeDigestHtmlSnapshotImpl;
   writeLastDigestAt: typeof writeLastDigestAtImpl;
   resolveDataDir: typeof resolveDataDirImpl;
   getDb: typeof getDb;
@@ -91,8 +95,10 @@ export interface DailyDigestWorkflowDeps {
 const realDeps: DailyDigestWorkflowDeps = {
   generateDigest: generateDigestImpl,
   renderDigestText: renderDigestTextImpl,
+  renderDigestHtml: renderDigestHtmlImpl,
   digestHeadline: digestHeadlineImpl,
   writeDigestArtifact: writeDigestArtifactImpl,
+  writeDigestHtmlSnapshot: writeDigestHtmlSnapshotImpl,
   writeLastDigestAt: writeLastDigestAtImpl,
   resolveDataDir: resolveDataDirImpl,
   getDb,
@@ -222,14 +228,17 @@ const writeArtifactStep = createStep({
     if (state.skipped) return state; // nothing to render/write on the skip path.
 
     const text = deps().renderDigestText(asPayload(state.payload));
-    // Budget red-line: the digest is "technically outbound" → never a budget
-    // figure. assertNoBudget THROWS (fail-loud) before anything touches disk.
+    const html = deps().renderDigestHtml(asPayload(state.payload));
+    // Budget red-line: check BOTH representations before either touches disk.
     assertNoBudget(text);
+    assertNoBudget(html);
 
+    const dataDir = deps().resolveDataDir();
     const artifactPath = deps().writeDigestArtifact(text, {
-      dataDir: deps().resolveDataDir(),
+      dataDir,
       nowMs: state.nowMs,
     });
+    deps().writeDigestHtmlSnapshot(html, { dataDir });
     return { ...state, artifactPath };
   },
 });

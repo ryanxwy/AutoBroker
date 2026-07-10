@@ -120,6 +120,7 @@ afterEach(() => {
 describe("daily_digest workflow", () => {
   it("generated: writes an artifact, advances the watermark per profile, no budget", async () => {
     const writtenPaths: string[] = [];
+    const htmlPaths: string[] = [];
     const watermarks: Array<{ profileId: string; atMs: number }> = [];
     __setDailyDigestDepsForTests({
       now: () => NOW,
@@ -128,6 +129,11 @@ describe("daily_digest workflow", () => {
       writeDigestArtifact: (_text, args) => {
         const p = `/tmp/digests/digest-${args.nowMs}.md`;
         writtenPaths.push(p);
+        return p;
+      },
+      writeDigestHtmlSnapshot: () => {
+        const p = "/tmp/digests/latest.html";
+        htmlPaths.push(p);
         return p;
       },
       writeLastDigestAt: ((_db: unknown, profileId: string, atMs: number) => {
@@ -147,6 +153,7 @@ describe("daily_digest workflow", () => {
     expect(out.summary).not.toMatch(/budget/i);
 
     expect(writtenPaths).toHaveLength(1);
+    expect(htmlPaths).toEqual(["/tmp/digests/latest.html"]);
     // Watermark advanced for EVERY summarized profile.
     expect(watermarks.map((w) => w.profileId).sort()).toEqual(["p1", "p2"]);
     expect(watermarks.every((w) => w.atMs === NOW)).toBe(true);
@@ -158,6 +165,7 @@ describe("daily_digest workflow", () => {
       getDb: (() => ({}) as never) as never,
       generateDigest: () => populatedPayload(),
       writeDigestArtifact: () => "/tmp/digests/x.md",
+      writeDigestHtmlSnapshot: () => "/tmp/digests/latest.html",
       writeLastDigestAt: (() => undefined) as never,
       resolveDataDir: () => "/tmp",
     });
@@ -169,14 +177,36 @@ describe("daily_digest workflow", () => {
     expect(String(notifyOut?.["headline"])).not.toMatch(/budget/i);
   });
 
+  it("checks the HTML budget red-line before writing either artifact", async () => {
+    const writeText = vi.fn(() => "/tmp/digests/x.md");
+    const writeHtml = vi.fn(() => "/tmp/digests/latest.html");
+    __setDailyDigestDepsForTests({
+      now: () => NOW,
+      getDb: (() => ({}) as never) as never,
+      generateDigest: () => populatedPayload(),
+      renderDigestHtml: () => "My budget is $35,000.",
+      writeDigestArtifact: writeText,
+      writeDigestHtmlSnapshot: writeHtml,
+      writeLastDigestAt: (() => undefined) as never,
+      resolveDataDir: () => "/tmp",
+    });
+
+    const result = await startRun(null);
+    expect((result as { status?: string }).status).toBe("failed");
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeHtml).not.toHaveBeenCalled();
+  });
+
   it("skipped: zero active profiles → graceful skip, no artifact, no watermark", async () => {
     const writeArtifact = vi.fn(() => "/tmp/should-not-write.md");
+    const writeHtml = vi.fn(() => "/tmp/should-not-write.html");
     const writeWatermark = vi.fn();
     __setDailyDigestDepsForTests({
       now: () => NOW,
       getDb: (() => ({}) as never) as never,
       generateDigest: () => emptyPayload(),
       writeDigestArtifact: writeArtifact,
+      writeDigestHtmlSnapshot: writeHtml,
       writeLastDigestAt: writeWatermark as never,
       resolveDataDir: () => "/tmp",
     });
@@ -188,6 +218,7 @@ describe("daily_digest workflow", () => {
     expect(out.reason).toBe("no_active_profile");
     expect(out.summary).toContain("intake");
     expect(writeArtifact).not.toHaveBeenCalled();
+    expect(writeHtml).not.toHaveBeenCalled();
     expect(writeWatermark).not.toHaveBeenCalled();
   });
 
@@ -201,6 +232,7 @@ describe("daily_digest workflow", () => {
         return populatedPayload();
       },
       writeDigestArtifact: () => "/tmp/x.md",
+      writeDigestHtmlSnapshot: () => "/tmp/digests/latest.html",
       writeLastDigestAt: (() => undefined) as never,
       resolveDataDir: () => "/tmp",
     });
