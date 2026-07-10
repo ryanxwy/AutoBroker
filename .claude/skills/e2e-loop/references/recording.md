@@ -129,13 +129,13 @@ them out before recording — re-surfacing them wastes a slot and pollutes the r
   matching your <trim> trim` + parens ("M didn't match your exact search", "K not yet in
   stock"), or a voiced per-site drop ("blocked automated scanning" / "couldn't confirm your
   location — skipped its results this run") = the trim-match/location keep-set working
-  (iSeeCars absent by design — launch adapters are Cars.com + Edmunds only). Re-flag ONLY the
+  (iSeeCars absent by design — launch adapters are Cars.com, visor.vin, and Edmunds). Re-flag ONLY the
   suspect-0 (kept 0 while site_scan holds ≥3 in-radius exact matches — skill-pipeline.md item
   4) or an UNVOICED site drop. Shipped 2026-07-03 (`phase2/inventory_aggregator_scan`).
 - `inventory_site_scan` completing and IMMEDIATELY spawning an UNPROMPTED
   `inventory_aggregator_scan` assistant turn (+ its headed browser windows) — the
   site_scan→aggregator AUTO-CHAIN (an app-layer lifecycle listener: the parent turn voices
-  `Also checking shopping sites (Cars.com, Edmunds)…` before its `done`, and the sibling
+  `Also checking shopping sites (Cars.com, visor.vin, Edmunds)…` before its `done`, and the sibling
   streams as its own turn for the SAME profile). Deliberate; serve-live runs it at the
   product default ON (`AUTOBROKER_SITESCAN_CHAIN` unset). A declined/failed/profile-less
   site_scan never chains, and the aggregator never chains further (no recursion) — both

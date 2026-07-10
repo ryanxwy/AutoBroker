@@ -1,11 +1,15 @@
 /**
  * AggregatorListing — the flat 13-field shape for one vehicle listing extracted
- * from a new-car AGGREGATOR shopping-site search page (Cars.com, Edmunds) by
- * `inventory_aggregator_scan`, the read-only sibling of `inventory_site_scan`.
+ * from a new-car AGGREGATOR shopping-site search page (Cars.com, visor.vin,
+ * Edmunds) by `inventory_aggregator_scan`, the read-only sibling of
+ * `inventory_site_scan`.
  *
- * This is the LLM extraction emit shape (single `emit_result` tool on DeepSeek —
- * never structured object output mixed with tools; native output_object on
- * Anthropic/OpenAI). Structured-output discipline (mirrors InventoryListing):
+ * This shape serves TWO roles: for the cards sites (Cars.com, Edmunds) it is the
+ * LLM extraction emit shape (single `emit_result` tool on DeepSeek — never
+ * structured object output mixed with tools; native output_object on
+ * Anthropic/OpenAI); for the rows site (visor.vin) it is the deterministic,
+ * no-LLM validation belt that `visorMap.ts` parses its already-structured rows
+ * against. Structured-output discipline (mirrors InventoryListing):
  * flat, all-required-with-explicit-null, the closed availability enum, lowest
  * common JSON-Schema subset, `.strict()` post-validation. Notes:
  *   - `vin` / `dealer_name` / `listing_url` are UNTRUSTED until the deterministic

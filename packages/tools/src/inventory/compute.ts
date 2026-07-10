@@ -85,8 +85,8 @@ export interface RankedCandidate {
   dealer_name: string | null;
   distance_miles: number | null;
   /** The joined source row's type — 'aggregator_srp' for a shopping-site listing
-   *  (Cars.com/Edmunds), null for a dealer-site listing (no aggregator source).
-   *  Drives the "via {host}" provenance line. */
+   *  (Cars.com/visor.vin/Edmunds), null for a dealer-site listing (no aggregator
+   *  source). Drives the "via {host}" provenance line. */
   source_type: string | null;
   /** The hostname of the joined source_url (e.g. "www.cars.com"), or null — the
    *  host-only text the provenance line renders. Computed in code from source_url. */
@@ -120,9 +120,9 @@ export interface RankInventoryResult {
    *  blocked automated scanning). */
   sourcesBlocked: number;
   /** # of shopping-site sources (source_type='aggregator_srp') with
-   *  last_status='scanned' — Cars.com/Edmunds an aggregator scan reached, counted
-   *  SEPARATELY from dealer sites so the empty-state can say "shopping sites"
-   *  distinctly. */
+   *  last_status='scanned' — Cars.com/visor.vin/Edmunds an aggregator scan
+   *  reached, counted SEPARATELY from dealer sites so the empty-state can say
+   *  "shopping sites" distinctly. */
   shoppingSourcesScanned: number;
   /** # of shopping-site sources (source_type='aggregator_srp') with
    *  last_status='blocked' — shopping sites that blocked automated scanning. */
@@ -354,7 +354,7 @@ export function rankInventoryForProfile(db: Db, profileId: string): RankInventor
 
   // Scan provenance: how many sources a scan actually reached vs were blocked,
   // SPLIT by source_type so the empty-state can speak of dealer sites and
-  // shopping sites (Cars.com/Edmunds) distinctly. Dealer sources keep the
+  // shopping sites (Cars.com/visor.vin/Edmunds) distinctly. Dealer sources keep the
   // sourcesScanned/sourcesBlocked meaning (backward compat); aggregator_srp
   // sources feed the shopping* counts. Read-only.
   const sourceTally = db.$client

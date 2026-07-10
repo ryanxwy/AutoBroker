@@ -169,7 +169,7 @@ skills never act without an explicit human approval.
 | `inventory_compare` | 1 | read-only | deterministic | Rank inventory listings against a search profile. |
 | `dealer_geosearch` | 2 | local write | LLM | Find dealers near the profile's location via the browser. |
 | `inventory_site_scan` | 2 | local write | LLM | Scan the profile's dealer sites for matching inventory, then auto-chain a shopping-site scan. |
-| `inventory_aggregator_scan` | 2 | local write | LLM | Search marketplace sites (Cars.com, Edmunds) for matching new-car listings nearby. |
+| `inventory_aggregator_scan` | 2 | local write | LLM | Search marketplace sites (Cars.com, visor.vin, Edmunds) for matching new-car listings nearby. |
 | `inventory_link_scan` | 2 | local write | LLM | Visit unscraped dealer inventory URLs and match listings against the profile. |
 | `incentive_scrape` | 2 | local write | LLM | Scrape current manufacturer incentives for each active profile's vehicle. |
 | `dealer_inbox_check` | 3 | local write | deterministic | Read dealer replies from the mailbox and surface new messages. |
