@@ -68,6 +68,13 @@ describe("mapVisorStructuredRows", () => {
     expect(result.listings[0]!.distance_miles).toBeNull();
   });
 
+  it("restores the Hybrid fuel type into the product model", () => {
+    const result = mapVisorStructuredRows([{ ...s1, model: "Tucson", fuelType: "Hybrid" }], PROFILE_COORDS);
+
+    expect(result.listings).toHaveLength(1);
+    expect(result.listings[0]!.model).toBe("Tucson Hybrid");
+  });
+
   it("drops a row with no dealer name and counts it, without emitting a listing", () => {
     const s3 = { ...s1, dealerName: null };
     const result = mapVisorStructuredRows([s3], PROFILE_COORDS);

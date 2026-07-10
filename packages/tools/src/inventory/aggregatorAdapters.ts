@@ -153,6 +153,18 @@ export function buildEdmundsUrl(slice: AggregatorFilterSlice): string {
   return `https://www.edmunds.com/inventory/srp.html?${params.toString()}`;
 }
 
+/** visor.vin indexes the live-proven "Tucson Hybrid" vocabulary as the base
+ * model plus `fuel_type=Hybrid`. This is intentionally narrow: no other
+ * powertrain taxonomy is assumed without a captured visor result. */
+function splitVisorModelFuelType(model: string): { model: string; fuelType: string | null } {
+  const suffix = "Hybrid";
+  if (!model.toLowerCase().endsWith(` ${suffix.toLowerCase()}`)) {
+    return { model, fuelType: null };
+  }
+  const baseModel = model.slice(0, -suffix.length).trim();
+  return baseModel === "" ? { model, fuelType: null } : { model: baseModel, fuelType: suffix };
+}
+
 /** Build the visor.vin new-inventory SRP URL from the closed slice, matching the
  *  site's OWN UI URL shape: the string-typed search params (`year`,
  *  `geo_origin_value`, `geo_distance_value`) are JSON-quoted literal strings (e.g.
@@ -160,9 +172,11 @@ export function buildEdmundsUrl(slice: AggregatorFilterSlice): string {
  *  NO trim param, NO state param — trim never reaches a URL (existing red line);
  *  visor's own trim vocabulary is coarse and this dodges that risk entirely. */
 export function buildVisorUrl(slice: AggregatorFilterSlice): string {
+  const visorModel = splitVisorModelFuelType(slice.model);
   const params = new URLSearchParams();
   params.set("make", slice.make);
-  params.set("model", slice.model);
+  params.set("model", visorModel.model);
+  if (visorModel.fuelType !== null) params.set("fuel_type", visorModel.fuelType);
   params.set("car_type", "new");
   params.set("year", JSON.stringify(String(slice.year)));
   params.set("geo_origin_kind", "postal_code");
@@ -528,6 +542,7 @@ function collectVisor(): AggregatorCollected {
           year: rec.year,
           make: rec.make,
           model: rec.model,
+          fuelType: rec.fuelType,
           trim: rec.trim,
           price: rec.price,
           miles: rec.miles,

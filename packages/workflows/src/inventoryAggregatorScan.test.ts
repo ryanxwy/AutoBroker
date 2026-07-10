@@ -1078,6 +1078,20 @@ describe("inventory_aggregator_scan — visor extract bypass (deterministic, zer
     expect(src.discovery_method).toBe("aggregator_visor_vin");
   });
 
+  it("keeps a visor Hybrid row when its base model is restored from fuelType", async () => {
+    seedProfile({ model: "Tucson Hybrid" });
+    __setAggregatorScanDepsForTests({
+      scanAggregators: scanStub({ calls: [] }, [visorScannedOutcome([visorRow({ fuelType: "Hybrid" })])]),
+      harnessGenerate: harnessNeverCalled,
+    });
+
+    const { result } = await startRun("agg-visor-hybrid-model-1");
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect((result.result as Record<string, unknown>)["listingsWritten"]).toBe(1);
+    expect(rowCount("inventory_listings")).toBe(1);
+  });
+
   it("folds invalidDropped + droppedNoDealer counters from a mixed-validity capture", async () => {
     seedProfile();
     __setAggregatorScanDepsForTests({
