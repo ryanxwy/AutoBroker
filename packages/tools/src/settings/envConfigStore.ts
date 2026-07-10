@@ -18,10 +18,10 @@
  * is the single allow-list. It does THREE structural things:
  *   - AUTOBROKER_MODE (the sole send-control var) is the editable "Mode" row;
  *     "test" keeps every send fake/local, "buyer" enables real send (still behind
- *     the per-action human-approval gate). It is the one knob the owner sets here.
+ *     the L2 approval gate). It is the one send-control knob the owner sets here.
  *   - AUTOBROKER_PORTFOLIO_SCHEDULER is the editable "Auto-run my searches"
- *     switch. It admits only quote_pipeline's read/local fan-out. Every outbound
- *     send remains behind its existing per-action human approval gate.
+ *     switch. It admits only quote_pipeline's read/local fan-out and grants no
+ *     outbound approval by itself.
  *   - The two test-escape vars (AUTOBROKER_TEST_AUTO_APPROVE,
  *     AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS) have NO descriptor at all — they are
  *     structurally unreachable: not readable through getEnvConfig (no row),
@@ -106,7 +106,7 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     numericMax: null,
     label: "Mode",
     tooltip:
-      "Buyer mode really emails dealers and submits forms (you still approve each one). Test mode keeps everything internal — nothing leaves your computer.",
+      "Buyer mode really emails dealers and submits forms. Approvals are manual unless Automatic send approvals is enabled. Test mode keeps everything internal.",
   },
   {
     id: "auto_send",
@@ -132,7 +132,7 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     numericMax: null,
     label: "Auto-run my searches",
     tooltip:
-      "Automatically runs read-only and local search-pipeline work when new replies or quotes arrive. Every email and web-form submission still waits for your approval.",
+      "Automatically runs read-only and local search-pipeline work when new replies or quotes arrive. This switch does not approve outbound sends.",
   },
   {
     id: "gmail_account",

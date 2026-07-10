@@ -31,7 +31,7 @@ shell and bypass the gate.
 | L3 native Mastra approval / `suspend()` | Convenience only, api-key lane only. |
 | **L2 in-process gate bridge** | **Load-bearing. All lanes. fail-CLOSED, single structured path.** (Renamed from the legacy `build_sdk_mcp_server`.) |
 | fallback-gate suspend | Workflow re-asks the human. |
-| `AUTOBROKER_MODE` brake | The send floor: `test` resolves every send fake/local at each seam. The sole send-control variable; `test` is force-pinned for all test/CI contexts. |
+| `AUTOBROKER_MODE` brake | The send floor: `test` resolves every send fake/local at each seam. The sole send-control variable; `test` is force-pinned for all test/CI contexts. `AUTOBROKER_AUTO_SEND` is approval policy, not a send-mode switch. |
 
 ### Fail-CLOSED rules enforced in `src/gate/index.ts`
 

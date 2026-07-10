@@ -209,6 +209,100 @@ describe("auto send — explicit first-send allow-list", () => {
     expect(svc.isTerminal(runId)).toBe(true);
   });
 
+  it.each([
+    {
+      name: "closeout email batch",
+      mode: "email",
+      skill: "dealer_closeout_email",
+      step: "batchReview",
+      payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload,
+      content: { approved_dealer_ids: ["dealer-1"] },
+    },
+    {
+      name: "negotiation email batch",
+      mode: "all",
+      skill: "negotiation_followup",
+      step: "batchReview",
+      payload: {
+        kind: "batch_review",
+        targets: [{ dealer_id: "thread-1", name: "Dealer One", website: "Draft preview" }],
+      },
+      content: { approved_dealer_ids: ["thread-1"] },
+    },
+    {
+      name: "web-form batch",
+      mode: "web_form",
+      skill: "dealer_web_lead_submit",
+      step: "batchReview",
+      payload: {
+        kind: "batch_review",
+        targets: [{ dealer_id: "dealer-2", name: "Dealer Two", website: "https://example.test" }],
+      },
+      content: { approved_dealer_ids: ["dealer-2"] },
+    },
+    {
+      name: "single-listing web-form",
+      mode: "all",
+      skill: "dealer_web_lead_submit",
+      step: "batchReview",
+      payload: { kind: "approval", reason: "single_store_confirm" },
+      content: undefined,
+    },
+    {
+      name: "targeted quote email",
+      mode: "email",
+      skill: "quote_pipeline",
+      step: "targeted",
+      payload: { kind: "approval", reason: "targeted_otd_send" },
+      content: undefined,
+    },
+  ])("allows the $name policy and reuses the existing decision contract", ({
+    mode,
+    skill,
+    step,
+    payload,
+    content,
+  }) => {
+    process.env.AUTOBROKER_MODE = "buyer";
+    process.env.AUTOBROKER_AUTO_SEND = mode;
+    expect(
+      autoSendDecisionForNewSuspend({
+        skill,
+        step,
+        decisionId: "decision-allow",
+        payload,
+      }),
+    ).toEqual({
+      decision_id: "decision-allow",
+      decision: {
+        action: "accept",
+        ...(content === undefined ? {} : { content }),
+      },
+    });
+  });
+
+  it.each([
+    { mode: "off", skill: "dealer_closeout_email", step: "batchReview", payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload },
+    { mode: "garbage", skill: "dealer_closeout_email", step: "batchReview", payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload },
+    { mode: "web_form", skill: "dealer_closeout_email", step: "batchReview", payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload },
+    { mode: "email", skill: "dealer_web_lead_submit", step: "batchReview", payload: { kind: "approval", reason: "single_store_confirm" } },
+    { mode: "all", skill: "quote_pipeline", step: "targeted", payload: { kind: "approval", reason: "other" } },
+    { mode: "all", skill: "dealer_web_lead_submit", step: "emailFallback", payload: { kind: "approval", reason: "email_fallback" } },
+    { mode: "all", skill: "dealer_closeout_email", step: "batchReview", payload: { kind: "batch_review", targets: [] } },
+    { mode: "all", skill: "unlisted_send_skill", step: "batchReview", payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload },
+  ])("refuses a non-allow-listed policy %#", ({ mode, skill, step, payload }) => {
+    process.env.AUTOBROKER_MODE = "buyer";
+    process.env.AUTOBROKER_AUTO_SEND = mode;
+    expect(
+      autoSendDecisionForNewSuspend({
+        skill,
+        step,
+        decisionId: "decision-deny",
+        payload,
+      }),
+    ).toBeNull();
+  });
+
   it("fails closed in test mode and on the negotiation contact-flip re-confirm", () => {
     process.env.AUTOBROKER_MODE = "test";
     process.env.AUTOBROKER_AUTO_SEND = "all";
@@ -229,6 +323,28 @@ describe("auto send — explicit first-send allow-list", () => {
         payload: { kind: "approval", reason: "contact_flip" },
       }),
     ).toBeNull();
+  });
+
+  it("keeps a recovered suspend manual even when automatic sends are enabled", async () => {
+    process.env.AUTOBROKER_MODE = "buyer";
+    process.env.AUTOBROKER_AUTO_SEND = "all";
+    const descriptor = RUN_DESCRIPTORS.find((entry) => entry.skillId === "dealer_closeout_email");
+    expect(descriptor).toBeDefined();
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      {
+        getWorkflow: () => ({
+          getWorkflowRunById: async () => SUSPEND_CLOSEOUT_BATCH,
+        }),
+      } as never,
+      pubsub,
+    );
+
+    await svc.reattach("recovered-run", descriptor!.workflowId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(svc.pendingOf("recovered-run")?.step).toBe("batchReview");
+    expect(svc.isTerminal("recovered-run")).toBe(false);
   });
 });
 

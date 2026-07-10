@@ -2,8 +2,8 @@
  * AUTOBROKER_MODE — the single user-facing switch between the two app postures:
  *
  *   - "buyer" (the DEFAULT): the real product. Real Gmail send + real dealer
- *     web-form submit + real LLM — after the per-action human approval the L2
- *     gate still requires. This is what a real buyer runs.
+ *     web-form submit + real LLM — after the L2 approval decision (manual by
+ *     default, optionally automated for fresh first-send gates).
  *   - "test": the internal/safe posture. The fake mailbox, no real web submit, no
  *     real external mutation — everything stays local on this machine.
  *
@@ -31,7 +31,7 @@ export function resolveMode(): AppMode {
 }
 
 /** True in buyer mode (the real product) — real send is enabled (still behind
- *  the L2 human-approval gate). True by default; false only when
+ *  the L2 approval gate). True by default; false only when
  *  AUTOBROKER_MODE === "test". */
 export function isBuyerMode(): boolean {
   return resolveMode() !== "test";
