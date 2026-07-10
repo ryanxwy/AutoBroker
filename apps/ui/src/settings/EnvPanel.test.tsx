@@ -46,6 +46,19 @@ function curatedVars(mode: "buyer" | "test" = "test"): EnvVarState[] {
       value: mode,
     },
     {
+      id: "auto_send",
+      envVar: "AUTOBROKER_AUTO_SEND",
+      classification: "editable-enum",
+      editable: true,
+      allowedValues: ["off", "email", "web_form", "all"],
+      default: "off",
+      numericMin: null,
+      numericMax: null,
+      label: "Automatic send approvals",
+      tooltip: "Auto-send tooltip.",
+      value: "off",
+    },
+    {
       id: "gmail_account",
       envVar: "AUTOBROKER_GMAIL_ACCOUNT",
       classification: "editable-text",
@@ -166,6 +179,7 @@ describe("EnvPanel — rows render from the store response", () => {
     expect(r.query("env-panel")).not.toBeNull();
     expect(r.query("env-row-app_mode")).not.toBeNull();
     expect(r.query("env-select-app_mode")).not.toBeNull();
+    expect(r.query("env-select-auto_send")).not.toBeNull();
     expect(r.query("env-toggle-chrome_headless")).not.toBeNull();
     // read-only demo status → a badge, no control.
     expect(r.query("env-badge-demo_seed")).not.toBeNull();
@@ -242,6 +256,21 @@ describe("EnvPanel — enum gate-before-control", () => {
     expect(r.query("env-confirm-app_mode")).toBeNull(); // never confirms the safe direction
     expect(puts).toHaveLength(1);
     expect(puts[0]).toEqual({ id: "app_mode", value: "test" });
+    r.unmount();
+  });
+
+  it("auto_send → all shows its own confirm and writes only after approval", async () => {
+    const puts: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
+    const r = render(<EnvPanel client={client} env={okEnv()} onChanged={() => {}} />);
+
+    changeSelect(r.get("env-select-auto_send") as HTMLSelectElement, "all");
+    expect(r.query("env-confirm-auto_send")).not.toBeNull();
+    expect(puts).toHaveLength(0);
+
+    click(r.get("env-confirm-yes-auto_send"));
+    await flush();
+    expect(puts).toContainEqual({ id: "auto_send", value: "all" });
     r.unmount();
   });
 });

@@ -113,6 +113,8 @@ import {
 } from "@autobroker/workflows";
 import {
   getDb,
+  isBuyerMode,
+  resolveAutoSendMode,
   validateResetToken,
   recordActivation,
   clearActivationByRunId,
@@ -1754,6 +1756,62 @@ function bodyKeyOf(body: FormDecisionBody): string {
   return JSON.stringify({ action: body.decision.action, content });
 }
 
+/** The only outbound approvals eligible for explicit auto-send. The policy is
+ * keyed by the registered skill and its known first send step — NEVER by a
+ * generic suspend payload shape — so read-only, destructive, intake, and later
+ * re-confirm gates cannot accidentally inherit automation. */
+const AUTO_SEND_CHANNELS = {
+  dealer_web_lead_submit: { channel: "web_form", step: "batchReview" },
+  negotiation_followup: { channel: "email", step: "batchReview" },
+  dealer_closeout_email: { channel: "email", step: "batchReview" },
+  quote_pipeline: { channel: "email", step: "targeted" },
+} as const;
+
+/** Build the existing form-decision body for a newly-emitted eligible send gate,
+ * or null to leave the gate for a human. Test mode is an independent hard stop;
+ * an invalid or absent AUTO_SEND value resolves to off in the tools layer. */
+export function autoSendDecisionForNewSuspend(args: {
+  skill: string;
+  step: string;
+  decisionId: string;
+  payload: Record<string, unknown>;
+}): FormDecisionBody | null {
+  if (!isBuyerMode()) return null;
+  const policy = AUTO_SEND_CHANNELS[args.skill as keyof typeof AUTO_SEND_CHANNELS];
+  if (policy === undefined || policy.step !== args.step) return null;
+  const configured = resolveAutoSendMode();
+  if (configured !== "all" && configured !== policy.channel) return null;
+
+  // quote_pipeline's targeted approval carries no list; every other eligible
+  // first gate is an explicit batch whose ids must come from the actual payload.
+  if (args.skill === "quote_pipeline") {
+    return { decision_id: args.decisionId, decision: { action: "accept" } };
+  }
+  const targetIds = Array.isArray(args.payload["targets"])
+    ? args.payload["targets"]
+        .map((target) =>
+          target !== null && typeof target === "object" && typeof target["dealer_id"] === "string"
+            ? target["dealer_id"]
+            : null,
+        )
+        .filter((id): id is string => id !== null)
+    : [];
+  if (targetIds.length > 0) {
+    return {
+      decision_id: args.decisionId,
+      decision: { action: "accept", content: { approved_dealer_ids: targetIds } },
+    };
+  }
+
+  // dealer_web_lead_submit's single-listing path uses the SAME batchReview step
+  // with an approval card (and no targets array). The step is intentionally
+  // eligible; emailFallback is a different step and remains manual, even at all.
+  if (args.skill === "dealer_web_lead_submit") {
+    return { decision_id: args.decisionId, decision: { action: "accept" } };
+  }
+  return null;
+}
+
 /**
  * The skill run service. One instance per server, holding the Mastra instance
  * (driven via the glue) and the per-run claim/pending state + the pubsub. The
@@ -2179,6 +2237,22 @@ export class SkillRunService {
       });
       // A parked run holds ZERO scheduler slots — notify so the slot frees.
       this.fireSuspended(run, runId);
+      // Only a LIVE translation of a newly-created suspend may opt into the
+      // existing formDecision path. Reattach deliberately never calls this, so a
+      // stale crash-recovered approval always surfaces for a human. Queue after
+      // the full awaiting_user fan-out + scheduler notification; if dispatch ever
+      // fails, it leaves the pending gate intact (fail closed).
+      const autoDecision = autoSendDecisionForNewSuspend({
+        skill: run.skill,
+        step,
+        decisionId,
+        payload,
+      });
+      if (autoDecision !== null) {
+        queueMicrotask(() => {
+          void this.formDecision(runId, autoDecision).catch(() => undefined);
+        });
+      }
       return;
     }
 

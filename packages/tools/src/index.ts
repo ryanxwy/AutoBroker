@@ -927,8 +927,8 @@ export {
   type SecretsProbeDeps,
 } from "./settings/index.js";
 
-// Settings/env — the curated NON-SECRET operational env vars (the four editable
-// app_mode / gmail_account / chrome_headless / per_dealer_record_cap rows +
+// Settings/env — the curated NON-SECRET operational env vars (the five editable
+// app_mode / auto_send / gmail_account / chrome_headless / per_dealer_record_cap rows +
 // read-only path/status rows).
 // The boot loader seeds saved overrides into process.env; routes delegate down
 // here and never read/write the env file directly.
@@ -938,6 +938,8 @@ export {
   loadEnvConfigIntoEnv,
   ENV_DESCRIPTORS,
   EDITABLE_IDS,
+  AUTO_SEND_MODES,
+  resolveAutoSendMode,
   UnknownEnvVarError,
   NonEditableEnvVarError,
   InvalidEnvValueError,
@@ -945,6 +947,7 @@ export {
   type EnvVarClass,
   type EnvVarDescriptor,
   type EnvVarState,
+  type AutoSendMode,
 } from "./settings/index.js";
 
 // goplaces — the ONLY external API in intake (read-only Google Geocoding).

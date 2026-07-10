@@ -19,6 +19,9 @@
  *   - AUTOBROKER_MODE (the sole send-control var) is the editable "Mode" row;
  *     "test" keeps every send fake/local, "buyer" enables real send (still behind
  *     the per-action human-approval gate). It is the one knob the owner sets here.
+ *   - AUTOBROKER_AUTO_SEND is an explicit, persisted opt-in for replaying only
+ *     newly-emitted outbound-send approvals. Its resolver treats missing or
+ *     garbage values as "off"; test mode still never auto-resumes a gate.
  *   - The two test-escape vars (AUTOBROKER_TEST_AUTO_APPROVE,
  *     AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS) have NO descriptor at all — they are
  *     structurally unreachable: not readable through getEnvConfig (no row),
@@ -47,6 +50,7 @@ import {
 export type EnvVarId =
   // editable
   | "app_mode"
+  | "auto_send"
   | "gmail_account"
   | "chrome_headless"
   | "per_dealer_record_cap"
@@ -101,7 +105,20 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     numericMax: null,
     label: "Mode",
     tooltip:
-      "Buyer mode really emails dealers and submits forms (you still approve each one). Test mode keeps everything internal — nothing leaves your computer.",
+      "Buyer mode can really email dealers and submit forms. Automatic send approvals are controlled separately; Test mode keeps everything internal — nothing leaves your computer.",
+  },
+  {
+    id: "auto_send",
+    envVar: "AUTOBROKER_AUTO_SEND",
+    classification: "editable-enum",
+    editable: true,
+    allowedValues: ["off", "email", "web_form", "all"],
+    default: "off",
+    numericMin: null,
+    numericMax: null,
+    label: "Automatic send approvals",
+    tooltip:
+      "In Buyer mode, automatically accept new send approvals for email, web forms, or both. Off keeps every approval manual. Email fallback always asks again.",
   },
   {
     id: "gmail_account",
@@ -187,7 +204,24 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
 ];
 
 /** The editable ids only — the write allow-list. */
-export const EDITABLE_IDS = ["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
+export const EDITABLE_IDS = [
+  "app_mode",
+  "auto_send",
+  "gmail_account",
+  "chrome_headless",
+  "per_dealer_record_cap",
+] as const;
+
+/** The channels AutoBroker may explicitly opt into auto-resuming. Any unknown
+ * environment value resolves to the conservative default, "off". */
+export const AUTO_SEND_MODES = ["off", "email", "web_form", "all"] as const;
+export type AutoSendMode = (typeof AUTO_SEND_MODES)[number];
+
+/** Read the auto-send setting fresh. Unlike AUTOBROKER_MODE's deliberately
+ * buyer-capable fallback, this control is fail-closed: missing or garbage is off. */
+export function resolveAutoSendMode(raw = process.env.AUTOBROKER_AUTO_SEND): AutoSendMode {
+  return AUTO_SEND_MODES.includes(raw as AutoSendMode) ? (raw as AutoSendMode) : "off";
+}
 
 /** Max length for a free-text editable value (an email address — RFC 5321 caps
  *  the full address at 254 chars). Guards against a pathological payload. */
@@ -337,6 +371,7 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
     case "db_path":
       return resolveActiveDbPath();
     case "app_mode":
+    case "auto_send":
     case "gmail_account":
     case "chrome_headless":
     case "per_dealer_record_cap": {
@@ -344,6 +379,9 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
       const fromFile = stored[descriptor.id];
       if (fromFile !== undefined) return fromFile;
       const fromEnv = process.env[descriptor.envVar];
+      if (descriptor.id === "auto_send") {
+        return resolveAutoSendMode(fromFile ?? fromEnv);
+      }
       if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
       return descriptor.default ?? "";
     }

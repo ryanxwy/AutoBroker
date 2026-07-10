@@ -674,14 +674,20 @@ export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
 //   GET /api/settings/env             → { vars: EnvVarState[] }  current values
 //   PUT /api/settings/env {id,value}  → { ok:true, vars: EnvVarState[] }
 // The server returns the WHOLE curated set as an array (one EnvVarState per
-// curated id), and the PUT echoes the refreshed set after a write. Only the two
+// curated id), and the PUT echoes the refreshed set after a write. Only the
 // editable ids are writable; the read-only rows are reported, never accepted on
 // PUT (the server rejects an attempt to set them). EnvVarState mirrors the store
 // descriptor + its effective `value` exactly — flat, all-required.
 // ---------------------------------------------------------------------------
 
 /** The editable env ids the route accepts on PUT. */
-export const ENV_EDITABLE_IDS = ["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
+export const ENV_EDITABLE_IDS = [
+  "app_mode",
+  "auto_send",
+  "gmail_account",
+  "chrome_headless",
+  "per_dealer_record_cap",
+] as const;
 export type EnvEditableId = (typeof ENV_EDITABLE_IDS)[number];
 
 /** One curated env-var row with its current effective value — mirrors the store

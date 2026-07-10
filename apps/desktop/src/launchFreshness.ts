@@ -39,6 +39,7 @@ const GIT_ALLOWLIST = ["/opt/homebrew/bin/git", "/usr/bin/git"] as const;
  *  send-control var); the harness trio is stripped for the same reason. */
 const STRIP_ENV = [
   "AUTOBROKER_MODE",
+  "AUTOBROKER_AUTO_SEND",
   "AUTOBROKER_HARNESS",
   "AUTOBROKER_HARNESS_FIXTURE",
   "AUTOBROKER_TEST_AUTO_APPROVE",

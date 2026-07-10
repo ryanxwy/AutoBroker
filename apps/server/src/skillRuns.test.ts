@@ -16,7 +16,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resetRuntimeGlueForTests } from "@autobroker/workflows";
 
-import { SkillRunService, FormDecisionError, RUN_DESCRIPTORS } from "./skillRuns.js";
+import {
+  SkillRunService,
+  FormDecisionError,
+  RUN_DESCRIPTORS,
+  autoSendDecisionForNewSuspend,
+} from "./skillRuns.js";
 import { RunPubSub } from "./runPubSub.js";
 import { useFreshProductDb } from "./testProductDb.js";
 
@@ -82,6 +87,21 @@ const SUCCESS_DECLINED = {
   status: "success",
   result: { outcome: "declined" },
 };
+
+const SUSPEND_CLOSEOUT_BATCH = {
+  status: "suspended",
+  steps: {
+    batchReview: {
+      status: "suspended",
+      suspendPayload: {
+        kind: "batch_review",
+        targets: [{ dealer_id: "dealer-a", name: "Dealer A", website: "" }],
+      },
+    },
+  },
+};
+
+const SUCCESS_CLOSEOUT = { status: "success", result: { outcome: "closed", summary: "Closed 1 dealer." } };
 
 /** A valid 18-field form content. */
 function validContent(): Record<string, unknown> {
@@ -154,6 +174,78 @@ describe("formDecision — idempotent replay (Phase 1 consumed-same-body)", () =
         decision: { action: "accept", content: validContent() },
       }),
     ).rejects.toMatchObject({ code: "decision_conflict", status: 409 });
+  });
+});
+
+describe("auto-send — new outbound gates only", () => {
+  const savedMode = process.env.AUTOBROKER_MODE;
+  const savedAutoSend = process.env.AUTOBROKER_AUTO_SEND;
+
+  afterEach(() => {
+    if (savedMode === undefined) delete process.env.AUTOBROKER_MODE;
+    else process.env.AUTOBROKER_MODE = savedMode;
+    if (savedAutoSend === undefined) delete process.env.AUTOBROKER_AUTO_SEND;
+    else process.env.AUTOBROKER_AUTO_SEND = savedAutoSend;
+  });
+
+  it("replays the existing formDecision path for a new eligible email batch in buyer mode", async () => {
+    process.env.AUTOBROKER_MODE = "buyer";
+    process.env.AUTOBROKER_AUTO_SEND = "email";
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(fakeMastra([SUSPEND_CLOSEOUT_BATCH, SUCCESS_CLOSEOUT]), pubsub);
+    const { runId } = await svc.start({
+      skill: "dealer_closeout_email",
+      input: { search_profile_id: "profile-auto" },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(svc.isTerminal(runId)).toBe(true);
+    expect(pubsub.snapshot(runId).map((event) => event.kind)).toEqual([
+      "init",
+      "awaiting_user",
+      "text",
+      "data.changed",
+      "done",
+    ]);
+  });
+
+  it("does not auto-decide test-mode, fallback, or recovered gates", async () => {
+    process.env.AUTOBROKER_MODE = "test";
+    process.env.AUTOBROKER_AUTO_SEND = "all";
+    expect(
+      autoSendDecisionForNewSuspend({
+        skill: "dealer_closeout_email",
+        step: "batchReview",
+        decisionId: "test-gate",
+        payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload,
+      }),
+    ).toBeNull();
+
+    process.env.AUTOBROKER_MODE = "buyer";
+    expect(
+      autoSendDecisionForNewSuspend({
+        skill: "dealer_web_lead_submit",
+        step: "emailFallback",
+        decisionId: "fallback-gate",
+        payload: { kind: "approval", reason: "email_fallback" },
+      }),
+    ).toBeNull();
+
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      {
+        getWorkflow: () => ({
+          getWorkflowRunById: async () => ({
+            status: "suspended",
+            steps: SUSPEND_CLOSEOUT_BATCH.steps,
+          }),
+        }),
+      } as never,
+      pubsub,
+    );
+    await svc.reattach("recovered-auto-send", "dealer_closeout_email");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(svc.pendingOf("recovered-auto-send")?.step).toBe("batchReview");
   });
 });
 

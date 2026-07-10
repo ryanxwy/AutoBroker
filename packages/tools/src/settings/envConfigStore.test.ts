@@ -33,6 +33,7 @@ const TOUCHED = [
   "AUTOBROKER_DATA_DIR",
   "AUTOBROKER_DB",
   "AUTOBROKER_MODE",
+  "AUTOBROKER_AUTO_SEND",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
   "AUTOBROKER_PER_DEALER_RECORD_CAP",
@@ -105,6 +106,22 @@ describe("setEnvConfig — editable persist + live mutation", () => {
     setEnvConfig("chrome_headless", "0");
     const row = getEnvConfig().find((r) => r.id === "chrome_headless");
     expect(row?.value).toBe("0");
+  });
+});
+
+describe("auto_send — explicit persisted opt-in", () => {
+  it("persists a valid channel and resolves garbage to off", () => {
+    setEnvConfig("auto_send", "email");
+    expect(process.env.AUTOBROKER_AUTO_SEND).toBe("email");
+    expect(JSON.parse(readFileSync(envFile(), "utf8"))).toEqual({ auto_send: "email" });
+
+    process.env.AUTOBROKER_AUTO_SEND = "surprise";
+    expect(getEnvConfig().find((row) => row.id === "auto_send")?.value).toBe("off");
+  });
+
+  it("rejects an unsupported channel without persisting it", () => {
+    expect(() => setEnvConfig("auto_send", "everything")).toThrow(InvalidEnvValueError);
+    expect(process.env.AUTOBROKER_AUTO_SEND).toBeUndefined();
   });
 });
 
