@@ -284,6 +284,15 @@ re-runs. Self-contained `index.html`, warm-paper ledger CSS, key sections 中文
    `references/brand-picker.md`.
 2. **逐技能表** — per skill: NL input · route · did-what · cost · latency · verdict · UI
    observation.
+   - **控件覆盖 / UI-control coverage** — immediately below the relevant skill row (or as
+     one run-level table when several actions share a canvas surface), format the evaluator's
+     existing `ui_checks[]` facts only: `testid · tab · verb · persona · before → after ·
+     evidence_ref`. Do not add a second collection channel: `ui_checks[]` already carries
+     `{surface, selector, expected, observed, ok}` from the real dashboard. Resolve the
+     testid against `ui-control-manifest.md`; an `apps/ui/src` testid absent from that
+     manifest renders **`UNTESTED — new since <date>`** until an explicit registration
+     decision. Diff this table against the prior run: a control covered there but
+     never-touched here is a **掉线控件 / dropped-control** finding, never a silent omission.
 3. **Live 议价摘要** — per dealer: initial OTD → counter rounds → final OTD (omit if step
    3 was skipped).
 4. **时间与成本** — the two tables below.

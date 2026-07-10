@@ -88,6 +88,16 @@ re-assert what the floor already covers.
 If the run was clean and the runner needs no change, **write that down** — a deliberate
 "no runner change needed" is a valid outcome, a silent skip is not.
 
+### F0 control-coverage draw-down (mandatory)
+
+Read `e2e-loop/references/ui-control-manifest.md` before closing step 6. In every evolve
+round, choose **2–3 `never-touched` controls** and land their coverage for the next run;
+order the draw-down by real buyer use: sort/filter/compare before secondary controls. If
+zero is the honest result (for example, a safety blocker consumed the round or no eligible
+control can be exercised without inventing product behavior), record that one-line reason
+in the evolve-report. Never silently skip the draw-down. The next run's coverage table
+must make the chosen controls, their persona/verb, and any dropped-control regression visible.
+
 ### Electron / desktop sync (conditional)
 
 If a fix this session touched `apps/ui/src/` or a `data-testid`, rebuild the desktop
