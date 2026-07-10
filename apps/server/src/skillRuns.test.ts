@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resetRuntimeGlueForTests } from "@autobroker/workflows";
 
 import {
+  autoSendDecisionForNewSuspend,
   SkillRunService,
   FormDecisionError,
   ProfileRunConflictError,
@@ -101,6 +102,11 @@ const SUSPEND_CLOSEOUT_BATCH = {
   },
 };
 
+const SUCCESS_CLOSEOUT = {
+  status: "success",
+  result: { summary: "Closed 1 dealer.", searchProfileId: "profile-1" },
+};
+
 /** A valid 18-field form content. */
 function validContent(): Record<string, unknown> {
   return {
@@ -172,6 +178,57 @@ describe("formDecision — idempotent replay (Phase 1 consumed-same-body)", () =
         decision: { action: "accept", content: validContent() },
       }),
     ).rejects.toMatchObject({ code: "decision_conflict", status: 409 });
+  });
+});
+
+describe("auto send — explicit first-send allow-list", () => {
+  const originalMode = process.env.AUTOBROKER_MODE;
+  const originalAutoSend = process.env.AUTOBROKER_AUTO_SEND;
+
+  afterEach(() => {
+    if (originalMode === undefined) delete process.env.AUTOBROKER_MODE;
+    else process.env.AUTOBROKER_MODE = originalMode;
+    if (originalAutoSend === undefined) delete process.env.AUTOBROKER_AUTO_SEND;
+    else process.env.AUTOBROKER_AUTO_SEND = originalAutoSend;
+  });
+
+  it("Buyer + email automatically resumes a fresh closeout batch gate", async () => {
+    process.env.AUTOBROKER_MODE = "buyer";
+    process.env.AUTOBROKER_AUTO_SEND = "email";
+    const pubsub = new RunPubSub();
+    const svc = new SkillRunService(
+      fakeMastra([SUSPEND_CLOSEOUT_BATCH, SUCCESS_CLOSEOUT]),
+      pubsub,
+    );
+    const { runId } = await svc.start({
+      skill: "dealer_closeout_email",
+      input: { search_profile_id: "profile-1" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(svc.pendingOf(runId)).toBeNull();
+    expect(svc.isTerminal(runId)).toBe(true);
+  });
+
+  it("fails closed in test mode and on the negotiation contact-flip re-confirm", () => {
+    process.env.AUTOBROKER_MODE = "test";
+    process.env.AUTOBROKER_AUTO_SEND = "all";
+    expect(
+      autoSendDecisionForNewSuspend({
+        skill: "dealer_closeout_email",
+        step: "batchReview",
+        decisionId: "decision-1",
+        payload: SUSPEND_CLOSEOUT_BATCH.steps.batchReview.suspendPayload,
+      }),
+    ).toBeNull();
+    process.env.AUTOBROKER_MODE = "buyer";
+    expect(
+      autoSendDecisionForNewSuspend({
+        skill: "negotiation_followup",
+        step: "batchReview",
+        decisionId: "decision-2",
+        payload: { kind: "approval", reason: "contact_flip" },
+      }),
+    ).toBeNull();
   });
 });
 

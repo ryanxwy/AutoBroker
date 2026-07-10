@@ -50,6 +50,7 @@ import {
 export type EnvVarId =
   // editable
   | "app_mode"
+  | "auto_send"
   | "auto_run_searches"
   | "gmail_account"
   | "chrome_headless"
@@ -106,6 +107,19 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     label: "Mode",
     tooltip:
       "Buyer mode really emails dealers and submits forms (you still approve each one). Test mode keeps everything internal — nothing leaves your computer.",
+  },
+  {
+    id: "auto_send",
+    envVar: "AUTOBROKER_AUTO_SEND",
+    classification: "editable-enum",
+    editable: true,
+    allowedValues: ["off", "email", "web_form", "all"],
+    default: "off",
+    numericMin: null,
+    numericMax: null,
+    label: "Automatic send approvals",
+    tooltip:
+      "Buyer mode can automatically accept new first-send email or web-form approvals. Email fallback still asks again.",
   },
   {
     id: "auto_run_searches",
@@ -206,6 +220,7 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
 /** The editable ids only — the write allow-list. */
 export const EDITABLE_IDS = [
   "app_mode",
+  "auto_send",
   "auto_run_searches",
   "gmail_account",
   "chrome_headless",
@@ -215,6 +230,12 @@ export const EDITABLE_IDS = [
 /** Max length for a free-text editable value (an email address — RFC 5321 caps
  *  the full address at 254 chars). Guards against a pathological payload. */
 const TEXT_VALUE_MAX_LEN = 254;
+
+export const AUTO_SEND_MODES = ["off", "email", "web_form", "all"] as const;
+export type AutoSendMode = (typeof AUTO_SEND_MODES)[number];
+export function resolveAutoSendMode(raw = process.env.AUTOBROKER_AUTO_SEND): AutoSendMode {
+  return AUTO_SEND_MODES.includes(raw as AutoSendMode) ? (raw as AutoSendMode) : "off";
+}
 
 /** Validate an editable-text value (currently only gmail_account → an email).
  *  Permissive but rejects whitespace, empty, over-length, and obvious non-emails
@@ -360,6 +381,7 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
     case "db_path":
       return resolveActiveDbPath();
     case "app_mode":
+    case "auto_send":
     case "auto_run_searches":
     case "gmail_account":
     case "chrome_headless":
