@@ -1,6 +1,6 @@
 /**
  * scheduler — the long-running-background MACHINERY: two anchored croner jobs
- * (a 6-hourly inbox poll, an 18:00 daily digest) plus the catch-up watermark
+ * (a 6-hourly inbox poll and an 18:00 daily digest) plus the catch-up watermark
  * logic that survives sleep/down windows. Runs INSIDE the long-lived server
  * subprocess (this app layer), never in the Electron main process — the main
  * process owns powerMonitor and forwards resume/suspend down to here.
@@ -12,13 +12,8 @@
  * power signal that main alone can see (Electron's powerMonitor) is relayed in
  * over the utilityProcess message channel as a {scheduler:'power', kind} message.
  *
- * THE JOB BODIES ARE SEAMS. The two scheduled skills do not exist yet
- * (dealer_inbox_check, a later inbox-poll wave; daily_digest, a later
- * report/digest wave). runScheduledJob() therefore invokes a registered handler
- * if one has been installed (the injection point those waves fill) and otherwise
- * traces a no-op "<skill> not yet wired" — it NEVER fabricates a run of a skill
- * that does not exist. The scheduling/catch-up machinery is fully real and
- * proven; only the work each job does is deferred.
+ * JOB BODIES are registered by the app entrypoint. A missing registration stays
+ * a traced no-op seam; the scheduler never fabricates a workflow run.
  *
  * CATCH-UP (the load-bearing logic): the watermark (pipeline_state, via the tools
  * accessors) records each job's last success as epoch-ms. On three triggers —
@@ -69,7 +64,11 @@ export const SCHEDULED_JOBS: readonly JobSpec[] = [
 
 /** A real job body, installed by a later wave at its injection point. Receives
  *  the job spec + the trigger that fired it; resolves when the work is done. */
-export type ScheduledJobHandler = (job: JobSpec, trigger: JobTrigger) => Promise<void>;
+export type ScheduledJobHandler = (
+  job: JobSpec,
+  trigger: JobTrigger,
+  trace: (line: SchedulerTrace) => void,
+) => Promise<void>;
 
 /** What caused a job to run — for the trace span and a handler's own logic. */
 export type JobTrigger = "scheduled" | "catch_up_boot" | "catch_up_resume" | "catch_up_heartbeat";
@@ -81,11 +80,14 @@ export interface SchedulerTrace {
     | "job_noop"
     | "job_skipped_claimed"
     | "job_error"
+    | "profile_run"
+    | "profile_skipped"
     | "catch_up"
     | "power"
     | "lifecycle";
   job?: string;
   skill?: string;
+  profileId?: string;
   trigger?: JobTrigger;
   detail?: string;
 }
@@ -311,7 +313,7 @@ export class BackgroundScheduler {
           detail: `no-op: ${job.skill} not yet wired`,
         });
       } else {
-        await handler(job, trigger);
+        await handler(job, trigger, (line) => this.trace(line));
         this.trace({ scheduler: "job_run", job: job.name, skill: job.skill, trigger });
       }
       writeLastSuccess(job.name, this.now());

@@ -35,6 +35,7 @@ import {
 } from "./portfolio/portfolioScheduler.js";
 import type { ActivationRegistry } from "./portfolio/activationRegistry.js";
 import { ProfileRunConflictError, type SkillRunService } from "./skillRuns.js";
+import { installScheduledProfileAutomations } from "./scheduledProfileAutomations.js";
 
 export { buildServer, type BuiltServer } from "./server.js";
 export { boot, type BootResult } from "./boot.js";
@@ -101,6 +102,10 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
       : undefined;
 
   const scheduler = new BackgroundScheduler(powerGuard !== undefined ? { powerGuard } : {});
+
+  // T3: pinned per-profile inbox checks every 6h. The workflow may park a
+  // review, but the handler never resumes it.
+  installScheduledProfileAutomations(scheduler, skillRuns);
 
   // Wire the daily_digest JOB seam: a fired job drives a headless daily_digest
   // run over ALL active profiles (search_profile_id:null → the workflow's
