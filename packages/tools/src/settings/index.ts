@@ -31,8 +31,6 @@ export {
   loadEnvConfigIntoEnv,
   ENV_DESCRIPTORS,
   EDITABLE_IDS,
-  AUTO_SEND_MODES,
-  resolveAutoSendMode,
   UnknownEnvVarError,
   NonEditableEnvVarError,
   InvalidEnvValueError,
@@ -40,5 +38,4 @@ export {
   type EnvVarClass,
   type EnvVarDescriptor,
   type EnvVarState,
-  type AutoSendMode,
 } from "./envConfigStore.js";

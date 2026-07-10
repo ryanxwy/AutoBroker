@@ -261,7 +261,7 @@ const TestKeyBodySchema = z.object({
  *  store is ever called (a non-editable id is structurally unreachable here). The
  *  store re-checks editable + allowedValues as defense-in-depth. */
 const SetEnvBodySchema = z.object({
-  id: z.enum(["app_mode", "auto_send", "gmail_account", "chrome_headless", "per_dealer_record_cap"]),
+  id: z.enum(["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"]),
   value: z.string().min(1).max(254),
 });
 

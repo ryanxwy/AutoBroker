@@ -83,10 +83,8 @@ fake in test mode). **One skill = one commit**, prefixed `phaseN/<skill>:`.
    `pipeline_reset` (destructive, typed-YES). Compose + destructive-local.
 5. **Phase 5 · irreversible mutations** — `dealer_web_lead_submit`,
    `negotiation_followup`, `dealer_closeout_email`. **Real send in buyer mode,
-   fake in test mode** (the single `AUTOBROKER_MODE` switch), and manual approval
-   is the default. The explicit `AUTOBROKER_AUTO_SEND` setting may replay only a
-   new eligible first send gate; test mode, recovery, and email fallback stay
-   manual. The gate stack (native Mastra approval / `suspend()` → L2
+   fake in test mode** (the single `AUTOBROKER_MODE` switch), and human approval
+   is never hidden. The gate stack (native Mastra approval / `suspend()` → L2
    in-process gate fail-closed → fallback suspend, over the `AUTOBROKER_MODE` send
    brake) is mandatory.
 

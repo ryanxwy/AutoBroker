@@ -9,9 +9,11 @@
  * it (hover/focus tooltip), the human label, and a one-line description from the
  * descriptor tooltip.
  *
- * GATE-BEFORE-CONTROL: a sensitive enum value does NOT commit. It parks a
- * `pending` value and renders the per-id confirmation from envDefs on the shared
- * gate-card plate. Values with no confirmation commit immediately.
+ * GATE-BEFORE-CONTROL (enum → "buyer"): switching the mode select to the
+ * sensitive value does NOT commit. It parks a `pending` value and renders an
+ * inline confirm on the shared gate-card plate; only "Use buyer mode" calls the
+ * setter, "Keep test mode" cancels with NO call and the select snaps back.
+ * The safe direction (buyer → test) commits immediately.
  *
  * BOOL ENCODING: the value crosses the wire as the STRING "1"/"0" ("1" =
  * headless = window hidden). The human label is "Show the browser", so the
@@ -26,8 +28,9 @@ import { useEffect, useState } from "react";
 
 import type { EnvVarState } from "../api/wire.js";
 import {
-  ENV_ENUM_CONFIRMATIONS,
-  ENV_ENUM_OPTION_LABELS,
+  APP_MODE_CONFIRM,
+  APP_MODE_CONFIRM_VALUE,
+  APP_MODE_OPTION_LABELS,
   SHOW_BROWSER_LABELS,
 } from "./envDefs.js";
 import { InfoHint } from "./InfoHint.js";
@@ -105,8 +108,8 @@ export function EnvRow({ state, onSet, busyError, saved }: EnvRowProps): JSX.Ele
   );
 }
 
-/** A server-owned enum row: native select plus an optional, per-id confirmation
- *  for a sensitive target value. */
+/** The mode enum: a native <select> with friendly option labels, plus the
+ *  gate-before-control confirm when switching to the sensitive value. */
 function EnumControl({
   id,
   value,
@@ -118,17 +121,13 @@ function EnumControl({
   allowedValues: readonly string[];
   onSet: (id: string, value: string) => void;
 }): JSX.Element {
-  const [pending, setPending] = useState<{
-    value: string;
-    confirmation: (typeof ENV_ENUM_CONFIRMATIONS)[string][string];
-  } | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
 
   const onSelect = (next: string): void => {
     if (next === value) return;
-    const confirmation = ENV_ENUM_CONFIRMATIONS[id]?.[next];
-    if (confirmation !== undefined) {
+    if (next === APP_MODE_CONFIRM_VALUE) {
       // Sensitive direction → confirm before committing (no call yet).
-      setPending({ value: next, confirmation });
+      setPending(next);
       return;
     }
     // Safe direction → commit immediately.
@@ -142,12 +141,12 @@ function EnumControl({
         data-testid={`env-select-${id}`}
         // While a confirm is pending the select reflects the would-be value so
         // the dropdown reads "My real Gmail"; cancelling snaps it back.
-        value={pending?.value ?? value}
+        value={pending ?? value}
         onChange={(e) => onSelect(e.target.value)}
       >
         {allowedValues.map((opt) => (
           <option key={opt} value={opt}>
-            {ENV_ENUM_OPTION_LABELS[id]?.[opt] ?? opt}
+            {APP_MODE_OPTION_LABELS[opt] ?? opt}
           </option>
         ))}
       </select>
@@ -159,27 +158,27 @@ function EnumControl({
           aria-labelledby={`env-confirm-title-${id}`}
           data-testid={`env-confirm-${id}`}
         >
-          <strong id={`env-confirm-title-${id}`}>{pending.confirmation.title}</strong>
-          <p className="muted">{pending.confirmation.body}</p>
+          <strong id={`env-confirm-title-${id}`}>{APP_MODE_CONFIRM.title}</strong>
+          <p className="muted">{APP_MODE_CONFIRM.body}</p>
           <div className="gate-actions">
             <button
               type="button"
               className="btn-primary"
               data-testid={`env-confirm-yes-${id}`}
               onClick={() => {
-                const next = pending.value;
+                const next = pending;
                 setPending(null);
                 onSet(id, next);
               }}
             >
-              {pending.confirmation.confirmLabel}
+              {APP_MODE_CONFIRM.confirmLabel}
             </button>
             <button
               type="button"
               data-testid={`env-confirm-no-${id}`}
               onClick={() => setPending(null)}
             >
-              {pending.confirmation.cancelLabel}
+              {APP_MODE_CONFIRM.cancelLabel}
             </button>
           </div>
         </div>

@@ -40,9 +40,8 @@ shell and bypass the gate.
   name out of free-text content and executes it. *fail-open == silent-fallback ==
   forbidden.*
 - **Deny path:** returns an explicit `declined` verdict with `autoApprove: false`
-  — the safe default. An approver that errors is treated as a decline. A send
-  decision is normally human-submitted; the explicit Buyer-mode auto-send setting
-  may replay only a new eligible first gate through that same structured path.
+  — the safe default. Approval is never implicit; an approver that errors is
+  treated as a decline.
 - **`AUTOBROKER_MODE=test` mode brake:** in test mode each mutating seam throws
   `ExternalMutationsBlockedError` **before** any network/file mutation — resolving
   every send fake/local. The sole send-control variable.

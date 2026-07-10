@@ -152,26 +152,22 @@ toggled in the TopBar) controls all external sending. `buyer` = the real product
 **fail-closed** — the `AUTOBROKER_HARNESS=1` sentinel + `isHarnessContext()` +
 `assertTestModeSafe()` tripwire in boot + the preflight gate + a no-clobber on
 `loadEnvConfigIntoEnv` mean a test can NEVER reach a real dealer. The **L2
-in-process gate is the always-on load-bearing floor**: every side effect still
-travels through its structured `formDecision` path. Buyer mode is manual by
-default; the explicit persisted `AUTOBROKER_AUTO_SEND` setting may replay only a
-new, channel-eligible first send gate through that same path. It never applies in
-`test` mode, on a recovered gate, or to `emailFallback`. `buyer` only makes the
-REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
+in-process human-approval gate is the always-on load-bearing floor**: even in
+`buyer` mode nothing sends without a per-action human approval; `buyer` only makes
+the REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
 "real email is never sent" posture historically described below.
 
 1. **`no_external_mutation` applies to every step in `test` mode** (it is what
    every harness lane asserts). In `buyer` mode real sends DO occur — but ONLY
-   through the single L2 gate; they are human-approved by default, or explicitly
-   channel-auto-approved by a new-gate `AUTOBROKER_AUTO_SEND` replay. There is
-   still no un-gated outbound path.
+   through the single L2 gate, one human-approved action at a time; there is still
+   no un-approved, un-gated outbound path.
 2. **Side effects can physically reach `browser.submit` / `gmail.send` only
    through the L2 in-process gate handler**, which fails **closed**. There is no
    second code path to a side effect.
 3. **Gate stack (top → bottom):** L3 native Mastra tool/step approval or
    `suspend()` (convenience, api-key lane only) → **L2 in-process gate,
    load-bearing, fail-CLOSED, single structured path** (the always-on
-   approval floor in BOTH modes) → fallback-suspend. The send floor is the
+   human-approval floor in BOTH modes) → fallback-suspend. The send floor is the
    per-seam `!isBuyerMode()` mode brake (`AUTOBROKER_MODE=test` resolves every
    send fake/local), independently re-asserted at each network boundary and
    force-pinned for all test/CI contexts by `forceTestMode()`+`assertTestModeSafe()`.
@@ -179,11 +175,9 @@ REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
    and the L1 `AUTOBROKER_BLOCK_EXTERNAL_MUTATIONS` fuse are **removed** (both
    added to the `check:strings` forbidden list so neither can be re-introduced).
    **Honest floor:** this narrows the env floor from two independent rings to ONE
-   env var plus the always-on L2 gate. A mistyped/garbage MODE resolves
-   buyer-capable (anything but the exact string `test` is buyer) and is caught
-   **only** by the L2 gate — there is no second env ring. `AUTOBROKER_AUTO_SEND`
-   is not a send-control var: it only decides whether an eligible new gate is
-   replayed, and invalid values resolve `off`.
+   env var plus the always-on L2 human-approval gate. A mistyped/garbage MODE
+   resolves buyer-capable (anything but the exact string `test` is buyer) and is
+   caught **only** by the L2 human-approval gate — there is no second env ring.
    Invariant #2 (side effects reach a seam only through the L2 gate, fail-closed)
    is unchanged and still true.
 4. **Structured-output delivery fail-closed.** A DeepSeek extraction delivers its
@@ -218,14 +212,11 @@ REAL adapter the target. This supersedes the old "fake-send until Phase 5" /
    typed result distinguishing `pinned` vs `inferred-newest`; log every inferred
    resolution. Re-test the 1/0/2-active branches in the TS resolver — do not
    assume closed. Do not build a global `AUTOBROKER_STRICT_PROFILE_PIN`.
-7. **Real email is sent in `buyer` mode** (real-send-by-default), always through
-   the L2 gate, one recipient at a time. Its default is human approval;
-   `AUTOBROKER_AUTO_SEND=email|all` may replay only a newly-emitted eligible
-   first email-send gate, never `emailFallback` or a recovered gate. In `test`
-   mode it is local fake-mailbox DB rows only, behind the fail-closed
-   `fake_mailbox_send_only` preflight. Email-pipeline skills still validate
-   against the fixed real-dealer corpus (fixed input, not fixed LLM trace) in the
-   `test`-mode harness lane.
+7. **Real email is sent in `buyer` mode** (real-send-by-default), always behind
+   the L2 human-approval gate, one recipient at a time. In `test` mode it is local
+   fake-mailbox DB rows only, behind the fail-closed `fake_mailbox_send_only`
+   preflight. Email-pipeline skills still validate against the fixed real-dealer
+   corpus (fixed input, not fixed LLM trace) in the `test`-mode harness lane.
 8. **The 3 irreversible mutation skills** (`dealer_web_lead_submit`,
    `negotiation_followup`, `dealer_closeout_email`) really send in `buyer` mode and
    fake-send in `test` mode — via the SAME `AUTOBROKER_MODE` switch as every other
