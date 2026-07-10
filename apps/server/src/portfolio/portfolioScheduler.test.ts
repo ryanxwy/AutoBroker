@@ -200,4 +200,26 @@ describe("PortfolioScheduler", () => {
     await Promise.all([t1, t2]);
     expect(starts).toEqual(["A"]); // started exactly once despite two concurrent ticks
   });
+
+  it("continues to the next profile when another process wins a claim", async () => {
+    const health = fakeHealth();
+    const reg = new InMemoryActivationRegistry();
+    const starts: string[] = [];
+    const sched = new PortfolioScheduler({
+      healthProvider: health,
+      activationRegistry: reg,
+      startProfileRun: async (pid) => {
+        starts.push(pid);
+        return pid === "A" ? null : { runId: `run-${pid}` };
+      },
+      cap: 2,
+    });
+    health.hot = ["A", "B"];
+
+    await sched.tick();
+
+    expect(starts).toEqual(["A", "B"]);
+    expect(reg.liveRunFor("A")).toBeUndefined();
+    expect(reg.liveRunFor("B")).toBe("run-B");
+  });
 });

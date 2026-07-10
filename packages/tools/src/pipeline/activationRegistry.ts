@@ -3,18 +3,19 @@
  * pipeline_state row per active profile keyed `pipeline.active_run.<profileId>`.
  *
  * THE VIRTUAL-ACTOR INVARIANT: a search profile has AT-MOST-ONE live pipeline
- * run at a time. The registry encodes that by keying on the profileId (PK), so a
- * fresh run for the same profile OVERWRITES the prior entry (upsert) rather than
- * stacking a second live row. The stored value is the live runId; the reverse
- * lookup (runId → profileId) scans the active_run keyspace.
+ * run at a time. The registry encodes that by keying on the profileId (PK) and
+ * acquiring it with INSERT ... ON CONFLICT DO NOTHING. A competing process can
+ * never overwrite a live owner; it loses before creating a workflow run. The
+ * stored value is the live runId; the reverse lookup (runId → profileId) scans
+ * the active_run keyspace.
  *
  * It survives a reboot in the same pipeline_state table that holds the
  * watermarks. After a crash the only truly-live runs are the ones the app's
  * recover-on-boot surfaces, so `reconcileActivations` prunes every entry whose
  * runId is not in that live set — abandoned/terminal runs leave no zombie entry.
  * `clearActivationByRunId` is the normal terminal teardown: it deletes by VALUE
- * (the runId), so a late teardown of an OLD run that a NEWER run already
- * overwrote is a harmless no-op and never clobbers the successor.
+ * (the runId), so a losing/unknown run is a harmless no-op and never clobbers
+ * the durable owner.
  *
  * KEYSPACE ISOLATION: every statement is scoped with
  * `key LIKE 'pipeline.active_run.%'`, so the registry never reads, deletes, or
@@ -38,12 +39,12 @@ export function activeRunKey(profileId: string): string {
   return `${ACTIVE_RUN_PREFIX}${profileId}`;
 }
 
-// pipeline_state.key is the PRIMARY KEY — upsert so a fresh run for the same
-// profile overwrites the prior entry (one live run per profile). value = runId;
-// search_profile_id is stamped for the profile-scoped projection / audit.
-const UPSERT_ACTIVATION =
+// pipeline_state.key is the PRIMARY KEY. A new owner may INSERT but may never
+// overwrite an existing owner. The same (profileId, runId) is treated as an
+// idempotent re-claim after the insert reports a conflict.
+const INSERT_ACTIVATION =
   "INSERT INTO pipeline_state (key, value, search_profile_id) VALUES (?, ?, ?) " +
-  "ON CONFLICT(key) DO UPDATE SET value = excluded.value, search_profile_id = excluded.search_profile_id";
+  "ON CONFLICT(key) DO NOTHING";
 
 const SELECT_RUN_FOR_PROFILE = "SELECT value FROM pipeline_state WHERE key = ?";
 
@@ -55,25 +56,70 @@ const SELECT_ACTIVE_PROFILES =
   "SELECT DISTINCT search_profile_id FROM pipeline_state " +
   "WHERE key LIKE ? AND search_profile_id IS NOT NULL";
 
-// DELETE by VALUE within the active_run keyspace — idempotent: 0 rows when a
-// newer run already overwrote this profile's entry (never clobbers a successor).
+// DELETE by VALUE within the active_run keyspace — idempotent: 0 rows for a
+// losing/unknown runId (never clobbers the actual owner).
 const DELETE_BY_RUN = "DELETE FROM pipeline_state WHERE key LIKE ? AND value = ?";
 
+export interface ActivationClaimResult {
+  /** True for a newly inserted claim or an idempotent claim by the same runId. */
+  acquired: boolean;
+  /** True only when this call inserted the durable row. */
+  inserted: boolean;
+  /** The durable owner observed after the insert attempt, when one exists. */
+  liveRunId: string | null;
+}
+
+/** Typed conflict used by callers that require ownership or fail loud. */
+export class ActivationClaimConflictError extends Error {
+  constructor(
+    readonly profileId: string,
+    readonly attemptedRunId: string,
+    readonly liveRunId: string | null,
+  ) {
+    super(
+      `profile '${profileId}' already has live run '${liveRunId ?? "unknown"}'; ` +
+        `refusing concurrent run '${attemptedRunId}'`,
+    );
+    this.name = "ActivationClaimConflictError";
+  }
+}
+
 /**
- * Register (or overwrite) THIS profile's live run. Upserts on the profile key so
- * a re-run replaces the prior live runId — the virtual-actor at-most-one-live-run
- * invariant.
+ * Atomically try to own a profile. Two SQLite connections racing the same key
+ * produce exactly one INSERT winner; the loser observes the durable owner and
+ * returns acquired=false without changing it. Repeating the same runId is
+ * idempotent and reports acquired=true, inserted=false.
  */
-export function recordActivation(args: { profileId: string; runId: string; db?: Db }): void {
+export function tryClaimActivation(args: {
+  profileId: string;
+  runId: string;
+  db?: Db;
+}): ActivationClaimResult {
   const db = args.db ?? getDb();
-  db.$client.prepare(UPSERT_ACTIVATION).run(activeRunKey(args.profileId), args.runId, args.profileId);
+  const key = activeRunKey(args.profileId);
+  const inserted =
+    db.$client.prepare(INSERT_ACTIVATION).run(key, args.runId, args.profileId).changes === 1;
+  if (inserted) return { acquired: true, inserted: true, liveRunId: args.runId };
+  const liveRunId = lookupRunIdForProfile(args.profileId, db);
+  return {
+    acquired: liveRunId === args.runId,
+    inserted: false,
+    liveRunId,
+  };
+}
+
+/** Register a profile owner or throw without overwriting a live competitor. */
+export function recordActivation(args: { profileId: string; runId: string; db?: Db }): void {
+  const claim = tryClaimActivation(args);
+  if (!claim.acquired) {
+    throw new ActivationClaimConflictError(args.profileId, args.runId, claim.liveRunId);
+  }
 }
 
 /**
  * Tear down the activation entry for a terminating run. Deletes the active_run
  * row(s) whose VALUE equals runId. Idempotent: returns 0 (a no-op) when an
- * unknown run is cleared OR when a newer run already overwrote this profile's
- * entry — it never clobbers the successor run.
+ * unknown/losing run is cleared — it never clobbers the actual owner.
  */
 export function clearActivationByRunId(args: { runId: string; db?: Db }): number {
   const db = args.db ?? getDb();

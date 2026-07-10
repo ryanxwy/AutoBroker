@@ -77,12 +77,15 @@ export {
 
 export {
   activeRunKey,
+  tryClaimActivation,
   recordActivation,
   clearActivationByRunId,
   lookupRunIdForProfile,
   lookupProfileIdForRunId,
   listActiveProfileIds,
   reconcileActivations,
+  ActivationClaimConflictError,
+  type ActivationClaimResult,
 } from "./activationRegistry.js";
 
 export {

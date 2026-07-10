@@ -27,8 +27,9 @@
  * scheduler never races two starts — complementing beginRunGuarded's in-process
  * dup-runId guard.
  *
- * SINGLE-PROCESS: all slot/recency state is in-memory (intentional for Phase 0-2; a
- * future multi-process move needs a storage-level run-ownership lock first).
+ * PROCESS-LOCAL slot accounting is paired with the durable SQLite profile claim
+ * in SkillRunService. Two processes may each track local slots, but only one can
+ * create a run for a given profile.
  */
 
 import type { ProfileHealth } from "@autobroker/tools";
@@ -51,9 +52,10 @@ export interface PortfolioSchedulerDeps {
    *  the provider derives that, matching the documented profileHealth producer). */
   healthProvider: ProfileHealthProvider;
   activationRegistry: ActivationRegistry;
-  /** Start one profile's ProfilePipeline run (the explicit-pin N=1 case). Returns
-   *  the runId so the scheduler can bind it in the activation registry (key=1). */
-  startProfileRun: (profileId: string) => Promise<{ runId: string }>;
+  /** Start one profile's ProfilePipeline run (the explicit-pin N=1 case). The
+   *  SkillRunService atomically claims the profile before creating the run.
+   *  null means another process won that claim; no run was created. */
+  startProfileRun: (profileId: string) => Promise<{ runId: string } | null>;
   /** MAX_CONCURRENT_ACTIVE_PROFILES — the hot-set slot cap. */
   cap: number;
 }
@@ -105,15 +107,15 @@ export class PortfolioScheduler implements RunLifecycleListener {
       let available = Math.max(0, this.deps.cap - this.running.size);
       for (const profileId of candidates) {
         if (available <= 0) break; // the rest stay WARM — the cap bound (see DELETION TEST)
-        const { runId } = await this.deps.startProfileRun(profileId);
+        const started = await this.deps.startProfileRun(profileId);
+        if (started === null) continue;
+        const { runId } = started;
         try {
-          this.deps.activationRegistry.register(profileId, runId); // key=1 binding
+          // Idempotent mirror: SkillRunService already owns this exact pair.
+          this.deps.activationRegistry.register(profileId, runId);
         } catch {
-          // register threw (a concurrent bind raced in) AFTER startProfileRun already
-          // started a run: do NOT account it as a slot; skip to the next candidate
-          // rather than letting the throw abort the rest of the tick. The orphan run
-          // still parks its own L2 human-approval gate (fail-safe) and a later
-          // terminal releases it.
+          // Defensive only: production loses cross-process races before run
+          // creation and returns null above. Never account an unowned run.
           continue;
         }
         this.running.add(profileId);

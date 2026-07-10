@@ -16,12 +16,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const watermarks = new Map<string, number>();
 // Job names whose watermark read should throw (simulating a DB read failure).
 const readThrows = new Set<string>();
+const claims = new Map<string, { ownerId: string; expiresAtMs: number; value: string }>();
 vi.mock("@autobroker/tools", () => ({
   readLastSuccess: (job: string) => {
     if (readThrows.has(job)) throw new Error("db gone");
     return watermarks.get(job) ?? 0;
   },
   writeLastSuccess: (job: string, atMs: number) => void watermarks.set(job, atMs),
+  tryClaimScheduledJob: ({
+    jobName,
+    ownerId,
+    nowMs,
+    leaseMs,
+  }: {
+    jobName: string;
+    ownerId: string;
+    nowMs: number;
+    leaseMs: number;
+  }) => {
+    const existing = claims.get(jobName);
+    if (existing !== undefined && existing.expiresAtMs > nowMs) return null;
+    const value = `${nowMs + leaseMs}:${ownerId}`;
+    const claim = { ownerId, expiresAtMs: nowMs + leaseMs, value };
+    claims.set(jobName, claim);
+    return { jobName, ...claim };
+  },
+  releaseScheduledJobClaim: (claim: { jobName: string; value: string }) => {
+    if (claims.get(claim.jobName)?.value !== claim.value) return 0;
+    claims.delete(claim.jobName);
+    return 1;
+  },
 }));
 
 import { BackgroundScheduler, SCHEDULED_JOBS, type SchedulerTrace } from "./scheduler.js";
@@ -31,6 +55,7 @@ const NOW = Date.parse("2026-06-12T13:00:00Z"); // most-recent 6-hourly fire = 1
 beforeEach(() => {
   watermarks.clear();
   readThrows.clear();
+  claims.clear();
 });
 
 /** A scheduler that never starts the heartbeat/croner timers (heartbeatMs huge,
@@ -43,12 +68,14 @@ function makeSchedulerImpl(opts: {
   now: () => number;
   acquire?: () => void;
   release?: () => void;
+  instanceId?: string;
 }) {
   const traces: SchedulerTrace[] = [];
   const scheduler = new BackgroundScheduler({
     now: opts.now,
     trace: (line) => traces.push(line),
     heartbeatMs: 10 * 60 * 1000, // long enough never to fire during a test
+    ...(opts.instanceId !== undefined ? { instanceId: opts.instanceId } : {}),
     ...(opts.acquire !== undefined && opts.release !== undefined
       ? { powerGuard: { acquire: opts.acquire, release: opts.release } }
       : {}),
@@ -141,6 +168,38 @@ describe("no double-run: a covered fire is not re-run", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(calls).toEqual(["inbox_poll"]); // still exactly one run
     expect(traces.some((t) => t.scheduler === "catch_up")).toBe(false);
+  });
+});
+
+describe("cross-process claim", () => {
+  it("only one scheduler starts a due job while the loser traces a claimed skip", async () => {
+    watermarks.set("inbox_poll", NOW - 7 * 60 * 60 * 1000);
+    watermarks.set("daily_digest", NOW);
+    const a = makeSchedulerImpl({ now: () => NOW, instanceId: "process-a" });
+    const b = makeSchedulerImpl({ now: () => NOW, instanceId: "process-b" });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls: string[] = [];
+    a.scheduler.registerHandler("inbox_poll", async () => {
+      calls.push("a");
+      await held;
+    });
+    b.scheduler.registerHandler("inbox_poll", async () => void calls.push("b"));
+
+    a.scheduler.onPower("resume");
+    await vi.waitFor(() => expect(calls).toEqual(["a"]));
+    b.scheduler.onPower("resume");
+    await vi.waitFor(() =>
+      expect(
+        b.traces.some((t) => t.scheduler === "job_skipped_claimed" && t.job === "inbox_poll"),
+      ).toBe(true),
+    );
+    expect(calls).toEqual(["a"]);
+
+    release();
+    await vi.waitFor(() => expect(watermarks.get("inbox_poll")).toBe(NOW));
   });
 });
 

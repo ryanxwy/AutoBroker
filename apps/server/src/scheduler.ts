@@ -35,9 +35,17 @@
  * tools watermark accessors (the only product-DB touch, funnelled through tools).
  */
 
+import { randomUUID } from "node:crypto";
+
 import { Cron } from "croner";
 
-import { readLastSuccess, writeLastSuccess } from "@autobroker/tools";
+import {
+  readLastSuccess,
+  releaseScheduledJobClaim,
+  tryClaimScheduledJob,
+  writeLastSuccess,
+  type ScheduledJobClaim,
+} from "@autobroker/tools";
 
 import { catchUpDecision } from "./schedulerCatchup.js";
 
@@ -68,7 +76,14 @@ export type JobTrigger = "scheduled" | "catch_up_boot" | "catch_up_resume" | "ca
 
 /** A structured trace line (the voiced background-activity record). */
 export interface SchedulerTrace {
-  scheduler: "job_run" | "job_noop" | "job_error" | "catch_up" | "power" | "lifecycle";
+  scheduler:
+    | "job_run"
+    | "job_noop"
+    | "job_skipped_claimed"
+    | "job_error"
+    | "catch_up"
+    | "power"
+    | "lifecycle";
   job?: string;
   skill?: string;
   trigger?: JobTrigger;
@@ -90,9 +105,14 @@ export interface SchedulerOptions {
   heartbeatMs?: number;
   /** Clock injection for tests; defaults to Date.now. */
   now?: () => number;
+  /** Stable process owner id for the cross-process SQLite claim. */
+  instanceId?: string;
+  /** Stale-claim recovery window. Handlers only start child runs and return. */
+  claimLeaseMs?: number;
 }
 
 const DEFAULT_HEARTBEAT_MS = 60_000;
+const DEFAULT_CLAIM_LEASE_MS = 15 * 60_000;
 
 /**
  * The background scheduler. Owns the croner jobs, the registered job handlers,
@@ -111,12 +131,16 @@ export class BackgroundScheduler {
   private readonly now: () => number;
   private readonly heartbeatMs: number;
   private readonly powerGuard: SchedulerOptions["powerGuard"];
+  private readonly instanceId: string;
+  private readonly claimLeaseMs: number;
 
   constructor(opts: SchedulerOptions = {}) {
     this.trace = opts.trace ?? ((line) => console.info(JSON.stringify(line)));
     this.now = opts.now ?? (() => Date.now());
     this.heartbeatMs = opts.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
     this.powerGuard = opts.powerGuard;
+    this.instanceId = opts.instanceId ?? randomUUID();
+    this.claimLeaseMs = opts.claimLeaseMs ?? DEFAULT_CLAIM_LEASE_MS;
   }
 
   /**
@@ -237,8 +261,43 @@ export class BackgroundScheduler {
       return;
     }
     this.inflight.add(job.name);
-    this.powerGuard?.acquire();
+    let claim: ScheduledJobClaim | null = null;
+    let powerAcquired = false;
     try {
+      claim = tryClaimScheduledJob({
+        jobName: job.name,
+        ownerId: this.instanceId,
+        nowMs: this.now(),
+        leaseMs: this.claimLeaseMs,
+      });
+      if (claim === null) {
+        this.trace({
+          scheduler: "job_skipped_claimed",
+          job: job.name,
+          skill: job.skill,
+          trigger,
+          detail: "another process owns this scheduled fire",
+        });
+        return;
+      }
+
+      // The pre-check in runCatchUp can go stale while another process runs.
+      // Re-check only after winning the claim; if the fire is now covered, do
+      // nothing. This closes the release-after-success race.
+      const covered = catchUpDecision(job.pattern, readLastSuccess(job.name), this.now());
+      if (!covered.due) {
+        this.trace({
+          scheduler: "job_noop",
+          job: job.name,
+          skill: job.skill,
+          trigger,
+          detail: "scheduled fire already covered",
+        });
+        return;
+      }
+
+      this.powerGuard?.acquire();
+      powerAcquired = this.powerGuard !== undefined;
       const handler = this.handlers.get(job.name);
       if (handler === undefined) {
         // SEAM: the skill is not wired yet. Trace the no-op and advance the
@@ -267,7 +326,20 @@ export class BackgroundScheduler {
         detail: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      this.powerGuard?.release();
+      if (powerAcquired) this.powerGuard?.release();
+      if (claim !== null) {
+        try {
+          releaseScheduledJobClaim(claim);
+        } catch (err) {
+          this.trace({
+            scheduler: "job_error",
+            job: job.name,
+            skill: job.skill,
+            trigger,
+            detail: `claim release failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+      }
       this.inflight.delete(job.name);
     }
   }

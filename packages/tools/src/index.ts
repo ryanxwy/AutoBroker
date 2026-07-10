@@ -819,7 +819,15 @@ export * from "./limiter/index.js";
 // Scheduler watermark — the per-job last-success store in pipeline_state (the
 // durable catch-up watermark; the only product-DB access the background
 // scheduler is permitted, funnelled down here per the SQLite invariant).
-export { watermarkKey, readLastSuccess, writeLastSuccess } from "./scheduler/watermark.js";
+export {
+  watermarkKey,
+  scheduledJobClaimKey,
+  readLastSuccess,
+  writeLastSuccess,
+  tryClaimScheduledJob,
+  releaseScheduledJobClaim,
+  type ScheduledJobClaim,
+} from "./scheduler/watermark.js";
 
 // Demo seed — the renderable sample world for the zero-config demo mode
 // (idempotent, writes whatever isolated handle it is given).
@@ -1081,12 +1089,14 @@ export {
   writeLastProgressAt,
   profileHealth,
   activeRunKey,
+  tryClaimActivation,
   recordActivation,
   clearActivationByRunId,
   lookupRunIdForProfile,
   lookupProfileIdForRunId,
   listActiveProfileIds,
   reconcileActivations,
+  ActivationClaimConflictError,
   sweepOrphanedBoundClaims,
   type DetectPipelineStateArgs,
   type PipelineStateFlags,
@@ -1104,5 +1114,6 @@ export {
   type ProfileHealth,
   type ProfileHealthLevel,
   type ProfileHealthOpts,
+  type ActivationClaimResult,
   type OrphanSweepResult,
 } from "./pipeline/index.js";

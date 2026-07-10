@@ -2,12 +2,10 @@
  * L1 unit tests — the ProfileId → live runId activation registry. Freezes:
  *   - recordActivation(A, run1) registers the row; lookupRunIdForProfile(A)=run1,
  *     lookupProfileIdForRunId(run1)=A, listActiveProfileIds()=[A];
- *   - recordActivation(A, run2) OVERWRITES (one live run per profile, the
- *     virtual-actor invariant): lookupRunIdForProfile(A)=run2,
- *     lookupProfileIdForRunId(run1)=null;
- *   - clearActivationByRunId(run2) removes the row (lookup gone); an unknown run
- *     clears 0 with no throw; clearing run1 AFTER A was overwritten by run2 clears
- *     0 — it must NEVER clobber the successor run's entry;
+ *   - a second connection cannot overwrite A's owner; the same runId is an
+ *     idempotent re-claim;
+ *   - clearActivationByRunId(run2) removes the row (lookup gone); an unknown or
+ *     losing run clears 0 with no throw and never clobbers the owner;
  *   - reconcileActivations(live) prunes every entry whose runId is not live (the
  *     reboot-survival reconcile) and keeps the live ones;
  *   - NONE of the registry SQL ever touches a `pipeline.last_progress_at.*`
@@ -27,6 +25,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, openDb, type Db } from "@autobroker/db";
 
 import {
+  ActivationClaimConflictError,
   activeRunKey,
   clearActivationByRunId,
   listActiveProfileIds,
@@ -34,6 +33,7 @@ import {
   lookupRunIdForProfile,
   recordActivation,
   reconcileActivations,
+  tryClaimActivation,
 } from "./activationRegistry.js";
 import { lastProgressKey, readLastProgressAt, writeLastProgressAt } from "./progressWatermark.js";
 
@@ -108,18 +108,45 @@ describe("recordActivation: first registration", () => {
   });
 });
 
-describe("recordActivation: overwrite (one live run per profile)", () => {
-  it("a second activation for the same profile overwrites the first", () => {
+describe("activation claim: one durable owner across connections", () => {
+  it("a second activation for the same profile fails without overwriting the first", () => {
     recordActivation({ profileId: "prof-A", runId: "run1", db });
-    recordActivation({ profileId: "prof-A", runId: "run2", db });
+    expect(() =>
+      recordActivation({ profileId: "prof-A", runId: "run2", db }),
+    ).toThrow(ActivationClaimConflictError);
 
-    expect(lookupRunIdForProfile("prof-A", db)).toBe("run2");
-    // The stale runId no longer resolves to any profile.
-    expect(lookupProfileIdForRunId("run1", db)).toBeNull();
-    expect(lookupProfileIdForRunId("run2", db)).toBe("prof-A");
-    // Still exactly one entry for the profile (upsert, not insert).
+    expect(lookupRunIdForProfile("prof-A", db)).toBe("run1");
+    expect(lookupProfileIdForRunId("run1", db)).toBe("prof-A");
+    expect(lookupProfileIdForRunId("run2", db)).toBeNull();
     expect(countRowsForKey(activeRunKey("prof-A"))).toBe(1);
     expect(listActiveProfileIds(db)).toEqual(["prof-A"]);
+  });
+
+  it("the same runId re-claims idempotently without inserting a second row", () => {
+    expect(tryClaimActivation({ profileId: "prof-A", runId: "run1", db })).toEqual({
+      acquired: true,
+      inserted: true,
+      liveRunId: "run1",
+    });
+    expect(tryClaimActivation({ profileId: "prof-A", runId: "run1", db })).toEqual({
+      acquired: true,
+      inserted: false,
+      liveRunId: "run1",
+    });
+    expect(countRowsForKey(activeRunKey("prof-A"))).toBe(1);
+  });
+
+  it("two private SQLite connections racing the same profile produce one winner", () => {
+    const second = openDb(join(tmpDir, "autobroker.db"));
+    try {
+      const firstClaim = tryClaimActivation({ profileId: "prof-A", runId: "run1", db });
+      const secondClaim = tryClaimActivation({ profileId: "prof-A", runId: "run2", db: second });
+      expect(firstClaim.acquired).toBe(true);
+      expect(secondClaim).toEqual({ acquired: false, inserted: false, liveRunId: "run1" });
+      expect(lookupRunIdForProfile("prof-A", second)).toBe("run1");
+    } finally {
+      second.$client.close();
+    }
   });
 });
 
@@ -152,11 +179,8 @@ describe("clearActivationByRunId", () => {
     expect(lookupRunIdForProfile("prof-A", db)).toBe("run2");
   });
 
-  it("clearing an OLD runId after the profile was overwritten clears 0 (never clobbers the successor)", () => {
-    recordActivation({ profileId: "prof-A", runId: "run1", db });
-    recordActivation({ profileId: "prof-A", runId: "run2", db }); // run2 supersedes run1
-
-    // A late teardown of run1 must NOT delete the live run2 entry.
+  it("clearing a losing runId clears 0 (never clobbers the durable owner)", () => {
+    recordActivation({ profileId: "prof-A", runId: "run2", db });
     expect(clearActivationByRunId({ runId: "run1", db })).toBe(0);
     expect(lookupRunIdForProfile("prof-A", db)).toBe("run2");
     expect(lookupProfileIdForRunId("run2", db)).toBe("prof-A");

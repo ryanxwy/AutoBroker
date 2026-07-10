@@ -18,7 +18,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDb, openDb, type Db } from "@autobroker/db";
 
-import { readLastSuccess, watermarkKey, writeLastSuccess } from "./watermark.js";
+import {
+  readLastSuccess,
+  releaseScheduledJobClaim,
+  scheduledJobClaimKey,
+  tryClaimScheduledJob,
+  watermarkKey,
+  writeLastSuccess,
+} from "./watermark.js";
 
 const DATA_DIR = "AUTOBROKER_DATA_DIR";
 const DB_OVERRIDE = "AUTOBROKER_DB";
@@ -81,5 +88,74 @@ describe("watermark accessors", () => {
     expect(readLastSuccess("inbox_poll", db)).toBe(1000);
     expect(readLastSuccess("daily_digest", db)).toBe(2000);
     expect(watermarkKey("inbox_poll")).not.toBe(watermarkKey("daily_digest"));
+  });
+});
+
+describe("scheduled job claims", () => {
+  it("allows exactly one owner across two SQLite connections", () => {
+    const second = openDb(join(tmpDir, "autobroker.db"));
+    try {
+      const first = tryClaimScheduledJob({
+        jobName: "daily_digest",
+        ownerId: "process-a",
+        nowMs: 1_000,
+        leaseMs: 500,
+        db,
+      });
+      const loser = tryClaimScheduledJob({
+        jobName: "daily_digest",
+        ownerId: "process-b",
+        nowMs: 1_000,
+        leaseMs: 500,
+        db: second,
+      });
+      expect(first).not.toBeNull();
+      expect(loser).toBeNull();
+      expect(readLastSuccess("daily_digest", second)).toBe(0);
+    } finally {
+      second.$client.close();
+    }
+  });
+
+  it("reclaims only after expiry and an old owner cannot release its successor", () => {
+    const first = tryClaimScheduledJob({
+      jobName: "inbox_poll",
+      ownerId: "process-a",
+      nowMs: 1_000,
+      leaseMs: 500,
+      db,
+    })!;
+    expect(
+      tryClaimScheduledJob({
+        jobName: "inbox_poll",
+        ownerId: "process-b",
+        nowMs: 1_499,
+        leaseMs: 500,
+        db,
+      }),
+    ).toBeNull();
+    const successor = tryClaimScheduledJob({
+      jobName: "inbox_poll",
+      ownerId: "process-b",
+      nowMs: 1_500,
+      leaseMs: 500,
+      db,
+    })!;
+    expect(successor.ownerId).toBe("process-b");
+    expect(releaseScheduledJobClaim(first, db)).toBe(0);
+    expect(releaseScheduledJobClaim(successor, db)).toBe(1);
+  });
+
+  it("uses a separate keyspace from success watermarks", () => {
+    const claim = tryClaimScheduledJob({
+      jobName: "daily_digest",
+      ownerId: "process-a",
+      nowMs: 1_000,
+      leaseMs: 500,
+      db,
+    })!;
+    expect(readLastSuccess("daily_digest", db)).toBe(0);
+    expect(scheduledJobClaimKey("daily_digest")).not.toBe(watermarkKey("daily_digest"));
+    expect(releaseScheduledJobClaim(claim, db)).toBe(1);
   });
 });

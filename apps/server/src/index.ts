@@ -30,7 +30,7 @@ import {
   type ProfileHealthProvider,
 } from "./portfolio/portfolioScheduler.js";
 import type { ActivationRegistry } from "./portfolio/activationRegistry.js";
-import type { SkillRunService } from "./skillRuns.js";
+import { ProfileRunConflictError, type SkillRunService } from "./skillRuns.js";
 
 export { buildServer, type BuiltServer } from "./server.js";
 export { boot, type BootResult } from "./boot.js";
@@ -144,19 +144,16 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
  * HOT profile as its own quote_pipeline run (the explicit-pin N=1 case) under the
  * MAX_CONCURRENT_ACTIVE_PROFILES cap, and tracks slots via the run-lifecycle stream.
  *
- * KNOWN BOUNDARY (single-process, in-memory — see CLAUDE.md run-drive note): the
- * activation registry is populated only by scheduler-started runs; a manually
- * (HTTP) started run for the same profile is not registered, so the scheduler could
- * in principle double-schedule it. The durable ProfileId->runId registry from
- * PROMPT-phase0-rest closes this; a multi-process move needs a storage-level
- * run-ownership lock first.
+ * CROSS-PROCESS BOUNDARY: SkillRunService atomically claims the profile in
+ * SQLite before Mastra creates a run, for HTTP and scheduler starts alike. A
+ * scheduler that loses the claim receives null and continues to the next
+ * profile without creating an orphan run.
  */
 export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler | undefined {
   if (process.env.AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") return undefined;
-  // The DURABLE ProfileId->runId registry (phase0-rest), adapted to the scheduler's
-  // ActivationRegistry seam. SkillRunService already records/clears these entries on
-  // every run's lifecycle, so the scheduler's register/release are idempotent
-  // re-writes over the same rows (and its key=1 view includes HTTP-started runs).
+  // The durable ProfileId->runId registry, adapted to the scheduler's read/lifecycle
+  // seam. SkillRunService owns the pre-start atomic claim; this adapter's register
+  // call is an idempotent assertion of the same pair.
   const activationRegistry: ActivationRegistry = {
     liveRunFor: (profileId) => lookupRunIdForProfile(profileId, getDb()) ?? undefined,
     profileForRun: (runId) => lookupProfileIdForRunId(runId, getDb()) ?? undefined,
@@ -179,7 +176,12 @@ export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioSc
     startProfileRun: async (profileId) => {
       const input =
         descriptor?.buildInput({ search_profile_id: profileId }) ?? { search_profile_id: profileId };
-      return skillRuns.start({ skill: "quote_pipeline", input });
+      try {
+        return await skillRuns.start({ skill: "quote_pipeline", input });
+      } catch (err) {
+        if (err instanceof ProfileRunConflictError) return null;
+        throw err;
+      }
     },
   });
   // The scheduler manages slots off the run-lifecycle stream.

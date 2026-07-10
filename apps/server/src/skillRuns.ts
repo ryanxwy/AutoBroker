@@ -114,7 +114,7 @@ import {
 import {
   getDb,
   validateResetToken,
-  recordActivation,
+  tryClaimActivation,
   clearActivationByRunId,
   writeLastProgressAt,
 } from "@autobroker/tools";
@@ -163,6 +163,23 @@ export class UnknownSkillError extends Error {
     super(`unknown skill '${skillId}'`);
     this.name = "UnknownSkillError";
     this.skillId = skillId;
+  }
+}
+
+/** A different live run already owns the requested search profile. The claim
+ * is acquired before Mastra run creation, so this conflict has zero workflow,
+ * channel, or session side effects. */
+export class ProfileRunConflictError extends Error {
+  constructor(
+    readonly profileId: string,
+    readonly attemptedRunId: string,
+    readonly liveRunId: string | null,
+  ) {
+    super(
+      `profile '${profileId}' already has live run '${liveRunId ?? "unknown"}'; ` +
+        `refusing concurrent run '${attemptedRunId}'`,
+    );
+    this.name = "ProfileRunConflictError";
   }
 }
 
@@ -1949,14 +1966,35 @@ export class SkillRunService {
     }
     const runId = args.runId ?? randomUUID();
 
-    // The dup-id guard + run creation come FIRST: a 409 must leave no channel
-    // or run state behind for the already-existing run id.
+    // Acquire the durable per-profile owner BEFORE touching Mastra. Across two
+    // server processes only one SQLite INSERT wins; a loser returns a typed 409
+    // with zero workflow/channel state. Profile-less runs need no claim.
+    const profileId = extractSearchProfileId(args.input);
+    const activationClaim =
+      profileId === null
+        ? null
+        : tryClaimActivation({ profileId, runId, db: getDb() });
+    if (activationClaim !== null && !activationClaim.acquired) {
+      throw new ProfileRunConflictError(profileId!, runId, activationClaim.liveRunId);
+    }
+
+    // The dup-id guard + run creation come next. If Mastra refuses the run, roll
+    // back only a claim THIS call inserted; an idempotent pre-existing same-run
+    // claim belongs to the already-live run and must survive.
     const workflow = this.mastra.getWorkflow(descriptor.workflowId);
-    const { started } = await beginRunGuarded(workflow, {
-      runId,
-      inputData: args.input,
-      ...(args.agentSelection !== undefined ? { agentSelection: args.agentSelection } : {}),
-    });
+    let started: Promise<unknown>;
+    try {
+      ({ started } = await beginRunGuarded(workflow, {
+        runId,
+        inputData: args.input,
+        ...(args.agentSelection !== undefined ? { agentSelection: args.agentSelection } : {}),
+      }));
+    } catch (err) {
+      if (activationClaim?.inserted === true) {
+        clearActivationByRunId({ runId, db: getDb() });
+      }
+      throw err;
+    }
 
     // First frame: init {run_id, skill, driver_kind} (the pubsub injects
     // driver_kind).
@@ -1965,21 +2003,12 @@ export class SkillRunService {
     this.runs.set(runId, {
       skill: descriptor.skillId,
       sessionId: args.sessionId ?? null,
-      searchProfileId: extractSearchProfileId(args.input),
+      searchProfileId: profileId,
       pending: null,
       terminal: false,
       terminalHandled: false,
       claims: new Map(),
     });
-
-    // Register this run in the durable activation registry IF its input carries
-    // a profile (the virtual-actor at-most-one-live-run map). A profile-less run
-    // (intake, daily-digest fan-out) records nothing.
-    const pid = (args.input as { search_profile_id?: string | null } | null | undefined)
-      ?.search_profile_id;
-    if (typeof pid === "string" && pid !== "") {
-      recordActivation({ profileId: pid, runId, db: getDb() });
-    }
 
     void started
       .then((result) => {

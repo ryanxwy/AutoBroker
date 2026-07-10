@@ -16,7 +16,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resetRuntimeGlueForTests } from "@autobroker/workflows";
 
-import { SkillRunService, FormDecisionError, RUN_DESCRIPTORS } from "./skillRuns.js";
+import {
+  SkillRunService,
+  FormDecisionError,
+  ProfileRunConflictError,
+  RUN_DESCRIPTORS,
+} from "./skillRuns.js";
 import { RunPubSub } from "./runPubSub.js";
 import { useFreshProductDb } from "./testProductDb.js";
 
@@ -154,6 +159,39 @@ describe("formDecision — idempotent replay (Phase 1 consumed-same-body)", () =
         decision: { action: "accept", content: validContent() },
       }),
     ).rejects.toMatchObject({ code: "decision_conflict", status: 409 });
+  });
+});
+
+describe("start — durable profile ownership", () => {
+  it("a competing service loses before it asks Mastra for a workflow", async () => {
+    const owner = new SkillRunService(fakeMastra([SUSPEND_COLLECT]), new RunPubSub());
+    await owner.start({
+      skill: "dealer_geosearch",
+      runId: "owner-run",
+      input: { search_profile_id: "profile-owned" },
+    });
+
+    let getWorkflowCalls = 0;
+    const competitorMastra = {
+      getWorkflow: () => {
+        getWorkflowCalls += 1;
+        throw new Error("competitor reached Mastra before acquiring the profile");
+      },
+    } as never;
+    const competitor = new SkillRunService(competitorMastra, new RunPubSub());
+
+    await expect(
+      competitor.start({
+        skill: "dealer_geosearch",
+        runId: "losing-run",
+        input: { search_profile_id: "profile-owned" },
+      }),
+    ).rejects.toMatchObject({
+      name: "ProfileRunConflictError",
+      profileId: "profile-owned",
+      liveRunId: "owner-run",
+    } satisfies Partial<ProfileRunConflictError>);
+    expect(getWorkflowCalls).toBe(0);
   });
 });
 

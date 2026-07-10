@@ -83,6 +83,7 @@ import {
   SkillRunService,
   FormDecisionBodySchema,
   FormDecisionError,
+  ProfileRunConflictError,
   UnknownRunError,
 } from "./skillRuns.js";
 import type { ApprovalInbox } from "./portfolio/approvalInbox.js";
@@ -575,6 +576,14 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
           extra: { run_id: err.runId },
         });
       }
+      if (err instanceof ProfileRunConflictError) {
+        throw new RouteError("profile_run_conflict", 409, err.message, {
+          extra: {
+            profile_id: err.profileId,
+            live_run_id: err.liveRunId,
+          },
+        });
+      }
       throw err;
     }
   });
@@ -704,6 +713,14 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       if (err instanceof DuplicateRunIdError) {
         throw new RouteError("duplicate_run_id", 409, err.message, {
           extra: { run_id: err.runId },
+        });
+      }
+      if (err instanceof ProfileRunConflictError) {
+        throw new RouteError("profile_run_conflict", 409, err.message, {
+          extra: {
+            profile_id: err.profileId,
+            live_run_id: err.liveRunId,
+          },
         });
       }
       throw err;
