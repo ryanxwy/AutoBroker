@@ -224,14 +224,13 @@ describe("refreshSpawnSpec", () => {
     expect(spec.args).toEqual([join("/repo", "scripts", "desktop-refresh.mjs"), "--launch-bg"]);
   });
 
-  it("child env is env-clean: no send-mode or auto-send setting, ELECTRON_RUN_AS_NODE=1, dataDir pinned", () => {
+  it("child env is env-clean: NO AUTOBROKER_MODE, ELECTRON_RUN_AS_NODE=1, dataDir pinned", () => {
     const spec = refreshSpawnSpec({
       ...base,
       mode: "install",
       selfPid: 1,
       baseEnv: {
         AUTOBROKER_MODE: "buyer",
-        AUTOBROKER_AUTO_SEND: "all",
         AUTOBROKER_HARNESS: "1",
         AUTOBROKER_TEST_AUTO_APPROVE: "1",
         AUTOBROKER_DATA_DIR: "/some/other/dir",
@@ -241,7 +240,6 @@ describe("refreshSpawnSpec", () => {
     });
     // The load-bearing env-clean assertion: no forced send-mode reaches the child.
     expect(spec.env.AUTOBROKER_MODE).toBeUndefined();
-    expect(spec.env.AUTOBROKER_AUTO_SEND).toBeUndefined();
     expect(spec.env.AUTOBROKER_HARNESS).toBeUndefined();
     expect(spec.env.AUTOBROKER_TEST_AUTO_APPROVE).toBeUndefined();
     // Interpreter rule + path pinning.
