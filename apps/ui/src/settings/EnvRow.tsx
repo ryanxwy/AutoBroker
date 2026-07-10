@@ -24,9 +24,8 @@ import { useEffect, useState } from "react";
 
 import type { EnvVarState } from "../api/wire.js";
 import {
-  APP_MODE_CONFIRM,
-  APP_MODE_CONFIRM_VALUE,
-  APP_MODE_OPTION_LABELS,
+  ENV_ENUM_CONFIRMATIONS,
+  ENV_ENUM_OPTION_LABELS,
   ENV_BOOL_PRESENTATIONS,
 } from "./envDefs.js";
 import { InfoHint } from "./InfoHint.js";
@@ -116,13 +115,16 @@ function EnumControl({
   allowedValues: readonly string[];
   onSet: (id: string, value: string) => void;
 }): JSX.Element {
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    value: string;
+    confirmation: { title: string; body: string; confirmLabel: string; cancelLabel: string };
+  } | null>(null);
 
   const onSelect = (next: string): void => {
     if (next === value) return;
-    if (next === APP_MODE_CONFIRM_VALUE) {
-      // Sensitive direction → confirm before committing (no call yet).
-      setPending(next);
+    const confirmation = ENV_ENUM_CONFIRMATIONS[id]?.[next];
+    if (confirmation !== undefined) {
+      setPending({ value: next, confirmation });
       return;
     }
     // Safe direction → commit immediately.
@@ -136,12 +138,12 @@ function EnumControl({
         data-testid={`env-select-${id}`}
         // While a confirm is pending the select reflects the would-be value so
         // the dropdown reads "My real Gmail"; cancelling snaps it back.
-        value={pending ?? value}
+        value={pending?.value ?? value}
         onChange={(e) => onSelect(e.target.value)}
       >
         {allowedValues.map((opt) => (
           <option key={opt} value={opt}>
-            {APP_MODE_OPTION_LABELS[opt] ?? opt}
+            {ENV_ENUM_OPTION_LABELS[id]?.[opt] ?? opt}
           </option>
         ))}
       </select>
@@ -153,27 +155,27 @@ function EnumControl({
           aria-labelledby={`env-confirm-title-${id}`}
           data-testid={`env-confirm-${id}`}
         >
-          <strong id={`env-confirm-title-${id}`}>{APP_MODE_CONFIRM.title}</strong>
-          <p className="muted">{APP_MODE_CONFIRM.body}</p>
+          <strong id={`env-confirm-title-${id}`}>{pending.confirmation.title}</strong>
+          <p className="muted">{pending.confirmation.body}</p>
           <div className="gate-actions">
             <button
               type="button"
               className="btn-primary"
               data-testid={`env-confirm-yes-${id}`}
               onClick={() => {
-                const next = pending;
+                const next = pending.value;
                 setPending(null);
                 onSet(id, next);
               }}
             >
-              {APP_MODE_CONFIRM.confirmLabel}
+              {pending.confirmation.confirmLabel}
             </button>
             <button
               type="button"
               data-testid={`env-confirm-no-${id}`}
               onClick={() => setPending(null)}
             >
-              {APP_MODE_CONFIRM.cancelLabel}
+              {pending.confirmation.cancelLabel}
             </button>
           </div>
         </div>

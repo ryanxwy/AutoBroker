@@ -30,7 +30,7 @@ AutoBroker handles sensitive data by design:
 
 - **Local-first.** All data lives under `~/.autobroker-ts/` on the user's
   machine. The app is not a multi-tenant service; there is no cloud backend.
-- **Human approval gates on all irreversible actions.** Side effects can
+- **L2 gates on all irreversible actions.** Side effects can
   physically reach `browser.submit` or `gmail.send` only through the L2
   in-process gate handler, which fails closed. `AUTOBROKER_MODE` is the single
   send-control variable: `AUTOBROKER_MODE=test` resolves every send to the local
@@ -39,8 +39,9 @@ AutoBroker handles sensitive data by design:
   in `.gitignore`. CI is verified to contain no real credentials.
 - **The three irreversible skills** (`dealer_web_lead_submit`,
   `negotiation_followup`, `dealer_closeout_email`) really send in `buyer` mode
-  through the single L2 human-approval gate (one action at a time), and fake-send
-  in `test` mode — via the same `AUTOBROKER_MODE` switch as every other send.
-  Their human approval is never hidden on any surface.
+  through the single L2 gate, and fake-send in `test` mode — via the same
+  `AUTOBROKER_MODE` switch as every other send. Approval is manual by default;
+  the explicit channel-scoped setting can resolve only fresh first-send gates
+  and cannot auto-resume recovered or fallback gates.
 
 See `CLAUDE.md` for the full 12-point safety invariant set.

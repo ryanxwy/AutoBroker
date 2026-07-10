@@ -683,6 +683,7 @@ export type KeyProbeResult = z.infer<typeof KeyProbeResultSchema>;
 /** The editable env ids the route accepts on PUT. */
 export const ENV_EDITABLE_IDS = [
   "app_mode",
+  "auto_send",
   "auto_run_searches",
   "gmail_account",
   "chrome_headless",

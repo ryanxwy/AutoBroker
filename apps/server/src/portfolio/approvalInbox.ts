@@ -5,10 +5,11 @@
  * (profileId, runId, decisionId), tagged by reason + the budget-free
  * BatchReviewCard summary.
  *
- * IT AGGREGATES ONLY. There is deliberately NO method that approves many
- * destructive/irreversible items at once — each decision still goes one at a time
- * through POST /api/skill-runs/:id/form-decision (the idempotent three-phase
- * claim). The per-action L2 human-approval floor is unchanged and load-bearing.
+ * IT AGGREGATES ONLY. There is deliberately NO bulk-approval method — every
+ * decision still goes one at a time through
+ * POST /api/skill-runs/:id/form-decision (the idempotent three-phase claim).
+ * The scoped auto-send policy reuses that same path for a fresh allow-listed
+ * first-send gate; it does not add an inbox bypass.
  */
 
 import type { PendingGate } from "../skillRuns.js";

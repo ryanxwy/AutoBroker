@@ -168,7 +168,8 @@ stays authoritative. The refresh build performs no sends and the relaunch is env
 AutoBroker can read your dealer email replies and send follow-ups on your behalf.
 Send mode is **buyer-by-default** (real send), but the shipped `.env.example`
 starts you in safe **test** mode (a local fake mailbox); the TopBar toggle is
-authoritative, and each real send still waits for your per-action approval. The Gmail
+authoritative. Real-send approvals are manual by default; Settings can explicitly
+automate new first-send email, web-form, or both approvals. The Gmail
 **backend is ready today**; the one-click **Connect Gmail** button in Settings is
 still a placeholder ("Coming soon"), so for now you connect with a short one-time
 command-line step.
