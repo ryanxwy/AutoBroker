@@ -15,7 +15,7 @@ import {
   INBOX_CHECK_SKILL_ID,
   INVENTORY_SITE_SCAN_SKILL_ID,
 } from "@autobroker/skills";
-import { getDb, isHarnessContext, listProfileRows } from "@autobroker/tools";
+import { getDb, isHarnessContext, isTestMode, listProfileRows } from "@autobroker/tools";
 
 import {
   ProfileRunConflictError,
@@ -35,11 +35,13 @@ type ProfileRunStarter = Pick<SkillRunService, "descriptorFor" | "start">;
 export interface ScheduledProfileAutomationDeps {
   listActiveProfiles(): Record<string, unknown>[];
   isHarness(): boolean;
+  isTestMode(): boolean;
 }
 
 const realDeps: ScheduledProfileAutomationDeps = {
   listActiveProfiles: () => listProfileRows(getDb(), "active"),
   isHarness: () => isHarnessContext(),
+  isTestMode: () => isTestMode(),
 };
 
 function traceFor(
@@ -68,10 +70,15 @@ function pinnedProfileHandler(
   skillId: typeof INBOX_CHECK_SKILL_ID | typeof INVENTORY_SITE_SCAN_SKILL_ID,
   skillRuns: ProfileRunStarter,
   deps: ScheduledProfileAutomationDeps,
+  opts: { disableBrowserInTestMode?: boolean } = {},
 ): ScheduledJobHandler {
   return async (job, trigger, trace) => {
     if (deps.isHarness()) {
       trace(traceFor("job_noop", job, trigger, "harness/test context: automatic runs disabled"));
+      return;
+    }
+    if (opts.disableBrowserInTestMode === true && deps.isTestMode()) {
+      trace(traceFor("job_noop", job, trigger, "test mode: browser inventory scan disabled"));
       return;
     }
 
@@ -128,6 +135,8 @@ export function installScheduledProfileAutomations(
   );
   scheduler.registerHandler(
     "morning_scan",
-    pinnedProfileHandler(INVENTORY_SITE_SCAN_SKILL_ID, skillRuns, deps),
+    pinnedProfileHandler(INVENTORY_SITE_SCAN_SKILL_ID, skillRuns, deps, {
+      disableBrowserInTestMode: true,
+    }),
   );
 }

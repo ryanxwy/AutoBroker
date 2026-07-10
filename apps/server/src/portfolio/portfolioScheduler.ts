@@ -136,14 +136,11 @@ export class PortfolioScheduler implements RunLifecycleListener {
         // never re-read here, because input arriving during start is NEW work.
         this.deps.admissionGate.record(profileId, admission);
         const { runId } = started;
-        try {
-          // Idempotent mirror: SkillRunService already owns this exact pair.
-          this.deps.activationRegistry.register(profileId, runId);
-        } catch {
-          // Defensive only: production loses cross-process races before run
-          // creation and returns null above. Never account an unowned run.
-          continue;
-        }
+        // SkillRunService owns the durable claim. Never write it here: a very
+        // fast run may already have terminated (and cleared its claim) before
+        // startProfileRun's promise returns. Re-registering after that terminal
+        // would resurrect a stale owner and consume a ghost scheduler slot.
+        if (this.deps.activationRegistry.profileForRun(runId) !== profileId) continue;
         this.running.add(profileId);
         this.recordProgress(profileId);
         available -= 1;

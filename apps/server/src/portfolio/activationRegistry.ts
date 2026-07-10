@@ -9,9 +9,8 @@
  * SkillRunService already records/clears on every run's lifecycle — so the scheduler's
  * key=1 respects HTTP-started runs too. `InMemoryActivationRegistry` below is the
  * in-memory implementation used by the scheduler's unit tests (it also throws on a
- * key=1 conflict, a stricter check than the durable upsert; the scheduler's candidate
- * filter never triggers it). Single-process by design (Phase 0-2); a multi-process
- * move needs a storage-level run-ownership lock first.
+ * key=1 conflict, a stricter check than the durable claim; test start fakes register
+ * before returning to model SkillRunService's production ownership contract).
  */
 
 /** Thrown when a second, DIFFERENT run is registered for a profile that already

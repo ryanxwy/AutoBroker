@@ -40,10 +40,10 @@
  *   - Phase 3 (lock): consumed; store the ack snapshot; the resume's terminal/
  *     next-suspend translation already fanned out to SSE.
  *
- * Single-process topology (127.0.0.1:8100, one Node process): the claim map's
- * synchronous map ops ARE the lock (single-threaded JS). The runtimeGlue
- * startRunGuarded dup-runId guard covers the start path; this claim map covers
- * the resume path.
+ * The form-decision claim map remains process-local: synchronous map ops are the
+ * lock inside the server instance that owns/reattached the run. Run START
+ * ownership is different and is cross-process through the durable SQLite claim;
+ * runtimeGlue's dup-runId guard remains defense in depth inside one process.
  *
  * Dependency wall: app layer. Imports core (schemas/status), skills (ids),
  * workflows (the run drive + glue) — NEVER @mastra, NEVER the DB.

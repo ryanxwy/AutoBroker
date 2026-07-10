@@ -38,14 +38,17 @@ function fixedHealth(list: Array<{ profileId: string; health: "hot" | "warm" | "
   return { snapshot: () => list.map((h) => ({ ...h, reasons: [] })) };
 }
 
-function recorder() {
+function recorder(registry = new InMemoryActivationRegistry()) {
   const starts: string[] = [];
   let n = 0;
   return {
     starts,
+    registry,
     startProfileRun: async (profileId: string) => {
       starts.push(profileId);
-      return { runId: `run-${profileId}-${(n += 1)}` };
+      const runId = `run-${profileId}-${(n += 1)}`;
+      registry.register(profileId, runId); // model SkillRunService's pre-start claim
+      return { runId };
     },
   };
 }
@@ -91,7 +94,7 @@ describe("PortfolioScheduler", () => {
       healthProvider: health,
       isEnabled: () => enabled,
       admissionGate: admitAll(),
-      activationRegistry: new InMemoryActivationRegistry(),
+      activationRegistry: rec.registry,
       startProfileRun: rec.startProfileRun,
       cap: 1,
     });
@@ -109,7 +112,7 @@ describe("PortfolioScheduler", () => {
   it("respects the MAX_CONCURRENT_ACTIVE_PROFILES cap and warms the least-recently-progressed", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const sched = new PortfolioScheduler({
       healthProvider: health,
       isEnabled: () => true,
@@ -133,7 +136,7 @@ describe("PortfolioScheduler", () => {
   it("resumes a warmed profile when a running slot frees (LRU re-admission)", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const sched = new PortfolioScheduler({
       healthProvider: health,
       isEnabled: () => true,
@@ -159,7 +162,7 @@ describe("PortfolioScheduler", () => {
   it("enforces per-profile concurrency = 1 (never starts a second run for a live profile)", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const sched = new PortfolioScheduler({
       healthProvider: health,
       isEnabled: () => true,
@@ -177,7 +180,7 @@ describe("PortfolioScheduler", () => {
   it("a SUSPENDED run holds ZERO slots — the freed slot admits a warm profile", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const sched = new PortfolioScheduler({
       healthProvider: health,
       isEnabled: () => true,
@@ -203,7 +206,7 @@ describe("PortfolioScheduler", () => {
 
   it("treats a NON-HOT (warm/lock-blocked) profile as never scheduled", async () => {
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const sched = new PortfolioScheduler({
       // The real profileHealth classifies a lock-blocked profile 'warm'; here B is warm.
       healthProvider: fixedHealth([
@@ -223,7 +226,7 @@ describe("PortfolioScheduler", () => {
   it("a resumed run RE-OCCUPIES its slot so the cap is not exceeded when new work arrives", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const sched = new PortfolioScheduler({
       healthProvider: health,
       isEnabled: () => true,
@@ -262,7 +265,9 @@ describe("PortfolioScheduler", () => {
       startProfileRun: async (pid) => {
         starts.push(pid);
         await gate; // hold the first tick inside startProfileRun so a second tick can overlap
-        return { runId: `run-${pid}-${(n += 1)}` };
+        const runId = `run-${pid}-${(n += 1)}`;
+        reg.register(pid, runId);
+        return { runId };
       },
       cap: 4,
     });
@@ -285,7 +290,10 @@ describe("PortfolioScheduler", () => {
       activationRegistry: reg,
       startProfileRun: async (pid) => {
         starts.push(pid);
-        return pid === "A" ? null : { runId: `run-${pid}` };
+        if (pid === "A") return null;
+        const runId = `run-${pid}`;
+        reg.register(pid, runId);
+        return { runId };
       },
       cap: 2,
     });
@@ -301,7 +309,7 @@ describe("PortfolioScheduler", () => {
   it("does not start a same-input candidate denied by admission, but continues to new input", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
-    const rec = recorder();
+    const rec = recorder(reg);
     const recorded: string[] = [];
     const sched = new PortfolioScheduler({
       healthProvider: health,
@@ -324,5 +332,32 @@ describe("PortfolioScheduler", () => {
 
     expect(rec.starts).toEqual(["B"]);
     expect(recorded).toEqual(["B"]);
+  });
+
+  it("does not resurrect ownership or a slot when a run terminates before start returns", async () => {
+    const health = fakeHealth();
+    const reg = new InMemoryActivationRegistry();
+    const starts: string[] = [];
+    const sched = new PortfolioScheduler({
+      healthProvider: health,
+      isEnabled: () => true,
+      admissionGate: admitAll(),
+      activationRegistry: reg,
+      startProfileRun: async (profileId) => {
+        const runId = `run-${profileId}-${starts.length + 1}`;
+        starts.push(runId);
+        reg.register(profileId, runId);
+        reg.releaseRun(runId); // terminal hook wins before the await resumes
+        return { runId };
+      },
+      cap: 1,
+    });
+    health.hot = ["A"];
+
+    await sched.tick();
+    await sched.tick();
+
+    expect(starts).toEqual(["run-A-1", "run-A-2"]);
+    expect(reg.liveRunFor("A")).toBeUndefined();
   });
 });

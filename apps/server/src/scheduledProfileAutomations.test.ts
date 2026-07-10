@@ -19,6 +19,7 @@ import {
 function fixture(opts: {
   profiles?: string[];
   harness?: boolean;
+  testMode?: boolean;
   occupied?: ReadonlySet<string>;
 } = {}) {
   const handlers = new Map<string, ScheduledJobHandler>();
@@ -51,6 +52,7 @@ function fixture(opts: {
     listActiveProfiles: () =>
       (opts.profiles ?? []).map((search_profile_id) => ({ search_profile_id })),
     isHarness: () => opts.harness ?? false,
+    isTestMode: () => opts.testMode ?? false,
   };
   installScheduledProfileAutomations(
     { registerHandler: (name, handler) => void handlers.set(name, handler) },
@@ -141,5 +143,23 @@ describe("scheduled profile automations", () => {
       }),
     ]);
     expect(harness.starts).toEqual([]);
+  });
+
+  it("keeps inbox fake-capable but disables the browser morning scan in test mode", async () => {
+    const f = fixture({ profiles: ["profile-a"], testMode: true });
+
+    await run(f.handlers, "inbox_poll");
+    expect(f.starts).toEqual([
+      { skill: INBOX_CHECK_SKILL_ID, input: { search_profile_id: "profile-a" } },
+    ]);
+
+    const traces = await run(f.handlers, "morning_scan");
+    expect(traces).toEqual([
+      expect.objectContaining({
+        scheduler: "job_noop",
+        detail: "test mode: browser inventory scan disabled",
+      }),
+    ]);
+    expect(f.starts).toHaveLength(1);
   });
 });
