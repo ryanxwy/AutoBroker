@@ -47,6 +47,15 @@ export interface ProfileHealthProvider {
   snapshot(liveRunProfileIds: ReadonlySet<string>): ProfileHealth[];
 }
 
+/** Tick-time switch projection. Harness/test contexts are an unconditional
+ * fail-closed no-op even if the persisted/user env says enabled. */
+export function autoRunSearchesEnabled(
+  configuredValue: string | undefined,
+  harnessContext: boolean,
+): boolean {
+  return !harnessContext && configuredValue === "1";
+}
+
 /** Durable same-input admission seam. The decision captures an exact frontier;
  * record() persists that same frontier only after startProfileRun succeeds. */
 export interface PortfolioAdmissionGate {
@@ -58,6 +67,9 @@ export interface PortfolioSchedulerDeps {
   /** Classifies the active set hot/warm/cold (lock-blocked profiles are non-hot —
    *  the provider derives that, matching the documented profileHealth producer). */
   healthProvider: ProfileHealthProvider;
+  /** Read fresh on every tick so the Settings switch takes effect without a
+   * scheduler start/stop lifecycle. */
+  isEnabled: () => boolean;
   admissionGate: PortfolioAdmissionGate;
   activationRegistry: ActivationRegistry;
   /** Start one profile's ProfilePipeline run (the explicit-pin N=1 case). The
@@ -100,6 +112,7 @@ export class PortfolioScheduler implements RunLifecycleListener {
     if (this.ticking) return; // re-entrancy guard — overlapping ticks are a no-op
     this.ticking = true;
     try {
+      if (!this.deps.isEnabled()) return;
       const health = this.deps.healthProvider.snapshot(this.deps.activationRegistry.liveProfileIds());
       // Candidates = HOT profiles that do not already hold a live run (key=1: a
       // running OR suspended run already occupies the profile's single slot).

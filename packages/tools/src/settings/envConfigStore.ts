@@ -19,6 +19,9 @@
  *   - AUTOBROKER_MODE (the sole send-control var) is the editable "Mode" row;
  *     "test" keeps every send fake/local, "buyer" enables real send (still behind
  *     the per-action human-approval gate). It is the one knob the owner sets here.
+ *   - AUTOBROKER_PORTFOLIO_SCHEDULER is the editable "Auto-run my searches"
+ *     switch. It admits only quote_pipeline's read/local fan-out. Every outbound
+ *     send remains behind its existing per-action human approval gate.
  *   - The two test-escape vars (AUTOBROKER_TEST_AUTO_APPROVE,
  *     AUTOBROKER_TEST_ALLOW_LOCALHOST_URLS) have NO descriptor at all — they are
  *     structurally unreachable: not readable through getEnvConfig (no row),
@@ -47,6 +50,7 @@ import {
 export type EnvVarId =
   // editable
   | "app_mode"
+  | "auto_run_searches"
   | "gmail_account"
   | "chrome_headless"
   | "per_dealer_record_cap"
@@ -102,6 +106,19 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
     label: "Mode",
     tooltip:
       "Buyer mode really emails dealers and submits forms (you still approve each one). Test mode keeps everything internal — nothing leaves your computer.",
+  },
+  {
+    id: "auto_run_searches",
+    envVar: "AUTOBROKER_PORTFOLIO_SCHEDULER",
+    classification: "editable-bool",
+    editable: true,
+    allowedValues: ["1", "0"],
+    default: "0",
+    numericMin: null,
+    numericMax: null,
+    label: "Auto-run my searches",
+    tooltip:
+      "Automatically runs read-only and local search-pipeline work when new replies or quotes arrive. Every email and web-form submission still waits for your approval.",
   },
   {
     id: "gmail_account",
@@ -187,7 +204,13 @@ export const ENV_DESCRIPTORS: readonly EnvVarDescriptor[] = [
 ];
 
 /** The editable ids only — the write allow-list. */
-export const EDITABLE_IDS = ["app_mode", "gmail_account", "chrome_headless", "per_dealer_record_cap"] as const;
+export const EDITABLE_IDS = [
+  "app_mode",
+  "auto_run_searches",
+  "gmail_account",
+  "chrome_headless",
+  "per_dealer_record_cap",
+] as const;
 
 /** Max length for a free-text editable value (an email address — RFC 5321 caps
  *  the full address at 254 chars). Guards against a pathological payload. */
@@ -337,6 +360,7 @@ function projectValue(descriptor: EnvVarDescriptor, stored: StoredEnv): string {
     case "db_path":
       return resolveActiveDbPath();
     case "app_mode":
+    case "auto_run_searches":
     case "gmail_account":
     case "chrome_headless":
     case "per_dealer_record_cap": {

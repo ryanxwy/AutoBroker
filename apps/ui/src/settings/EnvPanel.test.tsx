@@ -46,6 +46,19 @@ function curatedVars(mode: "buyer" | "test" = "test"): EnvVarState[] {
       value: mode,
     },
     {
+      id: "auto_run_searches",
+      envVar: "AUTOBROKER_PORTFOLIO_SCHEDULER",
+      classification: "editable-bool",
+      editable: true,
+      allowedValues: ["1", "0"],
+      default: "0",
+      numericMin: null,
+      numericMax: null,
+      label: "Auto-run my searches",
+      tooltip: "Read-only/local auto-run; sends still ask.",
+      value: "0",
+    },
+    {
       id: "gmail_account",
       envVar: "AUTOBROKER_GMAIL_ACCOUNT",
       classification: "editable-text",
@@ -166,6 +179,7 @@ describe("EnvPanel — rows render from the store response", () => {
     expect(r.query("env-panel")).not.toBeNull();
     expect(r.query("env-row-app_mode")).not.toBeNull();
     expect(r.query("env-select-app_mode")).not.toBeNull();
+    expect(r.query("env-toggle-auto_run_searches")).not.toBeNull();
     expect(r.query("env-toggle-chrome_headless")).not.toBeNull();
     // read-only demo status → a badge, no control.
     expect(r.query("env-badge-demo_seed")).not.toBeNull();
@@ -242,6 +256,18 @@ describe("EnvPanel — enum gate-before-control", () => {
     expect(r.query("env-confirm-app_mode")).toBeNull(); // never confirms the safe direction
     expect(puts).toHaveLength(1);
     expect(puts[0]).toEqual({ id: "app_mode", value: "test" });
+    r.unmount();
+  });
+
+  it("enabling Auto-run my searches writes the STRING '1' immediately", async () => {
+    const puts: Array<Record<string, unknown>> = [];
+    const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
+    const r = render(<EnvPanel client={client} env={okEnv("test")} onChanged={() => {}} />);
+    const box = r.get("env-toggle-auto_run_searches").querySelector("input") as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    toggleCheckbox(box, true);
+    await flush();
+    expect(puts).toEqual([{ id: "auto_run_searches", value: "1" }]);
     r.unmount();
   });
 });

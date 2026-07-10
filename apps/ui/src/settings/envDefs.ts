@@ -5,8 +5,7 @@
  * ONLY the bits the wire deliberately omits — to avoid re-declaring the
  * descriptor set in two places (which would drift):
  *
- *   - friendly DISPLAY labels for the enum / bool option values (the wire sends
- *     the raw "buyer"/"test" and "1"/"0"; a non-tech user needs words), and
+ *   - friendly display labels for enum / bool values, and
  *   - the confirm-warning copy for the one gate-before-control switch (enum →
  *     "buyer"), which is a UI affordance with no server field.
  *
@@ -25,14 +24,8 @@ export const APP_MODE_OPTION_LABELS: Record<string, string> = {
   test: "Test mode",
 };
 
-/** The id that switching the app_mode enum TO triggers a confirm for (the
- *  sensitive direction — turning on real dealer emails + form submits). The safe
- *  direction (buyer → test) commits immediately. */
 export const APP_MODE_CONFIRM_VALUE = "buyer";
 
-/** The gate-before-control confirm copy for the enum → "buyer" switch. Plain,
- *  non-tech: it names the one consequence (real dealer emails + form submits) and
- *  reassures that each one still waits for an explicit approval. */
 export const APP_MODE_CONFIRM = {
   title: "Switch to buyer mode?",
   body: "Buyer mode really emails dealers and submits forms on your behalf. You still approve each one before it leaves your computer.",
@@ -40,7 +33,11 @@ export const APP_MODE_CONFIRM = {
   cancelLabel: "Keep test mode",
 } as const;
 
-/** Human On/Off words for the chrome_headless toggle, framed as the user-facing
- *  "Show the browser" question (the env var is the negation — "headless" — so
- *  checked = NOT headless; EnvRow owns that flip). */
-export const SHOW_BROWSER_LABELS = { on: "On", off: "Off" } as const;
+/** Bool rows can differ in polarity: Show browser checks on value "0" because
+ * the backing env is headless; Auto-run checks on value "1". */
+export const ENV_BOOL_PRESENTATIONS: Readonly<
+  Record<string, { checkedValue: "0" | "1"; checkedLabel: string; uncheckedLabel: string }>
+> = {
+  chrome_headless: { checkedValue: "0", checkedLabel: "On", uncheckedLabel: "Off" },
+  auto_run_searches: { checkedValue: "1", checkedLabel: "On", uncheckedLabel: "Off" },
+};

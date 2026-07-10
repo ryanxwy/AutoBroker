@@ -133,8 +133,9 @@ export async function boot(opts: { quiet?: boolean } = {}): Promise<BootResult> 
   loadDotEnvKeys();
   loadSecretsIntoEnv();
 
-  // (1b') Seed the persisted operational env-config overrides (the four editable
-  // app_mode / gmail_account / chrome_headless / per_dealer_record_cap rows) into process.env from the env file
+  // (1b') Seed the persisted operational env-config overrides (the five editable
+  // app_mode / auto_run_searches / gmail_account / chrome_headless /
+  // per_dealer_record_cap rows) into process.env from the env file
   // BEFORE the registry / Mastra / gmail factory is constructed, mirroring the
   // secrets loader. A launch-supplied env var with no file override is left
   // untouched; missing file = no-op.

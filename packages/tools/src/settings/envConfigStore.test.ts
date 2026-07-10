@@ -33,6 +33,7 @@ const TOUCHED = [
   "AUTOBROKER_DATA_DIR",
   "AUTOBROKER_DB",
   "AUTOBROKER_MODE",
+  "AUTOBROKER_PORTFOLIO_SCHEDULER",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
   "AUTOBROKER_PER_DEALER_RECORD_CAP",
@@ -105,6 +106,21 @@ describe("setEnvConfig — editable persist + live mutation", () => {
     setEnvConfig("chrome_headless", "0");
     const row = getEnvConfig().find((r) => r.id === "chrome_headless");
     expect(row?.value).toBe("0");
+  });
+});
+
+describe("auto_run_searches — explicit persisted opt-in", () => {
+  it("defaults off, persists on, and mutates the live scheduler env", () => {
+    expect(getEnvConfig().find((row) => row.id === "auto_run_searches")?.value).toBe("0");
+    setEnvConfig("auto_run_searches", "1");
+    expect(process.env.AUTOBROKER_PORTFOLIO_SCHEDULER).toBe("1");
+    expect(JSON.parse(readFileSync(envFile(), "utf8"))).toEqual({ auto_run_searches: "1" });
+    expect(getEnvConfig().find((row) => row.id === "auto_run_searches")?.value).toBe("1");
+  });
+
+  it("rejects a non-bool value without persisting it", () => {
+    expect(() => setEnvConfig("auto_run_searches", "yes")).toThrow(InvalidEnvValueError);
+    expect(process.env.AUTOBROKER_PORTFOLIO_SCHEDULER).toBeUndefined();
   });
 });
 

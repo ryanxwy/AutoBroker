@@ -2,9 +2,9 @@
 # Environment panel, end-to-end (the centralized operational-env surface).
 #
 # A non-tech user opens Settings and sees the Environment card: the editable
-# rows (app_mode as a select — the sole send-control variable, chrome_headless as
-# a "Show browser window" toggle) and the read-only rows (the demo-status pill,
-# the data-dir path). They flip the browser-window toggle and it saves.
+# rows (app_mode as a select, auto_run_searches + chrome_headless as toggles) and
+# the read-only rows (the demo-status pill, the data-dir path). They enable
+# "Auto-run my searches" and flip the browser-window toggle; both save.
 #
 # WHY THIS IS A REAL END-TO-END PROOF (beyond the RTL component tests):
 #   - The panel mounts from a LIVE getEnvConfig() round-trip — the descriptor
@@ -12,8 +12,8 @@
 #     the panel actually connected in a real browser.
 #   - The toggle click drives a REAL PUT /api/settings/env to the isolated
 #     server; the Saved badge renders ONLY after that PUT resolves 200, so the
-#     click-as-wait on env-saved-chrome_headless is itself the save-succeeded
-#     proof (a non-200 / no-fire times out RED).
+#     click-as-wait on each Saved badge is itself the save-succeeded proof (a
+#     non-200 / no-fire times out RED).
 #   - SAFETY ANCHOR: a read-only status row (demo_seed) renders, but it has NO
 #     toggle and NO select (asserted absent) — a read-only row is structurally
 #     non-editable from the UI, proven against the live DOM, not just the unit reducer.
@@ -38,7 +38,7 @@ lane = "ui"
 id = "env_panel_renders_and_saves"
 kind = "ui"
 fixture_state = "empty_home"
-purpose = "Settings → Environment panel renders the curated env vars from a live getEnvConfig(); the editable app_mode (select) + chrome_headless (toggle) rows and the read-only demo-status pill + data-dir path all mount; flipping the browser-window toggle drives a real PUT proven by the Saved badge; and the read-only status row carries no editable control."
+purpose = "Settings → Environment renders the curated env vars from live getEnvConfig(); Auto-run my searches is a visible bool whose copy preserves per-send approval, enabling it drives a real PUT proven by Saved, and read-only status rows remain non-editable."
 
 # Open Settings — the top-right gear opens the settings POP-UP overlay (a Modal
 # rendering the same Environment panel). The DeepSeek key is seeded in fixture
@@ -47,6 +47,16 @@ purpose = "Settings → Environment panel renders the curated env vars from a li
 [[steps.ui_actions]]
 verb = "click"
 testid = "topbar-settings"
+
+# Enable "Auto-run my searches". The live functional host intentionally does
+# not mount production schedulers; this proves the visible control + real PUT.
+[[steps.ui_actions]]
+verb = "click"
+testid = "env-toggle-auto_run_searches"
+
+[[steps.ui_actions]]
+verb = "click"
+testid = "env-saved-auto_run_searches"
 
 # Flip "Show browser window" — the click verb waits for the toggle to mount
 # (so this also waits for the live getEnvConfig() panel), then triggers the real
@@ -82,6 +92,28 @@ value = "AUTOBROKER_MODE"
 [[steps.anchors]]
 kind = "dom_state"
 testid = "env-select-app_mode"
+expect = "visible"
+
+# The planned visible auto-run switch + backing env keyword render.
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-row-auto_run_searches"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-keyword-auto_run_searches"
+expect = "text"
+value = "AUTOBROKER_PORTFOLIO_SCHEDULER"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-toggle-auto_run_searches"
+expect = "visible"
+
+[[steps.anchors]]
+kind = "dom_state"
+testid = "env-saved-auto_run_searches"
 expect = "visible"
 
 # The editable chrome_headless row + its toggle render.

@@ -88,6 +88,19 @@ const SUCCESS_DECLINED = {
   result: { outcome: "declined" },
 };
 
+const SUSPEND_CLOSEOUT_BATCH = {
+  status: "suspended",
+  steps: {
+    batchReview: {
+      status: "suspended",
+      suspendPayload: {
+        kind: "batch_review",
+        targets: [{ dealer_id: "dealer-1", name: "Dealer One", website: "" }],
+      },
+    },
+  },
+};
+
 /** A valid 18-field form content. */
 function validContent(): Record<string, unknown> {
   return {
@@ -159,6 +172,32 @@ describe("formDecision — idempotent replay (Phase 1 consumed-same-body)", () =
         decision: { action: "accept", content: validContent() },
       }),
     ).rejects.toMatchObject({ code: "decision_conflict", status: 409 });
+  });
+});
+
+describe("Auto-run my searches — outbound approval boundary", () => {
+  it("never auto-resumes a newly parked send gate when the search scheduler is enabled", async () => {
+    const original = process.env.AUTOBROKER_PORTFOLIO_SCHEDULER;
+    process.env.AUTOBROKER_PORTFOLIO_SCHEDULER = "1";
+    try {
+      const pubsub = new RunPubSub();
+      const svc = new SkillRunService(fakeMastra([SUSPEND_CLOSEOUT_BATCH]), pubsub);
+      const { runId } = await svc.start({
+        skill: "dealer_closeout_email",
+        input: { search_profile_id: "profile-1" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(svc.pendingOf(runId)).toMatchObject({ step: "batchReview" });
+      expect(svc.isTerminal(runId)).toBe(false);
+      expect(pubsub.snapshot(runId).map((event) => event.kind)).toEqual([
+        "init",
+        "awaiting_user",
+      ]);
+    } finally {
+      if (original === undefined) delete process.env.AUTOBROKER_PORTFOLIO_SCHEDULER;
+      else process.env.AUTOBROKER_PORTFOLIO_SCHEDULER = original;
+    }
   });
 });
 

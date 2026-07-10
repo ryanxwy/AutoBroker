@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import {
   evaluatePipelineAdmission,
   getDb,
+  isHarnessContext,
   profileHealth,
   recordActivation,
   clearActivationByRunId,
@@ -29,6 +30,7 @@ import { buildServer, type BuiltServer } from "./server.js";
 import { BackgroundScheduler } from "./scheduler.js";
 import {
   PortfolioScheduler,
+  autoRunSearchesEnabled,
   type ProfileHealthProvider,
 } from "./portfolio/portfolioScheduler.js";
 import type { ActivationRegistry } from "./portfolio/activationRegistry.js";
@@ -138,11 +140,10 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
 
 /**
  * Mount the PortfolioScheduler — the bounded hot-set fan-out that makes N
- * independent profile pipelines actually run. It is GATED OFF by default
- * (AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") so the single-profile / pinned path stays
- * byte-identical: when off, nothing is constructed and no profile run is ever
- * auto-started; the ApprovalInbox (wired in buildServer) still works. When on (the
- * multi-profile lane), it ticks on an interval, scheduling each
+ * independent profile pipelines actually run. The scheduler stays resident and
+ * reads the Settings switch on every tick; off means no health read and no
+ * admission. Harness/test contexts are an unconditional no-op. When enabled, it
+ * ticks on an interval, scheduling each
  * HOT profile as its own quote_pipeline run (the explicit-pin N=1 case) under the
  * MAX_CONCURRENT_ACTIVE_PROFILES cap, and tracks slots via the run-lifecycle stream.
  *
@@ -151,8 +152,7 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
  * scheduler that loses the claim receives null and continues to the next
  * profile without creating an orphan run.
  */
-export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler | undefined {
-  if (process.env.AUTOBROKER_PORTFOLIO_SCHEDULER !== "1") return undefined;
+export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioScheduler {
   // The durable ProfileId->runId registry, adapted to the scheduler's read/lifecycle
   // seam. SkillRunService owns the pre-start atomic claim; this adapter's register
   // call is an idempotent assertion of the same pair.
@@ -173,6 +173,11 @@ export function startPortfolioScheduler(skillRuns: SkillRunService): PortfolioSc
   const descriptor = skillRuns.descriptorFor("quote_pipeline");
   const scheduler = new PortfolioScheduler({
     healthProvider,
+    isEnabled: () =>
+      autoRunSearchesEnabled(
+        process.env.AUTOBROKER_PORTFOLIO_SCHEDULER,
+        isHarnessContext(),
+      ),
     activationRegistry,
     admissionGate: {
       evaluate: (profileId) =>
@@ -212,7 +217,7 @@ export async function main(): Promise<BuiltServer> {
   // Long-running-background machinery: croner + the catch-up watermark live in
   // THIS process (the durable backend), not the Electron main launcher.
   startScheduler(built.skillRuns);
-  // The portfolio fan-out (off by default — byte-identical single-profile path).
+  // Resident portfolio loop; its tick-time Settings switch defaults off.
   startPortfolioScheduler(built.skillRuns);
   // Report the ACTUAL bound port (PORT=0 → ephemeral), not the configured one.
   console.info(JSON.stringify({ server: "listening", host: HOST, port: (built.app.server.address() as { port: number }).port }));

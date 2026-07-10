@@ -30,7 +30,7 @@ Wait for this line; **record `dataDir`**.
 | `CLAUDE_CODE_OAUTH_TOKEN` | lane-B credential (read from `.env`/keys, no-clobber); absent → every lane-B call fails closed |
 | `AUTOBROKER_RECORD_TRANSCRIPT` | optional; when set, records the SUT's LLM traffic to a JSONL file (the step-3.9 record/replay seam). Lane A (AI-SDK) → `<path>`; lane B (Claude OAuth) → sibling `<path>.laneB.jsonl` (diagnostic-only, since 2026-06-29) |
 | `AUTOBROKER_REPLAY_TRANSCRIPT` | optional; when set, replays a prior transcript with ZERO provider cost (deterministic; dealer replies are frozen as seeds) |
-| `AUTOBROKER_PORTFOLIO_SCHEDULER` | `"1"` arms the real PortfolioScheduler for step 3.9; pair with `MAX_CONCURRENT_ACTIVE_PROFILES` (set below the active count to prove the cap) and `AUTOBROKER_PORTFOLIO_TICK_MS` (e.g. 2000) |
+| `AUTOBROKER_PORTFOLIO_SCHEDULER` | Ignored for automatic admission in every harness/test context. T2 is fail-closed: even `"1"` cannot start an auto-run here. Use deterministic scheduler tests; T6 owns one controlled non-harness observation. |
 | `AUTOBROKER_SITESCAN_CHAIN` | the site_scan→aggregator auto-chain switch, read at FIRE time (not boot). **serve-live does NOT set it, so it stays at the product default ON** — a completed `inventory_site_scan` auto-fires an `inventory_aggregator_scan` sibling for the same profile, so the live e2e sweep SEES the chain (the harness regression runner exports `"0"` to keep its lanes deterministic; THIS live host does not). `"0"` disables it |
 
 Result: real server + real built UI + isolated throwaway DB (never touches
@@ -351,5 +351,5 @@ Time & Cost tables in the HTML report (see `references/recording.md`).
 9. Dump `test_run_records` BEFORE `pipeline_reset`; use backup fallback if missed.
 10. Verify writes and decline-Δ0 via `/__e2e/rows?table=` (whitelist 14 tables) and `/__e2e/audit?action=`.
 11. Per-PASS cleanup: assert `/__e2e/rows?table=search_profiles` returns `0`.
-12. **(Step 3.9 only)** Before launching: set `AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 AUTOBROKER_PORTFOLIO_TICK_MS=2000`; optionally `AUTOBROKER_RECORD_TRANSCRIPT=<path>` to capture a replay corpus.
+12. **Scheduler boundary:** never try to arm automatic admission in a harness; it is an intentional no-op. Use deterministic cap/admission tests here, and reserve the one controlled non-harness observation for T6.
 13. **Mode is launch-time, immutable.** `AUTOBROKER_MODE=test` is chosen at boot (`assertTestModeSafe` fires only there); **never** PUT/POST `app_mode=buyer` or flip the TopBar on the running host — a live flip arms a real adapter on the next send with no second env ring (see "Mode model").

@@ -10,15 +10,11 @@
  * descriptor tooltip.
  *
  * GATE-BEFORE-CONTROL (enum → "buyer"): switching the mode select to the
- * sensitive value does NOT commit. It parks a `pending` value and renders an
- * inline confirm on the shared gate-card plate; only "Use buyer mode" calls the
- * setter, "Keep test mode" cancels with NO call and the select snaps back.
- * The safe direction (buyer → test) commits immediately.
+ * sensitive value does NOT commit until the inline confirmation is accepted.
  *
- * BOOL ENCODING: the value crosses the wire as the STRING "1"/"0" ("1" =
- * headless = window hidden). The human label is "Show the browser", so the
- * checkbox is checked when the window IS shown — checked = (value === "0") — and
- * onChange sends "0" when checked, "1" when unchecked.
+ * BOOL ENCODING: values cross the wire as STRING "1"/"0". Polarity is
+ * presentational per row: Show browser is checked at "0" (not headless), while
+ * Auto-run my searches is checked at "1".
  *
  * Dependency wall: app/ui layer. react + the wire type + the presentational
  * extras only.
@@ -31,7 +27,7 @@ import {
   APP_MODE_CONFIRM,
   APP_MODE_CONFIRM_VALUE,
   APP_MODE_OPTION_LABELS,
-  SHOW_BROWSER_LABELS,
+  ENV_BOOL_PRESENTATIONS,
 } from "./envDefs.js";
 import { InfoHint } from "./InfoHint.js";
 
@@ -108,8 +104,7 @@ export function EnvRow({ state, onSet, busyError, saved }: EnvRowProps): JSX.Ele
   );
 }
 
-/** The mode enum: a native <select> with friendly option labels, plus the
- *  gate-before-control confirm when switching to the sensitive value. */
+/** The mode enum: native select plus gate-before-control for buyer mode. */
 function EnumControl({
   id,
   value,
@@ -187,8 +182,8 @@ function EnumControl({
   );
 }
 
-/** The show-the-browser bool toggle. value is the STRING "1"/"0" ("1" =
- *  headless = hidden); checked = window shown = (value === "0"). */
+/** A bool toggle whose checked polarity and labels come from presentational
+ * metadata keyed by the server-owned descriptor id. */
 function BoolControl({
   id,
   value,
@@ -198,16 +193,21 @@ function BoolControl({
   value: string;
   onSet: (id: string, value: string) => void;
 }): JSX.Element {
-  const showWindow = value === "0";
+  const presentation = ENV_BOOL_PRESENTATIONS[id] ?? {
+    checkedValue: "1" as const,
+    checkedLabel: "On",
+    uncheckedLabel: "Off",
+  };
+  const checked = value === presentation.checkedValue;
+  const uncheckedValue = presentation.checkedValue === "1" ? "0" : "1";
   return (
     <label className="env-toggle" data-testid={`env-toggle-${id}`}>
       <input
         type="checkbox"
-        checked={showWindow}
-        // checked → show the window → headless off → "0"; unchecked → "1".
-        onChange={(e) => onSet(id, e.target.checked ? "0" : "1")}
+        checked={checked}
+        onChange={(e) => onSet(id, e.target.checked ? presentation.checkedValue : uncheckedValue)}
       />
-      <span>{showWindow ? SHOW_BROWSER_LABELS.on : SHOW_BROWSER_LABELS.off}</span>
+      <span>{checked ? presentation.checkedLabel : presentation.uncheckedLabel}</span>
     </label>
   );
 }

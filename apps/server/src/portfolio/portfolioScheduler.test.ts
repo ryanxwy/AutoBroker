@@ -15,7 +15,11 @@ import { describe, it, expect } from "vitest";
 
 import type { ProfileHealth } from "@autobroker/tools";
 
-import { PortfolioScheduler, type ProfileHealthProvider } from "./portfolioScheduler.js";
+import {
+  autoRunSearchesEnabled,
+  PortfolioScheduler,
+  type ProfileHealthProvider,
+} from "./portfolioScheduler.js";
 import { InMemoryActivationRegistry } from "./activationRegistry.js";
 
 /** A controllable health provider — the test mutates `hot` between ticks. */
@@ -66,12 +70,49 @@ function admitAll() {
 }
 
 describe("PortfolioScheduler", () => {
+  it("projects the tick switch fail-closed in harness/test contexts", () => {
+    expect(autoRunSearchesEnabled("1", false)).toBe(true);
+    expect(autoRunSearchesEnabled("0", false)).toBe(false);
+    expect(autoRunSearchesEnabled(undefined, false)).toBe(false);
+    expect(autoRunSearchesEnabled("1", true)).toBe(false);
+  });
+
+  it("reads the switch on every tick and performs no health/admission work while off", async () => {
+    let enabled = false;
+    let snapshots = 0;
+    const rec = recorder();
+    const health: ProfileHealthProvider = {
+      snapshot: () => {
+        snapshots += 1;
+        return [{ profileId: "A", health: "hot", reasons: [] }];
+      },
+    };
+    const sched = new PortfolioScheduler({
+      healthProvider: health,
+      isEnabled: () => enabled,
+      admissionGate: admitAll(),
+      activationRegistry: new InMemoryActivationRegistry(),
+      startProfileRun: rec.startProfileRun,
+      cap: 1,
+    });
+
+    await sched.tick();
+    expect(snapshots).toBe(0);
+    expect(rec.starts).toEqual([]);
+
+    enabled = true;
+    await sched.tick();
+    expect(snapshots).toBe(1);
+    expect(rec.starts).toEqual(["A"]);
+  });
+
   it("respects the MAX_CONCURRENT_ACTIVE_PROFILES cap and warms the least-recently-progressed", async () => {
     const health = fakeHealth();
     const reg = new InMemoryActivationRegistry();
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
@@ -95,6 +136,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
@@ -120,6 +162,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
@@ -137,6 +180,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
@@ -166,6 +210,7 @@ describe("PortfolioScheduler", () => {
         { profileId: "A", health: "hot" },
         { profileId: "B", health: "warm" },
       ]),
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
@@ -181,6 +226,7 @@ describe("PortfolioScheduler", () => {
     const rec = recorder();
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: rec.startProfileRun,
@@ -210,6 +256,7 @@ describe("PortfolioScheduler", () => {
     let n = 0;
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: async (pid) => {
@@ -233,6 +280,7 @@ describe("PortfolioScheduler", () => {
     const starts: string[] = [];
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: admitAll(),
       activationRegistry: reg,
       startProfileRun: async (pid) => {
@@ -257,6 +305,7 @@ describe("PortfolioScheduler", () => {
     const recorded: string[] = [];
     const sched = new PortfolioScheduler({
       healthProvider: health,
+      isEnabled: () => true,
       admissionGate: {
         evaluate: (profileId) => ({
           ...admitAll().evaluate(),

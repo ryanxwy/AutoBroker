@@ -13,6 +13,12 @@ rooftops, and ONE human servicing every approval — driven on the run's lane
 > single-profile spine cannot: cross-profile bleed, a shared-rooftop double-send,
 > an approval routed to the wrong profile, a starved/wedged profile. Realism > cost.
 
+> **T2 boundary (2026-07-09):** every harness/test context is now an
+> unconditional no-op for automatic `PortfolioScheduler` admission, even when
+> `AUTOBROKER_PORTFOLIO_SCHEDULER=1`. This lane may still drive several pinned
+> runs manually for cross-profile product coverage. Cap/admission is a
+> deterministic code gate here; T6 owns the controlled non-harness observation.
+
 ---
 
 ## THE REALITIES TO MIMIC (UC3 — same metro, competing models)
@@ -25,9 +31,10 @@ collision world, and one human services every approval. Each profile
 independently: scans its in-radius dealers, submits leads, ingests replies, and
 negotiates multiple threads to ≥4 rounds. Mirror all of it:
 
-1. **N independent pipelines, bounded.** The real `PortfolioScheduler` fans the
-   active set out under a hard concurrency cap (LRU/recency eviction); a profile
-   parked at a human gate holds ZERO slots.
+1. **N independent pipelines, bounded in production.** `PortfolioScheduler`
+   applies the hard cap (LRU/recency eviction), with a parked profile holding
+   zero slots. Harness 3.9 drives pinned runs manually and does not claim a live
+   scheduler-cap proof.
 2. **Concurrent deep negotiation.** Each profile runs its own 3.5-grade
    negotiation (multiple threads, ≥4 rounds, ghosting, multi-titled escalation),
    the threads interleaved across profiles.
@@ -97,31 +104,15 @@ ONLY when the intake/profile-slot surface changes — NOT an every-run probe.
 
 ---
 
-## THE REAL SCHEDULER — bounded hot-set + LIVE cap proof
+## SCHEDULER BOUNDARY — deterministic here, controlled observation in T6
 
-`buildServer` does NOT mount the scheduler; the live host opts in. Launch
-serve-live with the fan-out armed and the cap STRICTLY BELOW the active count so the
-bound actually bites (`=2` here because the seed world is **3** active — Accord +
-Camry + Mazda6; for a different active count set the cap to `active − 1`):
-
-```
-AUTOBROKER_PORTFOLIO_SCHEDULER=1 MAX_CONCURRENT_ACTIVE_PROFILES=2 \
-  AUTOBROKER_PORTFOLIO_TICK_MS=2000  pnpm e2e:serve-live
-```
-
-(serve-live calls `startPortfolioScheduler(built.skillRuns)`, internally gated on
-the env — a no-op for every other lane.) Assert LIVE:
-
-- **cap holds**: at most `MAX_CONCURRENT_ACTIVE_PROFILES` profiles RUNNING at any
-  tick; the rest deferred (warm).
-- **suspended frees a slot**: a profile parked at a human gate drops out of the
-  running set so a deferred profile is admitted (the human is the bottleneck, not
-  Chromium/LLM).
-- **no starvation / liveness**: every active profile EVENTUALLY runs and reaches a
-  terminal state — none wedged past its follow-up-cap window.
-
-The deterministic cap/eviction proof already lives in the `PortfolioScheduler`
-unit tests + `soak mp`; this is the end-to-end LIVE corroboration.
+`serve-live` deliberately does not mount automatic portfolio admission. The
+production switch is read at tick time, but `isHarnessContext()` always wins and
+makes the tick a no-op. The executable proof in this lane is the
+`PortfolioScheduler` unit suite: switch-off performs no health/admission read,
+switch-on admits, harness projection stays off, cap holds, suspend frees a slot,
+and overlapping ticks cannot double-start. Do not label a manually driven 3.9
+run as live scheduler corroboration.
 
 ---
 
@@ -342,7 +333,7 @@ to terminal, so a gate cannot be left parked across steps in the func lane.
 `/__e2e/inject_replies`, so `injectDealerReplies` 404s and `AUTOBROKER_RECORD_TRANSCRIPT`
 is a dead var on that host — the until-dry live loop cannot actually drive a dealer
 reply. **THE live multi-profile e2e is serve-live 3.9** (which HAS `inject_replies` +
-record/replay + the real `PortfolioScheduler`), driven by Playwright MCP + Sonnet-OAuth
+record/replay and manually driven pinned runs), driven by Playwright MCP + Sonnet-OAuth
 dealer subagents (~2-3 in-flight). The runnable **deterministic** mp gate is
 `pnpm soak mp-replay` — a regression BACKSTOP, never the headline. Record any replay
 corpus from a serve-live 3.9 run.
@@ -352,8 +343,8 @@ scheduler (no live dealer): per round it cranks ghosting, bad-faith concessions/
 "send me your budget" probes (`harness/soak/multiprofile/chaos.ts`
 `aggressionDirectiveText`), more concurrent profiles, more profiles pitted against the
 same rooftop — a side-effect-free first-N hot/deferred split for breadth + a frozen
-replay corpus. The LIVE scheduler proof is the serve-live cap step above; this lane's
-job is breadth + the corpus, NOT a live verdict.
+replay corpus. Scheduler behavior is a deterministic gate here; this lane's job
+is breadth + the corpus, NOT a live automatic-admission verdict.
 
 On the first `runAllInvariants` violation the soak runner FREEZES: it writes the
 seed, the JSONL transcript, and the chaos config into a new case DIRECTORY
@@ -400,7 +391,7 @@ is how a one-off live concurrency bug becomes a permanent deterministic guard.
   — the decline path stays LIVE on every profile (inv #11).
 - The 3 irreversible sends + `inventory_link_scan` stay GATED through the shared
   `BatchReviewCard`; `inventory_site_scan` + `incentive_scrape` stay read-only
-  auto-scan (no per-source/per-dealer gate) — the scheduler fan-out does NOT
+  auto-scan (no per-source/per-dealer gate) — production auto-run fan-out does NOT
   relax either rule.
 - Budget never renders as a number on any surface or in any inbox summary (#9).
 - Verification hierarchy unchanged: deterministic `/__e2e/rows` + `/__e2e/audit` +
@@ -415,10 +406,12 @@ is how a one-off live concurrency bug becomes a permanent deterministic guard.
 
 ## VERDICT — 3.9 PASSES iff
 
-All of: cap holds + every profile reaches terminal (no starve/wedge) · exactly one
+All of: every manually driven profile reaches terminal (no starve/wedge) · exactly one
 binds each shared rooftop, losers voiced + ZERO send · `runAllInvariants` all-ok
 per-step (per-profile + aggregate) · decline isolated to its profile · keystone
-`no_external_mutation == 0`. The headline IS the serve-live 3.9 live drive above;
+`no_external_mutation == 0`. Scheduler cap/admission remains a separate
+deterministic gate plus the T6 non-harness observation. The headline here is the
+serve-live 3.9 multi-profile product drive;
 `pnpm soak mp-replay` GREEN (every frozen case clean) is the **deterministic backstop
 sub-line**, not the verdict (`soak mp --until-dry` is structurally live-deferred — see
 CHAOS).
