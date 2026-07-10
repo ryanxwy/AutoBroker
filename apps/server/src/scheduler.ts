@@ -1,6 +1,6 @@
 /**
- * scheduler — the long-running-background MACHINERY: two anchored croner jobs
- * (a 6-hourly inbox poll and an 18:00 daily digest) plus the catch-up watermark
+ * scheduler — the long-running-background MACHINERY: three anchored croner jobs
+ * (a 6-hourly inbox poll, a 07:00 morning scan, and an 18:00 daily digest) plus the catch-up watermark
  * logic that survives sleep/down windows. Runs INSIDE the long-lived server
  * subprocess (this app layer), never in the Electron main process — the main
  * process owns powerMonitor and forwards resume/suspend down to here.
@@ -44,7 +44,7 @@ import {
 
 import { catchUpDecision } from "./schedulerCatchup.js";
 
-/** The two standing background jobs. The cron patterns are anchored (top of the
+/** The three standing background jobs. The cron patterns are anchored (top of the
  *  hour) so the most-recent-fire math is stable. */
 export interface JobSpec {
   /** Stable job name — the watermark key and the trace label. */
@@ -58,6 +58,8 @@ export interface JobSpec {
 export const SCHEDULED_JOBS: readonly JobSpec[] = [
   // Inbox poll — every 6 hours on the hour (00:00, 06:00, 12:00, 18:00).
   { name: "inbox_poll", pattern: "0 */6 * * *", skill: "dealer_inbox_check" },
+  // Morning inventory refresh — 07:00 local, per active profile.
+  { name: "morning_scan", pattern: "0 7 * * *", skill: "inventory_site_scan" },
   // Daily digest — 18:00 local.
   { name: "daily_digest", pattern: "0 18 * * *", skill: "daily_digest" },
 ];

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   INBOX_CHECK_SKILL_ID,
+  INVENTORY_SITE_SCAN_SKILL_ID,
 } from "@autobroker/skills";
 
 import { ProfileRunConflictError, type RunDescriptor } from "./skillRuns.js";
@@ -61,7 +62,7 @@ function fixture(opts: {
 
 async function run(
   handlers: Map<string, ScheduledJobHandler>,
-  jobName: "inbox_poll",
+  jobName: "inbox_poll" | "morning_scan",
 ): Promise<SchedulerTrace[]> {
   const job = SCHEDULED_JOBS.find((candidate) => candidate.name === jobName);
   if (job === undefined) throw new Error(`missing job ${jobName}`);
@@ -83,6 +84,19 @@ describe("scheduled profile automations", () => {
     ]);
     expect(f.maxActiveStarts()).toBe(1);
     expect(traces.filter((line) => line.scheduler === "profile_run")).toHaveLength(2);
+  });
+
+  it("morning_scan starts only pinned site scans, sequentially, and leaves chaining to scanChain", async () => {
+    const f = fixture({ profiles: ["profile-a", "profile-b"] });
+    const traces = await run(f.handlers, "morning_scan");
+
+    expect(f.starts).toEqual([
+      { skill: INVENTORY_SITE_SCAN_SKILL_ID, input: { search_profile_id: "profile-a" } },
+      { skill: INVENTORY_SITE_SCAN_SKILL_ID, input: { search_profile_id: "profile-b" } },
+    ]);
+    expect(f.maxActiveStarts()).toBe(1);
+    expect(traces.filter((line) => line.scheduler === "profile_run")).toHaveLength(2);
+    expect(f.starts.every((start) => start.skill === INVENTORY_SITE_SCAN_SKILL_ID)).toBe(true);
   });
 
   it("skips an occupied profile before workflow creation and continues the sweep", async () => {
@@ -113,6 +127,14 @@ describe("scheduled profile automations", () => {
 
     const harness = fixture({ profiles: ["profile-a"], harness: true });
     expect(await run(harness.handlers, "inbox_poll")).toEqual([
+      expect.objectContaining({
+        scheduler: "job_noop",
+        detail: "harness/test context: automatic runs disabled",
+      }),
+    ]);
+    expect(harness.starts).toEqual([]);
+
+    expect(await run(harness.handlers, "morning_scan")).toEqual([
       expect.objectContaining({
         scheduler: "job_noop",
         detail: "harness/test context: automatic runs disabled",

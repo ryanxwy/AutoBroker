@@ -54,6 +54,8 @@ const NOW = Date.parse("2026-06-12T13:00:00Z"); // most-recent 6-hourly fire = 1
 
 beforeEach(() => {
   watermarks.clear();
+  // Keep the 07:00 job covered unless a test explicitly makes it due.
+  watermarks.set("morning_scan", NOW);
   readThrows.clear();
   claims.clear();
 });
@@ -84,7 +86,7 @@ function makeSchedulerImpl(opts: {
 }
 
 describe("registration: jobs armed with protect + catch", () => {
-  it("start() arms exactly the two standing anchored jobs", () => {
+  it("start() arms exactly the three standing anchored jobs", () => {
     const { scheduler, traces } = makeScheduler();
     // Pre-arm the watermarks so the boot catch-up pass is a no-op (we only test
     // the arming trace here).
@@ -93,8 +95,16 @@ describe("registration: jobs armed with protect + catch", () => {
     try {
       const armed = traces.find((t) => t.scheduler === "lifecycle" && t.detail?.startsWith("armed"));
       expect(armed?.detail).toBe(`armed ${SCHEDULED_JOBS.length} jobs`);
-      expect(SCHEDULED_JOBS.map((j) => j.name)).toEqual(["inbox_poll", "daily_digest"]);
-      expect(SCHEDULED_JOBS.map((j) => j.pattern)).toEqual(["0 */6 * * *", "0 18 * * *"]);
+      expect(SCHEDULED_JOBS.map((j) => j.name)).toEqual([
+        "inbox_poll",
+        "morning_scan",
+        "daily_digest",
+      ]);
+      expect(SCHEDULED_JOBS.map((j) => j.pattern)).toEqual([
+        "0 */6 * * *",
+        "0 7 * * *",
+        "0 18 * * *",
+      ]);
     } finally {
       scheduler.stop();
     }
@@ -120,6 +130,19 @@ describe("the no-op seam (no handler registered)", () => {
 });
 
 describe("a registered handler runs and a throw is contained", () => {
+  it("the fake clock makes the 07:00 morning_scan catch-up fire", async () => {
+    const { scheduler } = makeScheduler();
+    watermarks.set("inbox_poll", NOW);
+    watermarks.set("morning_scan", NOW - 48 * 60 * 60 * 1000);
+    watermarks.set("daily_digest", NOW);
+    const calls: string[] = [];
+    scheduler.registerHandler("morning_scan", async (job) => void calls.push(job.name));
+
+    scheduler.onPower("resume");
+    await vi.waitFor(() => expect(calls).toEqual(["morning_scan"]));
+    expect(watermarks.get("morning_scan")).toBe(NOW);
+  });
+
   it("the handler runs once, the watermark advances", async () => {
     const { scheduler, traces } = makeScheduler();
     watermarks.set("inbox_poll", NOW - 7 * 60 * 60 * 1000);

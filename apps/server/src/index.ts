@@ -103,8 +103,9 @@ function startScheduler(skillRuns: SkillRunService): BackgroundScheduler {
 
   const scheduler = new BackgroundScheduler(powerGuard !== undefined ? { powerGuard } : {});
 
-  // T3: pinned per-profile inbox checks every 6h. The workflow may park a
-  // review, but the handler never resumes it.
+  // T3/T4: pinned per-profile inbox checks every 6h and site scans at 07:00.
+  // A workflow may park a review, but these handlers never resume one; site
+  // scan aggregation remains owned by the existing scanChain listener.
   installScheduledProfileAutomations(scheduler, skillRuns);
 
   // Wire the daily_digest JOB seam: a fired job drives a headless daily_digest
