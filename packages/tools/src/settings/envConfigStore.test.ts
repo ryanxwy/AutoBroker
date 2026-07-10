@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   getEnvConfig,
-  resolveAutoSendMode,
   setEnvConfig,
   loadEnvConfigIntoEnv,
   UnknownEnvVarError,
@@ -34,7 +33,6 @@ const TOUCHED = [
   "AUTOBROKER_DATA_DIR",
   "AUTOBROKER_DB",
   "AUTOBROKER_MODE",
-  "AUTOBROKER_AUTO_SEND",
   "AUTOBROKER_PORTFOLIO_SCHEDULER",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
@@ -123,20 +121,6 @@ describe("auto_run_searches — explicit persisted opt-in", () => {
   it("rejects a non-bool value without persisting it", () => {
     expect(() => setEnvConfig("auto_run_searches", "yes")).toThrow(InvalidEnvValueError);
     expect(process.env.AUTOBROKER_PORTFOLIO_SCHEDULER).toBeUndefined();
-  });
-});
-
-describe("auto_send — explicit persisted opt-in", () => {
-  it("persists email and resolves garbage to off", () => {
-    setEnvConfig("auto_send", "email");
-    expect(process.env.AUTOBROKER_AUTO_SEND).toBe("email");
-    expect(JSON.parse(readFileSync(envFile(), "utf8"))).toEqual({ auto_send: "email" });
-    expect(resolveAutoSendMode("surprise")).toBe("off");
-  });
-
-  it("rejects an unsupported channel without persisting it", () => {
-    expect(() => setEnvConfig("auto_send", "everything")).toThrow(InvalidEnvValueError);
-    expect(process.env.AUTOBROKER_AUTO_SEND).toBeUndefined();
   });
 });
 

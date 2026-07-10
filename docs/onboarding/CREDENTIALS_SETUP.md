@@ -177,8 +177,7 @@ search and entering a city/state no longer suspends at the location step.
 
 The Gmail **backend is fully shipped** — a real loopback OAuth flow plus a
 `@googleapis/gmail` adapter that reads dealer replies and (in `buyer` mode)
-sends, every send still behind the L2 gate. Approval is manual by default, with
-an explicit channel-scoped first-send automation setting. The **in-app
+sends, every send still behind the per-action approval gate. The **in-app
 "Connect Gmail" button in Settings is still a disabled placeholder**; the
 supported way to connect today is the one-time command-line consent flow below.
 
@@ -234,7 +233,7 @@ URL to paste). Sign in as **the account you specified**, click through the
 "unverified app" notice (expected for a Testing-mode app — it's your own
 project), and click **Allow**. The scopes requested are
 `gmail.readonly`, `gmail.send`, `gmail.modify`, `gmail.labels` — send capability
-is granted but **never used outside the L2 approval gate**.
+is granted but **never used without the per-action approval gate**.
 
 ### 5e. Verify
 

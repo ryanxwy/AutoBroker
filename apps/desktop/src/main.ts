@@ -10,13 +10,12 @@
  *      never collides with the dev server on :8100),
  *   3. open one BrowserWindow on http://127.0.0.1:<port>.
  *
- * Safety: BUYER-BY-DEFAULT. Real Gmail/web-form send is reachable only through
- * the L2 gate (the same server+SPA code as the web form; the shell adds NO second
- * path to any side effect). Approval is manual unless the persisted Settings
- * policy explicitly enables fresh first-send automation. The DEMO showcase pins
- * test mode (AUTOBROKER_MODE=test) since it runs on seeded sample data.
- * AUTOBROKER_MODE is the sole send-control var: setting it to "test" in the
- * environment keeps every send fake/local.
+ * Safety: BUYER-BY-DEFAULT. A normal launch arms nothing send-related — real
+ * Gmail/web-form send is reachable, always behind the per-action human-approval
+ * gate (the same server+SPA code as the web form; the shell adds NO second path
+ * to any side effect). The DEMO showcase pins test mode (AUTOBROKER_MODE=test)
+ * since it runs on seeded sample data. AUTOBROKER_MODE is the sole send-control
+ * var: setting it to "test" in the environment keeps every send fake/local.
  * MASTRA_TELEMETRY_DISABLED=1 is still always pinned.
  *
  * `globalThis.__desktopHook` is a read-only introspection surface for the
@@ -207,8 +206,8 @@ function startServer(): Promise<number> {
       : process.env.AUTOBROKER_DATA_DIR ?? dotEnv.AUTOBROKER_DATA_DIR ?? join(homedir(), ".autobroker-ts"),
     AUTOBROKER_UI_DIST: join(bundleDir, "ui-dist"),
     MASTRA_TELEMETRY_DISABLED: "1",
-    // Buyer-by-default: real send remains behind the L2 gate; the separately
-    // persisted auto-send approval policy defaults off. The DEMO showcase pins
+    // Buyer-by-default: a NORMAL launch arms nothing send-related (real send
+    // reachable, still behind the human-approval gate). The DEMO showcase pins
     // test mode — keyed on the EFFECTIVE demo posture (the dialog flag OR an
     // externally-exported AUTOBROKER_DEMO_SEED), so an already-demo launch is test
     // too; boot re-applies this server-side as the floor. AUTOBROKER_MODE is the

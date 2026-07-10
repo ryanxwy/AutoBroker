@@ -59,19 +59,6 @@ function curatedVars(mode: "buyer" | "test" = "test"): EnvVarState[] {
       value: "0",
     },
     {
-      id: "auto_send",
-      envVar: "AUTOBROKER_AUTO_SEND",
-      classification: "editable-enum",
-      editable: true,
-      allowedValues: ["off", "email", "web_form", "all"],
-      default: "off",
-      numericMin: null,
-      numericMax: null,
-      label: "Automatic send approvals",
-      tooltip: "Automatic send tooltip.",
-      value: "off",
-    },
-    {
       id: "gmail_account",
       envVar: "AUTOBROKER_GMAIL_ACCOUNT",
       classification: "editable-text",
@@ -281,19 +268,6 @@ describe("EnvPanel — enum gate-before-control", () => {
     toggleCheckbox(box, true);
     await flush();
     expect(puts).toEqual([{ id: "auto_run_searches", value: "1" }]);
-    r.unmount();
-  });
-
-  it("automatic email sends require a danger confirmation", async () => {
-    const puts: Array<Record<string, unknown>> = [];
-    const client = new ApiClient({ fetchImpl: mockFetch({ puts }) });
-    const r = render(<EnvPanel client={client} env={okEnv("buyer")} onChanged={() => {}} />);
-    changeSelect(r.get("env-select-auto_send") as HTMLSelectElement, "email");
-    expect(r.query("env-confirm-auto_send")).not.toBeNull();
-    expect(puts).toHaveLength(0);
-    click(r.get("env-confirm-yes-auto_send"));
-    await flush();
-    expect(puts).toEqual([{ id: "auto_send", value: "email" }]);
     r.unmount();
   });
 });
