@@ -7,8 +7,8 @@
  * This is the COMPLEMENT of profileHealth's per-profile HOT/WARM/COLD: a
  * per-dealer advisory recomputed on read (no stored score, no Bayesian/Glicko
  * scorecard — the owner-simplicity choice). It NEVER auto-sends anything and
- * never writes profile_dealers.status; the caller surfaces it as advice behind
- * the existing human-approval floor.
+ * never writes profile_dealers.status; the caller surfaces it as advice before
+ * any subsequent send reaches the existing L2 approval path.
  *
  * BATNA model (raw OTD): a stalled dealer's expected $ improvement is ~0, the
  * cost of continuing is non-zero, and switching is only rational when a

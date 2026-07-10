@@ -113,6 +113,8 @@ import {
 } from "@autobroker/workflows";
 import {
   getDb,
+  isBuyerMode,
+  resolveAutoSendMode,
   validateResetToken,
   tryClaimActivation,
   clearActivationByRunId,
@@ -1771,6 +1773,53 @@ function bodyKeyOf(body: FormDecisionBody): string {
   return JSON.stringify({ action: body.decision.action, content });
 }
 
+/** Explicit auto-send is a first-send allow-list, never a generic payload
+ * classifier. Test mode, recovery, contact-flip, and emailFallback stay manual. */
+export function autoSendDecisionForNewSuspend(args: {
+  skill: string;
+  step: string;
+  decisionId: string;
+  payload: Record<string, unknown>;
+}): FormDecisionBody | null {
+  if (!isBuyerMode()) return null;
+  const policies = {
+    dealer_web_lead_submit: { channel: "web_form", step: "batchReview" },
+    negotiation_followup: { channel: "email", step: "batchReview" },
+    dealer_closeout_email: { channel: "email", step: "batchReview" },
+    quote_pipeline: { channel: "email", step: "targeted" },
+  } as const;
+  const policy = policies[args.skill as keyof typeof policies];
+  if (policy === undefined || policy.step !== args.step) return null;
+  const configured = resolveAutoSendMode();
+  if (configured !== "all" && configured !== policy.channel) return null;
+
+  if (args.skill === "quote_pipeline") {
+    return args.payload["kind"] === "approval" && args.payload["reason"] === "targeted_otd_send"
+      ? { decision_id: args.decisionId, decision: { action: "accept" } }
+      : null;
+  }
+  if (args.skill === "dealer_web_lead_submit" && args.payload["kind"] === "approval") {
+    return args.payload["reason"] === "single_store_confirm"
+      ? { decision_id: args.decisionId, decision: { action: "accept" } }
+      : null;
+  }
+  if (args.payload["kind"] !== "batch_review") return null;
+  const targetIds = Array.isArray(args.payload["targets"])
+    ? args.payload["targets"]
+        .map((target) =>
+          target !== null && typeof target === "object"
+            ? (target as Record<string, unknown>)["dealer_id"]
+            : null,
+        )
+        .filter((id): id is string => typeof id === "string")
+    : [];
+  if (targetIds.length === 0) return null;
+  return {
+    decision_id: args.decisionId,
+    decision: { action: "accept", content: { approved_dealer_ids: targetIds } },
+  };
+}
+
 /**
  * The skill run service. One instance per server, holding the Mastra instance
  * (driven via the glue) and the per-run claim/pending state + the pubsub. The
@@ -2208,6 +2257,17 @@ export class SkillRunService {
       });
       // A parked run holds ZERO scheduler slots — notify so the slot frees.
       this.fireSuspended(run, runId);
+      const autoDecision = autoSendDecisionForNewSuspend({
+        skill: run.skill,
+        step,
+        decisionId,
+        payload,
+      });
+      if (autoDecision !== null) {
+        queueMicrotask(() => {
+          void this.formDecision(runId, autoDecision).catch(() => undefined);
+        });
+      }
       return;
     }
 
