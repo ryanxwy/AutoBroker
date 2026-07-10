@@ -60,6 +60,12 @@ describe("URL builders", () => {
         "&geo_mode=radius&geo_distance_value=%2250%22&geo_distance_unit=mi",
     );
   });
+
+  it("uses visor's fuel_type vocabulary for a trailing Hybrid model token", () => {
+    expect(
+      buildVisorUrl({ make: "Hyundai", model: "Tucson Hybrid", year: 2026, zip: "92602", radiusMiles: 50 }),
+    ).toContain("make=Hyundai&model=Tucson&fuel_type=Hybrid");
+  });
 });
 
 describe("slugifyCarsComModel edge cases", () => {
@@ -348,6 +354,19 @@ describe("visor_vin collect() (self-contained, stubbed page)", () => {
     expect((collected.rows[0] as { vin: string }).vin).toBe("2T36CRAV9TC331812");
     expect(collected.challenge).toEqual({ cfIframe: false, cfInput: false, interstitial: false });
     expect(collected.echo).toEqual({ zip: "98052", radiusMiles: 50, year: 2026 });
+  });
+
+  it("keeps visor's fuelType row field for deterministic model restoration", () => {
+    stubRouter({
+      queryKey: ["listings", { geo_origin_zipcode: "92602", geo_distance_value: "50", year: "2026" }],
+      pages: [{ rows: [{ ...visorRow, model: "Tucson", fuelType: "Hybrid" }], total: 1 }],
+    });
+    vi.stubGlobal("document", { title: "Tucson for sale", querySelector: () => null });
+
+    const collected = AGGREGATOR_ADAPTERS.find((a) => a.siteId === "visor_vin")!.collect();
+    if (collected.kind !== "rows") throw new Error("expected kind: rows");
+
+    expect(collected.rows[0]).toMatchObject({ model: "Tucson", fuelType: "Hybrid" });
   });
 
   it("strips JSON-quoted echo values (the site's own UI param shape)", () => {

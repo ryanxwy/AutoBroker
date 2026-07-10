@@ -22,6 +22,7 @@ export const VisorRowSchema = z
     year: z.number().int(),
     make: z.string().min(1),
     model: z.string().min(1),
+    fuelType: z.string().nullable().optional(),
     trim: z.string().nullable().optional(),
     price: z.number().nullable().optional(),
     exteriorColor: z.string().nullable().optional(),
@@ -68,6 +69,14 @@ function absoluteHttpUrl(url: string | null | undefined): string | null {
   }
 }
 
+/** The live visor vocabulary returns a Hybrid search's base model plus
+ * `fuelType: "Hybrid"`; restore that product-model word before deterministic
+ * profile matching. Other values are deliberately left alone until observed. */
+function restoreVisorModelFuelType(model: string, fuelType: string | null | undefined): string {
+  if (fuelType?.trim().toLowerCase() !== "hybrid") return model;
+  return model.trim().toLowerCase().endsWith(" hybrid") ? model : `${model} Hybrid`;
+}
+
 /**
  * Map already-collected visor.vin rows (untyped, from the page's react-query
  * cache) to `AggregatorListing[]`. Deterministic, no LLM: `trim` is carried
@@ -112,7 +121,7 @@ export function mapVisorStructuredRows(rows: unknown[], coords: VisorProfileCoor
       vin: row.vin,
       year: row.year,
       make: row.make,
-      model: row.model,
+      model: restoreVisorModelFuelType(row.model, row.fuelType),
       trim: row.trim ?? null,
       price: row.price ?? null,
       msrp: null,
