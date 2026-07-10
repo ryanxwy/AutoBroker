@@ -3,9 +3,10 @@
  * Electron, no timers, no DB). Proves the watermark-vs-most-recent-fire rule
  * that survives sleep/down windows, and the no-double-run invariant.
  *
- * The two standing patterns: "0 *\/6 * * *" (every 6h on the hour) and
- * "0 18 * * *" (18:00 daily). UTC is used for deterministic clock math
- * (process.env.TZ is set to UTC below so the patterns anchor predictably).
+ * Representative standing patterns are "0 *\/6 * * *" (every 6h on the
+ * hour) and "0 18 * * *" (18:00 daily); the same helper also serves the
+ * 07:00 morning scan. UTC is used for deterministic clock math (process.env.TZ
+ * is set to UTC below so the patterns anchor predictably).
  */
 
 import { beforeAll, describe, expect, it } from "vitest";

@@ -6,8 +6,8 @@
  * process owns powerMonitor and forwards resume/suspend down to here.
  *
  * WHY HERE, NOT MAIN: the server child is the durable backend that already holds
- * the product DB handle (the watermark store) and is where a real job body will
- * eventually drive a workflow. The Electron main process is a thin launcher; it
+ * the product DB handle (the watermark store) and is where registered job bodies
+ * drive workflows. The Electron main process is a thin launcher; it
  * has no DB and no workflow registry. So croner lives here, and the platform
  * power signal that main alone can see (Electron's powerMonitor) is relayed in
  * over the utilityProcess message channel as a {scheduler:'power', kind} message.
@@ -51,7 +51,7 @@ export interface JobSpec {
   name: string;
   /** Anchored 5-field cron pattern (minute hour dom month dow). */
   pattern: string;
-  /** The skill this job will eventually drive (today: a no-op seam). */
+  /** The skill targeted by the handler registered for this job. */
   skill: string;
 }
 
@@ -64,7 +64,7 @@ export const SCHEDULED_JOBS: readonly JobSpec[] = [
   { name: "daily_digest", pattern: "0 18 * * *", skill: "daily_digest" },
 ];
 
-/** A real job body, installed by a later wave at its injection point. Receives
+/** A real job body, installed by the app entrypoint at its injection point. Receives
  *  the job spec + the trigger that fired it; resolves when the work is done. */
 export type ScheduledJobHandler = (
   job: JobSpec,

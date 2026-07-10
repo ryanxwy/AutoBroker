@@ -1,0 +1,5543 @@
+{
+  "date": "2026-07-10",
+  "code_repo_head_sha": "98aa26f",
+  "runs": [
+    {
+      "run_id": "364b8193-65e9-4b3c-8eb8-76691131f7a5",
+      "skill": "inventory_aggregator_scan",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.011265800000000001,
+      "duration_ms": 84305,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "3fd371cc-de21-4c34-871d-f51e7371b0d3",
+      "skill": "search_profile_intake",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.0009625000000000001,
+      "duration_ms": 9085,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    },
+    {
+      "run_id": "70b26f9b-84cc-49bc-a9c9-8f1396c9e061",
+      "skill": "inventory_aggregator_scan",
+      "layer": "L2",
+      "provider": "deepseek",
+      "model_alias": "deepseek.chat",
+      "anchors": {
+        "cost_and_time": true,
+        "no_external_mutation": true
+      },
+      "cost_usd": 0.011209800000000002,
+      "duration_ms": 94400,
+      "pricing_source": "deepseek-2026-06",
+      "fail_reason": null
+    }
+  ],
+  "cases": [
+    {
+      "cell_id": "live/inventory_aggregator_scan/deepseek/A/slash",
+      "case_id": "inventory_aggregator_scan_visor",
+      "run_id": "364b8193-65e9-4b3c-8eb8-76691131f7a5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "RED",
+      "status": "FAIL",
+      "run_dir": "2026-07-10T00-14-55-685Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "inventory_aggregator_scan_visor",
+      "run_id": "9b46cd35-01e8-4997-a8fa-ee819aa63448",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T00-14-55-685Z"
+    },
+    {
+      "cell_id": "live/inventory_aggregator_scan/deepseek/A/slash",
+      "case_id": "inventory_aggregator_scan_visor",
+      "run_id": "70b26f9b-84cc-49bc-a9c9-8f1396c9e061",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "RED",
+      "status": "FAIL",
+      "run_dir": "2026-07-10T05-41-53-806Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/A/slash",
+      "case_id": "inventory_aggregator_scan_visor",
+      "run_id": "017044c0-dd09-4edf-9093-8dbbc01f103e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T05-41-53-806Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_freeform",
+      "run_id": "3fd371cc-de21-4c34-871d-f51e7371b0d3",
+      "layer": "L2",
+      "lane": "api",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-15-28-014Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-24-37-894Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-34-111Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-40-886Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-46-960Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "1b511703-6d97-450f-87f8-e42b2b7ce0d2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-53-235Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "1b511703-6d97-450f-87f8-e42b2b7ce0d2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-53-235Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "46c53fe5-546d-4932-825b-611d889cbe88",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-59-045Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "46c53fe5-546d-4932-825b-611d889cbe88",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-28-59-045Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-04-872Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fdcedc95-0a97-4b88-b317-5149f890fa67",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-10-842Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-10-842Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "6e3a69cc-a26d-4c0d-9e31-3070d30acf69",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-16-742Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-16-742Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "b95d96c4-f43c-4796-9c9d-fae06e826b05",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-22-491Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-22-491Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "e59e00bd-dfe4-4a95-b7d1-62d974505985",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-28-429Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-28-429Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "f7f9c82b-9482-4ef4-bcec-b922ec40f183",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-34-686Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-34-686Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "3ece74c5-2ae7-4daa-8e6f-1c28c7f12ea6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-40-838Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "f8de4e3c-4fc2-4779-be6d-260056038b64",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-40-838Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-40-838Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "3ece74c5-2ae7-4daa-8e6f-1c28c7f12ea6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-40-838Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "aab5cb39-2c5e-4037-85a9-14618842907e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-47-740Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-47-740Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "8b2d8bed-c7e4-473d-98b1-e54a067af5b1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-53-757Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "fixture:inbox_no_lead",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-53-757Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "2f05d7da-b4a5-42a3-a4a6-4d16d6d1e5e1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-59-333Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "19956ebf-f44f-416a-8ee7-ab4bc158512a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-59-333Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-29-59-333Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "dec39d2a-b647-40fe-b046-be32e0aeed98",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-05-323Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "5851df21-3dad-4d74-8b8f-dd466c858390",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-05-323Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-05-323Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "2d7a2a9a-0543-42d5-bd16-d4fc0ab0c7c0",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-11-476Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "770e5962-4e0e-48c0-9705-5b243ef8b15c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-11-476Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-11-476Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_func",
+      "run_id": "fixture:dealer_reply_extract_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-17-790Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-23-091Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "a7c06efa-b94f-4136-92ee-75e2149b76ec",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-28-525Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-28-525Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "54fb999a-389e-4adf-b510-559fd612a6e1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-35-123Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-35-123Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "9eab02be-6db4-45df-9b71-160897d7f7fa",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-42-768Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-42-768Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "ac694bfc-d071-4152-9988-6fc73a3599b5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-49-445Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-49-445Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "1934041c-492e-40f6-bf1e-aef18e6997c6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-54-268Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-54-268Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "edit_preferences_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-30-58-910Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-03-505Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_combined_display_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-08-887Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-13-321Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-17-895Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_nomarkup_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-23-065Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_detail_modal_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-27-629Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_merged_note_func",
+      "run_id": "fixture:inventory_dup_vin",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-33-884Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_trim_filter_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-38-180Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-42-346Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset_reclear",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-42-346Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_active_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-47-202Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_profile_portfolio_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-51-461Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "bf54c51e-5249-4913-8ef9-76160c9c93e7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-56-090Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-31-56-090Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "abb027de-407f-4ecf-aa7c-5ffd102e2d10",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-01-160Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-01-160Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "negotiations_board_func",
+      "run_id": "fixture:negotiations_board",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-06-022Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_bad_token_func",
+      "run_id": "5cfac7fb-3fd8-4b61-a7dc-a58c642b0c65",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-10-854Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_decline_func",
+      "run_id": "bbbb8572-8a99-488c-bc4a-06196e25bf63",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-15-920Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "777482af-7258-4cff-9d71-7846f90a5c80",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-20-736Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "777482af-7258-4cff-9d71-7846f90a5c80",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-20-736Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "03644a75-7951-4a03-94c7-499b47404f3a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-25-794Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "f88ba115-16e5-4691-87c5-1a8be735551a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-25-794Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_func",
+      "run_id": "fixture:quote_compare_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-30-526Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_cash_func",
+      "run_id": "fixture:quote_compare_cash_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-35-394Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "dcb53907-afb7-4900-87de-b744ecc4e92e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-39-802Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-39-802Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "7fd99bb4-5f2f-4bd7-8a2e-ab753d1f7403",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-44-446Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-44-446Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "8d0a376a-8f73-42a9-bb58-5d91b364b19d",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-49-648Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-49-648Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_source_doc_func",
+      "run_id": "fixture:quote_source_doc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-54-427Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "rail_resize_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-32-58-939Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "remove_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-03-358Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_conflict_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-07-940Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_search_func",
+      "run_id": "fixture:closed_only",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-12-367Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_geocode_fault",
+      "run_id": "60e38eb1-f598-49b7-ab0f-737eef559dc0",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-16-971Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_humanized",
+      "run_id": "f9b36732-8c30-4d3a-a5b9-c36f5e7441c9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-22-113Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "type_while_running_func",
+      "run_id": "24b092cc-adb3-486c-aae4-511f60ae1304",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-27-326Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "ui_empty_home_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T06-33-31-675Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-23-57-860Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-03-810Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-09-058Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "1894a452-0e76-4ff7-af98-fba075c73ffd",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-14-075Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "1894a452-0e76-4ff7-af98-fba075c73ffd",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-14-075Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "cf49c52c-b3c5-45f1-a4e2-537c39fab7e6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-19-274Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "cf49c52c-b3c5-45f1-a4e2-537c39fab7e6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-19-274Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-24-781Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "007d35a4-e33a-49ec-995e-3663e42bae02",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-29-946Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-29-946Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "1d7ec3da-8b78-43dc-a1fd-43580041053f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-35-497Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-35-497Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "97e44180-9f17-42a5-9bb0-5015ec5ab0e6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-40-973Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-40-973Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "f83518b5-7cad-43bd-9cd0-7eae4bc1fa61",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-46-680Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-46-680Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "f2240332-c39b-4ebd-9484-fbabe4f9caa1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-52-323Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-52-323Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "a05cd9d5-301e-46b0-a796-376f86588bef",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-58-540Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "bc5873aa-5509-435f-9d55-93e3c0a905a8",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-58-540Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-58-540Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "a05cd9d5-301e-46b0-a796-376f86588bef",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-24-58-540Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "1f1c14e3-da13-46ea-8478-01c2b9d851ca",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-04-749Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-04-749Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "d48c419c-6fed-4360-8f1e-a736764fa8e5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-10-266Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "fixture:inbox_no_lead",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-10-266Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "ba957111-a0aa-40f9-896c-22608658a765",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-15-685Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "3ced5309-aece-483e-8ec2-ef70dd5d62b1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-15-685Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-15-685Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "b15b3651-5a56-4e9d-908c-49256de90464",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-21-853Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "8e73629f-dd03-4672-a6c9-3abcb0929a31",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-21-853Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-21-853Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "ed0d020b-85e1-4cb4-b51a-b46dc4106ed8",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-27-692Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "ce462f8f-3dc4-4687-a0db-6795b93fbd2c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-27-692Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-27-692Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_func",
+      "run_id": "fixture:dealer_reply_extract_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-33-460Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-38-402Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "97b7250f-fb83-42af-a59f-266640c78f18",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-43-412Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-43-412Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "4a42fd49-5887-4f0b-ae04-2b21edcf5a47",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-49-358Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-49-358Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "6b160b57-2a98-47e9-a9a7-421d9729d6a7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-55-434Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-25-55-434Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "335124c9-325b-46e6-926d-325d25c44ece",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-01-431Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-01-431Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "aadde2a3-5ae5-4a03-a44a-e2b5fbf35293",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-06-928Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-06-928Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "edit_preferences_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-12-387Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-17-603Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_combined_display_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-23-710Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-28-693Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-33-786Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_nomarkup_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-38-686Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_detail_modal_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-43-606Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_merged_note_func",
+      "run_id": "fixture:inventory_dup_vin",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-48-847Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_trim_filter_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-53-793Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-58-994Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset_reclear",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-26-58-994Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_active_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-05-331Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_profile_portfolio_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-10-416Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "6df2003b-1e3a-47f5-90f4-f03234fc3a9a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-15-935Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-15-935Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "ab804b80-0432-458f-abd3-b5b27a4991d1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-22-362Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-22-362Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "negotiations_board_func",
+      "run_id": "fixture:negotiations_board",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-28-855Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_bad_token_func",
+      "run_id": "8872c5dd-39ec-4792-9820-ef928183d9c7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-34-859Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_decline_func",
+      "run_id": "9d20f810-df01-4435-8079-659e17312dc2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-42-768Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "959e6475-dcfe-4c7e-b2fa-4eefffbc736c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-52-597Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "959e6475-dcfe-4c7e-b2fa-4eefffbc736c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-27-52-597Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "52caee8c-64d5-419b-999b-fe2cc04bf2af",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-04-102Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "28691788-a9a3-47c7-b390-0fd689e5da8a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-04-102Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_func",
+      "run_id": "fixture:quote_compare_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-15-704Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_cash_func",
+      "run_id": "fixture:quote_compare_cash_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-25-851Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fd5c482b-2d06-4afb-aec0-d77ada811fe1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-35-472Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-35-472Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "c74cb375-4284-4e9b-b293-045072b836e7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-45-472Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-45-472Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "20f78550-c35d-40e8-87b9-12fcf9165862",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-55-922Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-28-55-922Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_source_doc_func",
+      "run_id": "fixture:quote_source_doc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-04-696Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "rail_resize_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-09-971Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-13-220Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "remove_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-15-386Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-19-687Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_conflict_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-21-610Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-25-716Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_search_func",
+      "run_id": "fixture:closed_only",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-27-234Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "f90f4976-e15b-489f-a754-2baf36409e10",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-31-271Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "f90f4976-e15b-489f-a754-2baf36409e10",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-31-271Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_geocode_fault",
+      "run_id": "6804ee60-8967-4429-9b5b-a537c2755287",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-33-010Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "a9c17592-663a-4116-aeb8-fd1903723b99",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-36-791Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "a9c17592-663a-4116-aeb8-fd1903723b99",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-36-791Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_humanized",
+      "run_id": "efb289fe-4ed1-4c42-8ad1-e2605027ce45",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-38-720Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-43-017Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "type_while_running_func",
+      "run_id": "b9072a85-bf70-4960-9690-8936ac617771",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-45-119Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "b9bc3709-2f74-4813-ab8b-87508426ef04",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-49-018Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-49-018Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "ui_empty_home_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-50-966Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "5acee603-87ab-40b8-82c1-15c3ce58568a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-55-632Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-29-55-632Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-32-43-660Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-32-49-516Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-32-54-740Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-18-662Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-24-007Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-28-933Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "63a77603-870e-47d5-b6eb-e3ea2fe4c400",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-33-637Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "63a77603-870e-47d5-b6eb-e3ea2fe4c400",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-33-637Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "8a21eb8e-bf2a-4a7d-8590-f2f2dda8d142",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-38-713Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "8a21eb8e-bf2a-4a7d-8590-f2f2dda8d142",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-38-713Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-43-789Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "acd685fe-0003-4a13-bef1-94b4f072fa8a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-50-487Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-50-487Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "850010cc-1943-497d-8472-a34e51fa7b04",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-58-003Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-35-58-003Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "e7c7e306-d674-4a8e-ae43-7e002e079a83",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-06-527Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-06-527Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "a1539f8a-b54b-4296-8b9a-da907b9c63f8",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-15-100Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-15-100Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "67684f44-0bbe-481f-ad81-5631b0ba27e2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-25-144Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-25-144Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "8a64f425-ec58-437b-afd9-b7f58522cafb",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-32-916Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "b2393d57-51f4-4a96-baa6-242c3c7fc57a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-32-916Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-32-916Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "8a64f425-ec58-437b-afd9-b7f58522cafb",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-32-916Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "9f1619c7-f654-4ab5-b3dd-145583e7dbee",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-41-982Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-41-982Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "b2d2b703-1b39-4752-83d3-2696fa6f8695",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-50-407Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "fixture:inbox_no_lead",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-50-407Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "a466734c-5bb5-4872-9ca1-740175749eda",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-55-689Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "ba1d2e32-0960-4a96-88c5-a0b387cad523",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-55-689Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-55-689Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-36-56-235Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "b5647c71-918e-421f-8352-79a323e06d74",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-01-336Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "09616d5a-8b7b-45e5-bf14-e540608f8dc2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-01-336Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-01-336Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-01-713Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "119fcde2-8c42-4e78-af24-38d5760917e4",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-07-103Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "1f688858-cd64-44a4-8725-f039ae807dad",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-07-103Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-07-103Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-07-181Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "35f08c9b-099c-421b-baf5-47aa08aa9d0b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-12-319Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "35f08c9b-099c-421b-baf5-47aa08aa9d0b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-12-319Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_func",
+      "run_id": "fixture:dealer_reply_extract_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-12-741Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "ac5f4662-190f-4763-b869-0ae84b720623",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-17-494Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "ac5f4662-190f-4763-b869-0ae84b720623",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-17-494Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-17-740Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "953fdeed-de2d-4a87-961a-f41e87f6a064",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-22-502Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-22-502Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-22-661Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "1d895ba3-cb1b-4b99-ad9b-65f9cbfad64b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-27-637Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-27-637Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "c043f98d-9ebd-4967-9513-6139786d98a3",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-28-365Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-28-365Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "1c75634f-59ac-41f5-8c91-5db521746799",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-33-083Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-33-083Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "ee8c738d-8fe7-484f-a2a8-565d0a4337bf",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-34-311Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-34-311Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "9fb70142-3cb8-439a-b0aa-200ebe25d4ab",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-38-420Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-38-420Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "d3eb02c5-a13c-48f5-b3f1-7e1c4e3bc593",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-40-334Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-40-334Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "17b8404e-2c91-44cd-b30f-789d15f99286",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-44-028Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-44-028Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "d45e60cc-6996-43fc-b1b8-3042a96b27c9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-45-834Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-45-834Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "2f92f92b-613c-4c07-9376-d868e65483bc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-49-502Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-49-502Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "edit_preferences_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-51-144Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "e4156f29-9fa1-419f-9234-017dc2db8df3",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-54-810Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "95b3925d-d237-4e8b-a0bf-d2afc13391e6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-54-810Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-54-810Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "e4156f29-9fa1-419f-9234-017dc2db8df3",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-54-810Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-37-56-160Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "6f9acd33-9172-46df-871b-f0f83338c751",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-00-755Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-00-755Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_combined_display_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-02-283Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "008a69b7-6b26-4419-bcb6-5d4366108069",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-06-127Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "fixture:inbox_no_lead",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-06-127Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-07-118Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "7e9fe1c7-f489-4326-b07e-ba88c6b6dd57",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-11-284Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fd5505e6-b59d-4762-b812-2124847a65b1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-11-284Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-11-284Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-12-031Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "9251b9d1-a232-40e0-aee3-5e5ffb18a01c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-16-769Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "b7df1ee4-1445-4879-9994-df16ef7b707b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-16-769Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-16-769Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_nomarkup_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-16-902Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_detail_modal_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-22-671Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "578ae8e9-05d6-439f-9157-86fb5b50684e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-23-505Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "7b8c0f1a-6321-4c50-b06c-465c3479275c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-23-505Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-23-505Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_merged_note_func",
+      "run_id": "fixture:inventory_dup_vin",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-30-747Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_func",
+      "run_id": "fixture:dealer_reply_extract_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-31-904Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_trim_filter_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-37-736Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-38-887Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-43-820Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset_reclear",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-43-820Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "2288f18d-ad4c-4c28-9749-f0eceabf9a1a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-45-169Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-45-169Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_active_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-52-026Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "75460b6e-0fa4-40c9-82f7-aee422550377",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-54-501Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-38-54-501Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_profile_portfolio_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-02-562Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "f6a7ee48-23f7-4ebf-bda8-e97ba3b793ef",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-06-051Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-06-051Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "e99c6590-9aad-4b79-8fe5-847f00f225c2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-13-764Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-13-764Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "7aad66f2-e1ec-4a6c-afe5-6e0d541fe004",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-18-438Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-18-438Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "983967e1-6009-4810-9979-69f10bb2fd0e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-24-678Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-24-678Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "05763ee6-e62a-4a22-9ee6-290c2512df29",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-30-391Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-30-391Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "negotiations_board_func",
+      "run_id": "fixture:negotiations_board",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-35-844Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "edit_preferences_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-41-814Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_bad_token_func",
+      "run_id": "e10ec568-6f15-46c6-947a-5c993a877a70",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-46-745Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-52-173Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_decline_func",
+      "run_id": "6a638b9d-93f1-4882-9850-ad8289ad5f62",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-39-57-055Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_combined_display_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-04-619Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "3750a2c4-03b0-486d-8ef3-a8cc7b6c6ae5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-07-778Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "3750a2c4-03b0-486d-8ef3-a8cc7b6c6ae5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-07-778Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-15-134Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "ac70cde1-569c-4b12-b03e-04a284f33764",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-17-556Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "e7679ad8-557e-4379-9110-e50791a77a3c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-17-556Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-21-214Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-21-698Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_func",
+      "run_id": "fixture:quote_compare_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-23-259Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_nomarkup_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-26-638Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-27-375Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_cash_func",
+      "run_id": "fixture:quote_compare_cash_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-28-997Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_detail_modal_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-32-033Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-33-033Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "218574e0-7f21-4988-a43b-72166619001e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-34-326Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-34-326Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_merged_note_func",
+      "run_id": "fixture:inventory_dup_vin",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-37-769Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "c73cc5fb-1865-4cd9-80f1-2ce3ddc409af",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-38-519Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "c73cc5fb-1865-4cd9-80f1-2ce3ddc409af",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-38-519Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "41e969f5-a3f5-47e6-a883-fe5e005cda1b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-40-199Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-40-199Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_trim_filter_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-43-221Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "ad21530d-58da-4339-8636-5bde2260250e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-44-171Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "ad21530d-58da-4339-8636-5bde2260250e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-44-171Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "33691f39-8c12-43e5-9f1d-a3a8ac401a90",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-46-421Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-46-421Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-48-453Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset_reclear",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-48-453Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-49-958Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_source_doc_func",
+      "run_id": "fixture:quote_source_doc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-52-275Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_active_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-54-755Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "87655ae2-9dac-43e4-9868-4232e57118e2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-55-623Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-55-623Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "rail_resize_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-40-57-681Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_profile_portfolio_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-00-089Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "2d52d07f-93eb-4466-98c0-ca2284a51f74",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-01-536Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-01-536Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "remove_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-03-181Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fb8ef721-89af-458b-a3af-1af6aad40e08",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-05-779Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-05-779Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "89949daa-c4db-4a8e-9f00-cc39371a164f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-07-352Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-07-352Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_conflict_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-08-813Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "6336a998-9c1f-4aeb-9c8d-31bbe0dad072",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-11-745Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-11-745Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "4c408530-07fb-4bd1-aef2-2a9946044dd7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-13-423Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-13-423Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_search_func",
+      "run_id": "fixture:closed_only",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-14-394Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "negotiations_board_func",
+      "run_id": "fixture:negotiations_board",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-17-873Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "a3fdfa7c-d87f-45d1-afe6-638aed62680f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-19-578Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-19-578Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_geocode_fault",
+      "run_id": "a6816b2b-a441-4238-9529-2c3dda30dc2d",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-20-297Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_bad_token_func",
+      "run_id": "1ea160a3-024e-4071-96ed-dae9adc028c9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-24-081Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "3ca44b9e-947f-4a55-8bef-36e241d994b5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-25-509Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "7411009e-d412-4d45-956e-acb5d60eb129",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-25-509Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-25-509Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "3ca44b9e-947f-4a55-8bef-36e241d994b5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-25-509Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_humanized",
+      "run_id": "346038f3-f4d5-44e2-8f64-7bdaf1fce616",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-26-337Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_decline_func",
+      "run_id": "900091fb-2231-4bf7-982f-c87887d3c51c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-30-066Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "f227d1d2-7bf2-44ce-807f-ad9ac2afc00f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-32-224Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-32-224Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "type_while_running_func",
+      "run_id": "e65e20a1-8b58-4a85-b51e-44350d35158c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-32-603Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "01205fa5-9b59-4bd3-a457-935e59f36256",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-35-969Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "01205fa5-9b59-4bd3-a457-935e59f36256",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-35-969Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "2925fa19-22b6-446d-87e2-fc06f7e1fe30",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-37-973Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "fixture:inbox_no_lead",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-37-973Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "ui_empty_home_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-38-127Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "67e2a264-6a44-47c4-9411-0faae1f30b4b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-42-217Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "2b6f367b-ff25-402d-aed3-1dc26bef4baf",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-42-217Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "79056966-adf2-49bd-afef-a670076c25f2",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-43-589Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "ee471b86-57a4-4b54-9fad-522143220679",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-43-589Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-43-589Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_func",
+      "run_id": "fixture:quote_compare_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-47-436Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "939cb888-a5cb-48aa-9691-30257bf01a10",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-49-217Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "6f7821aa-a306-45f3-9549-ee6cf304172a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-49-217Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-49-217Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_cash_func",
+      "run_id": "fixture:quote_compare_cash_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-52-764Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "3851b745-b296-4bfb-8fb2-5ee4ed6ab609",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-55-134Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "0fe91691-4af8-49c6-82b9-3873dee5fb9e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-55-134Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-55-134Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "aef2fa6a-e940-41cb-b2ba-e94bf317528f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-57-777Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-41-57-777Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_func",
+      "run_id": "fixture:dealer_reply_extract_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-00-841Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "4a22988e-027b-4fef-9a72-3bca217753e1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-03-259Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-03-259Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-05-891Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "37bd283c-a6c3-4013-a27b-6f186c2b602d",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-09-303Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-09-303Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "b97a580e-9600-4917-b68f-abd9ee51e481",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-11-001Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-11-001Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_source_doc_func",
+      "run_id": "fixture:quote_source_doc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-14-632Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "2d76911f-7fde-49da-b114-0894b5c1c960",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-17-103Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-17-103Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "rail_resize_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-19-677Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "b4814547-b3fb-4607-8b0b-0343983b232e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-23-360Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-23-360Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "remove_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-25-014Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "a96762a1-a71b-45bf-a741-a5ce274c6063",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-31-445Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-31-445Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_conflict_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-32-962Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "96294747-8971-45dc-93dd-6c0d1fc47398",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-37-134Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-37-134Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_search_func",
+      "run_id": "fixture:closed_only",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-38-317Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "edit_preferences_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-43-040Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_geocode_fault",
+      "run_id": "ecbad98f-c36f-41dc-a6ee-befa7bb53d1b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-43-986Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-48-695Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_humanized",
+      "run_id": "63adc899-6e25-4ed8-957d-422393f1c9e4",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-49-791Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_combined_display_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-55-331Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "type_while_running_func",
+      "run_id": "5880ce9d-c264-43f8-b0a7-e70b99a88442",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-42-55-987Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-00-553Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "ui_empty_home_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-01-486Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-06-035Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_nomarkup_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-11-526Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_detail_modal_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-19-218Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_merged_note_func",
+      "run_id": "fixture:inventory_dup_vin",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-27-415Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_trim_filter_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-35-966Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-44-065Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset_reclear",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-44-065Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_active_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-43-56-513Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_profile_portfolio_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-08-324Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "8f488f64-9461-4a77-b499-a0a03da7fef8",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-19-463Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-19-463Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "8c727c6e-6186-4cb8-b99d-df9a495d9877",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-27-967Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-27-967Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "active_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-33-747Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "negotiations_board_func",
+      "run_id": "fixture:negotiations_board",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-33-827Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "agent_bar_func",
+      "run_id": "fixture:agent_bar_keys",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-39-273Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_bad_token_func",
+      "run_id": "1e88a967-52d9-406d-9870-e0fdf95e64c4",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-39-479Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "closed_profile_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-44-557Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_decline_func",
+      "run_id": "1f7e9c6e-29fa-439b-9885-87a0a1f6f776",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-45-039Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "eff497d8-e0f8-4af4-8b29-24d1cfa76fc0",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-49-562Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_empty_func",
+      "run_id": "eff497d8-e0f8-4af4-8b29-24d1cfa76fc0",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-49-562Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "1a2536a2-6619-4b20-83af-c52326637046",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-50-542Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "1a2536a2-6619-4b20-83af-c52326637046",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-50-542Z"
+    },
+    {
+      "cell_id": "live/daily_digest/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "11d387ef-38f8-4420-9ce2-d308addf0cc7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-54-689Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "daily_digest_ui_slash_func",
+      "run_id": "11d387ef-38f8-4420-9ce2-d308addf0cc7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-54-689Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "d837b2b2-b38b-4c3d-bcc5-2890ec631496",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-56-370Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "ab43cc8a-309b-48d4-a887-184c5a2e4da8",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-44-56-370Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "data_arriving_func",
+      "run_id": "fixture:data_arriving",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-00-487Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_func",
+      "run_id": "fixture:quote_compare_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-01-962Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "a4e59464-244a-4b90-a13c-b6e4c564232d",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-06-022Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_skip_all",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-06-022Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_cash_func",
+      "run_id": "fixture:quote_compare_cash_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-07-576Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "5c05de55-777f-4de2-b9f2-62aa911114ae",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-11-933Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_decline",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-11-933Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "58411452-f4d0-455b-904c-2726c354fb5e",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-12-987Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-12-987Z"
+    },
+    {
+      "cell_id": "live/dealer_closeout_email/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "4f2bbd43-bff1-4e5b-b007-580a95c3baaa",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-17-550Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_closeout_email_ui_send",
+      "run_id": "fixture:closeout_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-17-550Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "88b90d20-354c-48ca-9341-6b9cc428adfa",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-18-476Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-18-476Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "c21ae9d5-917d-4e39-867a-ce5c767f11d6",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-23-392Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_decline_mid",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-23-392Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "43adc0d2-cf34-4223-9cb0-77f556ebb75a",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-24-583Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-24-583Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "bafc3b7f-39c7-42c3-9739-450fe8606e21",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-29-235Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_decline",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-29-235Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_source_doc_func",
+      "run_id": "fixture:quote_source_doc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-30-295Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "9f7de41a-e25b-464d-8961-3c5c700dbf18",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-34-960Z"
+    },
+    {
+      "cell_id": "live/dealer_hygiene/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "98c5ffbf-bfff-4085-9b26-4fd458fc8fef",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-34-960Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "fixture:hygiene_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-34-960Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_hygiene_ui_journey",
+      "run_id": "9f7de41a-e25b-464d-8961-3c5c700dbf18",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-34-960Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "rail_resize_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-35-787Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "aebc8280-8def-47f8-b19b-4ba3885e72bb",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-41-517Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_new_salesperson",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-41-517Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "remove_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-41-519Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_conflict_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-47-234Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "8062badf-af5f-45c0-aa45-bd13ea963147",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-47-373Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_lead",
+      "run_id": "fixture:inbox_no_lead",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-47-373Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_search_func",
+      "run_id": "fixture:closed_only",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-52-827Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "16451d52-01e4-42c9-82a7-ee59c854b3c4",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-53-094Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "7cc62a84-6571-4de0-8f19-8c2805eddf23",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-53-094Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_no_pin",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-53-094Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_geocode_fault",
+      "run_id": "54798ac8-577b-4523-bff0-6eb04e836df8",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-59-073Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "ad357926-ea56-4919-abdf-19cdbfcc81f1",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-59-726Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "21752f2d-88d9-48e8-bf39-63ef7fe667dc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-59-726Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_decline",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-45-59-726Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_humanized",
+      "run_id": "608b356d-a454-45b5-9584-397bbcdf61d5",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-04-695Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "5c5f56eb-05b2-45ba-b854-6c433f1394fe",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-05-771Z"
+    },
+    {
+      "cell_id": "live/dealer_inbox_check/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "315d1e0d-e3d7-49a6-a64e-33eacdf90d27",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-05-771Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_inbox_check_ui_journey",
+      "run_id": "fixture:inbox_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-05-771Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "type_while_running_func",
+      "run_id": "8135917b-4240-4eb8-bced-3cf668dd99ad",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-10-643Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_func",
+      "run_id": "fixture:dealer_reply_extract_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-11-665Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "ui_empty_home_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-15-960Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "dealer_reply_extract_ui_quotes_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-16-699Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "067661ed-4efc-4572-bc23-ea3a15584355",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-21-681Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_captcha_fallback",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-21-681Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "8cda7b24-14bc-40d2-8fbd-8742e53fd783",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-27-610Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-27-610Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "a3115fc9-0016-4ade-9541-64caadb6e044",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-33-628Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_email_fallback_reconfirm",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-33-628Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fb31937e-73a4-4281-a384-abaafe5c8238",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-39-604Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_approve",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-39-604Z"
+    },
+    {
+      "cell_id": "live/dealer_web_lead_submit/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "44fab798-a121-45a4-a3ef-39a19b194c59",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-44-908Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "dealer_web_lead_submit_ui_decline",
+      "run_id": "fixture:lead_submit_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-44-908Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "edit_preferences_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-50-170Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "env_settings_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-46-55-351Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_combined_display_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-01-301Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-06-268Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_empty_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-11-369Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_compare_nomarkup_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-16-247Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_detail_modal_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-21-042Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_merged_note_func",
+      "run_id": "fixture:inventory_dup_vin",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-26-141Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "inventory_trim_filter_func",
+      "run_id": "fixture:inventory_listings",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-30-898Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-35-698Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "keys_setup_func",
+      "run_id": "fixture:keys_unset_reclear",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-35-698Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_active_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-41-271Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "multi_profile_portfolio_func",
+      "run_id": "fixture:multi_active",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-46-067Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "b5d1cbd6-e0e6-4df6-9a43-5560778fdfaf",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-51-375Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_decline",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-51-375Z"
+    },
+    {
+      "cell_id": "live/negotiation_followup/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "58a3523c-0b53-4ef9-ac8f-bb15f23c6d27",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-56-669Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/A/slash",
+      "case_id": "negotiation_followup_ui_send",
+      "run_id": "fixture:followup_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-47-56-669Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "negotiations_board_func",
+      "run_id": "fixture:negotiations_board",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-02-021Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_bad_token_func",
+      "run_id": "013b99a6-73e2-4449-a7b0-335febc844bc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-07-423Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_decline_func",
+      "run_id": "6bc10314-4b24-461a-bb97-4897da1b978b",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-13-006Z"
+    },
+    {
+      "cell_id": "live/pipeline_reset/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "cf097ee7-313e-4a10-9485-8f389a750a53",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-18-397Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "pipeline_reset_ui_slash_func",
+      "run_id": "cf097ee7-313e-4a10-9485-8f389a750a53",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-18-397Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "37762775-8b56-4b87-be48-0a45481acba7",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-24-116Z"
+    },
+    {
+      "cell_id": "live/quote_audit/deepseek/B/slash",
+      "case_id": "quote_audit_idempotency_func",
+      "run_id": "a0605072-c101-47f9-8705-08cd04be3301",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-24-116Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_func",
+      "run_id": "fixture:quote_compare_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-29-400Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_compare_cash_func",
+      "run_id": "fixture:quote_compare_cash_world",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-34-553Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "1482a820-8d18-40d3-ab2f-84a81b26fbf9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-39-284Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_dry_run_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-39-284Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "0fa392f8-9600-4a17-8bc7-2f7aa5f61cf9",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-44-464Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_targeted_decline_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-44-464Z"
+    },
+    {
+      "cell_id": "live/quote_pipeline/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "9be19afc-7f1b-43bd-ab63-592dec55530f",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-50-335Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_pipeline_ui_slash_func",
+      "run_id": "fixture:quote_pipeline_ready",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-50-335Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "quote_source_doc_func",
+      "run_id": "fixture:quote_source_doc",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-48-55-472Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "rail_resize_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-00-403Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "remove_search_func",
+      "run_id": "fixture:active_search",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-05-558Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_conflict_func",
+      "run_id": "fixture:closed_profile",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-10-803Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "restore_search_func",
+      "run_id": "fixture:closed_only",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-15-884Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "search_profile_intake_geocode_fault",
+      "run_id": "23be8a7f-bb73-485e-a281-c6116b6a9b9c",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-21-113Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/freeform",
+      "case_id": "search_profile_intake_ui_humanized",
+      "run_id": "10d863ba-e95f-41cb-a25e-41580853b856",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-26-454Z"
+    },
+    {
+      "cell_id": "live/search_profile_intake/deepseek/B/slash",
+      "case_id": "type_while_running_func",
+      "run_id": "9eda3502-8dac-4903-a613-79e6bc766fdf",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-32-024Z"
+    },
+    {
+      "cell_id": "live/ui/deepseek/B/slash",
+      "case_id": "ui_empty_home_func",
+      "run_id": "fixture:empty_home",
+      "layer": "L2",
+      "lane": "ui",
+      "verdict": "GREEN",
+      "status": "PASS",
+      "run_dir": "2026-07-10T22-49-37-147Z"
+    }
+  ]
+}
