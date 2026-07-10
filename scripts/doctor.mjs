@@ -148,7 +148,7 @@ console.log(`\nAutoBroker doctor — read-only environment check\n${"─".repeat
   else
     warn(
       `AUTOBROKER_MODE resolves to BUYER (real-send-capable)${raw === undefined ? " — unset/empty resolves buyer" : raw === "buyer" ? "" : ` — value ${JSON.stringify(raw)} is not the exact string "test"`}`,
-      'real sends still pass through L2 approval; approval is manual unless Automatic send approvals is enabled. Set AUTOBROKER_MODE=test to keep everything local. (Anything but exact "test" is buyer.)',
+      'real sends still require the per-action L2 approval; set AUTOBROKER_MODE=test to keep everything local. (Note: anything but the exact string "test" is buyer — there is no second env ring.)',
     );
 }
 

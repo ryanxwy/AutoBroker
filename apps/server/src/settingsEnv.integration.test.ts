@@ -43,7 +43,6 @@ const MIGRATION_SQL = join(
 // leaks a toggle into a sibling test or the host process.
 const ENV_VARS = [
   "AUTOBROKER_MODE",
-  "AUTOBROKER_AUTO_SEND",
   "AUTOBROKER_PORTFOLIO_SCHEDULER",
   "AUTOBROKER_GMAIL_ACCOUNT",
   "AUTOBROKER_CHROME_HEADLESS",
@@ -160,19 +159,6 @@ describe("PUT /api/settings/env", () => {
     const body = res.json() as { vars: { id: string; value: string }[] };
     expect(body.vars.find((v) => v.id === "auto_run_searches")?.value).toBe("1");
     expect(process.env["AUTOBROKER_PORTFOLIO_SCHEDULER"]).toBe("1");
-  });
-
-  it("sets auto_send → 200 with the selected channel echoed and env mutated live", async () => {
-    const { app } = await build();
-    const res = await app.inject({
-      method: "PUT",
-      url: "/api/settings/env",
-      payload: { id: "auto_send", value: "email" },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as { vars: { id: string; value: string }[] };
-    expect(body.vars.find((v) => v.id === "auto_send")?.value).toBe("email");
-    expect(process.env["AUTOBROKER_AUTO_SEND"]).toBe("email");
   });
 
   it("sets gmail_account (free-text email) → 200 with the value echoed and env mutated", async () => {

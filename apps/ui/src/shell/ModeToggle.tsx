@@ -1,8 +1,8 @@
 /**
  * ModeToggle — the TopBar's posture switch for the single AUTOBROKER_MODE,
  * rendered as ONE lamp (not a two-segment group): Buyer (the real product —
- * AutoBroker can really email dealers & submit web forms through the L2 gate)
- * vs Test (internal/safe — nothing leaves the machine).
+ * AutoBroker can really email dealers & submit web forms, each still behind the
+ * per-action approval gate) vs Test (internal/safe — nothing leaves the machine).
  * The lamp REFLECTS the live value (fetched by App from GET /api/mode) and
  * switches it via client.setEnvConfig("app_mode", …) then refetches.
  *
@@ -35,7 +35,7 @@ export interface ModeToggleProps {
 
 const TITLE: Record<AppMode, string> = {
   buyer:
-    "Buyer mode — AutoBroker can really email dealers & submit forms. Approvals are manual unless automatic sends are enabled in Settings. Click to switch to Test.",
+    "Buyer mode — AutoBroker can really email dealers & submit forms; you still approve each one. Click to switch to Test.",
   test: "Test mode — nothing leaves your computer. Click to switch to Buyer.",
 };
 
@@ -109,9 +109,8 @@ export function ModeToggle({ mode, onSwitched, client }: ModeToggleProps): JSX.E
           </h2>
           <p id={descId} className="hard-delete-consequence">
             Buyer mode lets AutoBroker <strong>really email dealers and submit web
-            forms</strong> on your behalf. Approvals are manual by default; the
-            separate Automatic send approvals setting can automate fresh first-send
-            gates. Test mode keeps everything on your computer.
+            forms</strong> on your behalf. You still approve each send before it goes
+            out. Test mode keeps everything on your computer.
           </p>
           {error !== null && (
             <p className="danger-text" role="alert" data-testid="mode-confirm-error">

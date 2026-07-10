@@ -222,9 +222,8 @@ personal, single-user use of the user's own token; a multi-user deployment must 
 
 The Gmail **backend is fully shipped and live**: a real loopback OAuth flow plus
 a `@googleapis/gmail` adapter that reads dealer reply threads and, in `buyer`
-mode, sends — every real send still passing through the L2 approval gate.
-Approval is manual by default; Settings can automate fresh allow-listed
-first-send gates. In `test` mode all sends resolve to a local fake mailbox.
+mode, sends — every real send still passing the per-action L2 approval gate. In
+`test` mode all sends resolve to a local fake mailbox.
 
 > The **in-app "Connect Gmail" button** in Settings (`data-testid="gmail-connect"`)
 > is still a **disabled placeholder** ("Coming soon"); `/api/settings/keys`
