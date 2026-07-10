@@ -171,9 +171,9 @@ describe("shared window (S1, S2, S6, S7)", () => {
           forkEnvSafety: Record<string, string>;
         },
     );
-    // Buyer-by-default: a NORMAL launch arms nothing send-related — AUTOBROKER_MODE
-    // is the sole send-control var and is unset (= buyer), so real send is reachable
-    // behind the per-action human-approval gate. (Demo mode pins test mode instead.)
+    // Buyer-by-default: AUTOBROKER_MODE is the sole send-control var and is unset
+    // (= buyer), so real send is reachable through the L2 gate. This isolated data
+    // dir has no persisted auto-send opt-in. (Demo mode pins test mode instead.)
     expect(hook.forkEnvSafety.AUTOBROKER_MODE).toBeUndefined(); // unset = buyer
     expect(hook.forkEnvSafety.MASTRA_TELEMETRY_DISABLED).toBe("1");
     expect(hook.forkEnvSafety.PORT).toBe("0");

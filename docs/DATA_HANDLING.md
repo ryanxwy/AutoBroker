@@ -10,7 +10,7 @@ to delete it.
 
 | Data type | Source | How accessed |
 |---|---|---|
-| Gmail inbox + send (dealer replies, attachments, outbound follow-ups) | The user's own Gmail account | Via Google's Gmail API using a BYO OAuth2 credential. Four scopes are authorized: `gmail.readonly`, `gmail.send`, `gmail.modify`, `gmail.labels`. Send/modify/labels **capability** is granted but never **used** without a per-action human approval — every real send is L2-gate-blocked and only fires in `buyer` mode. |
+| Gmail inbox + send (dealer replies, attachments, outbound follow-ups) | The user's own Gmail account | Via Google's Gmail API using a BYO OAuth2 credential. Four scopes are authorized: `gmail.readonly`, `gmail.send`, `gmail.modify`, `gmail.labels`. Every real send uses the L2 gate and only fires in `buyer` mode; approval is manual by default, with an explicit first-send auto-approval setting. |
 | Dealer contact information | Auto-populated from geosearch (Google Maps) and dealer websites | Stored locally in the product database. |
 | Dealer quotes and negotiation threads | Extracted from Gmail by the LLM extraction skill | Stored locally. |
 | LLM API keys | Provided by the user in Settings or `.env` | Stored locally in the OS keychain or `.env` file. Never committed to the repository. |
@@ -58,13 +58,15 @@ provider for parsing:
 **2. Outbound email to dealers (`buyer` mode only).** In `buyer` mode the send
 skills (`negotiation_followup`, `dealer_closeout_email`, and the
 `dealer_web_lead_submit` email fallback) send real email from the user's own
-Gmail account via the `gmail.send` scope — each one behind a per-action L2
-human-approval gate. In `test` mode these resolve to a local fake mailbox and
+Gmail account via the `gmail.send` scope — each one behind the L2 gate. Approval
+is manual by default and may be explicitly automated for fresh first-send email
+gates. In `test` mode these resolve to a local fake mailbox and
 nothing leaves the machine.
 
 **3. Dealer web-form submits (`buyer` mode only).** In `buyer` mode
 `dealer_web_lead_submit` submits a lead form on a dealer's website via the
-Playwright browser, again only after a per-action human approval. In `test` mode
+Playwright browser, again only through an L2 approval (manual by default, or the
+explicit fresh first-send web-form policy). In `test` mode
 the submit is faked and never touches the dealer site.
 
 **4. Maps geosearch + public website reads.** `dealer_geosearch` queries Google
@@ -82,7 +84,7 @@ multi-tenant service:
 
 - The four Gmail scopes requested are `gmail.readonly`, `gmail.send`,
   `gmail.modify`, and `gmail.labels`. Send/modify/labels are exercised only
-  behind a per-action human-approval gate, and only in `buyer` mode.
+  through the L2 gate, and only in `buyer` mode.
 - Gmail content is read locally and passed to the configured LLM provider for
   extraction (see above).
 - OAuth tokens are stored only on the user's local machine.

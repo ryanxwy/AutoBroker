@@ -13,7 +13,8 @@
  *   gmail.readonly, gmail.send, gmail.modify, gmail.labels
  * (send capability is granted here, but granting is not sending: in test mode
  *  every send resolves to the local fake mailbox, and in buyer mode a real send
- *  happens only one human-approved action at a time through the L2 gate.)
+ *  happens only through an L2 approval; the default is manual and first-send
+ *  automation must be explicitly enabled.)
  *
  * The account is a PARAMETER (env var or argv), never a hardcoded constant, so
  * no real mailbox address is baked into the committed source.
